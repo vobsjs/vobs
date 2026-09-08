@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # pnpm workspace: single lockfile at repo root.
+    # NOTE: The `ignore` rule below only stops Dependabot from repeatedly opening
+    # UPDATE PULL REQUESTS for urllib. It does NOT auto-dismiss the existing Open
+    # security alert (vobsjs/vobs #1). That alert must be dismissed manually —
+    # reason "Waiting for fix" — once so it stops appearing as an actionable/CI-blocking
+    # item while still being tracked. Remove this ignore rule once urllib 4.9.1 ships.
+    # urllib is a transitive dependency of alipay-sdk (used by @vobs/payment).
+    # urllib < 4.9.1 / < 2.44.1 has CVE-2026-55553 (cross-origin redirect
+    # leaks credential headers). The fixed versions are NOT yet published on
+    # npm (latest is 4.9.0), so there is no upgradeable target today.
+    # alipay-sdk depends on "urllib": "^4", so once 4.9.1 ships a normal
+    # update will resolve the vulnerable urllib automatically. Keep Dependabot
+    # quiet on this transitive dep until the fix is published; re-enable by
+    # removing this entry once urllib 4.9.1+ is available.
+    ignore:
+      - dependency-name: "urllib"
+        versions: [">=0", "<4.9.1"]
