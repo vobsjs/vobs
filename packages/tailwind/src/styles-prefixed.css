@@ -1,0 +1,4 @@
+/* Use this entry when a third-party library has utility class name collisions. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "./theme.css";
+@import "tailwindcss/utilities.css" prefix(vobs);

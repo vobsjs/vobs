@@ -1,0 +1,10 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+coverage/
+.vite/
+*.log
+*.tsbuildinfo
+scripts/sync-uistyle.mjs
+docs/

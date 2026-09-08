@@ -1,0 +1,57 @@
+.vui-toast-host {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-8);
+  width: min(380px, calc(100vw - 32px));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+.vui-toast-host--top-left { top: var(--spacer-16); left: var(--spacer-16); }
+.vui-toast-host--top-right { top: var(--spacer-16); right: var(--spacer-16); }
+.vui-toast-host--bottom-left { bottom: var(--spacer-16); left: var(--spacer-16); }
+.vui-toast-host--bottom-right { right: var(--spacer-16); bottom: var(--spacer-16); }
+
+.vui-toast {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacer-12);
+  min-height: 56px;
+  padding: var(--spacer-12) var(--spacer-12) var(--spacer-12) var(--spacer-16);
+  color: var(--text-default);
+  background: var(--bg-base-secondary);
+  border: 1px solid var(--border-neutral-l1);
+  border-left: 3px solid var(--status-primary-default);
+  border-radius: var(--radius-6);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  pointer-events: auto;
+}
+
+.vui-toast--success { border-left-color: var(--status-success-default); }
+.vui-toast--warning { border-left-color: var(--status-warning-default); }
+.vui-toast--error { border-left-color: var(--status-error-default); }
+.vui-toast__content { min-width: 0; }
+.vui-toast__title { margin-bottom: var(--spacer-4); font-weight: var(--font-weight-medium); }
+.vui-toast__message { color: var(--text-secondary); font-size: var(--body-sm-font-size); line-height: var(--body-sm-line-height); overflow-wrap: anywhere; }
+.vui-toast__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  margin: -4px -4px 0 0;
+  padding: 0;
+  color: var(--icon-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-4);
+  cursor: pointer;
+}
+.vui-toast__close:hover { color: var(--icon-default); background: var(--bg-overlay-l2); }
+.vui-toast__close:focus-visible { outline: 2px solid var(--border-brand); outline-offset: 2px; }

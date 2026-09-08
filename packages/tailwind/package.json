@@ -1,0 +1,30 @@
+{
+  "private": true,
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "name": "@vobs/tailwind",
+  "version": "1.0.0",
+  "description": "Tailwind CSS integration for Vobs theme conventions.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./vite": "./src/vite.ts",
+    "./theme.css": "./src/theme.css",
+    "./styles.css": "./src/styles.css",
+    "./styles-prefixed.css": "./src/styles-prefixed.css",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "./src/*.css"
+  ],
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "tailwindcss": "^4.3.3"
+  }
+}

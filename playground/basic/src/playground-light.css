@@ -1,0 +1,107 @@
+/*
+ * Playground-only light theme proof-of-concept.
+ * The framework remains dark-first: these overrides live in the demo app and
+ * keep the framework's green brand fill while adapting neutral, text, border
+ * and status tokens for light-surface contrast.
+ */
+.playground-root[data-playground-theme='light'] {
+  color-scheme: light;
+  --vobs-color-scheme: light;
+  --vobs-scrollbar-track: transparent;
+  --vobs-scrollbar-thumb: #c4d0c8;
+  --vobs-scrollbar-thumb-hover: #8d9f93;
+  --vobs-scrollbar-thumb-active: #0f8f50;
+
+  --bg-base-default: #f4f7f5;
+  --bg-base-secondary: #ffffff;
+  --bg-base-tertiary: #edf2ef;
+  --bg-overlay-l1: rgb(20 52 34 / 4%);
+  --bg-overlay-l2: rgb(20 52 34 / 7%);
+  --bg-overlay-l3: rgb(20 52 34 / 10%);
+  --bg-overlay-l4: rgb(20 52 34 / 15%);
+  --bg-menu: #ffffff;
+  --bg-tooltip: #17221a;
+  --bg-invert: #17221a;
+  --bg-invert-hover: #25352a;
+  --bg-invert-active: #3c5142;
+  --bg-invert-disabled: rgb(23 34 26 / 12%);
+
+  /* Keep the framework's default green brand. */
+  --bg-brand: #32f08c;
+  --bg-brand-hover: #0fdc78;
+  --bg-brand-disabled: rgb(50 240 140 / 28%);
+  --bg-brand-popup: rgb(50 240 140 / 18%);
+  --border-brand: #0f8f50;
+  --text-brand: #087a43;
+  --text-brand-hover: #056437;
+  --icon-brand: #087a43;
+  --icon-brand-hover: #056437;
+
+  --text-default: #17221a;
+  --text-default-hover: #0b120e;
+  --text-default-active: #0b120e;
+  --text-secondary: #53635a;
+  --text-secondary-hover: #304238;
+  --text-secondary-active: #304238;
+  --text-tertiary: #718078;
+  --text-disabled: #9aa79f;
+  --text-onbrand: #0c0c0d;
+  --text-onaccent: #0c0c0d;
+
+  --icon-default: #17221a;
+  --icon-default-hover: #0b120e;
+  --icon-default-active: #0b120e;
+  --icon-secondary: #53635a;
+  --icon-secondary-hover: #304238;
+  --icon-secondary-active: #304238;
+  --icon-tertiary: #718078;
+  --icon-disabled: #9aa79f;
+  --icon-onbrand: #0c0c0d;
+  --icon-onaccent: #0c0c0d;
+
+  --border-neutral-l1: #d8e1db;
+  --border-neutral-l2: #c2cec5;
+  --border-neutral-l3: #a7b8ac;
+  --border-contrast: #17221a;
+
+  --status-primary-default: #1d5fd1;
+  --status-primary-hover: #174eae;
+  --status-primary-active: #123d89;
+  --status-primary-surface-l1: rgb(29 95 209 / 10%);
+  --status-primary-surface-l2: rgb(29 95 209 / 17%);
+  --status-primary-surface-l3: rgb(29 95 209 / 24%);
+  --status-success-default: #087443;
+  --status-success-hover: #055d35;
+  --status-success-active: #044829;
+  --status-success-surface-l1: rgb(8 116 67 / 10%);
+  --status-success-surface-l2: rgb(8 116 67 / 17%);
+  --status-success-surface-l3: rgb(8 116 67 / 24%);
+  --status-alert-default: #8a5a00;
+  --status-alert-hover: #6f4800;
+  --status-alert-active: #553600;
+  --status-alert-surface-l1: rgb(138 90 0 / 11%);
+  --status-alert-surface-l2: rgb(138 90 0 / 18%);
+  --status-alert-surface-l3: rgb(138 90 0 / 25%);
+  --status-warning-default: #9a5300;
+  --status-warning-hover: #7a4200;
+  --status-warning-active: #5c3100;
+  --status-warning-surface-l1: rgb(154 83 0 / 11%);
+  --status-warning-surface-l2: rgb(154 83 0 / 18%);
+  --status-warning-surface-l3: rgb(154 83 0 / 25%);
+  --status-error-default: #b42318;
+  --status-error-hover: #8f1c13;
+  --status-error-active: #6e160f;
+  --status-error-surface-l1: rgb(180 35 24 / 10%);
+  --status-error-surface-l2: rgb(180 35 24 / 17%);
+  --status-error-surface-l3: rgb(180 35 24 / 24%);
+
+  --vobs-table-surface: #ffffff;
+  --vobs-table-header-surface: #f7faf8;
+  --vobs-table-border: #d8e1db;
+  --vobs-table-text: #17221a;
+  --vobs-table-muted: #53635a;
+  --vobs-table-active: rgb(20 52 34 / 8%);
+  --vobs-table-active-border: #a7b8ac;
+  --vobs-table-row-hover: rgb(20 52 34 / 5%);
+  --vobs-table-sort-active: #087a43;
+}

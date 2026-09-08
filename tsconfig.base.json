@@ -1,0 +1,23 @@
+{
+    "compilerOptions": {
+      "target": "ES2020",
+      "lib": ["ES2022", "DOM", "DOM.Iterable"],
+      "module": "ESNext",
+      "moduleResolution": "bundler",
+      "allowImportingTsExtensions": true,
+      "noEmit": true,
+      "strict": true,
+      "jsx": "preserve",
+      "jsxImportSource": "@vobs/vobs",
+      "esModuleInterop": true,
+      "skipLibCheck": true,
+      "declaration": true,
+      "sourceMap": true,
+      "resolveJsonModule": true,
+      "isolatedModules": true,
+      "noUnusedLocals": true,
+      "noUnusedParameters": true,
+      "noImplicitReturns": true,
+      "noFallthroughCasesInSwitch": true
+    }
+  }

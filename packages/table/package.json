@@ -1,0 +1,34 @@
+{
+  "private": true,
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "name": "@vobs/table",
+  "version": "1.0.0",
+  "description": "Optional data table primitives for Vobs.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest --environment jsdom"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./data-table": "./src/data-table.ts",
+    "./column-settings": "./src/column-settings.ts",
+    "./styles.css": "./src/styles/styles.css",
+    "./table.css": "./src/styles/table.css",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "./src/styles/*.css"
+  ],
+  "dependencies": {
+    "@vobs/reactivity": "workspace:*",
+    "@vobs/resource": "workspace:*",
+    "@vobs/vobs": "workspace:*"
+  }
+}

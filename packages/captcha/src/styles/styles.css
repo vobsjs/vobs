@@ -1,0 +1,437 @@
+/*
+ * Default styles for the provider-agnostic Captcha UI primitive.
+ *
+ * The challenge renderer owns the appearance and interaction of the actual
+ * captcha (slider, puzzle, third-party widget, etc.). These rules only style
+ * the Vobs container, messages, and actions supplied by @vobs/captcha.
+ */
+
+.vobs-captcha {
+  --vobs-captcha-bg: var(--vobs-captcha-surface, #ffffff);
+  --vobs-captcha-border: var(--vobs-captcha-border-color, #d9dee8);
+  --vobs-captcha-text: var(--vobs-captcha-text-color, #1f2937);
+  --vobs-captcha-muted: var(--vobs-captcha-muted-color, #667085);
+  --vobs-captcha-danger: var(--vobs-captcha-danger-color, #c93636);
+  --vobs-captcha-primary: var(--vobs-captcha-primary-color, #2563eb);
+  --vobs-captcha-primary-hover: var(--vobs-captcha-primary-hover-color, #1d4ed8);
+  --vobs-captcha-focus: var(--vobs-captcha-focus-color, #2563eb);
+  --vobs-captcha-radius: var(--vobs-captcha-radius-value, 8px);
+  --vobs-captcha-spacing: var(--vobs-captcha-spacing-value, 12px);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--vobs-captcha-spacing);
+  width: min(100%, 520px);
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--vobs-captcha-border);
+  border-radius: var(--vobs-captcha-radius);
+  color: var(--vobs-captcha-text);
+  background: var(--vobs-captcha-bg);
+  font: 400 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.vobs-captcha__header {
+  color: var(--vobs-captcha-text);
+  font-weight: 600;
+}
+
+.vobs-captcha__header:empty {
+  display: none;
+}
+
+.vobs-captcha__message-host:empty {
+  display: none;
+}
+
+.vobs-captcha__message-host .vobs-captcha__message {
+  margin-top: -2px;
+  text-align: left;
+}
+
+.vobs-captcha__challenge {
+  display: flex;
+  min-width: 0;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+}
+
+.vobs-captcha__challenge > * {
+  max-width: 100%;
+}
+
+.vobs-captcha__message {
+  margin: 0;
+  color: var(--vobs-captcha-muted);
+  text-align: center;
+}
+
+.vobs-captcha[data-status="error"] .vobs-captcha__message {
+  color: var(--vobs-captcha-danger);
+}
+
+.vobs-captcha[data-status="verified"] .vobs-captcha__message {
+  color: var(--vobs-captcha-primary);
+}
+
+.vobs-captcha[data-status="loading"] .vobs-captcha__challenge,
+.vobs-captcha[data-status="verifying"] .vobs-captcha__challenge {
+  opacity: 0.72;
+}
+
+.vobs-captcha__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.vobs-captcha__action {
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 1px solid var(--vobs-captcha-border);
+  border-radius: calc(var(--vobs-captcha-radius) - 2px);
+  color: var(--vobs-captcha-text);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.vobs-captcha__action-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+.vobs-captcha__action-icon > svg {
+  width: 100%;
+  height: 100%;
+}
+
+.vobs-captcha__action:hover:not(:disabled) {
+  border-color: var(--vobs-captcha-primary);
+  color: var(--vobs-captcha-primary-hover);
+  background: color-mix(in srgb, var(--vobs-captcha-primary) 8%, transparent);
+}
+
+.vobs-captcha__action:focus-visible {
+  outline: 2px solid var(--vobs-captcha-focus);
+  outline-offset: 2px;
+}
+
+.vobs-captcha__action:disabled,
+.vobs-captcha[aria-disabled="true"] .vobs-captcha__action {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.vobs-slider-captcha {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: max-content;
+  max-width: none;
+  gap: 10px 12px;
+  padding: 12px;
+  background: var(--vobs-captcha-surface, var(--bg-base-secondary, #ffffff));
+}
+
+.vobs-slider-captcha--dismissed { display: none; }
+
+.vobs-slider-captcha .vobs-captcha__header {
+  grid-column: 1;
+  grid-row: 1;
+  display: none;
+  min-height: 0;
+}
+
+.vobs-slider-captcha .vobs-captcha__actions {
+  display: contents;
+}
+
+.vobs-slider-captcha .vobs-captcha__action {
+  position: absolute;
+  z-index: 5;
+  display: inline-flex;
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 4px;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;
+}
+
+.vobs-slider-captcha .vobs-captcha__action--retry {
+  top: 176px;
+  right: 20px;
+}
+
+.vobs-slider-captcha .vobs-captcha__action--cancel {
+  top: 20px;
+  right: 20px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.vobs-slider-captcha .vobs-captcha__action-icon {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.vobs-slider-captcha .vobs-captcha__challenge {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.vobs-slider-captcha .vobs-captcha__challenge > .vobs-slider-captcha__challenge {
+  max-width: none;
+}
+
+.vobs-slider-captcha__challenge {
+  display: grid;
+  width: max-content;
+  gap: 10px;
+}
+
+.vobs-slider-captcha__visual {
+  position: relative;
+  overflow: hidden;
+  width: 480px;
+  height: 260px;
+  max-width: none;
+  border-radius: 6px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, .14), transparent 45%),
+    linear-gradient(45deg, rgba(0, 0, 0, .1), transparent 55%),
+    #8aa3b8;
+  background-repeat: no-repeat;
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .16);
+}
+
+.vobs-slider-captcha__visual::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: repeating-linear-gradient(112deg, transparent 0 17px, rgba(255, 255, 255, .07) 18px 19px);
+}
+
+.vobs-slider-captcha__target,
+.vobs-slider-captcha__piece,
+.vobs-slider-captcha__decoy {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 0;
+}
+
+.vobs-slider-captcha__target {
+}
+
+.vobs-slider-captcha__decoy {
+  pointer-events: none;
+}
+
+.vobs-slider-captcha__image {
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  transform-origin: center;
+}
+
+.vobs-slider-captcha__target::after,
+.vobs-slider-captcha__decoy::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+}
+
+.vobs-slider-captcha__target::after {
+  background: rgba(8, 19, 34, .2);
+  box-shadow: inset 0 0 14px rgba(4, 12, 24, .78);
+}
+
+.vobs-slider-captcha__decoy::after {
+  background: rgba(8, 19, 34, .16);
+  box-shadow: inset 0 0 12px rgba(4, 12, 24, .66);
+}
+
+.vobs-slider-captcha__target--puzzle,
+.vobs-slider-captcha__piece--puzzle,
+.vobs-slider-captcha__decoy--puzzle {
+  clip-path: polygon(0 0, 38% 0, 43% 12%, 57% 12%, 62% 0, 100% 0, 100% 38%, 88% 43%, 88% 57%, 100% 62%, 100% 100%, 62% 100%, 57% 88%, 43% 88%, 38% 100%, 0 100%);
+}
+
+.vobs-slider-captcha__target--circle,
+.vobs-slider-captcha__piece--circle,
+.vobs-slider-captcha__decoy--circle {
+  clip-path: polygon(48% 1%, 61% 7%, 73% 3%, 82% 15%, 96% 22%, 92% 36%, 99% 48%, 91% 60%, 94% 75%, 80% 82%, 70% 96%, 56% 91%, 46% 99%, 35% 89%, 19% 94%, 14% 80%, 1% 70%, 8% 56%, 1% 44%, 9% 32%, 5% 18%, 21% 15%, 31% 3%, 42% 9%);
+}
+
+.vobs-slider-captcha__target--square,
+.vobs-slider-captcha__piece--square,
+.vobs-slider-captcha__decoy--square {
+  clip-path: polygon(0 0, 34% 0, 38% 10%, 55% 10%, 60% 0, 100% 0, 100% 32%, 89% 38%, 89% 57%, 100% 63%, 100% 100%, 63% 100%, 57% 89%, 40% 89%, 34% 100%, 0 100%, 0 65%, 11% 59%, 11% 42%, 0 35%);
+}
+
+.vobs-slider-captcha__target--triangle,
+.vobs-slider-captcha__piece--triangle,
+.vobs-slider-captcha__decoy--triangle {
+  clip-path: polygon(50% 0, 59% 14%, 72% 12%, 76% 26%, 100% 100%, 65% 94%, 56% 100%, 47% 90%, 35% 96%, 0 100%, 24% 27%, 38% 24%, 41% 11%);
+}
+
+.vobs-slider-captcha__piece {
+  z-index: 2;
+  pointer-events: auto;
+  border: 0;
+  background-repeat: no-repeat;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .66), 0 3px 7px rgba(0, 0, 0, .48), 0 1px 2px rgba(255, 255, 255, .28) inset;
+  will-change: left, transform;
+  cursor: grab;
+  touch-action: none;
+}
+
+.vobs-slider-captcha__piece:active { cursor: grabbing; }
+
+.vobs-slider-captcha__track {
+  position: relative;
+  height: 33px;
+  box-sizing: border-box;
+  border: 1px solid var(--vobs-captcha-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vobs-captcha-text) 5%, transparent);
+}
+
+.vobs-slider-captcha__track-prompt {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vobs-captcha-muted);
+  font-size: 12px;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.vobs-slider-captcha__track[data-has-moved="true"] .vobs-slider-captcha__track-prompt {
+  opacity: 0;
+}
+
+.vobs-slider-captcha__handle {
+  position: absolute;
+  top: 1px;
+  z-index: 1;
+  width: 50px;
+  height: 29px;
+  padding: 0 10px;
+  border: 1px solid var(--vobs-captcha-primary);
+  border-radius: 6px;
+  color: var(--vobs-captcha-primary);
+  background: var(--vobs-captcha-bg);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, .2);
+  font: 600 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: grab;
+  touch-action: none;
+  transition: box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.vobs-slider-captcha__handle:hover,
+.vobs-slider-captcha__challenge[data-dragging="true"] .vobs-slider-captcha__handle {
+  background: color-mix(in srgb, var(--vobs-captcha-primary) 10%, var(--vobs-captcha-bg));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vobs-captcha-focus) 20%, transparent), 0 3px 8px rgba(0, 0, 0, .24);
+}
+
+.vobs-slider-captcha__handle:focus-visible {
+  outline: 2px solid var(--vobs-captcha-focus);
+  outline-offset: 2px;
+}
+
+.vobs-slider-captcha__handle:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.vobs-slider-captcha__handle--verified,
+.vobs-slider-captcha__handle--verified:disabled {
+  border-color: #1f9d55;
+  color: #ffffff;
+  background: #1f9d55;
+  box-shadow: 0 3px 8px rgba(20, 126, 70, .38);
+  opacity: 1;
+}
+
+.vobs-slider-captcha__error {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  margin: 0;
+  padding: 7px 10px;
+  color: #ffffff;
+  background: rgba(166, 35, 35, .9);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.vobs-slider-captcha__notice {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  margin: 0;
+  padding: 7px 10px;
+  color: #ffffff;
+  background: rgba(15, 23, 42, .78);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.vobs-slider-captcha__prompt,
+.vobs-slider-captcha__success {
+  margin: 0;
+  text-align: center;
+}
+
+.vobs-slider-captcha__prompt { color: var(--vobs-captcha-muted); }
+.vobs-slider-captcha__success {
+  padding: 20px 12px;
+  color: var(--vobs-captcha-primary);
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .vobs-captcha {
+    --vobs-captcha-bg: var(--vobs-captcha-surface, #1f2937);
+    --vobs-captcha-border: var(--vobs-captcha-border-color, #465166);
+    --vobs-captcha-text: var(--vobs-captcha-text-color, #f3f4f6);
+    --vobs-captcha-muted: var(--vobs-captcha-muted-color, #aab3c2);
+    --vobs-captcha-danger: var(--vobs-captcha-danger-color, #ff8b8b);
+    --vobs-captcha-primary: var(--vobs-captcha-primary-color, #78a9ff);
+    --vobs-captcha-primary-hover: var(--vobs-captcha-primary-hover-color, #a7c7ff);
+    --vobs-captcha-focus: var(--vobs-captcha-focus-color, #9bc1ff);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vobs-captcha__action,
+  .vobs-slider-captcha__handle {
+    transition: none;
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "private": true,
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "name": "@vobs/ui",
+  "version": "1.0.0",
+  "description": "Optional UI components and UIStyle-compatible styles for Vobs.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest --environment jsdom"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./button": "./src/button.ts",
+    "./forms": "./src/forms.ts",
+    "./card": "./src/card.ts",
+    "./tag": "./src/tag.ts",
+    "./alert": "./src/alert.ts",
+    "./tabs": "./src/tabs.ts",
+    "./dialog": "./src/dialog.ts",
+    "./icon": "./src/icon.ts",
+    "./menu": "./src/menu.ts",
+    "./nav-list": "./src/nav-list.ts",
+    "./pagination": "./src/pagination.ts",
+    "./avatar": "./src/avatar.ts",
+    "./page-header": "./src/page-header.ts",
+    "./table": "./src/table.ts",
+    "./stat-card": "./src/stat-card.ts",
+    "./kbd": "./src/kbd.ts",
+    "./activity-rail": "./src/activity-rail.ts",
+    "./file-tree": "./src/file-tree.ts",
+    "./editor-tabs": "./src/editor-tabs.ts",
+    "./workbench-titlebar": "./src/workbench-titlebar.ts",
+    "./status-bar": "./src/status-bar.ts",
+    "./chat-composer": "./src/chat-composer.ts",
+    "./drawer": "./src/drawer.ts",
+    "./toast": "./src/toast.ts",
+    "./toast.css": "./src/styles/toast.css",
+    "./overlay": "./src/overlay.ts",
+    "./icons.js": "./src/icons.js",
+    "./assets/icons/*": "./src/assets/icons/*",
+    "./tokens.css": "./src/styles/tokens.css",
+    "./base.css": "./src/styles/base.css",
+    "./components.css": "./src/styles/components.css",
+    "./vui.css": "./src/styles/vui.css",
+    "./styles.css": "./src/styles/styles.css",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "./src/styles/*.css"
+  ],
+  "dependencies": {
+    "@vobs/icon-core": "workspace:*",
+    "@vobs/notification": "workspace:*",
+    "@vobs/reactivity": "workspace:*",
+    "@vobs/vobs": "workspace:*"
+  }
+}

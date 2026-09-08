@@ -1,0 +1,28 @@
+/* Vobs semantic tokens exposed through Tailwind's color, spacing, and radius namespaces. */
+@theme inline {
+  --color-brand: var(--vobs-brand-primary, #2563eb);
+  --color-brand-secondary: var(--vobs-brand-secondary, #0f766e);
+  --color-brand-accent: var(--vobs-brand-accent, #d97706);
+
+  --color-background: var(--vobs-neutral-background, #ffffff);
+  --color-surface: var(--vobs-neutral-surface, var(--vobs-neutral-background, #f8fafc));
+  --color-foreground: var(--vobs-neutral-foreground, #172033);
+  --color-muted: var(--vobs-neutral-muted, #64748b);
+  --color-border: var(--vobs-neutral-border, #cbd5e1);
+
+  --color-success: var(--vobs-semantic-success, #15803d);
+  --color-warning: var(--vobs-semantic-warning, #b45309);
+  --color-danger: var(--vobs-semantic-danger, #b91c1c);
+  --color-info: var(--vobs-semantic-info, #0369a1);
+
+  --spacing-vobs-sm: var(--vobs-spacing-sm, 4px);
+  --spacing-vobs-md: var(--vobs-spacing-md, 8px);
+  --spacing-vobs-lg: var(--vobs-spacing-lg, 16px);
+
+  --radius-vobs-sm: var(--vobs-radius-sm, 2px);
+  --radius-vobs-md: var(--vobs-radius-md, 4px);
+  --radius-vobs-lg: var(--vobs-radius-lg, 6px);
+}
+
+/* Follow the Vobs theme boundary instead of maintaining a second class-based dark state. */
+@custom-variant dark (&:where([data-vobs-mode="dark"], [data-vobs-mode="dark"] *));

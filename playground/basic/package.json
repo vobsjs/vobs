@@ -1,0 +1,42 @@
+{
+  "name": "@vobs-playground/basic",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@vobs/auth": "workspace:*",
+    "@vobs/captcha": "workspace:*",
+    "@vobs/compiler": "workspace:*",
+    "@vobs/devtools": "workspace:*",
+    "@vobs/devtools-ui": "workspace:*",
+    "@vobs/forms": "workspace:*",
+    "@vobs/http": "workspace:*",
+    "@vobs/i18n": "workspace:*",
+    "@vobs/kit": "workspace:*",
+    "@vobs/layout": "workspace:*",
+    "@vobs/logger": "workspace:*",
+    "@vobs/notification": "workspace:*",
+    "@vobs/preferences": "workspace:*",
+    "@vobs/queue": "workspace:*",
+    "@vobs/resource": "workspace:*",
+    "@vobs/router": "workspace:*",
+    "@vobs/ssr": "workspace:*",
+    "@vobs/storage": "workspace:*",
+    "@vobs/sync": "workspace:*",
+    "@vobs/table": "workspace:*",
+    "@vobs/theme": "workspace:*",
+    "@vobs/transition": "workspace:*",
+    "@vobs/ui": "workspace:*",
+    "@vobs/upload": "workspace:*",
+    "@vobs/vobs": "workspace:*"
+  },
+  "devDependencies": {
+    "@vobs/tailwind": "workspace:*",
+    "@vobs/vite-plugin": "workspace:*",
+    "vite": "^7.3.6"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "private": true,
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "name": "@vobs/kit",
+  "version": "1.0.0",
+  "description": "Optional official Kit composition package for Vobs.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest --environment jsdom"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./page": "./src/page.ts",
+    "./filter-bar": "./src/filter-bar.ts",
+    "./page-actions": "./src/page-actions.ts",
+    "./layout": "./src/index.ts",
+    "./styles.css": "./src/styles/styles.css",
+    "./kit.css": "./src/styles/kit.css",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "./src/styles/*.css"
+  ],
+  "dependencies": {
+    "@vobs/auth": "workspace:*",
+    "@vobs/i18n": "workspace:*",
+    "@vobs/layout": "workspace:*",
+    "@vobs/reactivity": "workspace:*",
+    "@vobs/resource": "workspace:*",
+    "@vobs/router": "workspace:*",
+    "@vobs/table": "workspace:*",
+    "@vobs/theme": "workspace:*",
+    "@vobs/vobs": "workspace:*",
+    "@vobs/ui": "workspace:*"
+  }
+}

@@ -1,0 +1,123 @@
+import type { VobsNode } from './fragment'
+
+export type HmrComponent<Props extends object = Record<string, unknown>> =
+  (props: Props) => VobsNode
+
+export interface HmrStateStore {
+  get<T>(key: string, initial: T | (() => T)): T
+  set<T>(key: string, value: T): void
+  has(key: string): boolean
+  delete(key: string): void
+  clear(): void
+}
+
+export interface HmrInstance {
+  node: VobsNode
+  parent: Node | null
+  refresh(): void
+}
+
+interface HmrModuleState {
+  readonly components: Map<string, HmrComponent>
+  readonly state: Map<string, unknown>
+  readonly instances: Set<HmrInstance>
+}
+
+interface HmrGlobal {
+  modules: Map<string, HmrModuleState>
+}
+
+const globalTarget = globalThis as typeof globalThis & { __VOBS_HMR__?: HmrGlobal }
+const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: new Map<string, HmrModuleState>() }
+globalTarget.__VOBS_HMR__ = hmrGlobal
+
+export function resolveComponent<Props extends object>(
+  component: HmrComponent<Props>,
+  moduleId: string,
+  exportName: string
+): HmrComponent<Props> {
+  const module = getModule(moduleId)
+  const existing = module.components.get(exportName)
+  if (existing) return existing as HmrComponent<Props>
+
+  const proxy = ((props: Props) => {
+    const current = (proxy as HmrComponent<Props> & { current: HmrComponent<Props> }).current
+    return current(props)
+  }) as HmrComponent<Props> & { current: HmrComponent<Props> }
+  proxy.current = component
+  Object.defineProperties(proxy, {
+    displayName: { configurable: true, value: component.name || exportName },
+    hmrKey: { configurable: false, value: `${moduleId}:${exportName}` }
+  })
+  module.components.set(exportName, proxy as HmrComponent)
+  return proxy
+}
+
+export function updateHmrModule(_moduleId: string, nextModule: Record<string, unknown>): void {
+  const modules = [...hmrGlobal.modules.values()]
+  for (const module of modules) {
+    let changed = false
+    for (const [name, proxy] of module.components) {
+      const next = nextModule[name]
+      if (typeof next !== 'function') continue
+      const hmrProxy = proxy as HmrComponent & { current: HmrComponent; displayName?: string }
+      hmrProxy.current = next as HmrComponent
+      Object.defineProperty(hmrProxy, 'displayName', { configurable: true, value: next.name || name })
+      changed = true
+    }
+    if (!changed) continue
+    for (const instance of module.instances) {
+      try {
+        instance.refresh()
+      } catch {
+        // HMR failures remain application errors on the next normal render.
+      }
+    }
+  }
+}
+
+export function disposeHmrModule(_moduleId: string): void {
+  // State and component proxies intentionally survive module disposal.
+}
+
+export function createHmrStateStore(moduleId: string): HmrStateStore {
+  const state = getModule(moduleId).state
+  return {
+    get<T>(key: string, initial: T | (() => T)): T {
+      if (!state.has(key)) state.set(key, typeof initial === 'function' ? (initial as () => T)() : initial)
+      return state.get(key) as T
+    },
+    set<T>(key: string, value: T): void {
+      state.set(key, value)
+    },
+    has: key => state.has(key),
+    delete: key => { state.delete(key) },
+    clear: () => { state.clear() }
+  }
+}
+
+export function registerHmrInstance(moduleId: string, instance: HmrInstance): () => void {
+  const instances = getModule(moduleId).instances
+  instances.add(instance)
+  return () => instances.delete(instance)
+}
+
+export function markHmrInstanceMounted(node: VobsNode, parent: Node): void {
+  const instance = hmrInstances.get(node as object)
+  if (instance) instance.parent = parent
+}
+
+function getModule(moduleId: string): HmrModuleState {
+  let module = hmrGlobal.modules.get(moduleId)
+  if (!module) {
+    module = { components: new Map(), state: new Map(), instances: new Set() }
+    hmrGlobal.modules.set(moduleId, module)
+  }
+  return module
+}
+
+const hmrInstances = new WeakMap<object, HmrInstance>()
+
+export function associateHmrInstance(node: VobsNode, instance: HmrInstance): void {
+  hmrInstances.set(node as object, instance)
+}

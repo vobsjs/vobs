@@ -1,0 +1,39 @@
+{
+  "private": true,
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "name": "@vobs/layout",
+  "version": "1.0.0",
+  "description": "Optional Kit layout primitives for Vobs.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest --environment jsdom"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./layout": "./src/layout.ts",
+    "./header": "./src/header.ts",
+    "./sidebar": "./src/sidebar.ts",
+    "./menu": "./src/menu.ts",
+    "./breadcrumb": "./src/breadcrumb.ts",
+    "./tabs": "./src/tabs.ts",
+    "./context": "./src/context.ts",
+    "./viewport": "./src/viewport.ts",
+    "./layout.css": "./src/styles/layout.css",
+    "./styles.css": "./src/styles/styles.css",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "./src/styles/*.css"
+  ],
+  "dependencies": {
+    "@vobs/reactivity": "workspace:*",
+    "@vobs/vobs": "workspace:*"
+  }
+}

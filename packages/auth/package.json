@@ -1,0 +1,26 @@
+{
+  "private": true,
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "name": "@vobs/auth",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@vobs/reactivity": "workspace:*",
+    "@vobs/vobs": "workspace:*"
+  },
+  "devDependencies": {
+    "@vobs/http": "workspace:*",
+    "@vobs/resource": "workspace:*",
+    "@vobs/router": "workspace:*"
+  }
+}

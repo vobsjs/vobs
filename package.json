@@ -1,0 +1,23 @@
+{
+  "name": "vobs-framework",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Signals First · Zero Re-renders · Ultra Lightweight",
+  "scripts": {
+    "build": "pnpm run typecheck && pnpm --filter @vobs-playground/basic build",
+    "sync:uistyle": "node scripts/sync-uistyle.mjs",
+    "test": "vitest --environment jsdom",
+    "test:run": "vitest --environment jsdom --run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "pnpm --filter @vobs-playground/basic dev"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "jsdom": "^30.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.11"
+  }
+}

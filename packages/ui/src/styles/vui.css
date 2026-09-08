@@ -1,0 +1,47 @@
+/* Small runtime presentation hooks owned by @vobs/ui. */
+.vui-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+.vui-icon > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+
+.vui-avatar__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.vui-table th[data-align="center"],
+.vui-table td[data-align="center"] {
+  text-align: center;
+}
+
+.vui-wbtitlebar__light {
+  border: 0;
+  padding: 0;
+}
+
+.vui-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -1,0 +1,1582 @@
+.vobs-devtools-widget {
+  position: fixed;
+  left: 56px;
+  bottom: 32px;
+  z-index: 1000;
+}
+
+.vobs-devtools-widget .vui-btn {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .2);
+}
+
+.vobs-devtools-widget__dialog.vui-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  overflow: hidden;
+}
+
+.vobs-devtools-widget__dialog.vui-backdrop.is-maximized {
+  padding: 0;
+}
+
+.vobs-devtools-widget__dialog .vui-dialog {
+  max-width: min(1180px, calc(100vw - var(--spacer-32)));
+  height: min(760px, calc(100vh - var(--spacer-32)));
+  display: flex;
+  flex-direction: column;
+}
+
+.vobs-devtools-widget__dialog.is-maximized .vui-dialog {
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  border-radius: 0;
+}
+
+.vobs-devtools-widget__dialog .vui-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  max-height: none;
+}
+
+.vobs-devtools-widget__dialog .vui-dialog__head {
+  gap: var(--spacer-8);
+  justify-content: flex-start;
+}
+
+.vobs-devtools-widget__dialog .vui-dialog__title {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.vobs-devtools-widget__dialog .vui-dialog__close {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.vobs-devtools-widget__dialog .vobs-devtools-shell {
+  height: 100%;
+  min-height: 0;
+}
+
+.vobs-devtools-panel__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--spacer-16);
+}
+
+.vobs-devtools-collection-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacer-8);
+  margin-bottom: var(--spacer-12);
+}
+
+.vobs-devtools-collection-toolbar--header {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.vobs-devtools-collection-toolbar__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+.vobs-devtools-search {
+  min-width: 180px;
+  margin-right: auto;
+  padding: var(--spacer-6) var(--spacer-10);
+  border: 1px solid var(--border-neutral-l2);
+  border-radius: var(--radius-6);
+  background: var(--bg-base-secondary);
+  color: var(--text-default);
+  font: inherit;
+}
+
+.vobs-devtools-search:focus {
+  outline: 2px solid var(--border-brand);
+  outline-offset: 1px;
+}
+
+.vobs-devtools-header-search {
+  width: min(260px, 30vw);
+  min-width: 120px;
+  margin-right: 0;
+}
+
+.vobs-devtools-mutation-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacer-8);
+  margin-top: var(--spacer-8);
+}
+
+.vobs-devtools-mutation-control .vobs-devtools-search {
+  min-width: 160px;
+  margin-right: 0;
+}
+
+.vobs-devtools-control {
+  padding: var(--spacer-6) var(--spacer-10);
+  border: 1px solid var(--border-neutral-l2);
+  border-radius: var(--radius-6);
+  background: var(--bg-base-secondary);
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.vobs-devtools-control:hover {
+  border-color: var(--border-brand);
+  color: var(--text-brand);
+}
+
+.vobs-devtools-router-tabs {
+  min-width: 0;
+}
+
+.vobs-devtools-router-tabs-wrap {
+  position: relative;
+}
+
+.vobs-devtools-updates-tabs-wrap {
+  min-width: 0;
+}
+
+.vobs-devtools-updates-tabs-wrap > .vobs-devtools-router-tabs .vui-tabs {
+  padding-right: 0;
+}
+
+.vobs-devtools-router-tabs-wrap > .vobs-devtools-panel__toolbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  margin: 0;
+}
+
+.vobs-devtools-router-tabs-wrap > .vobs-devtools-router-tabs .vui-tabs {
+  padding-right: 190px;
+}
+
+.vobs-devtools-router-tabs .vui-tabs__panel {
+  display: grid;
+  gap: var(--spacer-16);
+  padding-top: var(--spacer-16);
+}
+
+.vobs-devtools-overview-route {
+  display: grid;
+  gap: var(--spacer-8);
+}
+
+.vobs-devtools-overview-route__path {
+  color: var(--text-brand);
+  font-family: var(--code-editor-font-family);
+  font-size: var(--heading-sm-font-size);
+  font-weight: var(--font-weight-strong);
+}
+
+.vobs-devtools-shell {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr) 250px;
+  height: 100%;
+  min-height: 0;
+  margin: calc(var(--spacer-16) * -1) calc(var(--spacer-24) * -1);
+  background: var(--bg-base-default);
+  color: var(--text-default);
+}
+
+.vobs-devtools-shell__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-12) var(--spacer-8);
+  border-right: 1px solid var(--border-neutral-l1);
+  background: var(--bg-base-secondary);
+}
+
+.vobs-devtools-shell__mark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  margin-bottom: var(--spacer-8);
+  border: 1px solid var(--border-neutral-l2);
+  border-radius: var(--radius-6);
+  color: var(--text-brand);
+}
+
+.vobs-devtools-shell__mark .vui-icon,
+.vobs-devtools-shell__nav-item .vui-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.vobs-devtools-shell__nav-item {
+  display: grid;
+  width: 36px;
+  min-height: 36px;
+  place-items: center;
+  gap: 3px;
+  padding: 5px 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.vobs-devtools-shell__nav-item:hover,
+.vobs-devtools-shell__nav-item.is-active {
+  border-color: var(--border-neutral-l2);
+  background: var(--bg-overlay-l2);
+  color: var(--text-brand);
+}
+
+.vobs-devtools-shell__main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vobs-devtools-shell__activity-subtitle {
+  color: var(--text-tertiary);
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-shell__content {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1 1 auto;
+  gap: var(--spacer-16);
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--spacer-10);
+}
+
+.vobs-devtools-shell__content > .vobs-devtools-list,
+.vobs-devtools-shell__content > .vui-card,
+.vobs-devtools-shell__content > .vobs-devtools-components-layout,
+.vobs-devtools-shell__content > .vobs-devtools-advanced {
+  min-width: 0;
+}
+
+.vobs-devtools-shell__content > .vobs-devtools-components-layout,
+.vobs-devtools-shell__content > .vobs-devtools-advanced,
+.vobs-devtools-shell__content > .vobs-devtools-updates-layout,
+.vobs-devtools-shell__content > .vobs-devtools-components-tabs-wrap,
+.vobs-devtools-shell__content > .vobs-devtools-updates-tabs-wrap {
+  grid-row: 1 / -1;
+}
+
+.vobs-devtools-updates-layout {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--spacer-16);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vobs-devtools-updates-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vobs-devtools-updates-card > .vobs-devtools-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100vh;
+  overflow: auto;
+}
+
+.vobs-devtools-shell__content > .vui-card {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The widget places the global toolbar in the Dialog header, leaving the
+   content grid with a single Card. Let that Card occupy the full grid area. */
+.vobs-devtools-shell__content > .vui-card:only-child {
+  grid-row: 1 / -1;
+}
+
+.vobs-devtools-shell__content > .vui-card > .vobs-devtools-network-inspector {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.vobs-devtools-shell__activity {
+  min-width: 0;
+  overflow: auto;
+  padding: var(--spacer-16);
+  border-left: 1px solid var(--border-neutral-l1);
+  background: var(--bg-base-secondary);
+}
+
+.vobs-devtools-shell__activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  min-width: 0;
+}
+
+.vobs-devtools-shell__activity-title {
+  color: var(--text-default-hover);
+  font-size: var(--body-base-font-size);
+  font-weight: var(--font-weight-strong);
+}
+
+.vobs-devtools-timeline-filter {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 104px;
+  max-width: 132px;
+}
+
+.vobs-devtools-activity-list {
+  display: grid;
+  gap: var(--spacer-16);
+  margin-top: var(--spacer-20);
+}
+
+.vobs-devtools-activity-item {
+  display: flex;
+  gap: var(--spacer-8);
+  min-width: 0;
+  cursor: pointer;
+  border-radius: var(--radius-8);
+  padding: var(--spacer-4);
+}
+
+.vobs-devtools-activity-item:hover,
+.vobs-devtools-activity-item.is-selected {
+  background: var(--bg-overlay-l2);
+}
+
+.vobs-devtools-activity-item__dot {
+  display: grid;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-brand-popup);
+  color: var(--text-brand);
+}
+
+.vobs-devtools-activity-item__dot .vui-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.vobs-devtools-activity-item__body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-activity-item__body .vobs-devtools-activity-item__name {
+  overflow: hidden;
+  color: var(--text-default);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vobs-devtools-activity-item__body span {
+  color: var(--text-tertiary);
+}
+
+.vobs-devtools-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacer-16);
+}
+
+.vobs-devtools-muted {
+  color: var(--text-secondary);
+}
+
+.vobs-devtools-error {
+  color: var(--text-danger);
+}
+
+.vobs-devtools-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-brand);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.vobs-devtools-lifecycle-list {
+  display: grid;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.vobs-devtools-components-layout {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--spacer-16);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vobs-devtools-components-tabs-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vobs-devtools-components-tabs-wrap > .vobs-devtools-router-tabs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.vobs-devtools-components-tabs-wrap > .vobs-devtools-router-tabs .vui-tabs__panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.vobs-devtools-components-tabs-wrap .vobs-devtools-component-tree-card,
+.vobs-devtools-components-tabs-wrap .vobs-devtools-lifecycle-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vobs-devtools-components-tabs-wrap .vobs-devtools-component-tree-card > .vobs-devtools-list,
+.vobs-devtools-components-tabs-wrap .vobs-devtools-lifecycle-card > .vobs-devtools-lifecycle-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  align-content: start;
+}
+
+.vobs-devtools-components-layout > .vui-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vobs-devtools-component-tree-card > .vobs-devtools-list,
+.vobs-devtools-lifecycle-card > .vobs-devtools-lifecycle-list {
+  min-height: 0;
+  overflow: auto;
+}
+
+.vobs-devtools-component-tree-card > .vobs-devtools-list,
+.vobs-devtools-lifecycle-card > .vobs-devtools-lifecycle-list {
+  flex: 1 1 auto;
+}
+
+.vobs-devtools-advanced {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vobs-devtools-advanced > .vui-tabs-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.vobs-devtools-advanced .vui-tabs__panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.vobs-devtools-advanced .vui-tabs__panel > .vobs-devtools-list {
+  min-height: 0;
+}
+
+.vobs-devtools-lifecycle-row {
+  display: grid;
+  grid-template-columns: minmax(120px, .8fr) minmax(0, 1.5fr) auto;
+  gap: var(--spacer-8);
+  width: 100%;
+  padding: var(--spacer-6) var(--spacer-8);
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.vobs-devtools-lifecycle-row:hover {
+  background: var(--bg-overlay-l2);
+}
+
+.vobs-devtools-network-list {
+  display: grid;
+  gap: 2px;
+}
+
+.vobs-devtools-network-inspector {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  gap: var(--spacer-12);
+}
+
+.vobs-devtools-network-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding-bottom: var(--spacer-4);
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+
+.vobs-devtools-network-toolbar__label {
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
+  font-weight: 600;
+}
+
+.vobs-devtools-network-toolbar__search {
+  flex: 1 1 180px;
+  min-width: 140px;
+}
+
+.vobs-devtools-network-toolbar__select {
+  min-height: 32px;
+  padding: 0 var(--spacer-8);
+  border: 1px solid var(--border-neutral-l2);
+  border-radius: var(--radius-6);
+  background: var(--bg-base-default);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-network-panes {
+  display: grid;
+  grid-template-columns: minmax(300px, .95fr) minmax(360px, 1.45fr);
+  gap: var(--spacer-16);
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.vobs-devtools-network-list-pane,
+.vobs-devtools-network-detail-pane {
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.vobs-devtools-network-list-pane {
+  max-height: none;
+  overflow: auto;
+  padding-right: var(--spacer-12);
+}
+
+.vobs-devtools-network-detail-pane {
+  min-height: 0;
+  overflow: auto;
+  border-left: 1px solid var(--border-neutral-l1);
+  padding-left: var(--spacer-8);
+}
+
+.vobs-devtools-network-request-list {
+  display: grid;
+  gap: 2px;
+}
+
+.vobs-devtools-network-request {
+  display: grid;
+  gap: var(--spacer-6);
+  width: 100%;
+  padding: var(--spacer-10);
+  border: 0;
+  border-bottom: 1px solid var(--border-neutral-l1);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.vobs-devtools-network-request:hover,
+.vobs-devtools-network-request.is-selected {
+  background: var(--bg-overlay-l2);
+}
+
+.vobs-devtools-network-request.is-selected {
+  box-shadow: inset 2px 0 0 var(--border-brand);
+}
+
+.vobs-devtools-network-request__path-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  min-width: 0;
+}
+
+.vobs-devtools-network-request__url {
+  display: inline-block;
+  flex: 1 1 auto;
+  width: 100%;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--code-editor-font-family);
+}
+
+.vobs-devtools-network-request__meta {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-tertiary);
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-network-detail {
+  display: grid;
+  gap: var(--spacer-12);
+  padding-top: var(--spacer-12);
+}
+
+.vobs-devtools-network-detail__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+.vobs-devtools-network-detail__title {
+  min-width: 0;
+  flex: 1 1 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-family: var(--code-editor-font-family);
+  font-size: var(--body-sm-font-size);
+  font-weight: 600;
+}
+
+.vobs-devtools-network-detail__duration {
+  color: var(--text-secondary);
+  font-family: var(--code-editor-font-family);
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-network-detail__tabs {
+  display: flex;
+  gap: var(--spacer-4);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+
+.vobs-devtools-network-detail__tab {
+  padding: var(--spacer-8) var(--spacer-10);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--body-xs-font-size);
+  cursor: pointer;
+}
+
+.vobs-devtools-network-detail__tab:hover,
+.vobs-devtools-network-detail__tab.is-active {
+  color: var(--text-brand);
+}
+
+.vobs-devtools-network-detail__tab.is-active {
+  border-bottom-color: var(--border-brand);
+}
+
+.vobs-devtools-network-detail__content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacer-8) var(--spacer-16);
+  min-width: 0;
+}
+
+.vobs-devtools-network-detail__field {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+  gap: var(--spacer-8);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.vobs-devtools-network-detail__label {
+  color: var(--text-tertiary);
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-network-detail__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-network-detail__content > .vobs-devtools-value-inspector,
+.vobs-devtools-network-detail__content > .vobs-devtools-error {
+  grid-column: 1 / -1;
+}
+
+.vobs-devtools-request-tester {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: grid;
+  align-content: start;
+  gap: var(--spacer-12);
+  width: 350px;
+  max-width: 100%;
+  overflow: auto;
+  padding: var(--spacer-12);
+  border-left: 1px solid var(--border-neutral-l2);
+  background: var(--bg-base-secondary);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, .18);
+}
+
+.vobs-devtools-request-tester__request-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px 32px;
+  gap: var(--spacer-6);
+  align-items: center;
+}
+
+.vobs-devtools-request-tester__request-line .vobs-devtools-request-tester__select {
+  width: 76px;
+  padding-left: var(--spacer-4);
+  padding-right: var(--spacer-4);
+}
+
+.vobs-devtools-request-tester__request-line .vui-btn {
+  width: 32px;
+  height: 26px;
+}
+
+.vobs-devtools-request-tester__tabs {
+  display: flex;
+  gap: var(--spacer-4);
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+
+.vobs-devtools-request-tester__tab {
+  padding: var(--spacer-8) var(--spacer-10);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--body-xs-font-size);
+  cursor: pointer;
+}
+
+.vobs-devtools-request-tester__tab:hover,
+.vobs-devtools-request-tester__tab.is-active {
+  color: var(--text-brand);
+}
+
+.vobs-devtools-request-tester__tab.is-active {
+  border-bottom-color: var(--border-brand);
+}
+
+.vobs-devtools-request-tester__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  padding-bottom: var(--spacer-8);
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+
+.vobs-devtools-request-tester__heading-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  min-width: 0;
+}
+
+.vobs-devtools-widget__dialog.is-maximized .vobs-devtools-request-tester {
+  width: min(520px, 32vw);
+}
+
+.vobs-devtools-request-tester__heading-actions .vui-btn:not(.vui-btn--icon-only) {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vobs-devtools-request-tester__title {
+  color: var(--text-primary);
+  font-size: var(--body-sm-font-size);
+  font-weight: 600;
+}
+
+.vobs-devtools-request-tester__field {
+  display: grid;
+  gap: var(--spacer-6);
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-request-tester__input,
+.vobs-devtools-request-tester__select,
+.vobs-devtools-request-tester__textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: var(--spacer-6) var(--spacer-8);
+  border: 1px solid var(--border-neutral-l2);
+  border-radius: var(--radius-4);
+  background: var(--bg-base-default);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-request-tester__textarea {
+  resize: vertical;
+  font-family: var(--code-editor-font-family);
+}
+
+.vobs-devtools-request-tester__group {
+  display: grid;
+  gap: var(--spacer-6);
+  min-width: 0;
+}
+
+.vobs-devtools-request-tester__group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
+  font-weight: 600;
+}
+
+.vobs-devtools-request-tester__add {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-brand);
+  font: inherit;
+  font-size: var(--body-xs-font-size);
+  cursor: pointer;
+}
+
+.vobs-devtools-request-tester__param {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 24px;
+  gap: var(--spacer-4);
+  align-items: center;
+}
+
+.vobs-devtools-request-tester__remove {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.vobs-devtools-request-tester__remove:hover {
+  color: var(--text-danger);
+}
+
+.vobs-devtools-request-tester__footer {
+  display: grid;
+  gap: var(--spacer-8);
+  padding-top: var(--spacer-8);
+  border-top: 1px solid var(--border-neutral-l1);
+}
+
+.vobs-devtools-request-tester__status {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-request-tester__status.is-success { color: var(--status-success-default); }
+.vobs-devtools-request-tester__status.is-error { color: var(--status-error-default); }
+
+@media (max-width: 760px) {
+  .vobs-devtools-network-panes {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .vobs-devtools-network-list-pane {
+    max-height: 360px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border-neutral-l1);
+    padding-right: 0;
+    padding-bottom: var(--spacer-12);
+  }
+
+  .vobs-devtools-network-detail-pane {
+    padding-left: 0;
+  }
+
+  .vobs-devtools-request-tester {
+    width: min(350px, calc(100% - var(--spacer-16)));
+  }
+
+  .vobs-devtools-network-detail__content {
+    grid-template-columns: 1fr;
+  }
+}
+
+.vobs-devtools-error-list {
+  display: grid;
+  gap: 2px;
+}
+
+.vobs-devtools-error-item > summary {
+  display: grid;
+  grid-template-columns: minmax(140px, .8fr) minmax(0, 1.4fr) auto auto;
+  gap: var(--spacer-8);
+  align-items: center;
+}
+
+.vobs-devtools-error-item[open] {
+  display: grid;
+  gap: var(--spacer-8);
+}
+
+.vobs-devtools-error-item__message {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vobs-devtools-error-item__details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacer-8) var(--spacer-16);
+  padding-left: var(--spacer-20);
+  min-width: 0;
+}
+
+.vobs-devtools-error-item__field {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--spacer-8);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.vobs-devtools-error-item__field--wide,
+.vobs-devtools-error-item__stack {
+  grid-column: 1 / -1;
+}
+
+.vobs-devtools-error-item__label {
+  color: var(--text-tertiary);
+  font-size: var(--body-xs-font-size);
+  white-space: nowrap;
+}
+
+.vobs-devtools-error-item__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vobs-devtools-error-item__stack {
+  display: grid;
+  gap: var(--spacer-6);
+  min-width: 0;
+}
+
+.vobs-devtools-error-item__stack-code {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  padding: var(--spacer-8);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-6);
+  background: var(--bg-base-secondary);
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.vobs-devtools-performance-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  gap: var(--spacer-16);
+  min-width: 0;
+}
+
+.vobs-devtools-performance-card,
+.vobs-devtools-performance-slow-card {
+  min-width: 0;
+  height: max-content;
+}
+
+.vobs-devtools-performance-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacer-8);
+  align-content: start;
+}
+
+.vobs-devtools-performance-slow-list {
+  display: grid;
+  min-width: 0;
+  margin-top: var(--spacer-12);
+  border-top: 1px solid var(--border-neutral-l1);
+}
+
+.vobs-devtools-performance-item {
+  display: grid;
+  gap: 2px;
+  padding: var(--spacer-8);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-6);
+}
+
+.vobs-devtools-performance-slow-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--spacer-8);
+  min-width: 0;
+  padding: var(--spacer-10) 0;
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+
+.vobs-devtools-performance-slow-item:last-child {
+  border-bottom: 0;
+}
+
+.vobs-devtools-performance-slow-item .vobs-devtools-list__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .vobs-devtools-widget__dialog .vui-dialog__head {
+    flex-wrap: wrap;
+  }
+
+  .vobs-devtools-widget__dialog .vui-dialog__title {
+    order: 1;
+  }
+
+  .vobs-devtools-widget__dialog .vobs-devtools-collection-toolbar--header {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .vobs-devtools-widget__dialog .vui-dialog__close {
+    order: 2;
+  }
+
+  .vobs-devtools-performance-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .vobs-devtools-header-search {
+    width: auto;
+    flex: 1 1 auto;
+  }
+
+  .vobs-devtools-performance-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+.vobs-devtools-list__row.is-selected,
+.vobs-devtools-update-row.is-selected {
+  box-shadow: inset 2px 0 0 var(--border-brand);
+  background: var(--bg-overlay-l1);
+}
+
+.vobs-devtools-code {
+  font-family: var(--code-editor-font-family);
+}
+
+.vobs-devtools-value-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacer-8);
+  align-items: start;
+  margin: var(--spacer-8) 0;
+}
+
+.vobs-devtools-value-pair__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-distinct-toggle {
+  padding: 1px var(--spacer-6);
+  border: 1px solid var(--border-neutral-l2);
+  border-radius: var(--radius-4);
+  background: var(--bg-base-secondary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--body-xs-font-size);
+  cursor: pointer;
+}
+
+.vobs-devtools-distinct-toggle:hover,
+.vobs-devtools-distinct-toggle.is-active {
+  border-color: var(--status-success-default);
+  color: var(--status-success-default);
+}
+
+.vobs-devtools-distinct-toggle.is-active {
+  background: var(--status-success-surface-l1);
+}
+
+.vobs-devtools-value-pair--compact {
+  margin-top: 0;
+}
+
+.vobs-devtools-value-inspector {
+  position: relative;
+  min-width: 0;
+}
+
+.vobs-devtools-value-inspector__controls {
+  display: flex;
+  position: absolute;
+  top: var(--spacer-6);
+  right: 0;
+  z-index: 1;
+  gap: var(--spacer-4);
+}
+
+.vobs-devtools-value-inspector__controls .vui-btn--icon {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+}
+
+.vobs-devtools-value-tree-root {
+  overflow: auto;
+  border: 1px solid var(--border-neutral-l2);
+  border-radius: var(--radius-6);
+  background: var(--bg-base-secondary);
+}
+
+.vobs-devtools-value-tree__empty {
+  display: block;
+  padding: var(--spacer-8);
+  color: var(--text-tertiary);
+  font-size: var(--body-xs-font-size);
+  font-style: italic;
+}
+
+.vobs-devtools-value-tree,
+.vobs-devtools-value-tree__leaf {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vobs-devtools-value-tree__leaf {
+  display: grid;
+  grid-template-columns: minmax(84px, .5fr) minmax(0, 1fr);
+  gap: var(--spacer-8);
+  align-items: baseline;
+  padding: var(--spacer-6) var(--spacer-8) var(--spacer-6) calc(var(--spacer-8) + 18px);
+  border-top: 1px solid var(--border-neutral-l1);
+}
+
+.vobs-devtools-value-field__label {
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-value-tree {
+  border-top: 1px solid var(--border-neutral-l1);
+}
+
+.vobs-devtools-value-tree__summary {
+  display: grid;
+  grid-template-columns: 12px minmax(84px, .5fr) minmax(0, 1fr);
+  gap: var(--spacer-8);
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: var(--spacer-6) var(--spacer-8);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vobs-devtools-value-tree__summary::before {
+  content: '›';
+  color: var(--icon-secondary);
+  font-size: 16px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 120ms ease;
+}
+
+.vobs-devtools-value-tree[data-expanded="true"] > .vobs-devtools-value-tree__summary::before {
+  transform: rotate(90deg);
+}
+
+.vobs-devtools-value-tree__summary:hover {
+  background: var(--bg-overlay-l2);
+}
+
+.vobs-devtools-value-tree__summary .vobs-devtools-code {
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vobs-devtools-value-tree__children {
+  display: none;
+  margin-left: var(--spacer-12);
+  border-left: 1px solid var(--border-neutral-l2);
+}
+
+.vobs-devtools-value-tree[data-expanded="true"] > .vobs-devtools-value-tree__children {
+  display: grid;
+}
+
+.vobs-devtools-value-tree__children .vobs-devtools-value-tree__leaf {
+  padding-left: calc(var(--spacer-8) + 18px);
+}
+
+.vobs-devtools-dom-update {
+  display: grid;
+  gap: var(--spacer-6);
+  margin-top: var(--spacer-8);
+  padding: var(--spacer-8);
+  border-left: 2px solid var(--border-brand);
+  background: var(--bg-base-secondary);
+}
+
+.vobs-devtools-effect-execution {
+  min-width: 0;
+  padding-left: var(--spacer-20);
+}
+
+.vobs-devtools-effect-execution .vobs-devtools-link {
+  display: block;
+  width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: normal;
+}
+
+@media (max-width: 760px) {
+  .vobs-devtools-value-pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+.vobs-devtools-error-row {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.vobs-devtools-error-row > .vobs-devtools-code {
+  flex: 1 1 100%;
+  max-height: 72px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.vobs-devtools-router {
+  display: grid;
+  gap: var(--spacer-16);
+}
+
+.vobs-devtools-route-tree {
+  display: grid;
+  gap: 2px;
+}
+
+.vobs-devtools-route-node {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 var(--spacer-8);
+  padding-left: calc(var(--spacer-8) + var(--route-depth) * var(--spacer-16));
+  border-left: 1px solid var(--border-neutral-l2);
+  border-bottom: 0;
+  border-radius: 0;
+  color: var(--text-secondary);
+  font-size: var(--body-sm-font-size);
+}
+
+button.vobs-devtools-route-node,
+button.vobs-devtools-list__row {
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  border-bottom: 0;
+  appearance: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.vobs-devtools-route-node:hover,
+button.vobs-devtools-route-node.is-active,
+button.vobs-devtools-list__row:hover {
+  background: var(--bg-overlay-l2);
+}
+
+button.vobs-devtools-route-node.is-active {
+  color: var(--text-brand);
+  box-shadow: inset 2px 0 0 var(--border-brand);
+}
+
+.vobs-devtools-list__row summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  width: 100%;
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.vobs-devtools-list__row[open] {
+  display: grid;
+  gap: var(--spacer-8);
+}
+
+.vobs-devtools-list__row[open] > summary {
+  margin-bottom: var(--spacer-4);
+}
+
+.vobs-devtools-update-row {
+  min-width: 0;
+  padding: var(--spacer-10);
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+
+.vobs-devtools-update-row:last-child {
+  border-bottom: 0;
+}
+
+.vobs-devtools-update-row > summary {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) minmax(120px, 1.5fr) auto auto;
+  align-items: center;
+  gap: var(--spacer-8);
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.vobs-devtools-update-row:hover {
+  background: var(--bg-overlay-l2);
+}
+
+.vobs-devtools-update-row__source {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--body-xs-font-size);
+}
+
+.vobs-devtools-update-row[open] {
+  display: grid;
+  gap: var(--spacer-8);
+}
+
+.vobs-devtools-update-row > .vobs-devtools-code,
+.vobs-devtools-update-row > .vobs-devtools-muted {
+  padding-left: var(--spacer-20);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.vobs-devtools-signal-row > .vobs-devtools-code,
+.vobs-devtools-signal-row > span:not(.vobs-devtools-code) {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.vobs-devtools-route-node .vobs-devtools-list__name {
+  min-width: 120px;
+}
+
+.vobs-devtools-list {
+  display: grid;
+  gap: var(--spacer-8);
+}
+
+.vobs-devtools-list__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  min-width: 0;
+  padding: var(--spacer-8);
+  border-bottom: 1px solid var(--border-neutral-l1);
+  color: var(--text-secondary);
+}
+
+.vobs-devtools-list__row:last-child {
+  border-bottom: 0;
+}
+
+.vobs-devtools-list__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-default);
+  font-weight: var(--font-weight-strong);
+}
+
+.vobs-devtools-list__row > .vui-tag {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 900px) {
+  .vobs-devtools-shell {
+    grid-template-columns: 60px minmax(0, 1fr);
+  }
+
+  .vobs-devtools-shell__activity {
+    display: none;
+  }
+
+  .vobs-devtools-section-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .vobs-devtools-shell {
+    grid-template-columns: 1fr;
+    margin: calc(var(--spacer-12) * -1);
+  }
+
+  .vobs-devtools-shell__rail {
+    flex-direction: row;
+    justify-content: space-around;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-neutral-l1);
+  }
+
+  .vobs-devtools-shell__mark {
+    display: none;
+  }
+
+  .vobs-devtools-shell__nav-item {
+    width: auto;
+    min-width: 48px;
+  }
+
+  .vobs-devtools-shell__content {
+    max-height: calc(100vh - 280px);
+    padding: var(--spacer-12);
+  }
+
+  .vobs-devtools-widget {
+    left: var(--spacer-12);
+    bottom: var(--spacer-12);
+  }
+
+  .vobs-devtools-widget__dialog.vui-backdrop {
+    padding: var(--spacer-12);
+  }
+
+  .vobs-devtools-widget__dialog .vui-dialog {
+    max-width: 100%;
+  }
+
+  .vobs-devtools-router-tabs-wrap > .vobs-devtools-panel__toolbar {
+    position: static;
+    justify-content: flex-start;
+    margin-top: var(--spacer-12);
+  }
+
+  .vobs-devtools-router-tabs-wrap > .vobs-devtools-router-tabs .vui-tabs {
+    padding-right: 0;
+  }
+
+  .vobs-devtools-update-row > summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .vobs-devtools-update-row__source {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

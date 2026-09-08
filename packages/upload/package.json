@@ -1,0 +1,27 @@
+{
+  "private": true,
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "name": "@vobs/upload",
+  "version": "1.0.0",
+  "description": "Reactive file upload tasks built on @vobs/http.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "scripts": {
+    "test": "vitest --environment jsdom"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@vobs/http": "workspace:*",
+    "@vobs/reactivity": "workspace:*",
+    "@vobs/vobs": "workspace:*"
+  }
+}

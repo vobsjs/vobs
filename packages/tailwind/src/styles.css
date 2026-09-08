@@ -1,0 +1,4 @@
+/* Vobs owns the reset; this entry intentionally exposes utilities only. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "./theme.css";
+@import "tailwindcss/utilities.css" layer(utilities);

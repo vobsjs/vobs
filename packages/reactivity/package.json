@@ -1,0 +1,26 @@
+{
+  "private": true,
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "name": "@vobs/reactivity",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./state": "./src/signal.ts",
+    "./memo": "./src/memo.ts",
+    "./effect": "./src/effect.ts",
+    "./owner": "./src/owner.ts",
+    "./id": "./src/id.ts",
+    "./scheduler": "./src/scheduler.ts"
+  },
+  "scripts": {
+    "test": "vitest"
+  }
+}
