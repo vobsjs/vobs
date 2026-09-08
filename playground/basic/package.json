@@ -20,6 +20,7 @@
     "@vobs/layout": "workspace:*",
     "@vobs/logger": "workspace:*",
     "@vobs/notification": "workspace:*",
+    "@vobs/payment": "workspace:*",
     "@vobs/preferences": "workspace:*",
     "@vobs/queue": "workspace:*",
     "@vobs/resource": "workspace:*",

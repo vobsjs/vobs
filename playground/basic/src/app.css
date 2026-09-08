@@ -466,6 +466,103 @@ body {
   }
 }
 
+.demo-field {
+  display: grid;
+  gap: var(--spacer-4);
+}
+.demo-field > span {
+  color: var(--text-secondary);
+  font-size: var(--body-sm-font-size);
+}
+
+.demo-product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--spacer-12);
+}
+
+.demo-product-card {
+  position: relative;
+  display: grid;
+  gap: var(--spacer-8);
+  padding: var(--spacer-16);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-8);
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.demo-product-card:hover {
+  border-color: var(--border-brand);
+  box-shadow: 0 0 0 1px var(--border-brand);
+}
+.demo-product-card--selected {
+  border-color: var(--border-brand);
+  box-shadow: 0 0 0 1px var(--border-brand);
+  background: var(--bg-brand-subtle);
+}
+.demo-product-icon {
+  font-size: 2rem;
+  text-align: center;
+}
+.demo-product-name {
+  font-weight: var(--font-weight-strong);
+  text-align: center;
+}
+.demo-product-price {
+  color: var(--status-danger-default);
+  font-size: var(--heading-sm-font-size);
+  font-weight: var(--font-weight-strong);
+  text-align: center;
+}
+.demo-product-desc {
+  color: var(--text-secondary);
+  font-size: var(--body-sm-font-size);
+  text-align: center;
+}
+.demo-product-check {
+  position: absolute;
+  top: var(--spacer-8);
+  right: var(--spacer-8);
+  color: var(--status-success-default);
+}
+
+.demo-log {
+  min-height: 80px;
+  white-space: pre-wrap;
+}
+
+.demo-result-detail {
+  display: grid;
+  gap: var(--spacer-12);
+}
+.demo-result-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-12);
+  padding: var(--spacer-8) 0;
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+.demo-result-row:last-child {
+  border-bottom: none;
+}
+.demo-result-label {
+  color: var(--text-secondary);
+  font-size: var(--body-sm-font-size);
+}
+.demo-result-value {
+  font-weight: var(--font-weight-strong);
+}
+.demo-result-amount {
+  color: var(--status-danger-default);
+  font-size: var(--heading-sm-font-size);
+}
+
+/* 修复 Dialog backdrop 的 hidden 属性被 display:flex 覆盖 */
+.vui-backdrop[hidden] { display: none !important; }
+/* portal 方式使用的 Dialog 需要 fixed 定位覆盖全屏 */
+.vui-backdrop { position: fixed; inset: 0; }
+
 @media (max-width: 640px) {
   .demo-header-controls { gap: var(--spacer-4); }
   .demo-header-control > span { display: none; }

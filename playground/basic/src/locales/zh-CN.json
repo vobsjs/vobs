@@ -1,6 +1,6 @@
 {
   "common": {"ready":"就绪","loading":"加载中...","save":"保存","reset":"重置","refresh":"刷新","retry":"重试","backOverview":"返回概览","backHome":"返回首页","signIn":"登录","signOut":"退出登录","language":"语言","darkTheme":"深色主题","currentLocale":"当前语言：{locale}","status":{"idle":"空闲","loading":"加载中","success":"成功","error":"错误","done":"完成","offline":"离线","ready":"就绪","pending":"待处理","running":"运行中","retrying":"重试中","cancelled":"已取消","syncing":"同步中","uploading":"上传中","verifying":"校验中","verified":"已验证","expired":"已过期"}},
-  "nav": {"overview":"概览","resourceTable":"资源表格","captcha":"验证码","components":"UI 组件","forms":"表单","data":"数据与偏好","async":"异步工作台","errors":"错误诊断","runtime":"核心运行时","ssr":"SSR 与 Hydration"},
+  "nav": {"overview":"概览","resourceTable":"资源表格","captcha":"验证码","components":"UI 组件","forms":"表单","data":"数据与偏好","async":"异步工作台","payment":"支付宝支付","errors":"错误诊断","runtime":"核心运行时","ssr":"SSR 与 Hydration"},
   "dashboard": {"title":"Vobs Playground","description":"框架核心及官方扩展包的可运行示例。","systemsReady":"所有系统就绪","integrationTitle":"集成示例","integrationDescription":"以下页面都连接到真实的 Vobs 上下文、信号、插件和浏览器交互。","officialPackages":"官方扩展包","growing":"持续增长","currentRoute":"当前路由","browserHistory":"浏览器历史","signedInUser":"当前用户","authenticated":"已认证","locale":"语言","sampleFormat":"格式化示例","startTitle":"从一个能力开始","startDescription":"直接进入一个端到端示例。","resourceTable":"资源表格","uiGallery":"UI 组件库","formsValidation":"表单校验","asyncWorkbench":"异步工作台","runtimeTitle":"运行时控制","runtimeDescription":"这些控件会实时更新已注入的上下文。","sendNotification":"发送通知","notificationBody":"通知上下文运行正常。","notificationAction":"已通过 @vobs/notification 发送通知。","localeChanged":"语言已切换为 {locale}。","openedResource":"已打开 Resource + Table 示例。","openedComponents":"已打开 UI 组件库。","openedForms":"已打开表单示例。","openedAsync":"已打开异步工作台。","openedRuntime":"已打开核心运行时示例。","ssrTitle":"SSR 与 Hydration","ssrDescription":"服务端渲染、状态恢复和 Hydration 诊断。","openedSSR":"已打开 SSR 与 Hydration 示例。"},
   "data": {"title":"数据与偏好","description":"Storage、Preferences 和 Dict 共享同一个应用级插件/上下文模型。","stateful":"有状态","storageTitle":"存储上下文","storageDescription":"值会保存到浏览器 localStorage，刷新页面后仍会保留。","storageKey":"存储键","storageValue":"存储值","defaultStorageValue":"保存到浏览器 localStorage","saveValue":"保存值","readBack":"读取结果","nothingSaved":"尚未保存","keys":"{count} 个键","revision":"版本 {revision} · 类型：{kind} · 持久化：{persistent}","preferencesTitle":"偏好上下文","preferencesDescription":"模式校验、响应式值以及重置/保存操作。","workspace":"工作区","density":"密度","compact":"紧凑","comfortable":"舒适","spacious":"宽松","showTips":"显示提示","currentDensity":"当前密度：{density}","resetAll":"全部重置","dictionaryTitle":"字典源","dictionaryDescription":"静态字典数据通过具名查询提供，并带有响应式加载/错误状态。","reloadStatuses":"重新加载状态","active":"活跃","draft":"草稿","archived":"已归档","labelLookup":"标签查询：{active} · 未知回退：{fallback}","fallbackLabel":"回退标签","routerActionsTitle":"Router 数据操作","routerActionsDescription":"触发 action 和 fetcher 请求，并在 DevTools Router 中查看。","runAction":"运行 action","runFetcher":"运行 fetcher","actionScenarios":"Action 场景","fetcherScenarios":"Fetcher 场景","operationCancelled":"操作已取消。"},
   "resource": {"title":"资源表格","description":"通过 KitDataTable 渲染真实的 @vobs/resource 集合。","name":"姓名","role":"角色","status":"状态","searchUsers":"搜索用户","filterStatus":"按状态筛选","allStatuses":"全部状态","active":"活跃","invited":"已邀请","columns":"列设置","refresh":"刷新","scenarioTitle":"Resource 场景","scenarioDescription":"加载中、空数据、错误、取消、重试、服务端分页和写操作。","scenarioReady":"就绪","scenarioLoading":"正在加载慢响应...","scenarioChanged":"场景：{scenario}","scenarioCancelled":"场景请求已取消。","scenarioRetrying":"正在重试场景...","noWrite":"尚未执行写操作。","writeAdded":"已添加乐观行。","optimisticWrite":"乐观写入","noRows":"暂无数据","serverPagination":"服务端分页","ready":"就绪","empty":"空数据","error":"错误","slow":"慢响应"},
@@ -10,5 +10,57 @@
   "async": {"title":"异步工作台","description":"Queue、HTTP、Upload、Sync、Notification 和 Logger 通过真实的取消/生命周期 API 协同工作。","httpTitle":"HTTP 请求检查器","httpDescription":"运行真实的 @vobs/http 请求，并在 DevTools Network 中查看。","runGet":"运行 GET","sendPost":"发送 POST","requestInFlight":"{method} 请求进行中...","queueTitle":"任务队列","queueDescription":"优先级调度、并发和响应式任务状态。","addHigh":"添加高优先级","addNormal":"添加普通任务","pending":"待处理 {count}","processing":"处理中 {count}","completed":"已完成 {count}","failed":"失败 {count}","clearPending":"清除待处理","successScenario":"成功","errorScenario":"失败一次","slowScenario":"慢请求","cancel":"取消","cancelled":"操作已取消。","noTasks":"还没有队列任务。","noUploads":"还没有上传任务。","taskFailed":"演示任务失败一次；重试即可恢复。","uploadTitle":"Upload + HTTP","uploadDescription":"Upload 将传输、进度和重试行为委托给 @vobs/http。","chooseFile":"选择一个文件，通过 upload 上下文发送。","syncTitle":"增量同步","syncDescription":"本地传输会确认请求并返回新 cursor；Storage 和 Queue 由插件注入。","runSync":"运行同步周期","noSync":"尚未运行同步周期。","syncComplete":"同步完成：推送 {pushed}，拉取 {pulled}，cursor {cursor}。","inspectTitle":"检查运行时","inspectDescription":"devtoolsPlugin 已通过 window.__VOBS_DEVTOOLS__ 启用。打开浏览器控制台查看信号、Effect 和组件所有权。"},
   "runtime": {"title":"核心运行时","description":"展示 Vobs 信号、所有权和渲染原语的可观测示例。","stateTitle":"State 与 memo","stateDescription":"State 通过 .value 修改；memo 会派生并缓存值，依赖变化后重新计算。","increment":"递增","currentValue":"当前值：{value}","derivedValue":"派生值：{value}","effectTitle":"Effect 与清理","effectDescription":"依赖变化时先运行 cleanup，再重新运行 effect。","triggerEffect":"触发 effect","effectRuns":"Effect 次数：{count}","cleanupRuns":"Cleanup 次数：{count}","ownerTitle":"Owner 销毁","ownerDescription":"Owner 管理 effect 和清理函数。销毁子 Owner 可释放其资源。","disposeOwner":"销毁 Owner","ownerActive":"Owner 活跃","ownerDisposed":"Owner 已销毁","refTitle":"DOM ref","refDescription":"Ref 直接暴露已挂载的宿主节点，无需查询文档。","focusInput":"聚焦输入框","refReady":"Ref 已连接到输入框。","idTitle":"稳定 ID","idDescription":"createId 生成 Owner 作用域内的 ID，可用于无障碍 label/control 关联。","labelId":"Label ID：{id}","inputId":"Input ID：{id}","asyncTitle":"AsyncBoundary","asyncDescription":"处理延迟 Promise，观察 loading、成功和 fallback 分支。","startRequest":"开始请求","resolve":"Resolve","reject":"Reject","loading":"请求加载中...","resolved":"已完成：{value}","rejected":"已拒绝：{error}","profilerTitle":"Profiler","profilerDescription":"Profiler 报告 mount/update 阶段和渲染耗时，并隔离回调异常。","updateView":"更新分析视图","refreshSnapshot":"刷新快照","lastRender":"最近渲染：{phase} · {duration} ms","noRender":"尚无渲染快照。"},
   "auth": {"title":"登录","description":"认证后访问受保护的 Playground 路由。","accountTitle":"Playground 账户","accountDescription":"使用任意非空用户名；使用 admin 可预览高级角色。","username":"用户名","password":"密码","signInFailed":"登录失败"},
-  "errors": {"pageNotFound":"页面不存在","noRoute":"没有匹配 {path} 的路由。","routeFailed":"路由失败"}
+  "errors": {"pageNotFound":"页面不存在","noRoute":"没有匹配 {path} 的路由。","routeFailed":"路由失败"},
+  "payment": {
+    "config": {
+      "title": "支付宝支付配置",
+      "description": "配置 AlipayClient 并查看集成代码示例。",
+      "securityTitle": "安全提示",
+      "securityDescription": "私钥禁止保存在客户端、禁止出现在日志中、禁止上传到公共仓库。所有构造和签名操作必须在服务端完成。",
+      "configTitle": "配置表单",
+      "configDescription": "填写支付宝开放平台的应用配置信息（沙箱或线上环境）。",
+      "privateKey": "应用私钥",
+      "alipayPublicKey": "支付宝公钥",
+      "notifyUrl": "异步通知地址",
+      "returnUrl": "同步跳转地址",
+      "integrationTitle": "集成代码",
+      "integrationDescription": "独立使用 @vobs/payment/alipay 的完整示例。",
+      "savedTitle": "配置已保存（演示）",
+      "savedDescription": "此页面为演示页面，实际使用时请将配置放到服务端环境变量中。"
+    },
+    "pay": {
+      "title": "商品购买",
+      "description": "选择商品并使用支付宝电脑网站支付完成付款。",
+      "demoDescription": "选择商品后点击「支付宝支付」按钮，模拟发起电脑网站支付流程。",
+      "productTitle": "选择商品",
+      "productDescription": "请选择一个商品进行购买。",
+      "orderTitle": "订单信息",
+      "orderDescription": "确认订单信息并发起支付。",
+      "orderSelected": "已选择：{name}（¥{price}）",
+      "orderEmpty": "请先在左侧选择一个商品。",
+      "payWithAlipay": "支付宝支付"
+    },
+    "result": {
+      "title": "支付结果",
+      "description": "查看支付宝电脑网站支付的最终结果。",
+      "successTitle": "支付成功",
+      "successDescription": "订单已支付成功，请查看订单详情。",
+      "failTitle": "支付失败",
+      "failDescription": "订单支付未完成，请重试。",
+      "orderTitle": "订单详情",
+      "orderDescription": "支付订单的详细信息。",
+      "outTradeNo": "商户订单号",
+      "subject": "商品名称",
+      "totalAmount": "支付金额",
+      "tradeStatus": "交易状态",
+      "gmtPayment": "支付时间",
+      "notifyTitle": "异步通知处理",
+      "notifyDescription": "支付结果以异步通知或查询接口为准，不可依赖同步跳转。",
+      "notifyReceived": "异步通知已收到",
+      "notifyVerified": "异步通知验签通过，业务字段校验通过。",
+      "notifyMissed": "未收到异步通知",
+      "notifyQuery": "请调用查询接口确认交易状态，或检查 notify_url 是否外网可访问。",
+      "backToShop": "返回商品页"
+    }
+  }
 }

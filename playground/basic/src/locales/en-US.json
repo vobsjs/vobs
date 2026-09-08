@@ -40,6 +40,7 @@
     "forms": "Forms",
     "data": "Data & preferences",
     "async": "Async workbench",
+    "payment": "Alipay Pay",
     "errors": "Error diagnostics",
     "runtime": "Core runtime",
     "ssr": "SSR & hydration"
@@ -341,5 +342,58 @@
     "pageNotFound": "Page not found",
     "noRoute": "No route matches {path}.",
     "routeFailed": "Route failed"
+  },
+  "payment": {
+    "config": {
+      "title": "Alipay Config",
+      "description": "Configure AlipayClient and view integration code examples.",
+      "securityTitle": "Security Notice",
+      "securityDescription": "Private keys must never be stored on the client, appear in logs, or be uploaded to public repositories. All signing operations must be done server-side.",
+      "configTitle": "Configuration Form",
+      "configDescription": "Fill in the Alipay Open Platform application configuration (sandbox or production).",
+      "privateKey": "App Private Key",
+      "alipayPublicKey": "Alipay Public Key",
+      "notifyUrl": "Async Notify URL",
+      "returnUrl": "Sync Return URL",
+      "integrationTitle": "Integration Code",
+      "integrationDescription": "Complete example of using @vobs/payment/alipay independently.",
+      "savedTitle": "Config Saved (Demo)",
+      "savedDescription": "This is a demo page. In production, store configuration in server-side environment variables."
+    },
+    "pay": {
+      "title": "Product Purchase",
+      "description": "Select a product and pay with Alipay computer website payment.",
+      "demoTitle": "Demo Info",
+      "demoDescription": "Select a product and click the 'Pay with Alipay' button to simulate the payment flow.",
+      "productTitle": "Select Product",
+      "productDescription": "Choose a product to purchase.",
+      "orderTitle": "Order Info",
+      "orderDescription": "Confirm the order and initiate payment.",
+      "orderSelected": "Selected: {name} (¥{price})",
+      "orderEmpty": "Please select a product first.",
+      "payWithAlipay": "Pay with Alipay"
+    },
+    "result": {
+      "title": "Payment Result",
+      "description": "View the result of Alipay computer website payment.",
+      "successTitle": "Payment Successful",
+      "successDescription": "The order has been paid successfully.",
+      "failTitle": "Payment Failed",
+      "failDescription": "The order payment was not completed. Please try again.",
+      "orderTitle": "Order Details",
+      "orderDescription": "Detailed information of the payment order.",
+      "outTradeNo": "Merchant Order No.",
+      "subject": "Product Name",
+      "totalAmount": "Amount",
+      "tradeStatus": "Trade Status",
+      "gmtPayment": "Payment Time",
+      "notifyTitle": "Async Notification",
+      "notifyDescription": "Payment result must be confirmed via async notification or query API, not synchronous redirect.",
+      "notifyReceived": "Async notification received",
+      "notifyVerified": "Async notification signature verified, business fields validated.",
+      "notifyMissed": "Async notification not received",
+      "notifyQuery": "Please call the query API to confirm the trade status, or check if the notify_url is publicly accessible.",
+      "backToShop": "Back to Shop"
+    }
   }
 }

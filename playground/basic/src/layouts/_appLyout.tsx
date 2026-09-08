@@ -65,6 +65,11 @@ export function AppLayout(props: AppLayoutProps) {
       icon: <Icon name="atom" />
     },
     {
+      key: 'payment',
+      label: i18n.t('nav.payment'),
+      icon: <Icon name="zap" />
+    },
+    {
       key: 'errors',
       label: i18n.t('nav.errors'),
       icon: <Icon name="alert-triangle" />

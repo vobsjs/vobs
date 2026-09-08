@@ -9,6 +9,9 @@ import { DevToolsPage } from './pages/DevToolsPage'
 import { ErrorDiagnosticsPage } from './pages/ErrorDiagnosticsPage'
 import { FormsPage } from './pages/FormsPage'
 import { LoginPage } from './pages/LoginPage'
+import { PaymentConfigPage } from './pages/payment/PaymentConfigPage'
+import { PaymentPage } from './pages/payment/PaymentPage'
+import { PaymentResultPage } from './pages/payment/PaymentResultPage'
 import { ResourceTablePage } from './pages/ResourceTablePage'
 import { RuntimePage } from './pages/RuntimePage'
 import { SSRPage } from './pages/SSRPage'
@@ -39,6 +42,9 @@ export const router = createRouter({
         { path: '/forms', component: FormsPage, source: 'src/pages/FormsPage.tsx' },
         { path: '/data', component: DataPage, source: 'src/pages/DataPage.tsx' },
         { path: '/async', component: AsyncPage, source: 'src/pages/AsyncPage.tsx' },
+        { path: '/payment', component: PaymentPage, source: 'src/pages/payment/PaymentPage.tsx' },
+        { path: '/payment/config', component: PaymentConfigPage, source: 'src/pages/payment/PaymentConfigPage.tsx' },
+        { path: '/payment/result', component: PaymentResultPage, source: 'src/pages/payment/PaymentResultPage.tsx' },
         { path: '/runtime', component: RuntimePage, source: 'src/pages/RuntimePage.tsx' },
         { path: '/ssr', component: SSRPage, source: 'src/pages/SSRPage.tsx' },
         { path: '/devtools', component: DevToolsPage, source: 'src/pages/DevToolsPage.tsx' },

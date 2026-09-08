@@ -2,7 +2,7 @@
 
 Signals First · Zero Re-renders · Ultra Lightweight
 
-> Pre-1.0 — under active development. Packages live in this monorepo and are not yet published to npm.
+> v1.0 — released on npm. Published packages under `@vobs/*` scope.
 
 ## Core model
 
@@ -68,6 +68,7 @@ The compiler emits plain DOM operations — a component's initial render is a st
 | [`@vobs/theme`](packages/theme) | Design tokens, dark mode, system preference tracking |
 | [`@vobs/preferences`](packages/preferences) | Schema-validated user preferences with autosave |
 | [`@vobs/notification`](packages/notification) | Toast/notification state with timers and overflow policy |
+| [`@vobs/payment`](packages/payment) | Payment integration: Alipay, WeChat (extension SDK) |
 | [`@vobs/upload`](packages/upload) | Concurrent upload queue with progress and cancellation |
 | [`@vobs/captcha`](packages/captcha) | Slider and challenge captchas |
 | [`@vobs/forms`](packages/forms) | Form state, validation, submit lifecycle |
