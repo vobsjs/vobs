@@ -55,6 +55,11 @@ export function AppLayout(props: AppLayoutProps) {
       icon: <Icon name="zap" />
     },
     {
+      key: 'cli',
+      label: i18n.t('nav.cli'),
+      icon: <Icon name="terminal" />
+    },
+    {
       key: 'runtime',
       label: i18n.t('nav.runtime'),
       icon: <Icon name="code" />

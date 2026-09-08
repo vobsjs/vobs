@@ -1,6 +1,6 @@
 {
   "common": {"ready":"就绪","loading":"加载中...","save":"保存","reset":"重置","refresh":"刷新","retry":"重试","backOverview":"返回概览","backHome":"返回首页","signIn":"登录","signOut":"退出登录","language":"语言","darkTheme":"深色主题","currentLocale":"当前语言：{locale}","status":{"idle":"空闲","loading":"加载中","success":"成功","error":"错误","done":"完成","offline":"离线","ready":"就绪","pending":"待处理","running":"运行中","retrying":"重试中","cancelled":"已取消","syncing":"同步中","uploading":"上传中","verifying":"校验中","verified":"已验证","expired":"已过期"}},
-  "nav": {"overview":"概览","resourceTable":"资源表格","captcha":"验证码","components":"UI 组件","forms":"表单","data":"数据与偏好","async":"异步工作台","payment":"支付宝支付","errors":"错误诊断","runtime":"核心运行时","ssr":"SSR 与 Hydration"},
+  "nav": {"overview":"概览","resourceTable":"资源表格","captcha":"验证码","components":"UI 组件","forms":"表单","data":"数据与偏好","async":"异步工作台","cli":"CLI 工具","payment":"支付宝支付","errors":"错误诊断","runtime":"核心运行时","ssr":"SSR 与 Hydration"},
   "dashboard": {"title":"Vobs Playground","description":"框架核心及官方扩展包的可运行示例。","systemsReady":"所有系统就绪","integrationTitle":"集成示例","integrationDescription":"以下页面都连接到真实的 Vobs 上下文、信号、插件和浏览器交互。","officialPackages":"官方扩展包","growing":"持续增长","currentRoute":"当前路由","browserHistory":"浏览器历史","signedInUser":"当前用户","authenticated":"已认证","locale":"语言","sampleFormat":"格式化示例","startTitle":"从一个能力开始","startDescription":"直接进入一个端到端示例。","resourceTable":"资源表格","uiGallery":"UI 组件库","formsValidation":"表单校验","asyncWorkbench":"异步工作台","runtimeTitle":"运行时控制","runtimeDescription":"这些控件会实时更新已注入的上下文。","sendNotification":"发送通知","notificationBody":"通知上下文运行正常。","notificationAction":"已通过 @vobs/notification 发送通知。","localeChanged":"语言已切换为 {locale}。","openedResource":"已打开 Resource + Table 示例。","openedComponents":"已打开 UI 组件库。","openedForms":"已打开表单示例。","openedAsync":"已打开异步工作台。","openedRuntime":"已打开核心运行时示例。","ssrTitle":"SSR 与 Hydration","ssrDescription":"服务端渲染、状态恢复和 Hydration 诊断。","openedSSR":"已打开 SSR 与 Hydration 示例。"},
   "data": {"title":"数据与偏好","description":"Storage、Preferences 和 Dict 共享同一个应用级插件/上下文模型。","stateful":"有状态","storageTitle":"存储上下文","storageDescription":"值会保存到浏览器 localStorage，刷新页面后仍会保留。","storageKey":"存储键","storageValue":"存储值","defaultStorageValue":"保存到浏览器 localStorage","saveValue":"保存值","readBack":"读取结果","nothingSaved":"尚未保存","keys":"{count} 个键","revision":"版本 {revision} · 类型：{kind} · 持久化：{persistent}","preferencesTitle":"偏好上下文","preferencesDescription":"模式校验、响应式值以及重置/保存操作。","workspace":"工作区","density":"密度","compact":"紧凑","comfortable":"舒适","spacious":"宽松","showTips":"显示提示","currentDensity":"当前密度：{density}","resetAll":"全部重置","dictionaryTitle":"字典源","dictionaryDescription":"静态字典数据通过具名查询提供，并带有响应式加载/错误状态。","reloadStatuses":"重新加载状态","active":"活跃","draft":"草稿","archived":"已归档","labelLookup":"标签查询：{active} · 未知回退：{fallback}","fallbackLabel":"回退标签","routerActionsTitle":"Router 数据操作","routerActionsDescription":"触发 action 和 fetcher 请求，并在 DevTools Router 中查看。","runAction":"运行 action","runFetcher":"运行 fetcher","actionScenarios":"Action 场景","fetcherScenarios":"Fetcher 场景","operationCancelled":"操作已取消。"},
   "resource": {"title":"资源表格","description":"通过 KitDataTable 渲染真实的 @vobs/resource 集合。","name":"姓名","role":"角色","status":"状态","searchUsers":"搜索用户","filterStatus":"按状态筛选","allStatuses":"全部状态","active":"活跃","invited":"已邀请","columns":"列设置","refresh":"刷新","scenarioTitle":"Resource 场景","scenarioDescription":"加载中、空数据、错误、取消、重试、服务端分页和写操作。","scenarioReady":"就绪","scenarioLoading":"正在加载慢响应...","scenarioChanged":"场景：{scenario}","scenarioCancelled":"场景请求已取消。","scenarioRetrying":"正在重试场景...","noWrite":"尚未执行写操作。","writeAdded":"已添加乐观行。","optimisticWrite":"乐观写入","noRows":"暂无数据","serverPagination":"服务端分页","ready":"就绪","empty":"空数据","error":"错误","slow":"慢响应"},
@@ -61,6 +61,24 @@
       "notifyMissed": "未收到异步通知",
       "notifyQuery": "请调用查询接口确认交易状态，或检查 notify_url 是否外网可访问。",
       "backToShop": "返回商品页"
+    }
+  },
+  "cli": {
+    "title": "CLI 命令行工具",
+    "description": "@vobs/cli 提供项目脚手架搭建、代码生成和开发/构建能力。",
+    "commands": {
+      "title": "支持的命令",
+      "description": "所有命令都委托给 Vite 或使用本地文件系统操作。"
+    },
+    "templates": {
+      "title": "项目模板文件",
+      "description": "执行 vobs init my-app 时生成以下文件结构。"
+    },
+    "preview": {
+      "title": "命令预览",
+      "description": "点击按钮查看 CLI 命令的模拟输出。",
+      "runInit": "运行 init",
+      "runGenerate": "运行 generate"
     }
   }
 }

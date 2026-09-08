@@ -1,0 +1,20 @@
+import { createVobs } from '@vobs/dom'
+import { i18nPlugin } from '@vobs/i18n'
+import { notificationPlugin } from '@vobs/notification'
+import { routerPlugin } from '@vobs/router'
+import { createBrowserHistory } from '@vobs/router/history'
+import App from './App.js'
+import './app.css'
+
+const app = createVobs({
+  render: App,
+  plugins: [
+    i18nPlugin(),
+    notificationPlugin(),
+    routerPlugin({
+      history: createBrowserHistory('/'),
+    }),
+  ],
+})
+
+app.mount('#app')

@@ -2,6 +2,7 @@ import { createBrowserHistory, createRouter, routerPlugin } from '@vobs/router'
 import { resourceRouterPlugin } from '@vobs/resource'
 import { AsyncPage } from './pages/AsyncPage'
 import { CaptchaPage } from './pages/CaptchaPage'
+import { CLIPage } from './pages/cli/CLIPage'
 import { ComponentsPage } from './pages/ComponentsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DataPage } from './pages/DataPage'
@@ -42,6 +43,7 @@ export const router = createRouter({
         { path: '/forms', component: FormsPage, source: 'src/pages/FormsPage.tsx' },
         { path: '/data', component: DataPage, source: 'src/pages/DataPage.tsx' },
         { path: '/async', component: AsyncPage, source: 'src/pages/AsyncPage.tsx' },
+        { path: '/cli', component: CLIPage, source: 'src/pages/cli/CLIPage.tsx' },
         { path: '/payment', component: PaymentPage, source: 'src/pages/payment/PaymentPage.tsx' },
         { path: '/payment/config', component: PaymentConfigPage, source: 'src/pages/payment/PaymentConfigPage.tsx' },
         { path: '/payment/result', component: PaymentResultPage, source: 'src/pages/payment/PaymentResultPage.tsx' },

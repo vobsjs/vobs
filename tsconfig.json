@@ -5,6 +5,7 @@
     "paths": {
       "@vobs/auth": ["packages/auth/src/index.ts"],
       "@vobs/captcha": ["packages/captcha/src/index.ts"],
+      "@vobs/cli": ["packages/cli/src/index.ts"],
       "@vobs/compiler": ["packages/compiler/src/index.ts"],
       "@vobs/devtools": ["packages/devtools/src/index.ts"],
       "@vobs/devtools-ui": ["packages/devtools-ui/src/index.ts"],

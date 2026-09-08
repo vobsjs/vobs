@@ -40,6 +40,7 @@
     "forms": "Forms",
     "data": "Data & preferences",
     "async": "Async workbench",
+    "cli": "CLI Tools",
     "payment": "Alipay Pay",
     "errors": "Error diagnostics",
     "runtime": "Core runtime",
@@ -394,6 +395,24 @@
       "notifyMissed": "Async notification not received",
       "notifyQuery": "Please call the query API to confirm the trade status, or check if the notify_url is publicly accessible.",
       "backToShop": "Back to Shop"
+    }
+  },
+  "cli": {
+    "title": "CLI Tools",
+    "description": "@vobs/cli provides project scaffolding, code generation, and dev/build capabilities.",
+    "commands": {
+      "title": "Commands",
+      "description": "All commands delegate to Vite or use local filesystem operations."
+    },
+    "templates": {
+      "title": "Project Templates",
+      "description": "Running vobs init my-app generates the following file structure."
+    },
+    "preview": {
+      "title": "Command Preview",
+      "description": "Click a button to see simulated CLI output.",
+      "runInit": "Run init",
+      "runGenerate": "Run generate"
     }
   }
 }
