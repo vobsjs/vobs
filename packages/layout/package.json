@@ -6,7 +6,7 @@
     "LICENSE"
   ],
   "name": "@vobs/layout",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Optional Kit layout primitives for Vobs.",
   "type": "module",
   "main": "src/index.ts",

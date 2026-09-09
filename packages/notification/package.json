@@ -6,7 +6,7 @@
     "LICENSE"
   ],
   "name": "@vobs/notification",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Reactive notification state and lifecycle for Vobs applications.",
   "type": "module",
   "main": "src/index.ts",

@@ -6,7 +6,7 @@
     "LICENSE"
   ],
   "name": "@vobs/upload",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Reactive file upload tasks built on @vobs/http.",
   "type": "module",
   "main": "src/index.ts",

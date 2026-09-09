@@ -6,7 +6,7 @@
     "LICENSE"
   ],
   "name": "@vobs/transition",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Optional DOM transition lifecycle primitives for Vobs.",
   "type": "module",
   "main": "src/index.ts",

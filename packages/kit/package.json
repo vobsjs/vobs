@@ -6,7 +6,7 @@
     "LICENSE"
   ],
   "name": "@vobs/kit",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Optional official Kit composition package for Vobs.",
   "type": "module",
   "main": "src/index.ts",

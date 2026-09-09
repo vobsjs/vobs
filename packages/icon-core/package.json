@@ -6,7 +6,7 @@
     "LICENSE"
   ],
   "name": "@vobs/icon-core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Framework-neutral SVG icon primitives for Vobs-compatible icon libraries.",
   "type": "module",
   "main": "src/index.ts",
