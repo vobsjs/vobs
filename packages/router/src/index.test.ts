@@ -40,6 +40,62 @@ describe('@vobs/router', () => {
     router.destroy()
   })
 
+  it('导航 state 随 history 条目存取，back 时恢复', async () => {
+    const router = createRouter({
+      history: createMemoryHistory('/'),
+      routes: [
+        { path: '/', name: 'home', component: () => createText('home') },
+        { path: '/result', name: 'result', component: () => createText('result') }
+      ]
+    })
+
+    // push 携带 state（对象目标与字符串目标的透传路径都要覆盖）
+    await router.push({ path: '/result', state: { orderId: 'A-1' } })
+    expect(router.currentRoute.value.path).toBe('/result')
+    expect(router.currentRoute.value.state).toEqual({ orderId: 'A-1' })
+    expect(router.history.state).toEqual({ orderId: 'A-1' })
+
+    await router.push({ path: '/', state: { orderId: 'A-2' } })
+    expect(router.currentRoute.value.state).toEqual({ orderId: 'A-2' })
+
+    // back 回到上一条目，state 一并恢复
+    router.history.back()
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/result'))
+    expect(router.currentRoute.value.state).toEqual({ orderId: 'A-1' })
+    router.destroy()
+  })
+
+  it('replace 更新当前条目的 state，同路径 state-only 变更被去重忽略', async () => {
+    const history = createMemoryHistory('/')
+    const router = createRouter({
+      history,
+      routes: [
+        { path: '/', name: 'home', component: () => createText('home') },
+        { path: '/a', name: 'a', component: () => createText('a') },
+        { path: '/b', name: 'b', component: () => createText('b') }
+      ]
+    })
+
+    await router.push('/a')
+    expect(router.currentRoute.value.state).toBeUndefined()
+
+    // replace 到不同路径：state 写入新条目
+    await router.replace({ path: '/b', state: { retried: true } })
+    expect(router.currentRoute.value.path).toBe('/b')
+    expect(router.currentRoute.value.state).toEqual({ retried: true })
+    expect(router.history.state).toEqual({ retried: true })
+
+    // 与既有“相同目标忽略”语义一致：同路径仅 state 变化不会触发导航
+    await router.replace({ path: '/b', state: { retried: false } })
+    expect(router.currentRoute.value.state).toEqual({ retried: true })
+
+    // replace 覆盖了 /a 的条目而非新增：back 直接回到初始 /
+    // （若 replace 误作 push，这里会回到 /a）
+    router.history.back()
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/'))
+    router.destroy()
+  })
+
   it('支持无路径父路由、嵌套 children、父子 meta 合并和命名导航', () => {
     const Layout = () => createText('layout')
     const router = createRouter({

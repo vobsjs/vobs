@@ -37,6 +37,7 @@ export interface RouteLocation {
   readonly meta: RouteMeta
   readonly record: RouteRecord | null
   readonly matched: readonly RouteRecord[]
+  readonly state?: unknown
 }
 
 export interface RouteComponentProps {
@@ -84,6 +85,7 @@ export interface RouteLocationRaw {
   readonly params?: Record<string, unknown>
   readonly query?: RouteQueryInput
   readonly hash?: string
+  readonly state?: unknown
 }
 
 export type RouteTarget = string | RouteLocationRaw
@@ -114,10 +116,12 @@ export class NavigationRedirectError extends Error {
 
 export interface RouterHistory {
   readonly location: string
-  push(path: string): void
-  replace(path: string): void
+  /** 当前 history 条目携带的导航 state（push/replace 时写入，popstate/初始启动时回读）。 */
+  readonly state?: unknown
+  push(path: string, state?: unknown): void
+  replace(path: string, state?: unknown): void
   back(): void
-  listen(listener: (path: string) => void): () => void
+  listen(listener: (path: string, state: unknown) => void): () => void
 }
 
 export interface RouterOptions {
@@ -269,33 +273,37 @@ export function lazy(loader: RouteComponentLoader): LazyRouteComponent {
 }
 
 export function createMemoryHistory(initial = '/'): RouterHistory {
-  let entries = [normalizeHistoryPath(initial)]
+  let entries = [{ path: normalizeHistoryPath(initial), state: undefined as unknown }]
   let index = 0
-  const listeners = new Set<(path: string) => void>()
+  const listeners = new Set<(path: string, state: unknown) => void>()
 
   return {
     get location(): string {
-      return entries[index]
+      return entries[index]!.path
     },
 
-    push(path: string): void {
+    get state(): unknown {
+      return entries[index]!.state
+    },
+
+    push(path: string, state?: unknown): void {
       const next = normalizeHistoryPath(path)
       entries = entries.slice(0, index + 1)
-      entries.push(next)
+      entries.push({ path: next, state })
       index++
     },
 
-    replace(path: string): void {
-      entries[index] = normalizeHistoryPath(path)
+    replace(path: string, state?: unknown): void {
+      entries[index] = { path: normalizeHistoryPath(path), state }
     },
 
     back(): void {
       if (index === 0) return
       index--
-      notifyListeners(listeners, entries[index])
+      notifyListeners(listeners, entries[index]!.path, entries[index]!.state)
     },
 
-    listen(listener: (path: string) => void): () => void {
+    listen(listener: (path: string, state: unknown) => void): () => void {
       listeners.add(listener)
       return () => listeners.delete(listener)
     }
@@ -308,9 +316,9 @@ export function createBrowserHistory(base = ''): RouterHistory {
   }
 
   const normalizedBase = normalizeBase(base)
-  const listeners = new Set<(path: string) => void>()
-  const onPopState = (): void => {
-    notifyListeners(listeners, readBrowserLocation(normalizedBase))
+  const listeners = new Set<(path: string, state: unknown) => void>()
+  const onPopState = (event: PopStateEvent): void => {
+    notifyListeners(listeners, readBrowserLocation(normalizedBase), event.state)
   }
 
   return {
@@ -318,19 +326,23 @@ export function createBrowserHistory(base = ''): RouterHistory {
       return readBrowserLocation(normalizedBase)
     },
 
-    push(path: string): void {
-      window.history.pushState(null, '', withBase(normalizeHistoryPath(path), normalizedBase))
+    get state(): unknown {
+      return window.history.state
     },
 
-    replace(path: string): void {
-      window.history.replaceState(null, '', withBase(normalizeHistoryPath(path), normalizedBase))
+    push(path: string, state?: unknown): void {
+      window.history.pushState(state ?? null, '', withBase(normalizeHistoryPath(path), normalizedBase))
+    },
+
+    replace(path: string, state?: unknown): void {
+      window.history.replaceState(state ?? null, '', withBase(normalizeHistoryPath(path), normalizedBase))
     },
 
     back(): void {
       window.history.back()
     },
 
-    listen(listener: (path: string) => void): () => void {
+    listen(listener: (path: string, state: unknown) => void): () => void {
       if (listeners.size === 0) window.addEventListener('popstate', onPopState)
       listeners.add(listener)
       return () => {
@@ -368,10 +380,10 @@ export function createRouter(options: RouterOptions): Router {
   function resolve(to: RouteTarget): RouteLocation {
     ensureActive()
     const target = typeof to === 'string' ? parseTargetString(to) : normalizeTarget(to, matchers)
-    return resolvePath(buildTargetPath(target.path, target.query, target.hash))
+    return resolvePath(buildTargetPath(target.path, target.query, target.hash), target.state)
   }
 
-  function resolvePath(rawPath: string): RouteLocation {
+  function resolvePath(rawPath: string, state?: unknown): RouteLocation {
     const parsed = parseTargetString(rawPath)
     const matched = matchers.find(matcher => matcher.regex.exec(parsed.path))
     const params = matched ? extractParams(matched, parsed.path) : {}
@@ -387,19 +399,23 @@ export function createRouter(options: RouterOptions): Router {
       name: record?.name,
       meta: matched?.meta ?? {},
       record,
-      matched: matched?.chain ?? EMPTY_MATCHED
+      matched: matched?.chain ?? EMPTY_MATCHED,
+      state
     }
   }
 
   async function navigate(
     to: RouteTarget,
     replaceHistory: boolean,
-    fromHistory: boolean
+    fromHistory: boolean,
+    historyState?: unknown
   ): Promise<RouteLocation | false> {
     ensureActive()
     const id = ++navigationId
     const from = currentRoute.value
     let target = resolve(to)
+    // popstate 回读的 state 保存在 history 条目上，不在目标描述里，这里回填。
+    if (fromHistory && historyState !== undefined) target = { ...target, state: historyState }
     const source: NavigationTrace['source'] = fromHistory ? 'history' : replaceHistory ? 'replace' : 'push'
     const startedAt = now()
     const initialTarget = target.fullPath
@@ -470,8 +486,8 @@ export function createRouter(options: RouterOptions): Router {
 
         if (target.fullPath === from.fullPath) return from
         if (!fromHistory) {
-          if (replaceHistory) history.replace(target.fullPath)
-          else history.push(target.fullPath)
+          if (replaceHistory) history.replace(target.fullPath, target.state)
+          else history.push(target.fullPath, target.state)
         }
         currentRoute.value = target
         recordNavigation({ id, from: from.fullPath, to: target.fullPath, status: 'success', source, startedAt, endedAt: now(), duration: now() - startedAt, redirect: target.fullPath !== initialTarget ? target.fullPath : undefined })
@@ -615,13 +631,13 @@ export function createRouter(options: RouterOptions): Router {
     return buildRouteDebugTree(options.routes, statuses)
   }
 
-  function handleHistoryNavigation(path: string): void {
-    void navigate(path, false, true).then(result => {
+  function handleHistoryNavigation(path: string, state: unknown): void {
+    void navigate(path, false, true, state).then(result => {
       if (destroyed) return
       if (result === false) {
-        history.replace(currentRoute.value.fullPath)
+        history.replace(currentRoute.value.fullPath, currentRoute.value.state)
       } else if (result.fullPath !== normalizeHistoryPath(path)) {
-        history.replace(result.fullPath)
+        history.replace(result.fullPath, result.state)
       }
     }).catch(error => {
       if (!(error instanceof NavigationCancelledError) && !destroyed) {
@@ -630,7 +646,7 @@ export function createRouter(options: RouterOptions): Router {
         reportError('navigation', failed, normalizeHistoryPath(path))
         navigationState = { status: 'error', from: current, to: normalizeHistoryPath(path), error: failed.message }
         emitRouter('navigation:end', { status: 'error', from: current, to: normalizeHistoryPath(path), error: failed.message })
-        history.replace(currentRoute.value.fullPath)
+        history.replace(currentRoute.value.fullPath, currentRoute.value.state)
       }
     })
   }
@@ -872,6 +888,7 @@ interface ParsedTarget {
   readonly path: string
   readonly query: RouteQuery
   readonly hash: string
+  readonly state?: unknown
 }
 
 function defaultHistory(): RouterHistory {
@@ -1024,7 +1041,7 @@ function normalizeTarget(target: RouteLocationRaw, matchers: readonly RouteMatch
   const filledPath = fillRouteParams(parsed.path, target.params ?? {})
   const query = target.query === undefined ? parsed.query : normalizeQuery(target.query)
   const hash = target.hash === undefined ? parsed.hash : normalizeHash(target.hash)
-  return { path: filledPath, query, hash }
+  return { path: filledPath, query, hash, state: target.state }
 }
 
 function fillRouteParams(path: string, params: Record<string, unknown>): string {
@@ -1110,8 +1127,8 @@ function withBase(path: string, base: string): string {
   return `${base}${path === '/' ? '/' : path}` || '/'
 }
 
-function notifyListeners(listeners: Set<(path: string) => void>, path: string): void {
-  for (const listener of [...listeners]) listener(path)
+function notifyListeners(listeners: Set<(path: string, state: unknown) => void>, path: string, state: unknown): void {
+  for (const listener of [...listeners]) listener(path, state)
 }
 
 function escapeRegExp(value: string): string {
