@@ -108,34 +108,144 @@ export function insertList<T>(
 
   effect(() => {
     const items = source()
-    const keyed = keyOf && items.every((item, index) => keyOf(item, index) != null)
-    const nextEntries = keyed
-      ? reconcileKeyed(items, entries, renderItem, keyOf)
+
+    // key 只计算一次：keyed 判定与调和共用，避免 keyOf 每轮被调用两遍。
+    let keys: unknown[] | null = null
+    if (keyOf) {
+      keys = new Array(items.length)
+      let allKeyed = items.length > 0
+      for (let index = 0; index < items.length; index++) {
+        const key = keyOf(items[index], index)
+        if (key == null) {
+          allKeyed = false
+          break
+        }
+        keys[index] = key
+      }
+      if (!allKeyed) keys = null
+    }
+
+    const nextEntries = keys
+      ? reconcileKeyed(items, keys, entries, renderItem)
       : reconcileIndexed(items, entries, renderItem)
 
+    // tracksIndex 时 index 参与渲染，位置变化的行必须整体重建，新节点不在 DOM 中，
+    // 重排阶段强制插入；否则只同步记录的位置，节点保持原样交给重排阶段移动。
+    const refreshed = tracksIndex ? new Set<ListEntry<T>>() : null
     for (let index = 0; index < nextEntries.length; index++) {
       const entry = nextEntries[index]
-      if (tracksIndex && entry && entry.index !== index) refreshListEntry(parent, entry, index, renderItem)
+      if (tracksIndex) {
+        if (entry.index !== index) {
+          refreshListEntry(parent, entry, index, renderItem)
+          refreshed!.add(entry)
+        }
+      } else {
+        entry.index = index
+      }
     }
 
+    const retained = new Set(nextEntries)
     for (const entry of entries) {
-      if (!nextEntries.includes(entry)) disposeEntry(parent, entry)
+      if (!retained.has(entry)) disposeEntry(parent, entry)
     }
 
-    let reference: VobsNode | null = marker
-    for (let index = nextEntries.length - 1; index >= 0; index--) {
-      insertBefore(parent, nextEntries[index].node, reference)
-      reference = nextEntries[index].node
-    }
+    reorderListEntries(parent, marker, entries, nextEntries, refreshed)
     entries = nextEntries
   })
 }
 
+/**
+ * 按 nextEntries 顺序整理 DOM，但只移动必须移动的节点。
+ */
+function reorderListEntries<T>(
+  parent: Node,
+  marker: Node,
+  previous: readonly ListEntry<T>[],
+  nextEntries: readonly ListEntry<T>[],
+  forceInsert: Set<ListEntry<T>> | null
+): void {
+  const count = nextEntries.length
+  if (count === 0) return
+
+  // 首次挂载（旧列表为空）：全部是新节点，倒序直插即可，跳过 Map/LIS 构建。
+  if (previous.length === 0) {
+    let reference: VobsNode = marker
+    for (let index = count - 1; index >= 0; index--) {
+      const node = nextEntries[index].node
+      insertBefore(parent, node, reference)
+      reference = node
+    }
+    return
+  }
+
+  const oldIndexOf = new Map<ListEntry<T>, number>()
+  for (let index = 0; index < previous.length; index++) oldIndexOf.set(previous[index], index)
+
+  // seq[i] = 条目在旧序中的位置；新条目、重建条目与强制插入条目为 -1。
+  const seq: number[] = new Array(count)
+  for (let index = 0; index < count; index++) {
+    const entry = nextEntries[index]
+    seq[index] = forceInsert?.has(entry) ? -1 : oldIndexOf.get(entry) ?? -1
+  }
+
+  const keep = computeKeptByLis(seq)
+
+  let reference: VobsNode = marker
+  for (let index = count - 1; index >= 0; index--) {
+    const node = nextEntries[index].node
+    if (keep[index]) {
+      reference = node
+      continue
+    }
+    insertBefore(parent, node, reference)
+    reference = node
+  }
+}
+
+/**
+ * 严格递增子序列（LIS）成员标记，O(n log n)。
+ * 负值（新节点）不参与 LIS，永远视为需要移动。
+ */
+function computeKeptByLis(seq: readonly number[]): boolean[] {
+  const count = seq.length
+  const keep = new Array<boolean>(count).fill(false)
+  const tailsIndex: number[] = []
+  const tailsValue: number[] = []
+  const prev = new Array<number>(count).fill(-1)
+
+  for (let i = 0; i < count; i++) {
+    const value = seq[i]
+    if (value < 0) continue
+    let lo = 0
+    let hi = tailsValue.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (tailsValue[mid] < value) lo = mid + 1
+      else hi = mid
+    }
+    if (lo === tailsValue.length) {
+      tailsValue.push(value)
+      tailsIndex.push(i)
+    } else {
+      tailsValue[lo] = value
+      tailsIndex[lo] = i
+    }
+    prev[i] = lo > 0 ? tailsIndex[lo - 1] : -1
+  }
+
+  let cursor = tailsIndex.length > 0 ? tailsIndex[tailsIndex.length - 1] : -1
+  while (cursor >= 0) {
+    keep[cursor] = true
+    cursor = prev[cursor]
+  }
+  return keep
+}
+
 function reconcileKeyed<T>(
   items: readonly T[],
+  keys: readonly unknown[],
   entries: Array<ListEntry<T>>,
-  renderItem: (item: T, index: number) => VobsNode,
-  keyOf: (item: T, index: number) => unknown
+  renderItem: (item: T, index: number) => VobsNode
 ): Array<ListEntry<T>> {
   const previous = new Map(entries.map(entry => [entry.key, entry]))
   const seen = new Set<unknown>()
@@ -143,13 +253,13 @@ function reconcileKeyed<T>(
 
   for (let index = 0; index < items.length; index++) {
     const item = items[index]
-    const key = keyOf(item, index)
+    const key = keys[index]
     if (seen.has(key)) {
       console.warn(`Vobs: 检测到重复的列表 key: ${String(key)}`)
     }
     seen.add(key)
-    if (previous.has(key)) {
-      const entry = previous.get(key)!
+    const entry = previous.get(key)
+    if (entry) {
       previous.delete(key)
       if (isPrimitiveItem(item) && !Object.is(entry.value, item)) {
         // 原始类型项在编译产物中被静态捕获，无法通过 item 信号刷新视图：值变化时必须重建行。

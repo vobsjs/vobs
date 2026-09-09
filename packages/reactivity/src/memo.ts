@@ -1,6 +1,6 @@
 import { cleanupDependencies } from './effect'
 import { getCurrentOwner } from './owner'
-import { invokeDebug } from './debug'
+import { invokeDebug, hasDebugHooks } from './debug'
 import {
   getCurrentSubscriber,
   setCurrentSubscriber,
@@ -28,7 +28,7 @@ export function memo<T>(compute: () => T): Memo<T> {
     notify(): void {
       if (disposed || dirty) return
       dirty = true
-      invokeDebug('memoInvalidated', memoSignal as Signal<unknown>)
+      if (hasDebugHooks()) invokeDebug('memoInvalidated', memoSignal as Signal<unknown>)
       for (const subscriber of [...subscribers]) subscriber.notify()
     }
   }
@@ -69,13 +69,15 @@ export function memo<T>(compute: () => T): Memo<T> {
       disposed = true
       subscribers.clear()
       cleanupDependencies(memoSubscriber)
-      invokeDebug('signalDisposed', memoSignal as Signal<unknown>)
+      if (hasDebugHooks()) invokeDebug('signalDisposed', memoSignal as Signal<unknown>)
     }
   }
 
   const owner = getCurrentOwner()
   owner?.addCleanup(memoSignal.dispose)
-  invokeDebug('signalCreated', memoSignal as Signal<unknown>, owner)
-  invokeDebug('memoCreated', memoSignal as Signal<unknown>, memoSubscriber, owner)
+  if (hasDebugHooks()) {
+    invokeDebug('signalCreated', memoSignal as Signal<unknown>, owner)
+    invokeDebug('memoCreated', memoSignal as Signal<unknown>, memoSubscriber, owner)
+  }
   return memoSignal
 }

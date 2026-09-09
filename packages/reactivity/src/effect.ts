@@ -1,5 +1,5 @@
 import { getCurrentOwner } from './owner'
-import { invokeDebug } from './debug'
+import { invokeDebug, hasDebugHooks } from './debug'
 import {
   getCurrentSubscriber,
   setCurrentSubscriber,
@@ -24,7 +24,7 @@ let nextEffectOrder = 1
 export function cleanupDependencies(subscriber: Subscriber): void {
   for (const dependency of subscriber.dependencies) {
     dependency.unsubscribe(subscriber)
-    invokeDebug('dependencyUntracked', dependency, subscriber)
+    if (hasDebugHooks()) invokeDebug('dependencyUntracked', dependency, subscriber)
   }
   subscriber.dependencies.clear()
 }
@@ -47,7 +47,7 @@ export function effect(callback: EffectCallback): Effect {
     notify(): void {
       if (disposed || dirty) return
       dirty = true
-      invokeDebug('effectInvalidated', eff)
+      if (hasDebugHooks()) invokeDebug('effectInvalidated', eff)
       scheduler.schedule(eff)
     },
 
@@ -71,7 +71,7 @@ export function effect(callback: EffectCallback): Effect {
       setCurrentSubscriber(eff)
       let thrown: unknown
       let handled = false
-      invokeDebug('effectRunStart', eff)
+      if (hasDebugHooks()) invokeDebug('effectRunStart', eff)
       try {
         const result = owner ? owner.run(callback) : callback()
         cleanup = typeof result === 'function' ? result : undefined
@@ -81,7 +81,7 @@ export function effect(callback: EffectCallback): Effect {
         if (!handled) throw error
       } finally {
         setCurrentSubscriber(previous)
-        invokeDebug('effectRunEnd', eff, thrown, handled)
+        if (hasDebugHooks()) invokeDebug('effectRunEnd', eff, thrown, handled)
       }
       if (cleanupError && !thrown) throw cleanupError
     },
@@ -109,13 +109,13 @@ export function effect(callback: EffectCallback): Effect {
         }
       }
       cleanupDependencies(eff)
-      invokeDebug('effectDisposed', eff)
+      if (hasDebugHooks()) invokeDebug('effectDisposed', eff)
       if (cleanupError) throw cleanupError
     }
   }
 
   owner?.addCleanup(eff.dispose)
-  invokeDebug('effectCreated', eff, owner)
+  if (hasDebugHooks()) invokeDebug('effectCreated', eff, owner)
   eff.run()
   return eff
 }

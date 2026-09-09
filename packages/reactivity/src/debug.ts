@@ -37,6 +37,11 @@ export function getDebugHooks(): ReactivityDebugHooks | null {
   return activeDebugHooks
 }
 
+/** 热路径守卫：无 hooks 时跳过 invokeDebug 调用，避免 rest 参数数组分配。 */
+export function hasDebugHooks(): boolean {
+  return activeDebugHooks !== null
+}
+
 export function setSignalDebugName(signal: Signal<unknown>, name: string): void {
   signalNames.set(signal, name)
   invokeDebug('signalNamed', signal, name)

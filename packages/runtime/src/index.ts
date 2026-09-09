@@ -45,6 +45,7 @@ export { ref, setRef } from './ref'
 export type { Ref, RefTarget } from './ref'
 export { insertDynamic, insertDynamicValue, insertList, normalizeDynamicChild } from './dynamic'
 export type { DynamicChild, NodeFactory } from './dynamic'
+export { createTemplate, cloneTemplate } from './template'
 export type { VobsLocatedError, VobsSourceLocation } from './ops'
 export {
   VobsError,

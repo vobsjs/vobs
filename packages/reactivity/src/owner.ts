@@ -1,4 +1,4 @@
-import { invokeDebug } from './debug'
+import { invokeDebug, hasDebugHooks } from './debug'
 
 export interface Owner {
   readonly id: string
@@ -97,19 +97,19 @@ export function createOwner(): Owner {
         const index = parent.children.indexOf(owner)
         if (index >= 0) (parent.children as Owner[]).splice(index, 1)
       }
-      invokeDebug('ownerDisposed', owner)
+      if (hasDebugHooks()) invokeDebug('ownerDisposed', owner)
       if (firstError) throw firstError
     }
   }
 
   if (parent && !parent.disposed) (parent.children as Owner[]).push(owner)
-  invokeDebug('ownerCreated', owner)
+  if (hasDebugHooks()) invokeDebug('ownerCreated', owner)
   return owner
 }
 
 export function setOwnerDebugName(owner: Owner, name: string): void {
   ownerNames.set(owner, name)
-  invokeDebug('ownerNamed', owner, name)
+  if (hasDebugHooks()) invokeDebug('ownerNamed', owner, name)
 }
 
 export function getOwnerDebugName(owner: Owner): string | undefined {

@@ -1,5 +1,5 @@
 import { getCurrentOwner } from './owner'
-import { invokeDebug, setSignalDebugName } from './debug'
+import { invokeDebug, hasDebugHooks, setSignalDebugName } from './debug'
 
 export interface Dependency {
   unsubscribe(subscriber: Subscriber): void
@@ -40,7 +40,7 @@ export function trackDependency(dependency: Dependency): void {
   if (!currentSubscriber || currentSubscriber.disposed) return
   const added = !currentSubscriber.dependencies.has(dependency)
   currentSubscriber.dependencies.add(dependency)
-  if (added) invokeDebug('dependencyTracked', dependency, currentSubscriber)
+  if (added && hasDebugHooks()) invokeDebug('dependencyTracked', dependency, currentSubscriber)
 }
 
 /**
@@ -63,7 +63,7 @@ export function state<T>(initialValue: T, debugName?: string): Signal<T> {
       const subscriber = getCurrentSubscriber()
       if (subscriber && !subscriber.disposed) {
         subscribers.add(subscriber)
-        invokeDebug('signalRead', signalInstance as Signal<unknown>, subscriber)
+        if (hasDebugHooks()) invokeDebug('signalRead', signalInstance as Signal<unknown>, subscriber)
         trackDependency(signalInstance)
       }
       return value
@@ -73,7 +73,7 @@ export function state<T>(initialValue: T, debugName?: string): Signal<T> {
       if (disposed || Object.is(value, nextValue)) return
       const previousValue = value
       value = nextValue
-      invokeDebug('signalChanged', signalInstance as Signal<unknown>, previousValue, nextValue)
+      if (hasDebugHooks()) invokeDebug('signalChanged', signalInstance as Signal<unknown>, previousValue, nextValue)
       for (const subscriber of [...subscribers]) subscriber.notify()
     },
 
@@ -85,13 +85,13 @@ export function state<T>(initialValue: T, debugName?: string): Signal<T> {
       if (disposed) return
       disposed = true
       subscribers.clear()
-      invokeDebug('signalDisposed', signalInstance as Signal<unknown>)
+      if (hasDebugHooks()) invokeDebug('signalDisposed', signalInstance as Signal<unknown>)
     }
   }
 
   const owner = getCurrentOwner()
   owner?.addCleanup(signalInstance.dispose)
-  invokeDebug('signalCreated', signalInstance as Signal<unknown>, owner)
+  if (hasDebugHooks()) invokeDebug('signalCreated', signalInstance as Signal<unknown>, owner)
   if (debugName?.trim()) setSignalDebugName(signalInstance as Signal<unknown>, debugName.trim())
   return signalInstance
 }

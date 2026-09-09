@@ -70,6 +70,35 @@ describe('vobsPlugin', () => {
     expect(result.code).not.toContain('import.meta.hot.accept')
   })
 
+  it('生产构建默认剔除组件源码位置，开发构建保留', () => {
+    const compile = (plugin: ReturnType<typeof vobsPlugin>, source: string) => {
+      const transform = plugin.transform
+      if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: 缺少 transform 钩子')
+      return transform.call({} as ThisParameterType<typeof transform>,
+        source, 'src/App.tsx') as { code: string }
+    }
+
+    const production = vobsPlugin({ hmr: false })
+    ;(production.configResolved as (config: unknown) => void)?.({ command: 'build' })
+    const productionCode = compile(production, `export function App() { return <Panel /> }`).code
+    expect(productionCode).toContain('createComponent')
+    expect(productionCode).not.toContain('file:')
+
+    const development = compile(vobsPlugin(), `export function App() { return <Panel /> }`).code
+    expect(development).toContain('file: "src/App.tsx"')
+  })
+
+  it('显式 compiler.sourceLocation 配置优先于生产默认值', () => {
+    const plugin = vobsPlugin({ hmr: false, compiler: { sourceLocation: true } })
+    const configResolved = plugin.configResolved as ((config: unknown) => void) | undefined
+    configResolved?.({ command: 'build' })
+    const transform = plugin.transform
+    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: 缺少 transform 钩子')
+    const result = transform.call({} as ThisParameterType<typeof transform>,
+      `export function App() { return <Panel /> }`, 'src/App.tsx') as { code: string }
+    expect(result.code).toContain('file: "src/App.tsx"')
+  })
+
   it('转换不含 export function 的合法 TSX 模块', () => {
     const plugin = vobsPlugin({ hmr: false })
     const transform = plugin.transform
@@ -80,7 +109,8 @@ describe('vobsPlugin', () => {
       'src/App.tsx'
     ) as { code: string }
 
-    expect(result.code).toContain('createElement("main")')
+    // 完全静态的 JSX 提升为模板克隆
+    expect(result.code).toContain('createTemplate("<main>hello</main>")')
   })
 
   it('转换默认箭头导出和带 query 的 TSX 模块', () => {
@@ -93,7 +123,8 @@ describe('vobsPlugin', () => {
       'src/App.tsx?direct'
     ) as { code: string }
 
-    expect(result.code).toContain('createElement("main")')
+    // 完全静态的 JSX 提升为模板克隆
+    expect(result.code).toContain('createTemplate("<main>hello</main>")')
   })
 
   it('通过 extractI18n 回调收集静态翻译 key', () => {

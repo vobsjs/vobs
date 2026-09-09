@@ -60,6 +60,7 @@ declare global {
       article: VobsHTMLAttributes
       aside: VobsHTMLAttributes
       button: VobsHTMLAttributes
+      code: VobsHTMLAttributes
       div: VobsHTMLAttributes
       footer: VobsHTMLAttributes
       form: VobsHTMLAttributes

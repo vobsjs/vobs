@@ -24,10 +24,10 @@ describe('compiler', () => {
   })
 
   it('编译 JSX 为 DOM 渲染调用', () => {
-    const code = `const el = <div>hello</div>`
-  
+    const code = `const el = <div>hello {name.value}</div>`
+
     const result = compile(code)
-  
+
     expect(result).toContain('createElement')
     expect(result).toContain('createText')
     expect(result).toContain('insertBefore')
@@ -37,12 +37,12 @@ describe('compiler', () => {
     const code = `
   function Counter() {
     const count = state(0)
-    return <div>hello</div>
+    return <div>hello {count.value}</div>
   }
   `
-  
+
     const result = compile(code)
-  
+
     expect(result).toContain('function Counter')
     expect(result).toContain('createElement')
   })
@@ -51,11 +51,48 @@ describe('compiler', () => {
     const code = `
   const el = <button onClick={() => { console.log('clicked') }}>点击</button>
   `
-  
+
     const result = compile(code)
-  
+
     expect(result).toContain('addEventListener')
     expect(result).toContain('click')
+  })
+
+  it('重入安全：插件在编译过程中调用 compile() 不污染外层编译状态', () => {
+    // 外层源码的变量名会命中内层片段用到的 helper 名，验证 takenNames/helperAliases
+    // 等状态在外层编译全程保持独立（此前为模块级变量，嵌套编译会互相覆盖）。
+    const nestedPlugin: CompilerPlugin = {
+      name: 'nested-compile',
+      analyze() {
+        compile(`const el = <span>inner</span>`, { filename: 'inner.tsx' })
+      }
+    }
+    const code = `
+  const createElement = () => null
+  const el = <div>outer {name.value}</div>
+  `
+
+    const result = compileWithSourceMap(code, {
+      filename: 'outer.tsx',
+      plugins: [nestedPlugin]
+    })
+
+    // 外层的局部绑定 createElement 仍在，运行时 helper 注入为别名导入
+    expect(result.code).toContain('const createElement = () => null')
+    expect(result.code).toContain('_vobs_createElement')
+    expect(result.code).toContain('outer')
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('重入安全：连续多次编译各自独立，计数器与别名不跨编译泄漏', () => {
+    const first = compileWithSourceMap(`const a = <div className="x">{a.value}</div>`, { filename: 'a.tsx' })
+    const second = compileWithSourceMap(`const b = <div className="y">{b.value}</div>`, { filename: 'b.tsx' })
+
+    // 临时变量计数器每次编译从 0 开始
+    expect(first.code).toContain('_el0')
+    expect(second.code).toContain('_el0')
+    // 第二次编译不带第一次残留的诊断
+    expect(second.diagnostics).toEqual([])
   })
 
   it('将静态属性合并为一次 setStaticProps 调用', () => {
@@ -168,9 +205,11 @@ describe('compiler', () => {
   it('只导入生成代码实际使用的运行时 helper', () => {
     const result = compile(`const el = <div>hello</div>`)
 
-    expect(result).toContain('createElement')
-    expect(result).toContain('createText')
-    expect(result).toContain('insertBefore')
+    // 完全静态的子树提升为模板：只需 createTemplate + cloneTemplate
+    expect(result).toContain('createTemplate')
+    expect(result).toContain('cloneTemplate')
+    expect(result).not.toContain('createElement')
+    expect(result).not.toContain('insertBefore')
     expect(result).not.toContain('bindAttribute')
     expect(result).not.toContain('bindText')
     expect(result).not.toContain('insertDynamic')
@@ -240,7 +279,7 @@ describe('compiler', () => {
     const result = compile(`
       import { createElement } from './shim'
       export const tag = createElement('span')
-      const el = <div>hello</div>
+      const el = <div>hello {name.value}</div>
     `)
 
     // 用户导入与调用保持不变，编译器 helper 走别名，不再产生重复声明
@@ -255,12 +294,12 @@ describe('compiler', () => {
   it('源文件本地声明与 helper 同名时注入别名 import', () => {
     const result = compile(`
       const createText = (value: string) => value
-      const el = <div>hello</div>
+      const el = <div>hello {name.value}</div>
     `)
 
     expect(result).toContain('createText as _vobs_createText')
     expect(result).toContain('from "@vobs/vobs"')
-    expect(result).toContain('insertBefore(_el0, _vobs_createText("hello")')
+    expect(result).toContain('insertBefore(_el0, _vobs_createText("hello ")')
     // 用户本地声明不受影响
     expect(result).toContain('const createText = (value: string) => value')
   })
@@ -283,7 +322,7 @@ describe('compiler', () => {
   it('同名绑定触发别名时保留别名一致性（同一 helper 只注入一次）', () => {
     const result = compile(`
       const createElement = String
-      const el = <div><span>one</span></div>
+      const el = <div><span>one {name.value}</span></div>
     `)
 
     expect(result.match(/_vobs_createElement/g)?.length).toBeGreaterThanOrEqual(2)
@@ -294,7 +333,7 @@ describe('compiler', () => {
   it('生成的临时变量避开用户已声明的名称', () => {
     const result = compile(`
       const _el0 = 'reserved'
-      const el = <div>hello</div>
+      const el = <div>hello {name.value}</div>
     `)
 
     // _el0 被用户占用，编译产物必须改用下一个可用名称
@@ -333,6 +372,17 @@ describe('compiler', () => {
     expect(result).toContain('"value"')
     expect(result).toContain('file: "src/editor.tsx"')
     expect(result).toContain('line: 2')
+  })
+
+  it('sourceLocation: false 剔除组件源码位置', () => {
+    const result = compile(`
+      const el = <Editor><input disabled={locked.value} value={text.value} /></Editor>
+    `, { filename: 'src/editor.tsx', sourceLocation: false })
+
+    expect(result).toContain('createComponent')
+    expect(result).not.toContain('file:')
+    expect(result).not.toContain('line:')
+    expect(result).not.toContain('column:')
   })
 
   it('生成包含原始内容的 Source Map', () => {

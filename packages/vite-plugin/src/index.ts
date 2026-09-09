@@ -52,6 +52,8 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
         : undefined
       const result = compileWithSourceMap(code, {
         ...options.compiler,
+        // 生产构建默认剔除组件源码位置（错误定位走 source map）；显式配置优先。
+        sourceLocation: options.compiler?.sourceLocation ?? !productionBuild,
         filename: id,
         plugins: [
           ...(options.compiler?.plugins ?? []),

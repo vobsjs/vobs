@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { createDOMRenderer, createText, createVobs, Profiler, AsyncBoundary, state } from '@vobs/vobs'
 

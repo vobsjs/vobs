@@ -45,6 +45,8 @@ Plugins can analyze or rewrite the compile tree; `context.helperRef` guarantees 
 
 Unsupported JSX shapes fail with structured errors — code `VOBS_Cxxx`, source location, code frame, and a fix hint — instead of silently emitting broken output (e.g. member-expression tags like `<Foo.Bar>` used as a DOM tag).
 
+Component calls carry a `{ file, line, column }` source location for error reporting and DevTools. Pass `sourceLocation: false` to omit it in production builds (the Vite plugin does this automatically for `vite build`); errors still carry component names and positions resolve via source maps.
+
 ## API
 
 | Signature | Description |

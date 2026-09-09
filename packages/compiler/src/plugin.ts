@@ -36,6 +36,11 @@ export interface CompilerOptions {
 
 export interface CompileOptions extends CompilerOptions {
   filename?: string
+  /**
+   * 是否为组件调用生成源码位置（{ file, line, column }，用于错误定位与 DevTools）。
+   * 默认 true。生产构建应传 false 以减小产物体积，省略后错误仍带组件名，定位走 source map。
+   */
+  sourceLocation?: boolean
 }
 
 export interface VobsSourceMap {

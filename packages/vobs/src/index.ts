@@ -47,6 +47,7 @@ export { ref, setRef } from '@vobs/runtime'
 export type { Ref, RefTarget } from '@vobs/runtime'
 export { insertDynamic, insertDynamicValue, insertList, normalizeDynamicChild } from '@vobs/runtime'
 export type { DynamicChild, NodeFactory } from '@vobs/runtime'
+export { createTemplate, cloneTemplate } from '@vobs/runtime'
 export type { VobsLocatedError, VobsSourceLocation } from '@vobs/runtime'
 export {
   VobsError,
