@@ -12,9 +12,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Collision-safe runtime helper injection: compiler-provided helpers no longer conflict with user imports or local bindings of the same names.
 - Resource client revision guard on every settle path, so late in-flight responses can no longer overwrite newer data or resurface stale errors after `mutate`/`optimistic`.
 - Router guard against stale navigation commits: a navigation superseded during loader execution can no longer push history or overwrite the current route.
+- Router navigation state: pass per-entry state via `RouteLocationRaw.state`, read it back as `RouteLocation.state` (persisted through history adapters and restored on `back`/popstate).
+- `@vobs/payment`: gateway responses are now checked for business errors (`code !== '10000'` throws `AlipayApiError` with `sub_code`/`sub_msg`) instead of silently mapping undefined fields; notification `validate()` accepts expected `outTradeNo`/`totalAmount` from the merchant's order store; `verify()` supports raw-mode signature checking.
+- Static template hoisting: fully static JSX subtrees are serialized to module-level HTML templates (`createTemplate`) and mounted with a single `cloneTemplate` call at runtime; dynamic roots hoist contiguous static child blocks, shrinking output and mount cost.
+- `sourceLocation` compile option (default `true`): set `false` to omit per-component `{ file, line, column }` payloads from generated code. The Vite plugin strips them automatically for `vite build` (errors still carry component names; positions resolve via source maps); an explicit `compiler.sourceLocation` overrides the default.
+
+### Changed
+
+- `insertList` keyed reconciliation computes minimal DOM movement via LIS (strict longest increasing subsequence) and checks disposal with a Set, so update cost is proportional to the number of moved rows: swapping two rows of a 1000-row list went from slower than a full reversal (34.2 ms) to 0.45 ms; first mount takes an append-only fast path.
+- Reactivity scheduler flush reuses its buffer arrays and sorts normal/low groups without per-flush `Set` lookups: a batch write to 100 signals with 100 dirty effects flushes ~14% faster.
+- Debug hook invocations are guarded by `hasDebugHooks()`, eliminating rest-argument array allocations on every signal read/write and effect run when no debug hooks are attached (production default).
 
 ### Fixed
 
+- Compiler reentrancy: per-compile state replaces module-level variables, so plugins that compile fragments during a compilation — and concurrent compilations — no longer leak identifiers, helper aliases, or diagnostics across compilations.
 - Primitive list items now update when their value changes; object items still update in place through per-row proxies.
 - Dynamic children (arrays and swapped nodes) now dispose their entire previous scope, preventing ghost effects from writing to detached DOM and fixing memory leaks in swapped arrays.
 - `spreadProps`/`setStaticProps` apply `false` for property keys (e.g. `disabled={false}` clears the property) while attribute keys keep HTML semantics.

@@ -3,7 +3,7 @@ import { execSync } from 'node:child_process'
 import * as p from '@clack/prompts'
 import { logger } from '../utils/logger.js'
 import { scaffoldProject } from '../utils/file.js'
-import { detectPackageManager, installDependencies } from '../utils/pm.js'
+import { installDependencies } from '../utils/pm.js'
 import type { InitOptions } from '../types.js'
 
 export async function initCommand(options: Partial<InitOptions>): Promise<void> {

@@ -1,7 +1,9 @@
 {
   "name": "@vobs/cli",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
+  "license": "MIT",
   "description": "Vobs framework CLI - project scaffolding, code generation, and dev/build tools",
   "bin": {
     "vobs": "./bin/vobs.js"
