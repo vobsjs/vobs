@@ -42,6 +42,37 @@ export interface AlipayPagePayResult {
   formHtml: string
 }
 
+// ---- 手机网站支付 (alipay.trade.wap.pay) ----
+export interface AlipayWapPayParams {
+  /** 商户订单号，需保证唯一 */
+  outTradeNo: string
+  /** 订单总金额，单位元，精确到两位小数 */
+  totalAmount: string
+  /** 订单标题 */
+  subject: string
+  /** 产品代码，手机网站支付固定为 QUICK_WAP_WAY */
+  productCode?: string
+  /** 订单描述 */
+  body?: string
+  /** 绝对超时时间，格式 yyyy-MM-dd HH:mm:ss */
+  timeExpire?: string
+  /** 订单相对超时时间，范围 1m~15d */
+  timeoutExpress?: string
+  /** 公用回传参数，异步通知时原样返回 */
+  passbackParams?: string
+  /** 用户付款中途退出后返回的商户页面地址 */
+  quitUrl?: string
+  /** 支付完成后同步跳转地址 */
+  returnUrl?: string
+  /** 异步通知地址 */
+  notifyUrl?: string
+}
+
+export interface AlipayWapPayResult {
+  /** 支付宝返回的 HTML 表单字符串 */
+  formHtml: string
+}
+
 // ---- 交易查询 (alipay.trade.query) ----
 export interface AlipayQueryParams {
   outTradeNo?: string
@@ -221,4 +252,20 @@ export interface AlipayPagePayConfig {
   body?: string
   /** 公用回传参数 */
   passbackParams?: string
+}
+
+/** 手机网站支付配置 */
+export interface AlipayWapPayConfig {
+  /** 商户订单号 */
+  outTradeNo: string
+  /** 订单总金额，单位元 */
+  totalAmount: string
+  /** 订单标题 */
+  subject: string
+  /** 订单描述 */
+  body?: string
+  /** 公用回传参数 */
+  passbackParams?: string
+  /** 用户付款中途退出后返回的商户页面地址（wap 支付必填） */
+  quitUrl?: string
 }

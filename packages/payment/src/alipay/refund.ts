@@ -1,4 +1,5 @@
 import type { AlipayClient } from './client'
+import { unwrapResponse } from './response'
 import type {
   AlipayRefundParams,
   AlipayRefundResult,
@@ -18,14 +19,15 @@ export function createRefund(client: AlipayClient) {
     /**
      * 交易退款 (alipay.trade.refund)
      * 交易发生后 12 个月内可退款，退款资金原路返回。
+     * @throws {AlipayApiError} 业务失败时抛出
      */
     async refund(params: AlipayRefundParams): Promise<AlipayRefundResult> {
-      const result = await client.sdk.exec('alipay.trade.refund', {
-        bizContent: params
-      })
-
-      const response = result as Record<string, any>
-      const alipayResponse = response.alipay_trade_refund_response ?? response
+      const alipayResponse = unwrapResponse(
+        await client.sdk.exec('alipay.trade.refund', {
+          bizContent: params
+        }),
+        'alipay.trade.refund'
+      )
 
       return {
         tradeNo: alipayResponse.trade_no,
@@ -41,14 +43,15 @@ export function createRefund(client: AlipayClient) {
     /**
      * 退款查询 (alipay.trade.fastpay.refund.query)
      * 查询退款状态，确认退款是否成功。
+     * @throws {AlipayApiError} 业务失败时抛出
      */
     async queryRefund(params: AlipayRefundQueryParams): Promise<AlipayRefundQueryResult> {
-      const result = await client.sdk.exec('alipay.trade.fastpay.refund.query', {
-        bizContent: params
-      })
-
-      const response = result as Record<string, any>
-      const alipayResponse = response.alipay_trade_fastpay_refund_query_response ?? response
+      const alipayResponse = unwrapResponse(
+        await client.sdk.exec('alipay.trade.fastpay.refund.query', {
+          bizContent: params
+        }),
+        'alipay.trade.fastpay.refund.query'
+      )
 
       return {
         tradeNo: alipayResponse.trade_no,
@@ -63,14 +66,15 @@ export function createRefund(client: AlipayClient) {
     /**
      * 关闭交易 (alipay.trade.close)
      * 关闭未支付的订单。
+     * @throws {AlipayApiError} 业务失败时抛出
      */
     async close(params: AlipayCloseParams): Promise<AlipayCloseResult> {
-      const result = await client.sdk.exec('alipay.trade.close', {
-        bizContent: params
-      })
-
-      const response = result as Record<string, any>
-      const alipayResponse = response.alipay_trade_close_response ?? response
+      const alipayResponse = unwrapResponse(
+        await client.sdk.exec('alipay.trade.close', {
+          bizContent: params
+        }),
+        'alipay.trade.close'
+      )
 
       return {
         tradeNo: alipayResponse.trade_no,

@@ -16,11 +16,12 @@ export function createNotifyHandler(client: AlipayClient) {
     /**
      * 验签异步通知
      * @param params 异步通知参数（支付宝 POST 过来的原始参数）
+     * @param raw 使用原始报文验签（推荐：v4.15+ 支持，规避 encodeURIComponent 差异导致的验签失败）
      * @returns 验签是否通过
      */
-    verify(params: Record<string, any>): boolean {
+    verify(params: Record<string, any>, raw = false): boolean {
       try {
-        return client.sdk.checkNotifySign(params)
+        return client.sdk.checkNotifySign(params, raw)
       } catch {
         return false
       }
@@ -28,14 +29,31 @@ export function createNotifyHandler(client: AlipayClient) {
 
     /**
      * 校验异步通知的业务字段
-     * 确保通知中的关键信息与商户自身信息一致
+     *
+     * 验签只保证通知确实来自支付宝，不保证通知与你系统中的订单一致；
+     * 因此除了 app_id，还应传入商户侧的期望值（outTradeNo / totalAmount）进行比对。
+     * @param params 异步通知参数
+     * @param expected 商户侧期望值：outTradeNo 订单号、totalAmount 订单金额（单位元）
      */
-    validate(params: AlipayNotifyParams): NotifyValidationResult {
+    validate(
+      params: AlipayNotifyParams,
+      expected?: { outTradeNo?: string; totalAmount?: string }
+    ): NotifyValidationResult {
       const errors: string[] = []
 
       // 校验 app_id
       if (params.appId !== client.config.appId) {
         errors.push(`app_id 不匹配: 期望 ${client.config.appId}，收到 ${params.appId}`)
+      }
+
+      // 校验 out_trade_no 与商户订单一致
+      if (expected?.outTradeNo && params.outTradeNo !== expected.outTradeNo) {
+        errors.push(`out_trade_no 不匹配: 期望 ${expected.outTradeNo}，收到 ${params.outTradeNo}`)
+      }
+
+      // 校验 total_amount 与订单金额一致（金额为两位小数的服务端字符串，按数值比较）
+      if (expected?.totalAmount && Number(params.totalAmount) !== Number(expected.totalAmount)) {
+        errors.push(`total_amount 不匹配: 期望 ${expected.totalAmount}，收到 ${params.totalAmount}`)
       }
 
       // 校验 trade_status

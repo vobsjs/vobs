@@ -1,4 +1,5 @@
 import type { AlipayClient } from './client'
+import { unwrapResponse } from './response'
 import type { AlipayQueryParams, AlipayQueryResult, TradeStatus } from './types'
 
 /**
@@ -12,14 +13,15 @@ export function createQuery(client: AlipayClient) {
     /**
      * 查询交易状态
      * @param params 查询参数（outTradeNo 和 tradeNo 至少传一个）
+     * @throws {AlipayApiError} 业务失败（如 ACQ.TRADE_NOT_EXIST）时抛出
      */
     async query(params: AlipayQueryParams): Promise<AlipayQueryResult> {
-      const result = await client.sdk.exec('alipay.trade.query', {
-        bizContent: params
-      })
-
-      const response = result as Record<string, any>
-      const alipayResponse = response.alipay_trade_query_response ?? response
+      const alipayResponse = unwrapResponse(
+        await client.sdk.exec('alipay.trade.query', {
+          bizContent: params
+        }),
+        'alipay.trade.query'
+      )
 
       return {
         tradeNo: alipayResponse.trade_no,

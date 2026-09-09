@@ -64,7 +64,7 @@ export function PaymentPage() {
     paymentLog.value = ['>>> 已选择商品，等待发起支付...']
   }
 
-  async function handlePay(): void {
+  async function handlePay(): Promise<void> {
     if (!selectedProduct.value) return
     const product = selectedProduct.value
     paying.value = true
@@ -81,7 +81,8 @@ export function PaymentPage() {
     paying.value = false
 
     // 跳转到结果页
-    void router.push('/payment/result', {
+    void router.push({
+      path: '/payment/result',
       state: {
         outTradeNo: `ORDER${Date.now()}`,
         totalAmount: product.price,
@@ -170,7 +171,7 @@ export function PaymentPage() {
         size="md"
         portal={portal}
         portalTarget={document.body}
-        onClose={reason => { dialogOpen.value = false }}
+        onClose={() => { dialogOpen.value = false }}
       >
         <form class="demo-form" onSubmit={event => { event.preventDefault(); dialogOpen.value = false }}>
           <label class="demo-field">
