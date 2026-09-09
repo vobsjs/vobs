@@ -41,6 +41,6 @@
       "@vobs/vobs/jsx-dev-runtime": ["packages/vobs/src/jsx-dev-runtime.ts"]
     }
   },
-  "include": ["packages/**/*.ts", "playground/**/*.ts", "playground/**/*.tsx"],
+  "include": ["packages/**/*.ts", "playground/**/*.ts", "playground/**/*.tsx", "benchmarks/**/*.ts"],
   "exclude": ["**/node_modules", "**/dist", "**/vite.config.ts"]
 }

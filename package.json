@@ -10,6 +10,7 @@
     "sync:uistyle": "node scripts/sync-uistyle.mjs",
     "test": "vitest --environment jsdom",
     "test:run": "vitest --environment jsdom --run",
+    "bench": "vitest bench --run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dev": "pnpm --filter @vobs-playground/basic dev"
   },
