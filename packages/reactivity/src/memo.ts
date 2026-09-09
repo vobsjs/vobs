@@ -1,4 +1,4 @@
-import { cleanupDependencies } from './effect'
+﻿import { cleanupDependencies } from './effect'
 import { getCurrentOwner } from './owner'
 import { invokeDebug, hasDebugHooks } from './debug'
 import {
@@ -6,11 +6,12 @@ import {
   setCurrentSubscriber,
   trackDependency,
   type Dependency,
-  type Signal,
+  type ReadableSignal,
   type Subscriber
 } from './signal'
 
-export interface Memo<T> extends Signal<T> {}
+/** 派生值：只读信号。写入在类型层面即被禁止；运行时保留 setter 防线兜底未经类型检查的调用方。 */
+export interface Memo<T> extends ReadableSignal<T> {}
 
 export function memo<T>(compute: () => T): Memo<T> {
   let cached!: T
@@ -28,7 +29,7 @@ export function memo<T>(compute: () => T): Memo<T> {
     notify(): void {
       if (disposed || dirty) return
       dirty = true
-      if (hasDebugHooks()) invokeDebug('memoInvalidated', memoSignal as Signal<unknown>)
+      if (hasDebugHooks()) invokeDebug('memoInvalidated', memoSignal as ReadableSignal<unknown>)
       for (const subscriber of [...subscribers]) subscriber.notify()
     }
   }
@@ -69,15 +70,15 @@ export function memo<T>(compute: () => T): Memo<T> {
       disposed = true
       subscribers.clear()
       cleanupDependencies(memoSubscriber)
-      if (hasDebugHooks()) invokeDebug('signalDisposed', memoSignal as Signal<unknown>)
+      if (hasDebugHooks()) invokeDebug('signalDisposed', memoSignal as ReadableSignal<unknown>)
     }
   }
 
   const owner = getCurrentOwner()
   owner?.addCleanup(memoSignal.dispose)
   if (hasDebugHooks()) {
-    invokeDebug('signalCreated', memoSignal as Signal<unknown>, owner)
-    invokeDebug('memoCreated', memoSignal as Signal<unknown>, memoSubscriber, owner)
+    invokeDebug('signalCreated', memoSignal as ReadableSignal<unknown>, owner)
+    invokeDebug('memoCreated', memoSignal as ReadableSignal<unknown>, memoSubscriber, owner)
   }
   return memoSignal
 }

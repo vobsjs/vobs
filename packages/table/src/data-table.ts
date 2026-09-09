@@ -1,4 +1,4 @@
-import { effect, state } from '@vobs/reactivity'
+import { effect, state, type Signal } from '@vobs/reactivity'
 import {
   addEventListener,
   createElement,
@@ -22,6 +22,7 @@ import {
   resolveSlot,
   setOptionalAttribute
 } from './utils'
+import { defaultIcons } from './icons'
 import type {
   DataTableColumn,
   DataTableChildren,
@@ -320,11 +321,9 @@ function createPageButton<Row>(
   setAttribute(button, 'class', 'vobs-data-table__page-button')
   setAttribute(button, 'aria-label', label)
   setProperty(button, 'disabled', disabled)
-  const icons = readProp<DataTableIcons | undefined>(props, 'icons', undefined) ?? {}
+  const icons = resolveIcons(props)
   const icon = direction === 'previous' ? icons.previous : icons.next
-  const node = icon === undefined
-    ? createText(direction === 'previous' ? '<' : '>')
-    : resolveSlot(icon)
+  const node = icon === undefined ? undefined : resolveSlot(icon)
   if (node) insertBefore(button, node, null)
   addEventListener(button, 'click', () => {
     if (disabled) return
@@ -540,10 +539,14 @@ function resolveWindow<Row>(props: KitDataTableProps<Row>, count: number, scroll
   return { start, end, before: start * rowHeight, after: (count - end) * rowHeight }
 }
 
+function unwrapQueryValue(value: number | Signal<number>): number {
+  return typeof value === 'number' ? value : value.value
+}
+
 function currentQuery<Row>(props: KitDataTableProps<Row>): DataTableQuery {
   const internal = internalQueries.get(props)?.value
-  const page = readProp(props, 'page', internal?.page ?? 1)
-  const pageSize = readProp(props, 'pageSize', internal?.pageSize ?? DEFAULT_PAGE_SIZE)
+  const page = unwrapQueryValue(readProp(props, 'page', internal?.page ?? 1))
+  const pageSize = unwrapQueryValue(readProp(props, 'pageSize', internal?.pageSize ?? DEFAULT_PAGE_SIZE))
   return {
     page: Math.max(1, Math.floor(page)),
     pageSize: normalizePositive(pageSize, DEFAULT_PAGE_SIZE),
@@ -552,9 +555,18 @@ function currentQuery<Row>(props: KitDataTableProps<Row>): DataTableQuery {
   }
 }
 
+function readSignalProp<T>(props: object, name: string): Signal<T> | undefined {
+  const value = Reflect.get(props, name) as Signal<T> | undefined
+  return value && typeof value === 'object' && 'value' in value ? value : undefined
+}
+
 function emitQuery<Row>(props: KitDataTableProps<Row>, query: DataTableQuery): void {
   const internal = internalQueries.get(props)
   if (internal) internal.value = query
+  const pageSignal = readSignalProp<number>(props, 'page')
+  if (pageSignal) pageSignal.value = query.page
+  const pageSizeSignal = readSignalProp<number>(props, 'pageSize')
+  if (pageSizeSignal) pageSizeSignal.value = query.pageSize
   readProp<KitDataTableProps<Row>['onQueryChange'] | undefined>(props, 'onQueryChange', undefined)?.(query)
 }
 
@@ -573,10 +585,14 @@ function visibleColumns<Row>(props: KitDataTableProps<Row>): readonly DataTableC
     .filter(column => column.visible !== false && (!visible || visible.has(column.id)))
 }
 
+function resolveIcons<Row>(props: KitDataTableProps<Row>): Required<DataTableIcons> {
+  return { ...defaultIcons(), ...(readProp<DataTableIcons | undefined>(props, 'icons', undefined) ?? {}) }
+}
+
 function sortIcon<Row>(props: KitDataTableProps<Row>, sort: DataTableSort | null, columnId: string) {
-  const icons = readProp<DataTableIcons | undefined>(props, 'icons', undefined) ?? {}
-  if (sort?.columnId !== columnId) return icons.unsorted ?? ''
-  return sort.direction === 'asc' ? icons.ascending ?? '^' : icons.descending ?? 'v'
+  const icons = resolveIcons(props)
+  if (sort?.columnId !== columnId) return icons.unsorted
+  return sort.direction === 'asc' ? icons.ascending : icons.descending
 }
 
 function pageLabel<Row>(

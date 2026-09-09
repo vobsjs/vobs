@@ -28,6 +28,7 @@
   "dependencies": {
     "@vobs/reactivity": "workspace:*",
     "@vobs/resource": "workspace:*",
+    "@vobs/ui": "workspace:*",
     "@vobs/vobs": "workspace:*"
   }
 }

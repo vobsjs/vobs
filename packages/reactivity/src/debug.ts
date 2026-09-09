@@ -1,16 +1,16 @@
 import type { Effect } from './effect'
 import type { Owner } from './owner'
-import type { Dependency, Signal, Subscriber } from './signal'
+import type { Dependency, ReadableSignal, Subscriber } from './signal'
 
 export interface ReactivityDebugHooks {
   ownerCreated?(owner: Owner): void
   ownerNamed?(owner: Owner, name: string): void
   ownerDisposed?(owner: Owner): void
-  signalCreated?(signal: Signal<unknown>, owner: Owner | null): void
-  signalNamed?(signal: Signal<unknown>, name: string): void
-  signalRead?(signal: Signal<unknown>, subscriber: Subscriber): void
-  signalChanged?(signal: Signal<unknown>, previousValue: unknown, nextValue: unknown): void
-  signalDisposed?(signal: Signal<unknown>): void
+  signalCreated?(signal: ReadableSignal<unknown>, owner: Owner | null): void
+  signalNamed?(signal: ReadableSignal<unknown>, name: string): void
+  signalRead?(signal: ReadableSignal<unknown>, subscriber: Subscriber): void
+  signalChanged?(signal: ReadableSignal<unknown>, previousValue: unknown, nextValue: unknown): void
+  signalDisposed?(signal: ReadableSignal<unknown>): void
   dependencyTracked?(dependency: Dependency, subscriber: Subscriber): void
   dependencyUntracked?(dependency: Dependency, subscriber: Subscriber): void
   effectCreated?(effect: Effect, owner: Owner | null): void
@@ -18,8 +18,8 @@ export interface ReactivityDebugHooks {
   effectRunStart?(effect: Effect): void
   effectRunEnd?(effect: Effect, error?: unknown, handled?: boolean): void
   effectDisposed?(effect: Effect): void
-  memoCreated?(signal: Signal<unknown>, subscriber: Subscriber, owner: Owner | null): void
-  memoInvalidated?(signal: Signal<unknown>): void
+  memoCreated?(signal: ReadableSignal<unknown>, subscriber: Subscriber, owner: Owner | null): void
+  memoInvalidated?(signal: ReadableSignal<unknown>): void
   flushStart?(): void
   flushEnd?(): void
 }
@@ -42,12 +42,12 @@ export function hasDebugHooks(): boolean {
   return activeDebugHooks !== null
 }
 
-export function setSignalDebugName(signal: Signal<unknown>, name: string): void {
+export function setSignalDebugName(signal: ReadableSignal<unknown>, name: string): void {
   signalNames.set(signal, name)
   invokeDebug('signalNamed', signal, name)
 }
 
-export function getSignalDebugName(signal: Signal<unknown>): string | undefined {
+export function getSignalDebugName(signal: ReadableSignal<unknown>): string | undefined {
   return signalNames.get(signal)
 }
 

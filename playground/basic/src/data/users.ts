@@ -1,4 +1,4 @@
-import { createResourceClient } from '@vobs/resource'
+﻿import { createResourceClient } from '@vobs/resource'
 import { createLocalColumnSettingsPersistence } from '@vobs/table'
 import { state } from '@vobs/vobs'
 
@@ -9,11 +9,11 @@ export interface PlaygroundUser {
   readonly status: 'Active' | 'Invited'
 }
 
-export const usersSearch = state('', 'resource.users.search')
-export const usersStatus = state<'' | PlaygroundUser['status']>('', 'resource.users.status')
-export const resourceScenario = state<'ready' | 'error' | 'empty' | 'slow'>('ready', 'resource.scenario')
-export const serverPage = state(1, 'resource.server.page')
-export const serverPageSize = state(2, 'resource.server.pageSize')
+export const usersSearch = state('')
+export const usersStatus = state<'' | PlaygroundUser['status']>('')
+export const resourceScenario = state<'ready' | 'error' | 'empty' | 'slow'>('ready')
+export const serverPage = state(1)
+export const serverPageSize = state(2)
 export const playgroundResourceClient = createResourceClient()
 export const usersColumnSettingsPersistence = createLocalColumnSettingsPersistence('vobs:playground:users.columns')
 

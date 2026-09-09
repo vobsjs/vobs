@@ -11,9 +11,16 @@ export interface Subscriber {
   notify(): void
 }
 
-export interface Signal<T> extends Dependency {
-  value: T
+/** 只读信号：派生值（memo）与只读上下文的最小契约，只能订阅与读取。 */
+export interface ReadableSignal<T> extends Dependency {
+  readonly value: T
   dispose(): void
+}
+
+/** 可写信号：state() 的返回类型。`set` 与 `.value =` 赋值语义完全一致。 */
+export interface Signal<T> extends ReadableSignal<T> {
+  value: T
+  set(next: T): void
 }
 
 let currentSubscriber: Subscriber | null = null
@@ -79,6 +86,12 @@ export function state<T>(initialValue: T, debugName?: string): Signal<T> {
 
     unsubscribe(subscriber: Subscriber): void {
       subscribers.delete(subscriber)
+    },
+
+    // 与 `.value =` 赋值同一条路径：判等短路、debug hook、notify 全部一致。
+    // 以闭包实现，可安全地作为回调直接传递（无 this 绑定问题）。
+    set(next: T): void {
+      signalInstance.value = next
     },
 
     dispose(): void {

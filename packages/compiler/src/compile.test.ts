@@ -122,6 +122,38 @@ describe('compiler', () => {
     expect(result).toContain('state(0)')
   })
 
+  it('自动推断 state() 的 debugName（未显式传参时使用变量名）', () => {
+    const result = compile(`import { state } from '@vobs/reactivity'\nconst username = state('')`)
+
+    expect(result).toContain(`state('', "username")`)
+  })
+
+  it('别名导入的 state 同样推断 debugName', () => {
+    const result = compile(`import { state as signal } from '@vobs/reactivity'\nconst username = signal('')`)
+
+    expect(result).toContain(`signal('', "username")`)
+  })
+
+  it('显式传入 debugName 时不覆盖', () => {
+    const result = compile(`import { state } from '@vobs/reactivity'\nconst username = state('', 'auth.name')`)
+
+    expect(result).toContain(`state('', 'auth.name')`)
+    expect(result).not.toContain('"username"')
+  })
+
+  it('state 被本地声明遮蔽时不推断 debugName', () => {
+    const result = compile(`import { state } from '@vobs/reactivity'\nfunction state(value: unknown) { return value }\nconst username = state('')`)
+
+    expect(result).toContain(`state('')`)
+    expect(result).not.toContain('"username"')
+  })
+
+  it('非 state 调用不推断 debugName', () => {
+    const result = compile(`const items = useState([])`)
+
+    expect(result).toContain('useState([])')
+  })
+
   it('编译条件 JSX 为动态块', () => {
     const result = compile(`const el = <div>{show.value && <span>visible</span>}</div>`)
 

@@ -1,10 +1,10 @@
 import { RouterView, useRouter } from '@vobs/router'
 import { DevToolsWidget } from '@vobs/devtools-ui'
 import { createComponent, createFragment, insertDynamic } from '@vobs/vobs'
-import { ErrorPage } from './pages/ErrorPage'
-import { NotFoundPage } from './pages/NotFoundPage'
+import { ErrorPage } from './pages/errors/ErrorPage'
+import { NotFoundPage } from './pages/errors/NotFoundPage'
 import { useI18n } from '@vobs/i18n'
-import { playgroundThemeMode } from './theme'
+import { playgroundThemeMode } from './plugins/theme'
 
 export function App() {
   const i18n = useI18n()

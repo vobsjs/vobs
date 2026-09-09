@@ -2,7 +2,7 @@ import { authPlugin, createAuth } from '@vobs/auth'
 import { state } from '@vobs/vobs'
 
 export const auth = createAuth({
-  session: state({ user: { id: 'playground', roles: ['maintainer'], permissions: ['users.read'] } }, 'auth.session'),
+  session: state({ user: { id: 'playground', roles: ['maintainer'], permissions: ['users.read'] } }),
   loginHandler: async credentials => {
     await new Promise<void>(resolve => setTimeout(resolve, 260))
     const username = String(credentials.username ?? '').trim()

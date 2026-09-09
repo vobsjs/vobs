@@ -2,7 +2,7 @@ import { useRoute, useRouter } from '@vobs/router'
 import { Alert, Button, Card, Icon, Tag } from '@vobs/ui'
 import { KitPage } from '@vobs/kit'
 import { useI18n } from '@vobs/i18n'
-import { findUserById, playgroundUsers } from '../data/users'
+import { findUserById, playgroundUsers } from '../../data/users'
 
 export function UserDetailPage() {
   const route = useRoute()

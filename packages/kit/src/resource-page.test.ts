@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { createAuth } from '@vobs/auth'
+import { createAuth, type Session } from '@vobs/auth'
 import { createI18n } from '@vobs/i18n'
 import { createResourceClient } from '@vobs/resource'
 import { createMemoryHistory, createRouter } from '@vobs/router'
 import { createTheme } from '@vobs/theme'
-import { createDOMRenderer, createVobs, setRenderer } from '@vobs/vobs'
+import { createDOMRenderer, createVobs, setRenderer, state } from '@vobs/vobs'
 import { KitResourcePage } from './resource-page'
 
 describe('@vobs/kit KitResourcePage', () => {
@@ -13,11 +13,9 @@ describe('@vobs/kit KitResourcePage', () => {
   it('组合五个基础上下文并渲染 Resource 表格', async () => {
     const client = createResourceClient()
     const resource = client.resource({ key: ['users'], fetcher: () => Promise.resolve([{ id: 1, name: 'Ada' }]) })
-    const auth = createAuth({ session: {
-      value: { user: { id: '1', roles: ['admin'], permissions: ['users.read'] } },
-      dispose() {},
-      unsubscribe() {}
-    } })
+    const auth = createAuth({ session: state<Session | null>({
+      user: { id: '1', roles: ['admin'], permissions: ['users.read'] }
+    }) })
     const router = createRouter({ routes: [{ path: '/users' }], history: createMemoryHistory('/users') })
     const i18n = createI18n({ defaultLocale: 'en-US', messages: {
       'en-US': { common: { loading: 'Loading', empty: 'Empty' }, auth: { unauthorized: 'Unauthorized' } }
@@ -55,11 +53,9 @@ describe('@vobs/kit KitResourcePage', () => {
   })
 
   it('未授权时使用 unauthorized 内容且不渲染表格', () => {
-    const auth = createAuth({ session: {
-      value: { user: { id: '1', roles: [], permissions: [] } },
-      dispose() {},
-      unsubscribe() {}
-    } })
+    const auth = createAuth({ session: state<Session | null>({
+      user: { id: '1', roles: [], permissions: [] }
+    }) })
     const router = createRouter({ routes: [], history: createMemoryHistory('/') })
     const i18n = createI18n({ defaultLocale: 'en-US' })
     const theme = createTheme()

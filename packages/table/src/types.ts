@@ -1,3 +1,4 @@
+import type { Signal } from '@vobs/reactivity'
 import type { VobsNode } from '@vobs/vobs'
 
 export type DataTableAlign = 'start' | 'center' | 'end'
@@ -123,8 +124,9 @@ export interface KitDataTableProps<Row = Record<string, unknown>> extends DataTa
   readonly rows?: readonly Row[]
   readonly resource?: DataTableResource<Row>
   readonly rowKey?: (row: Row, index: number) => unknown
-  readonly page?: number
-  readonly pageSize?: number
+  /** 传入 Signal 时受控分页：表格翻页后自动写回信号。 */
+  readonly page?: number | Signal<number>
+  readonly pageSize?: number | Signal<number>
   readonly total?: number
   readonly sort?: DataTableSort | null
   /** Client sorts loaded rows; server leaves row order to the resource owner. */

@@ -20,6 +20,35 @@ describe('reactivity', () => {
     expect(count.value).toBe(1)
   })
 
+  it('set 与 .value = 赋值语义一致', async () => {
+    const count = state(0)
+    const fn = vi.fn(() => { void count.value })
+    effect(fn)
+    count.set(1)
+    await Promise.resolve()
+    expect(count.value).toBe(1)
+    expect(fn).toHaveBeenCalledTimes(2)
+
+    // Object.is 判等短路：相同值不触发订阅者
+    count.set(1)
+    await Promise.resolve()
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
+
+  it('set 可脱离对象直接作为回调传递', () => {
+    const count = state(0)
+    const setCount: (next: number) => void = count.set
+    setCount(5)
+    expect(count.value).toBe(5)
+  })
+
+  it('memo 没有 set，写入派生值被运行时拒绝', () => {
+    const count = state(0)
+    const doubled = memo(() => count.value * 2)
+    expect('set' in doubled).toBe(false)
+    expect(() => { (doubled as unknown as { value: number }).value = 10 }).toThrow()
+  })
+
   it('支持创建时设置调试名称且不影响 state 行为', () => {
     const named = state(0, 'dashboard.lastAction')
     expect(reactivity.getSignalDebugName(named)).toBe('dashboard.lastAction')

@@ -1,4 +1,4 @@
-import type { Signal } from '@vobs/reactivity'
+import type { ReadableSignal, Signal } from '@vobs/reactivity'
 import type { VobsNode } from '@vobs/vobs'
 
 export type LayoutAttributeValue = string | number | boolean | undefined
@@ -145,6 +145,7 @@ export interface KitLayoutContext {
 export interface KitViewport {
   readonly width: Signal<number>
   readonly height: Signal<number>
-  readonly isMobile: Signal<boolean>
+  /** memo 派生值，只读。 */
+  readonly isMobile: ReadableSignal<boolean>
   dispose(): void
 }

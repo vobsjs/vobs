@@ -1,4 +1,4 @@
-import { getCurrentOwner, memo, onDispose, renderEffect, state, type Signal } from '@vobs/reactivity'
+import { getCurrentOwner, memo, onDispose, renderEffect, state, type ReadableSignal, type Signal } from '@vobs/reactivity'
 import {
   createElement,
   createInjectionKey,
@@ -39,10 +39,10 @@ export interface ThemeDehydratedState {
 }
 
 export interface ThemeContext {
-  readonly theme: Signal<ThemeTokens>
-  readonly brand: Signal<BrandTokens>
+  readonly theme: ReadableSignal<ThemeTokens>
+  readonly brand: ReadableSignal<BrandTokens>
   readonly mode: Signal<ThemeMode>
-  readonly resolvedMode: Signal<ResolvedThemeMode>
+  readonly resolvedMode: ReadableSignal<ResolvedThemeMode>
   dehydrate(): ThemeDehydratedState
   hydrate(snapshot: unknown): void
   setTheme(theme: ThemeTokens): void

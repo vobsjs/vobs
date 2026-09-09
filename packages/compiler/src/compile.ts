@@ -33,6 +33,10 @@ interface CompileState {
   templates: Map<string, ts.Identifier>
   /** 是否为组件调用生成源码位置（生产构建传 false 剔除，减小产物体积）。 */
   sourceLocation: boolean
+  /** 从 @vobs/reactivity / @vobs/vobs 导入的 `state` 别名（含 as 别名），用于 debugName 自动推断。 */
+  stateAliases: ReadonlySet<string>
+  /** 非 import 的本地声明绑定名：`state` 被本地声明遮蔽时禁用 debugName 推断。 */
+  localBindings: ReadonlySet<string>
   /** 编译器自身产出的诊断（如不支持的 JSX 形态），与 TypeScript 解析诊断合并返回。 */
   diagnostics: CompilerDiagnostic[]
 }
@@ -95,6 +99,8 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
     helperAliases: new Map(),
     templates: new Map(),
     sourceLocation: options.sourceLocation ?? true,
+    stateAliases: collectStateAliases(sourceFile),
+    localBindings: collectLocallyDeclaredNames(sourceFile),
     diagnostics: []
   }
   const cleanFilename = filename.split(/[?#]/u, 1)[0] || filename
@@ -387,6 +393,36 @@ function collectDeclaredNames(sourceFile: ts.SourceFile): Set<string> {
   return names
 }
 
+/** 收集从 @vobs/reactivity / @vobs/vobs 导入的 `state` 绑定名（含 `as` 别名）。 */
+function collectStateAliases(sourceFile: ts.SourceFile): Set<string> {
+  const aliases = new Set<string>()
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue
+    const module = statement.moduleSpecifier.text
+    if (module !== '@vobs/reactivity' && module !== '@vobs/vobs') continue
+    const clause = statement.importClause
+    if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) continue
+    for (const element of clause.namedBindings.elements) {
+      if (element.propertyName ? element.propertyName.text === 'state' : element.name.text === 'state') {
+        aliases.add(element.name.text)
+      }
+    }
+  }
+  return aliases
+}
+
+/** 与 collectDeclaredNames 相同，但跳过 import 声明：用于判断 helper 名是否被本地声明遮蔽。 */
+function collectLocallyDeclaredNames(sourceFile: ts.SourceFile): Set<string> {
+  const names = new Set<string>()
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) return
+    if (ts.isIdentifier(node) && isBindingName(node)) names.add(node.text)
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return names
+}
+
 /** 标识符是否为某个声明的绑定名（import、变量、函数、参数、类成员等）。 */
 function isBindingName(node: ts.Identifier): boolean {
   const parent = node.parent
@@ -482,28 +518,64 @@ function transformStatement(state: CompileState, node: ts.Statement): ts.Stateme
 }
 
 function transformVariableStatement(state: CompileState, node: ts.VariableStatement): ts.VariableStatement {
+  let changed = false
   const declarations = node.declarationList.declarations.map(declaration => {
     const initializer = declaration.initializer
-    if (!initializer || !containsJsx(initializer)) return declaration
+    if (!initializer) return declaration
 
+    let nextInitializer = inferStateDebugName(state, declaration, initializer) ?? initializer
+    if (containsJsx(nextInitializer)) {
+      nextInitializer = transformEmbeddedExpression(state, nextInitializer)
+    }
+    if (nextInitializer === initializer) return declaration
+
+    changed = true
     return ts.factory.updateVariableDeclaration(
       declaration,
       declaration.name,
       declaration.exclamationToken,
       declaration.type,
-      transformEmbeddedExpression(state, initializer)
+      nextInitializer
     )
   })
 
-  if (declarations.every((declaration, index) => declaration === node.declarationList.declarations[index])) {
-    return node
-  }
+  if (!changed) return node
 
   return tagStatement(state, ts.factory.updateVariableStatement(
     node,
     node.modifiers,
     ts.factory.updateVariableDeclarationList(node.declarationList, declarations)
   ), node)
+}
+
+/**
+ * `const name = state(initial)` 在未显式传入 debugName 时从变量名推断：
+ * `const username = state('')` → `state('', 'username')`，使 DevTools 信号名称与源码命名一致。
+ * 仅当 `state` 确认来自 @vobs/reactivity / @vobs/vobs、未被本地声明遮蔽、
+ * 且调用只带一个参数时启用；其余形态保持原样。
+ */
+function inferStateDebugName(
+  state: CompileState,
+  declaration: ts.VariableDeclaration,
+  initializer: ts.Expression
+): ts.Expression | undefined {
+  if (state.stateAliases.size === 0) return undefined
+  if (!ts.isIdentifier(declaration.name)) return undefined
+
+  let call = initializer
+  while (ts.isParenthesizedExpression(call) || ts.isAsExpression(call) || ts.isTypeAssertionExpression(call) || ts.isSatisfiesExpression(call)) {
+    call = call.expression
+  }
+  if (!ts.isCallExpression(call)) return undefined
+  const callee = call.expression
+  if (!ts.isIdentifier(callee) || !state.stateAliases.has(callee.text)) return undefined
+  if (state.localBindings.has(callee.text)) return undefined
+  if (call.arguments.length !== 1) return undefined
+
+  return ts.factory.createCallExpression(callee, call.typeArguments, [
+    ...call.arguments,
+    ts.factory.createStringLiteral(declaration.name.text)
+  ])
 }
 
 function containsJsx(expression: ts.Expression): boolean {

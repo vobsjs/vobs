@@ -8,6 +8,7 @@ import {
   type Effect,
   type Owner,
   type ReactivityDebugHooks,
+  type ReadableSignal,
   type Signal,
   type Subscriber
 } from '@vobs/reactivity'
@@ -454,7 +455,7 @@ interface OwnerRecord {
 }
 
 interface SignalRecord {
-  readonly signal: Signal<unknown>
+  readonly signal: ReadableSignal<unknown>
   readonly id: string
   readonly ownerId: string | null
   readonly createdAt: number
@@ -736,7 +737,7 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     return errorComponentForOwner(record.parentId ?? undefined)
   }
 
-  function ensureSignal(signal: Signal<unknown>, owner: Owner | null = null): SignalRecord {
+  function ensureSignal(signal: ReadableSignal<unknown>, owner: Owner | null = null): SignalRecord {
     const existingId = signalIds.get(signal)
     if (existingId) {
       const existing = signals.get(existingId)
@@ -793,7 +794,7 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     const existingId = signalIds.get(dependency as object)
     if (existingId) return signals.get(existingId) ?? null
     if (!('value' in (dependency as object))) return null
-    return ensureSignal(dependency as Signal<unknown>)
+    return ensureSignal(dependency as ReadableSignal<unknown>)
   }
 
   function edgeKey(from: string, to: string): string {
@@ -872,7 +873,7 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     }
   }
 
-  function readSignal(signal: Signal<unknown>): unknown {
+  function readSignal(signal: ReadableSignal<unknown>): unknown {
     try {
       return untrack(() => signal.value)
     } catch (error) {
@@ -1540,9 +1541,10 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     setSignalValue(signalId: string, value: unknown): boolean {
       if (!allowMutations || disposed) return false
       const record = signals.get(signalId)
-      if (!record || record.disposed || record.kind === 'memo') return false
+      // 只有 state 创建的信号可写；memo 派生值拒绝。
+      if (!record || record.disposed || record.kind !== 'state') return false
       try {
-        record.signal.value = value
+        ;(record.signal as Signal<unknown>).value = value
         return true
       } catch (error) {
         reportError('render', error)

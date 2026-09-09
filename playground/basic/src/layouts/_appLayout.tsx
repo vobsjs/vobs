@@ -1,4 +1,4 @@
-import { KitLayout, KitSidebar, useKitLayout, type KitMenuItem } from '@vobs/kit'
+﻿import { KitLayout, KitSidebar, useKitLayout, type KitMenuItem } from '@vobs/kit'
 import { useAuth } from '@vobs/auth'
 import { useRoute, useRouter } from '@vobs/router'
 import { Button, Icon, StatusBar, Switch, Tag, ToastHost } from '@vobs/ui'
@@ -7,7 +7,7 @@ import { useI18n } from '@vobs/i18n'
 import { useNotification } from '@vobs/notification'
 import { getDevTools } from '@vobs/devtools'
 import { onDispose, state } from '@vobs/vobs'
-import { playgroundThemeMode } from '../theme'
+import { playgroundThemeMode } from '../plugins/theme'
 
 export interface AppLayoutProps {
   readonly children?: LayoutChildren
@@ -110,7 +110,7 @@ export function AppLayout(props: AppLayoutProps) {
 function HeaderActions() {
   const i18n = useI18n()
   const notification = useNotification()
-  const localeLoading = state(false, 'playground.localeLoading')
+  const localeLoading = state(false)
 
   const handleLocaleToggle = (): void => {
     const next = i18n.locale.value === 'en-US' ? 'zh-CN' : 'en-US'
@@ -180,7 +180,7 @@ function UserMenu() {
 
 function PlaygroundStatusBar() {
   const i18n = useI18n()
-  const errorCount = state(getDevTools()?.getErrors().length ?? 0, 'playground.errorCount')
+  const errorCount = state(getDevTools()?.getErrors().length ?? 0)
   const devtools = getDevTools()
   if (devtools) {
     const updateErrorCount = () => { errorCount.value = devtools.getErrors().length }

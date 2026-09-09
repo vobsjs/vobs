@@ -1,4 +1,4 @@
-import { effect } from '@vobs/reactivity'
+import { effect, type Signal } from '@vobs/reactivity'
 import {
   createElement,
   insertBefore,
@@ -21,10 +21,17 @@ import type { VuiCommonProps, VuiEventHandler } from './types'
 
 export type InputType = 'date' | 'email' | 'number' | 'password' | 'search' | 'text' | 'url'
 
+/** bind 传入 Signal 时组件建立双向绑定：信号→DOM property、用户输入→信号写回。 */
+function bindSignalProp<T>(props: object): Signal<T> | undefined {
+  const value = readProp<Signal<T> | undefined>(props, 'bind', undefined)
+  return value && typeof value === 'object' && 'value' in value ? value : undefined
+}
+
 export interface InputProps extends VuiCommonProps {
   readonly type?: InputType
   readonly name?: string
   readonly value?: string | number
+  readonly bind?: Signal<string | number | undefined>
   readonly placeholder?: string
   readonly disabled?: boolean
   readonly readOnly?: boolean
@@ -66,7 +73,11 @@ export function Input(props: InputProps = {}): VobsNode {
     setOptionalProperty(control, 'readOnly', readProp(props, 'readOnly', false))
     setOptionalProperty(control, 'required', readProp(props, 'required', false))
   })
-  if (hasProp(props, 'value')) {
+  const bind = bindSignalProp<string | number | undefined>(props)
+  if (bind) {
+    bindPropertyValue(control, 'value', () => String(bind.value ?? ''))
+    listen(control, 'input', { onInput: (event: Event) => { bind.value = (event.target as HTMLInputElement).value } }, 'onInput', () => readProp(props, 'disabled', false))
+  } else if (hasProp(props, 'value')) {
     bindPropertyValue(control, 'value', () => readProp<string | number | undefined>(props, 'value', undefined) ?? '')
   }
 
@@ -87,6 +98,7 @@ export function Input(props: InputProps = {}): VobsNode {
 
 export interface TextareaProps extends VuiCommonProps {
   readonly value?: string | number
+  readonly bind?: Signal<string | number | undefined>
   readonly placeholder?: string
   readonly disabled?: boolean
   readonly readOnly?: boolean
@@ -121,7 +133,11 @@ export function Textarea(props: TextareaProps = {}): VobsNode {
     setOptionalProperty(root, 'required', readProp(props, 'required', false))
     setOptionalAttribute(root, 'rows', readProp<number | undefined>(props, 'rows', undefined))
   })
-  if (hasProp(props, 'value')) {
+  const bind = bindSignalProp<string | number | undefined>(props)
+  if (bind) {
+    bindPropertyValue(root, 'value', () => String(bind.value ?? ''))
+    listen(root, 'input', { onInput: (event: Event) => { bind.value = (event.target as HTMLTextAreaElement).value } }, 'onInput', () => readProp(props, 'disabled', false))
+  } else if (hasProp(props, 'value')) {
     bindPropertyValue(root, 'value', () => readProp<string | number | undefined>(props, 'value', undefined) ?? '')
   }
   listen(root, 'input', props, 'onInput', () => readProp(props, 'disabled', false))
@@ -133,6 +149,7 @@ export function Textarea(props: TextareaProps = {}): VobsNode {
 export interface SelectProps extends VuiCommonProps {
   readonly name?: string
   readonly value?: string | number
+  readonly bind?: Signal<string | number | undefined>
   readonly disabled?: boolean
   readonly required?: boolean
   readonly multiple?: boolean
@@ -160,7 +177,11 @@ export function Select(props: SelectProps = {}): VobsNode {
     setOptionalAttribute(root, 'size', readProp<number | undefined>(props, 'size', undefined))
   })
   if (hasProp(props, 'children')) mountSlot(root, props, 'children')
-  if (hasProp(props, 'value')) {
+  const bind = bindSignalProp<string | number | undefined>(props)
+  if (bind) {
+    bindPropertyValue(root, 'value', () => String(bind.value ?? ''))
+    listen(root, 'change', { onChange: (event: Event) => { bind.value = (event.target as HTMLSelectElement).value } }, 'onChange', () => readProp(props, 'disabled', false))
+  } else if (hasProp(props, 'value')) {
     bindPropertyValue(root, 'value', () => readProp<string | number | undefined>(props, 'value', undefined) ?? '')
   }
   listen(root, 'change', props, 'onChange', () => readProp(props, 'disabled', false))
@@ -171,6 +192,7 @@ export interface ChoiceProps extends VuiCommonProps {
   readonly name?: string
   readonly value?: string
   readonly checked?: boolean
+  readonly bind?: Signal<boolean>
   readonly disabled?: boolean
   readonly required?: boolean
   readonly onChange?: VuiEventHandler<Event>
@@ -208,7 +230,11 @@ function createChoice(type: 'checkbox' | 'radio', props: ChoiceProps): VobsNode 
     setOptionalProperty(control, 'disabled', readProp(props, 'disabled', false))
     setOptionalProperty(control, 'required', readProp(props, 'required', false))
   })
-  if (hasProp(props, 'checked')) {
+  const bind = bindSignalProp<boolean>(props)
+  if (bind) {
+    bindPropertyValue(control, 'checked', () => bind.value)
+    listen(control, 'change', { onChange: (event: Event) => { bind.value = (event.target as HTMLInputElement).checked } }, 'onChange', () => readProp(props, 'disabled', false))
+  } else if (hasProp(props, 'checked')) {
     bindPropertyValue(control, 'checked', () => readProp(props, 'checked', false))
   }
   insertBefore(root, control, null)
@@ -220,6 +246,7 @@ function createChoice(type: 'checkbox' | 'radio', props: ChoiceProps): VobsNode 
 
 export interface SwitchProps extends VuiCommonProps {
   readonly checked?: boolean
+  readonly bind?: Signal<boolean>
   readonly disabled?: boolean
   readonly readOnly?: boolean
   readonly size?: 'sm' | 'md'
@@ -249,6 +276,7 @@ export function Switch(props: SwitchProps = {}): VobsNode {
   ])
   setAttribute(thumb, 'class', 'vui-switch__thumb')
   setAttribute(root, 'role', 'switch')
+  const bind = bindSignalProp<boolean>(props)
 
   effect(() => {
     setOptionalAttribute(control, 'type', 'checkbox')
@@ -256,10 +284,13 @@ export function Switch(props: SwitchProps = {}): VobsNode {
     setOptionalAttribute(control, 'value', readProp<string | undefined>(props, 'value', undefined))
     setOptionalProperty(control, 'disabled', readProp(props, 'disabled', false))
     setOptionalProperty(control, 'readOnly', readProp(props, 'readOnly', false))
-    setOptionalAttribute(root, 'aria-checked', readProp(props, 'checked', false) ? 'true' : 'false')
+    setOptionalAttribute(root, 'aria-checked', (bind ? bind.value : readProp(props, 'checked', false)) ? 'true' : 'false')
     setOptionalAttribute(root, 'aria-disabled', readProp(props, 'disabled', false) ? 'true' : undefined)
   })
-  if (hasProp(props, 'checked')) {
+  if (bind) {
+    bindPropertyValue(control, 'checked', () => bind.value)
+    listen(control, 'change', { onChange: (event: Event) => { bind.value = (event.target as HTMLInputElement).checked } }, 'onChange', () => readProp(props, 'disabled', false))
+  } else if (hasProp(props, 'checked')) {
     bindPropertyValue(control, 'checked', () => readProp(props, 'checked', false))
   }
   insertBefore(root, control, null)

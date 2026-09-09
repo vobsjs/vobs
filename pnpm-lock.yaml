@@ -369,6 +369,9 @@ importers:
       '@vobs/resource':
         specifier: workspace:*
         version: link:../resource
+      '@vobs/ui':
+        specifier: workspace:*
+        version: link:../ui
       '@vobs/vobs':
         specifier: workspace:*
         version: link:../vobs

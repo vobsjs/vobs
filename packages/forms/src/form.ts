@@ -101,7 +101,12 @@ export interface FormFieldProps<T extends object> {
   form: Form<T>
   name: string
   label?: string
+  /** 直接渲染 UI 组件（如 @vobs/ui 的 Input/Select）；Field 注入 value/onInput/onBlur 受控接线。children 优先。 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 接受任意组件的 props 形状
+  component?: (props: any) => VobsNode
   children?: (field: FormField<unknown>) => VobsNode
+  /** component 渲染时透传给组件的其余 props（如 placeholder、type）。 */
+  [prop: string]: unknown
 }
 
 interface InternalField<TValue, TValues extends object> {
@@ -616,7 +621,7 @@ export function createForm<T extends object>(initialValues: T, options: FormOpti
     validating,
     validatingFields,
     fieldNames,
-    Field: (props: Omit<FormFieldProps<T>, 'form'>) => Field({ ...props, form: api }),
+    Field: (props: Omit<FormFieldProps<T>, 'form'>) => Field({ ...props, form: api } as FormFieldProps<T>),
     field: fieldApi,
     addField,
     removeField,

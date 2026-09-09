@@ -1,5 +1,5 @@
 export { state, untrack } from './signal'
-export type { Dependency, Signal, Subscriber } from './signal'
+export type { Dependency, ReadableSignal, Signal, Subscriber } from './signal'
 export { effect, renderEffect } from './effect'
 export type { Effect, EffectCallback, EffectCleanup } from './effect'
 export { memo } from './memo'

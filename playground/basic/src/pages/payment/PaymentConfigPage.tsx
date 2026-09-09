@@ -5,12 +5,12 @@ import { useI18n } from '@vobs/i18n'
 
 export function PaymentConfigPage() {
   const i18n = useI18n()
-  const appId = state('', 'paymentConfig.appId')
-  const privateKey = state('', 'paymentConfig.privateKey')
-  const alipayPublicKey = state('', 'paymentConfig.alipayPublicKey')
-  const notifyUrl = state('', 'paymentConfig.notifyUrl')
-  const returnUrl = state('', 'paymentConfig.returnUrl')
-  const configSaved = state(false, 'paymentConfig.configSaved')
+  const appId = state('')
+  const privateKey = state('')
+  const alipayPublicKey = state('')
+  const notifyUrl = state('')
+  const returnUrl = state('')
+  const configSaved = state(false)
 
   function saveConfig(): void {
     configSaved.value = true
@@ -34,23 +34,23 @@ export function PaymentConfigPage() {
           <form class="demo-form" onSubmit={event => { event.preventDefault(); saveConfig() }}>
             <label class="demo-field">
               <span>App ID</span>
-              <Input value={appId.value} placeholder="202100..." onInput={event => appId.value = (event.target as HTMLInputElement).value} />
+              <Input bind={appId} placeholder="202100..." />
             </label>
             <label class="demo-field">
               <span>{i18n.t('payment.config.privateKey')}</span>
-              <Input type="password" value={privateKey.value} placeholder="MII..." onInput={event => privateKey.value = (event.target as HTMLInputElement).value} />
+              <Input type="password" bind={privateKey} placeholder="MII..." />
             </label>
             <label class="demo-field">
               <span>{i18n.t('payment.config.alipayPublicKey')}</span>
-              <Input value={alipayPublicKey.value} placeholder="MII..." onInput={event => alipayPublicKey.value = (event.target as HTMLInputElement).value} />
+              <Input bind={alipayPublicKey} placeholder="MII..." />
             </label>
             <label class="demo-field">
               <span>{i18n.t('payment.config.notifyUrl')}</span>
-              <Input value={notifyUrl.value} placeholder="https://example.com/notify" onInput={event => notifyUrl.value = (event.target as HTMLInputElement).value} />
+              <Input bind={notifyUrl} placeholder="https://example.com/notify" />
             </label>
             <label class="demo-field">
               <span>{i18n.t('payment.config.returnUrl')}</span>
-              <Input value={returnUrl.value} placeholder="https://example.com/return" onInput={event => returnUrl.value = (event.target as HTMLInputElement).value} />
+              <Input bind={returnUrl} placeholder="https://example.com/return" />
             </label>
             <div class="demo-button-row">
               <Button type="submit" variant="brand" icon={<Icon name="check" />}>{i18n.t('common.save')}</Button>

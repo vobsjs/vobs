@@ -1,4 +1,4 @@
-import { useI18n } from '@vobs/i18n'
+﻿import { useI18n } from '@vobs/i18n'
 import { state } from '@vobs/vobs'
 import { Button, Card, Tag } from '@vobs/ui'
 
@@ -49,7 +49,7 @@ const templateFiles = [
 
 export function CLIPage() {
   const i18n = useI18n()
-  const output = state('', 'cli.output')
+  const output = state('')
 
   const handlePreview = () => {
     output.value = `> vobs init my-app

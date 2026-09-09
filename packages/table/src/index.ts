@@ -1,5 +1,6 @@
 export { KitDataTable } from './data-table'
 export { KitColumnSettings } from './column-settings'
+export { defaultIcons } from './icons'
 export { createColumnSettingsPersistence, createLocalColumnSettingsPersistence } from './persistence'
 export type {
   DataTableAlign,

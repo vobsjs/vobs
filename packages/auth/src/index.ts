@@ -1,4 +1,4 @@
-import { getCurrentOwner, memo, onDispose, state, type Signal } from '@vobs/reactivity'
+import { getCurrentOwner, memo, onDispose, state, type ReadableSignal, type Signal } from '@vobs/reactivity'
 import {
   createFragment,
   createInjectionKey,
@@ -49,7 +49,7 @@ export class AuthError extends Error {
 
 export interface AuthContext<C extends Credentials = Credentials> {
   readonly session: Signal<Session | null>
-  readonly status: Signal<AuthStatus>
+  readonly status: ReadableSignal<AuthStatus>
   hasPermission(permission: Permission): boolean
   hasRole(role: string): boolean
   login(credentials: C): Promise<void>

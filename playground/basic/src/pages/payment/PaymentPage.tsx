@@ -1,4 +1,4 @@
-import { onDispose, state } from '@vobs/vobs'
+﻿import { onDispose, state } from '@vobs/vobs'
 import { Alert, Button, Card, createDOMPortalAdapter, Dialog, Icon, Input, Tag } from '@vobs/ui'
 import { KitPage } from '@vobs/kit'
 import { useRouter } from '@vobs/router'
@@ -39,16 +39,16 @@ const products: Product[] = [
 export function PaymentPage() {
   const router = useRouter()
   const i18n = useI18n()
-  const selectedProduct = state<Product | null>(null, 'payment.selectedProduct')
-  const paying = state(false, 'payment.paying')
-  const paymentLog = state<string[]>(['>>> 等待发起支付...'], 'payment.log')
-  const dialogOpen = state(false, 'payment.dialogOpen')
+  const selectedProduct = state<Product | null>(null)
+  const paying = state(false)
+  const paymentLog = state<string[]>(['>>> 等待发起支付...'])
+  const dialogOpen = state(false)
   const portal = createDOMPortalAdapter()
-  const configAppId = state('', 'payment.configAppId')
-  const configPrivateKey = state('', 'payment.configPrivateKey')
-  const configAlipayPublicKey = state('', 'payment.configAlipayPublicKey')
-  const configNotifyUrl = state('', 'payment.configNotifyUrl')
-  const configReturnUrl = state('', 'payment.configReturnUrl')
+  const configAppId = state('')
+  const configPrivateKey = state('')
+  const configAlipayPublicKey = state('')
+  const configNotifyUrl = state('')
+  const configReturnUrl = state('')
 
   onDispose(() => {
     selectedProduct.value = null
@@ -176,23 +176,23 @@ export function PaymentPage() {
         <form class="demo-form" onSubmit={event => { event.preventDefault(); dialogOpen.value = false }}>
           <label class="demo-field">
             <span>App ID</span>
-            <Input value={configAppId.value} placeholder="202100..." onInput={event => configAppId.value = (event.target as HTMLInputElement).value} />
+            <Input bind={configAppId} placeholder="202100..." />
           </label>
           <label class="demo-field">
             <span>{i18n.t('payment.config.privateKey')}</span>
-            <Input type="password" value={configPrivateKey.value} placeholder="MII..." onInput={event => configPrivateKey.value = (event.target as HTMLInputElement).value} />
+            <Input type="password" bind={configPrivateKey} placeholder="MII..." />
           </label>
           <label class="demo-field">
             <span>{i18n.t('payment.config.alipayPublicKey')}</span>
-            <Input value={configAlipayPublicKey.value} placeholder="MII..." onInput={event => configAlipayPublicKey.value = (event.target as HTMLInputElement).value} />
+            <Input bind={configAlipayPublicKey} placeholder="MII..." />
           </label>
           <label class="demo-field">
             <span>{i18n.t('payment.config.notifyUrl')}</span>
-            <Input value={configNotifyUrl.value} placeholder="https://example.com/notify" onInput={event => configNotifyUrl.value = (event.target as HTMLInputElement).value} />
+            <Input bind={configNotifyUrl} placeholder="https://example.com/notify" />
           </label>
           <label class="demo-field">
             <span>{i18n.t('payment.config.returnUrl')}</span>
-            <Input value={configReturnUrl.value} placeholder="https://example.com/return" onInput={event => configReturnUrl.value = (event.target as HTMLInputElement).value} />
+            <Input bind={configReturnUrl} placeholder="https://example.com/return" />
           </label>
           <div class="demo-button-row" style="margin-top: var(--spacer-16)">
             <Button type="submit" variant="brand" icon={<Icon name="check" />}>{i18n.t('common.save')}</Button>
