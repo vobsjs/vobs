@@ -126,9 +126,12 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
   const statements = sourceFile.statements.map(statement =>
     ts.isImportDeclaration(statement) ? rebuildImport(state, statement) : transformStatement(state, statement)
   )
+  // 模板声明必须先于 runtime import 生成：声明里的 createTemplate 依赖
+  // helperRef 注册别名，import 需要在别名全部就绪后再构建。
+  const templateDeclarations = createTemplateDeclarations(state)
   const resultFile = ts.factory.updateSourceFile(sourceFile, [
     ...createRuntimeImports(state),
-    ...createTemplateDeclarations(state),
+    ...templateDeclarations,
     ...statements
   ])
 
