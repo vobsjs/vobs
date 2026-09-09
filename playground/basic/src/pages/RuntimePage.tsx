@@ -1,6 +1,6 @@
 import { KitPage } from '@vobs/kit'
 import { Alert, Button, Card, Tag } from '@vobs/ui'
-import { AsyncBoundary, Profiler, createId, createOwner, effect, memo, onDispose, ref, state } from '@vobs/vobs'
+import { AsyncBoundary, Profiler, cloneTemplate, createId, createOwner, createTemplate, effect, insertList, memo, onDispose, ref, state } from '@vobs/vobs'
 import { useI18n } from '@vobs/i18n'
 
 export function RuntimePage() {
@@ -13,6 +13,8 @@ export function RuntimePage() {
         <OwnerDemo />
         <RefDemo />
         <StableIdDemo />
+        <KeyedListDemo />
+        <TemplateDemo />
         <AsyncBoundaryDemo />
         <ProfilerDemo />
       </div>
@@ -106,6 +108,102 @@ function StableIdDemo() {
         <input id={inputId} aria-labelledby={labelId} value="Stable ID" />
         <span class="demo-muted">{i18n.t('runtime.labelId', { id: labelId })}</span>
         <span class="demo-muted">{i18n.t('runtime.inputId', { id: inputId })}</span>
+      </div>
+    </Card>
+  )
+}
+
+interface RuntimeListItem {
+  readonly id: number
+  readonly label: string
+}
+
+function KeyedListDemo() {
+  const i18n = useI18n()
+  const items = state<readonly RuntimeListItem[]>([
+    { id: 1, label: 'Alpha' },
+    { id: 2, label: 'Beta' },
+    { id: 3, label: 'Gamma' }
+  ], 'runtime.list.items')
+  const events = state<string[]>([], 'runtime.list.events')
+  let nextId = 4
+
+  function record(action: string, label: string): void {
+    events.value = [`${action}: ${label}`, ...events.value].slice(0, 4)
+  }
+
+  function shuffle(): void {
+    const shuffled = [...items.value].sort(() => Math.random() - 0.5)
+    items.value = shuffled
+    record(i18n.t('runtime.listShuffle'), shuffled[0]?.label ?? '')
+  }
+
+  function removeFirst(): void {
+    const [removed] = items.value
+    if (!removed) return
+    items.value = items.value.slice(1)
+    record(i18n.t('runtime.listRemove'), removed.label)
+  }
+
+  function addItem(): void {
+    const item = { id: nextId++, label: `Item ${nextId - 1}` }
+    items.value = [...items.value, item]
+    record(i18n.t('runtime.listAdd'), item.label)
+  }
+
+  // 挂载时把 keyed 列表插入宿主节点；DOM 复用可通过 DevTools Elements 观察节点顺序。
+  function attachList(node: HTMLUListElement): void {
+    insertList(
+      node,
+      null,
+      () => items.value,
+      item => <li class="demo-muted">{item.label} <code>#{item.id}</code></li>,
+      item => item.id
+    )
+  }
+
+  return (
+    <Card title={i18n.t('runtime.listTitle')} description={i18n.t('runtime.listDescription')}>
+      <div class="demo-control-stack">
+        <div class="demo-button-row">
+          <Button size="sm" variant="secondary" onClick={addItem}>{i18n.t('runtime.listAdd')}</Button>
+          <Button size="sm" variant="secondary" onClick={removeFirst}>{i18n.t('runtime.listRemove')}</Button>
+          <Button size="sm" variant="ghost" onClick={shuffle}>{i18n.t('runtime.listShuffle')}</Button>
+        </div>
+        <ul ref={attachList} class="demo-keyed-list" />
+        {events.value.length > 0 ? <span class="demo-muted">{events.value.join(' · ')}</span> : null}
+      </div>
+    </Card>
+  )
+}
+
+function TemplateDemo() {
+  const i18n = useI18n()
+  const template = createTemplate('<span>cloned template node</span>')
+  const clones = state(0, 'runtime.template.clones')
+  let host: HTMLDivElement | null = null
+
+  function addClone(): void {
+    if (!host) return
+    host.append(cloneTemplate(template))
+    clones.value++
+  }
+
+  function resetClones(): void {
+    if (!host) return
+    host.replaceChildren()
+    clones.value = 0
+  }
+
+  return (
+    <Card title={i18n.t('runtime.templateTitle')} description={i18n.t('runtime.templateDescription')}>
+      <div class="demo-control-stack">
+        <div class="demo-button-row">
+          <Button size="sm" variant="secondary" onClick={addClone}>{i18n.t('runtime.templateClone')}</Button>
+          <Button size="sm" variant="ghost" disabled={clones.value === 0} onClick={resetClones}>{i18n.t('common.reset')}</Button>
+        </div>
+        <div ref={node => { host = node }} class="demo-template-host" />
+        <Tag tone="brand">{i18n.t('runtime.templateCount', { value: clones.value })}</Tag>
       </div>
     </Card>
   )

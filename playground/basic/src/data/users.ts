@@ -25,6 +25,14 @@ const USERS: readonly PlaygroundUser[] = [
   { id: 5, name: 'Alan Turing', role: 'Contributor', status: 'Active' }
 ]
 
+export const playgroundUsers = USERS
+
+export function findUserById(id: string | readonly string[] | undefined): PlaygroundUser | null {
+  const numericId = Number(id)
+  if (!Number.isInteger(numericId)) return null
+  return USERS.find(user => user.id === numericId) ?? null
+}
+
 export const usersResource = playgroundResourceClient.resource<readonly PlaygroundUser[]>({
   key: () => ['playground', 'users', usersSearch.value, usersStatus.value],
   staleTime: 30_000,

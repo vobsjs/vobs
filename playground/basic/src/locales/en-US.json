@@ -127,6 +127,8 @@
     "name": "Name",
     "role": "Role",
     "status": "Status",
+    "actions": "Actions",
+    "viewDetail": "Detail",
     "searchUsers": "Search users",
     "filterStatus": "Filter by status",
     "allStatuses": "All statuses",
@@ -328,7 +330,16 @@
     "updateView": "Update profiled view",
     "refreshSnapshot": "Refresh snapshot",
     "lastRender": "Last render: {phase} · {duration} ms",
-    "noRender": "No render snapshot yet."
+    "noRender": "No render snapshot yet.",
+    "listTitle": "Keyed list (insertList)",
+    "listDescription": "insertList reconciles DOM nodes by key: additions, removals and reordering reuse existing nodes whenever possible.",
+    "listAdd": "Add",
+    "listRemove": "Remove first",
+    "listShuffle": "Shuffle",
+    "templateTitle": "Template cloning (createTemplate)",
+    "templateDescription": "createTemplate parses an HTML string into an inert template; cloneTemplate copies its content in O(1).",
+    "templateClone": "Clone node",
+    "templateCount": "{value} node(s) cloned."
   },
   "auth": {
     "title": "Sign in",

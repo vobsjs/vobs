@@ -10,6 +10,7 @@ import {
   type DataTableColumnSettings
 } from '@vobs/table'
 import { Button, Card, Icon, Tag } from '@vobs/ui'
+import { useRouter } from '@vobs/router'
 import {
   usersColumnSettingsPersistence,
   usersResource,
@@ -27,6 +28,7 @@ import { useI18n } from '@vobs/i18n'
 
 export function ResourceTablePage() {
   const i18n = useI18n()
+  const router = useRouter()
   const columns = [
     {
       id: 'name',
@@ -43,6 +45,15 @@ export function ResourceTablePage() {
       label: i18n.t('resource.status'),
       key: 'status',
       render: (user: PlaygroundUser) => <Tag tone={user.status === 'Active' ? 'success' : 'warning'}>{user.status === 'Active' ? i18n.t('resource.active') : i18n.t('resource.invited')}</Tag>
+    },
+    {
+      id: 'actions',
+      label: i18n.t('resource.actions'),
+      render: (user: PlaygroundUser) => (
+        <Button size="sm" variant="ghost" icon={<Icon name="chevron-right" />} onClick={() => { void router.push({ path: `/users/${user.id}`, query: { from: 'table' } }) }}>
+          {i18n.t('resource.viewDetail')}
+        </Button>
+      )
     }
   ] as const
   const columnSettings = state<DataTableColumnSettings>(normalizeColumnSettings(

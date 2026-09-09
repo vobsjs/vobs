@@ -16,6 +16,7 @@
     "@vobs/forms": "workspace:*",
     "@vobs/http": "workspace:*",
     "@vobs/i18n": "workspace:*",
+    "@vobs/jwt-auth": "workspace:*",
     "@vobs/kit": "workspace:*",
     "@vobs/layout": "workspace:*",
     "@vobs/logger": "workspace:*",

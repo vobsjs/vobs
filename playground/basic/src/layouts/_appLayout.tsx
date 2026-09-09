@@ -17,7 +17,7 @@ export function AppLayout(props: AppLayoutProps) {
   const route = useRoute()
   const router = useRouter()
   const i18n = useI18n()
-  const activeKey = route.value.path === '/' ? '' : route.value.path.slice(1)
+  const activeKey = route.value.path.split('/')[1] ?? ''
   const menuItems: readonly KitMenuItem[] = [
     {
       key: '',

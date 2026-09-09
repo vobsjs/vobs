@@ -318,6 +318,27 @@ body {
   color: var(--text-default);
   background: var(--bg-base-default);
 }
+.demo-keyed-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-4);
+  margin: 0;
+  padding: var(--spacer-8);
+  list-style: none;
+  border: 1px dashed var(--border-neutral-l1);
+  border-radius: var(--radius-6);
+}
+.demo-template-host {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacer-8);
+  min-height: 32px;
+  padding: var(--spacer-8);
+  border: 1px dashed var(--border-neutral-l1);
+  border-radius: var(--radius-6);
+  color: var(--text-secondary);
+}
+.demo-template-host:empty::before { content: '—'; }
 
 @media (max-width: 900px) {
   .demo-card-grid,

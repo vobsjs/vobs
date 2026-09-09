@@ -16,6 +16,7 @@ import { PaymentResultPage } from './pages/payment/PaymentResultPage'
 import { ResourceTablePage } from './pages/ResourceTablePage'
 import { RuntimePage } from './pages/RuntimePage'
 import { SSRPage } from './pages/SSRPage'
+import { UserDetailPage } from './pages/UserDetailPage'
 import { AppLayout, AuthLayout } from './layouts'
 import { auth } from './auth'
 import { usersResource } from './data/users'
@@ -26,7 +27,7 @@ export const router = createRouter({
   routes: [
     {
       component: AppLayout,
-      source: 'src/layouts/_appLyout.tsx',
+      source: 'src/layouts/_appLayout.tsx',
       meta: { requiresAuth: true },
       children: [
         { path: '/', component: DashboardPage, source: 'src/pages/DashboardPage.tsx' },
@@ -38,6 +39,7 @@ export const router = createRouter({
             prefetch: () => usersResource.prefetch()
           }
         },
+        { path: '/users/:id', component: UserDetailPage, source: 'src/pages/UserDetailPage.tsx' },
         { path: '/captcha', component: CaptchaPage, source: 'src/pages/CaptchaPage.tsx' },
         { path: '/components', component: ComponentsPage, source: 'src/pages/ComponentsPage.tsx' },
         { path: '/forms', component: FormsPage, source: 'src/pages/FormsPage.tsx' },
