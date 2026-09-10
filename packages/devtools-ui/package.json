@@ -7,9 +7,14 @@
     "LICENSE"
   ],
   "name": "@vobs/devtools-ui",
-  "repository": { "type": "git", "url": "git+https://github.com/vobsjs/vobs.git" },
-  "version": "1.2.0",
-  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git"
+  },
+  "version": "1.2.1",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Optional reusable DevTools panel UI for Vobs.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -23,11 +28,29 @@
     "test": "vitest --environment jsdom"
   },
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
-    "./panel": { "types": "./dist/panel.d.ts", "import": "./dist/panel.js", "require": "./dist/panel.cjs", "default": "./dist/panel.js" },
-    "./widget": { "types": "./dist/widget.d.ts", "import": "./dist/widget.js", "require": "./dist/widget.cjs", "default": "./dist/widget.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./panel": {
+      "types": "./dist/panel.d.ts",
+      "import": "./dist/panel.js",
+      "require": "./dist/panel.cjs",
+      "default": "./dist/panel.js"
+    },
+    "./widget": {
+      "types": "./dist/widget.d.ts",
+      "import": "./dist/widget.js",
+      "require": "./dist/widget.cjs",
+      "default": "./dist/widget.js"
+    },
     "./styles.css": "./dist/styles/styles.css",
-    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./source": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
     "./source/*": "./src/*",
     "./package.json": "./package.json"
   },

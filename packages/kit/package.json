@@ -7,9 +7,14 @@
     "LICENSE"
   ],
   "name": "@vobs/kit",
-  "repository": { "type": "git", "url": "git+https://github.com/vobsjs/vobs.git" },
-  "version": "1.2.0",
-  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git"
+  },
+  "version": "1.2.1",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Optional official Kit composition package for Vobs.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -19,14 +24,42 @@
     "test": "vitest --environment jsdom"
   },
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
-    "./page": { "types": "./dist/page.d.ts", "import": "./dist/page.js", "require": "./dist/page.cjs", "default": "./dist/page.js" },
-    "./filter-bar": { "types": "./dist/filter-bar.d.ts", "import": "./dist/filter-bar.js", "require": "./dist/filter-bar.cjs", "default": "./dist/filter-bar.js" },
-    "./page-actions": { "types": "./dist/page-actions.d.ts", "import": "./dist/page-actions.js", "require": "./dist/page-actions.cjs", "default": "./dist/page-actions.js" },
-    "./layout": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./page": {
+      "types": "./dist/page.d.ts",
+      "import": "./dist/page.js",
+      "require": "./dist/page.cjs",
+      "default": "./dist/page.js"
+    },
+    "./filter-bar": {
+      "types": "./dist/filter-bar.d.ts",
+      "import": "./dist/filter-bar.js",
+      "require": "./dist/filter-bar.cjs",
+      "default": "./dist/filter-bar.js"
+    },
+    "./page-actions": {
+      "types": "./dist/page-actions.d.ts",
+      "import": "./dist/page-actions.js",
+      "require": "./dist/page-actions.cjs",
+      "default": "./dist/page-actions.js"
+    },
+    "./layout": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
     "./styles.css": "./dist/styles/styles.css",
     "./kit.css": "./dist/styles/kit.css",
-    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./source": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
     "./source/*": "./src/*",
     "./package.json": "./package.json"
   },

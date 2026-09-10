@@ -7,9 +7,14 @@
     "LICENSE"
   ],
   "name": "@vobs/table",
-  "repository": { "type": "git", "url": "git+https://github.com/vobsjs/vobs.git" },
-  "version": "1.2.0",
-  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git"
+  },
+  "version": "1.2.1",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Optional data table primitives for Vobs.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -19,12 +24,30 @@
     "test": "vitest --environment jsdom"
   },
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
-    "./data-table": { "types": "./dist/data-table.d.ts", "import": "./dist/data-table.js", "require": "./dist/data-table.cjs", "default": "./dist/data-table.js" },
-    "./column-settings": { "types": "./dist/column-settings.d.ts", "import": "./dist/column-settings.js", "require": "./dist/column-settings.cjs", "default": "./dist/column-settings.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./data-table": {
+      "types": "./dist/data-table.d.ts",
+      "import": "./dist/data-table.js",
+      "require": "./dist/data-table.cjs",
+      "default": "./dist/data-table.js"
+    },
+    "./column-settings": {
+      "types": "./dist/column-settings.d.ts",
+      "import": "./dist/column-settings.js",
+      "require": "./dist/column-settings.cjs",
+      "default": "./dist/column-settings.js"
+    },
     "./styles.css": "./dist/styles/styles.css",
     "./table.css": "./dist/styles/table.css",
-    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./source": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
     "./source/*": "./src/*",
     "./package.json": "./package.json"
   },

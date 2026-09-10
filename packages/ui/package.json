@@ -7,9 +7,14 @@
     "LICENSE"
   ],
   "name": "@vobs/ui",
-  "repository": { "type": "git", "url": "git+https://github.com/vobsjs/vobs.git" },
-  "version": "1.2.0",
-  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git"
+  },
+  "version": "1.2.1",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Optional UI components and UIStyle-compatible styles for Vobs.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -19,41 +24,178 @@
     "test": "vitest --environment jsdom"
   },
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
-    "./button": { "types": "./dist/button.d.ts", "import": "./dist/button.js", "require": "./dist/button.cjs", "default": "./dist/button.js" },
-    "./forms": { "types": "./dist/forms.d.ts", "import": "./dist/forms.js", "require": "./dist/forms.cjs", "default": "./dist/forms.js" },
-    "./card": { "types": "./dist/card.d.ts", "import": "./dist/card.js", "require": "./dist/card.cjs", "default": "./dist/card.js" },
-    "./tag": { "types": "./dist/tag.d.ts", "import": "./dist/tag.js", "require": "./dist/tag.cjs", "default": "./dist/tag.js" },
-    "./alert": { "types": "./dist/alert.d.ts", "import": "./dist/alert.js", "require": "./dist/alert.cjs", "default": "./dist/alert.js" },
-    "./tabs": { "types": "./dist/tabs.d.ts", "import": "./dist/tabs.js", "require": "./dist/tabs.cjs", "default": "./dist/tabs.js" },
-    "./dialog": { "types": "./dist/dialog.d.ts", "import": "./dist/dialog.js", "require": "./dist/dialog.cjs", "default": "./dist/dialog.js" },
-    "./icon": { "types": "./dist/icon.d.ts", "import": "./dist/icon.js", "require": "./dist/icon.cjs", "default": "./dist/icon.js" },
-    "./menu": { "types": "./dist/menu.d.ts", "import": "./dist/menu.js", "require": "./dist/menu.cjs", "default": "./dist/menu.js" },
-    "./nav-list": { "types": "./dist/nav-list.d.ts", "import": "./dist/nav-list.js", "require": "./dist/nav-list.cjs", "default": "./dist/nav-list.js" },
-    "./pagination": { "types": "./dist/pagination.d.ts", "import": "./dist/pagination.js", "require": "./dist/pagination.cjs", "default": "./dist/pagination.js" },
-    "./avatar": { "types": "./dist/avatar.d.ts", "import": "./dist/avatar.js", "require": "./dist/avatar.cjs", "default": "./dist/avatar.js" },
-    "./page-header": { "types": "./dist/page-header.d.ts", "import": "./dist/page-header.js", "require": "./dist/page-header.cjs", "default": "./dist/page-header.js" },
-    "./table": { "types": "./dist/table.d.ts", "import": "./dist/table.js", "require": "./dist/table.cjs", "default": "./dist/table.js" },
-    "./stat-card": { "types": "./dist/stat-card.d.ts", "import": "./dist/stat-card.js", "require": "./dist/stat-card.cjs", "default": "./dist/stat-card.js" },
-    "./kbd": { "types": "./dist/kbd.d.ts", "import": "./dist/kbd.js", "require": "./dist/kbd.cjs", "default": "./dist/kbd.js" },
-    "./activity-rail": { "types": "./dist/activity-rail.d.ts", "import": "./dist/activity-rail.js", "require": "./dist/activity-rail.cjs", "default": "./dist/activity-rail.js" },
-    "./file-tree": { "types": "./dist/file-tree.d.ts", "import": "./dist/file-tree.js", "require": "./dist/file-tree.cjs", "default": "./dist/file-tree.js" },
-    "./editor-tabs": { "types": "./dist/editor-tabs.d.ts", "import": "./dist/editor-tabs.js", "require": "./dist/editor-tabs.cjs", "default": "./dist/editor-tabs.js" },
-    "./workbench-titlebar": { "types": "./dist/workbench-titlebar.d.ts", "import": "./dist/workbench-titlebar.js", "require": "./dist/workbench-titlebar.cjs", "default": "./dist/workbench-titlebar.js" },
-    "./status-bar": { "types": "./dist/status-bar.d.ts", "import": "./dist/status-bar.js", "require": "./dist/status-bar.cjs", "default": "./dist/status-bar.js" },
-    "./chat-composer": { "types": "./dist/chat-composer.d.ts", "import": "./dist/chat-composer.js", "require": "./dist/chat-composer.cjs", "default": "./dist/chat-composer.js" },
-    "./drawer": { "types": "./dist/drawer.d.ts", "import": "./dist/drawer.js", "require": "./dist/drawer.cjs", "default": "./dist/drawer.js" },
-    "./toast": { "types": "./dist/toast.d.ts", "import": "./dist/toast.js", "require": "./dist/toast.cjs", "default": "./dist/toast.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./button": {
+      "types": "./dist/button.d.ts",
+      "import": "./dist/button.js",
+      "require": "./dist/button.cjs",
+      "default": "./dist/button.js"
+    },
+    "./forms": {
+      "types": "./dist/forms.d.ts",
+      "import": "./dist/forms.js",
+      "require": "./dist/forms.cjs",
+      "default": "./dist/forms.js"
+    },
+    "./card": {
+      "types": "./dist/card.d.ts",
+      "import": "./dist/card.js",
+      "require": "./dist/card.cjs",
+      "default": "./dist/card.js"
+    },
+    "./tag": {
+      "types": "./dist/tag.d.ts",
+      "import": "./dist/tag.js",
+      "require": "./dist/tag.cjs",
+      "default": "./dist/tag.js"
+    },
+    "./alert": {
+      "types": "./dist/alert.d.ts",
+      "import": "./dist/alert.js",
+      "require": "./dist/alert.cjs",
+      "default": "./dist/alert.js"
+    },
+    "./tabs": {
+      "types": "./dist/tabs.d.ts",
+      "import": "./dist/tabs.js",
+      "require": "./dist/tabs.cjs",
+      "default": "./dist/tabs.js"
+    },
+    "./dialog": {
+      "types": "./dist/dialog.d.ts",
+      "import": "./dist/dialog.js",
+      "require": "./dist/dialog.cjs",
+      "default": "./dist/dialog.js"
+    },
+    "./icon": {
+      "types": "./dist/icon.d.ts",
+      "import": "./dist/icon.js",
+      "require": "./dist/icon.cjs",
+      "default": "./dist/icon.js"
+    },
+    "./menu": {
+      "types": "./dist/menu.d.ts",
+      "import": "./dist/menu.js",
+      "require": "./dist/menu.cjs",
+      "default": "./dist/menu.js"
+    },
+    "./nav-list": {
+      "types": "./dist/nav-list.d.ts",
+      "import": "./dist/nav-list.js",
+      "require": "./dist/nav-list.cjs",
+      "default": "./dist/nav-list.js"
+    },
+    "./pagination": {
+      "types": "./dist/pagination.d.ts",
+      "import": "./dist/pagination.js",
+      "require": "./dist/pagination.cjs",
+      "default": "./dist/pagination.js"
+    },
+    "./avatar": {
+      "types": "./dist/avatar.d.ts",
+      "import": "./dist/avatar.js",
+      "require": "./dist/avatar.cjs",
+      "default": "./dist/avatar.js"
+    },
+    "./page-header": {
+      "types": "./dist/page-header.d.ts",
+      "import": "./dist/page-header.js",
+      "require": "./dist/page-header.cjs",
+      "default": "./dist/page-header.js"
+    },
+    "./table": {
+      "types": "./dist/table.d.ts",
+      "import": "./dist/table.js",
+      "require": "./dist/table.cjs",
+      "default": "./dist/table.js"
+    },
+    "./stat-card": {
+      "types": "./dist/stat-card.d.ts",
+      "import": "./dist/stat-card.js",
+      "require": "./dist/stat-card.cjs",
+      "default": "./dist/stat-card.js"
+    },
+    "./kbd": {
+      "types": "./dist/kbd.d.ts",
+      "import": "./dist/kbd.js",
+      "require": "./dist/kbd.cjs",
+      "default": "./dist/kbd.js"
+    },
+    "./activity-rail": {
+      "types": "./dist/activity-rail.d.ts",
+      "import": "./dist/activity-rail.js",
+      "require": "./dist/activity-rail.cjs",
+      "default": "./dist/activity-rail.js"
+    },
+    "./file-tree": {
+      "types": "./dist/file-tree.d.ts",
+      "import": "./dist/file-tree.js",
+      "require": "./dist/file-tree.cjs",
+      "default": "./dist/file-tree.js"
+    },
+    "./editor-tabs": {
+      "types": "./dist/editor-tabs.d.ts",
+      "import": "./dist/editor-tabs.js",
+      "require": "./dist/editor-tabs.cjs",
+      "default": "./dist/editor-tabs.js"
+    },
+    "./workbench-titlebar": {
+      "types": "./dist/workbench-titlebar.d.ts",
+      "import": "./dist/workbench-titlebar.js",
+      "require": "./dist/workbench-titlebar.cjs",
+      "default": "./dist/workbench-titlebar.js"
+    },
+    "./status-bar": {
+      "types": "./dist/status-bar.d.ts",
+      "import": "./dist/status-bar.js",
+      "require": "./dist/status-bar.cjs",
+      "default": "./dist/status-bar.js"
+    },
+    "./chat-composer": {
+      "types": "./dist/chat-composer.d.ts",
+      "import": "./dist/chat-composer.js",
+      "require": "./dist/chat-composer.cjs",
+      "default": "./dist/chat-composer.js"
+    },
+    "./drawer": {
+      "types": "./dist/drawer.d.ts",
+      "import": "./dist/drawer.js",
+      "require": "./dist/drawer.cjs",
+      "default": "./dist/drawer.js"
+    },
+    "./toast": {
+      "types": "./dist/toast.d.ts",
+      "import": "./dist/toast.js",
+      "require": "./dist/toast.cjs",
+      "default": "./dist/toast.js"
+    },
     "./toast.css": "./dist/styles/toast.css",
-    "./overlay": { "types": "./dist/overlay.d.ts", "import": "./dist/overlay.js", "require": "./dist/overlay.cjs", "default": "./dist/overlay.js" },
-    "./icons.js": { "import": "./dist/icons.js", "require": "./dist/icons.cjs", "default": "./dist/icons.js" },
+    "./overlay": {
+      "types": "./dist/overlay.d.ts",
+      "import": "./dist/overlay.js",
+      "require": "./dist/overlay.cjs",
+      "default": "./dist/overlay.js"
+    },
+    "./icons.js": {
+      "import": "./dist/icons.js",
+      "require": "./dist/icons.cjs",
+      "default": "./dist/icons.js"
+    },
     "./assets/icons/*": "./dist/assets/icons/*",
     "./tokens.css": "./dist/styles/tokens.css",
     "./base.css": "./dist/styles/base.css",
     "./components.css": "./dist/styles/components.css",
     "./vui.css": "./dist/styles/vui.css",
     "./styles.css": "./dist/styles/styles.css",
-    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./source": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
     "./source/*": "./src/*",
     "./package.json": "./package.json"
   },

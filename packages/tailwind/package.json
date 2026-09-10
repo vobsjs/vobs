@@ -7,21 +7,39 @@
     "LICENSE"
   ],
   "name": "@vobs/tailwind",
-  "repository": { "type": "git", "url": "git+https://github.com/vobsjs/vobs.git" },
-  "version": "1.2.0",
-  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git"
+  },
+  "version": "1.2.1",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Tailwind CSS integration for Vobs theme conventions.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
-    "./vite": { "types": "./dist/vite.d.ts", "import": "./dist/vite.js", "require": "./dist/vite.cjs", "default": "./dist/vite.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js",
+      "require": "./dist/vite.cjs",
+      "default": "./dist/vite.js"
+    },
     "./theme.css": "./dist/theme.css",
     "./styles.css": "./dist/styles.css",
     "./styles-prefixed.css": "./dist/styles-prefixed.css",
-    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./source": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
     "./source/*": "./src/*",
     "./package.json": "./package.json"
   },

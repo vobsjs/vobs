@@ -7,9 +7,14 @@
     "LICENSE"
   ],
   "name": "@vobs/transition",
-  "repository": { "type": "git", "url": "git+https://github.com/vobsjs/vobs.git" },
-  "version": "1.2.0",
-  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git"
+  },
+  "version": "1.2.1",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Optional DOM transition lifecycle primitives for Vobs.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -19,8 +24,16 @@
     "test": "vitest --environment jsdom"
   },
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
-    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./source": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
     "./source/*": "./src/*"
   },
   "dependencies": {

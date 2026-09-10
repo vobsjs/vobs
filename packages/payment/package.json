@@ -1,6 +1,8 @@
 {
   "license": "MIT",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "src",
@@ -8,8 +10,11 @@
     "LICENSE"
   ],
   "name": "@vobs/payment",
-  "repository": { "type": "git", "url": "git+https://github.com/vobsjs/vobs.git" },
-  "version": "1.2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git"
+  },
+  "version": "1.2.1",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
