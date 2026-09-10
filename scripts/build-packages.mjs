@@ -67,19 +67,34 @@ for (const name of packageNames) {
   if (existsSync(outDir)) await rm(outDir, { recursive: true, force: true })
 
   console.log(`[build] ${manifest.name} (${entries.length} entries)`)
+  // workspace 依赖走 @vobs/* 正则；其余 dependencies/peerDependencies（如 typescript、parse5）
+  // 必须显式外置，否则会被内联进 dist（node_modules 软链接与 workspace 路径导致自动外置失效）
+  const dependencyNames = Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies })
   const baseOptions = {
     outDir,
     format: ['esm', 'cjs'],
     sourcemap: true,
     splitting: false,
     target: 'es2020',
-    treeshake: true,
-    skipNodeModulesBundle: true,
-    external: [/^@vobs\//],
+    external: [/^@vobs\//, /^node:/, ...dependencyNames],
     outExtension: ({ format }) => ({ js: format === 'cjs' ? '.cjs' : '.js' }),
     esbuildOptions(options) {
-      options.platform = 'neutral'
+      // platform: node 自动外置 Node 内置模块
+      options.platform = 'node'
       options.keepNames = true
+      if (options.format === 'cjs') {
+        // esbuild 在 CJS 产物中会把 import.meta 变成空对象（运行时崩溃）。
+        // define 值只允许标识符/字面量，因此先替换成标识符，再用 banner 注入实现；
+        // ESM 产物保留原生 import.meta.url
+        options.define = {
+          ...options.define,
+          'import.meta.url': '__VOBS_CJS_FILE_URL'
+        }
+        options.banner = {
+          ...options.banner,
+          js: 'var __VOBS_CJS_FILE_URL = require("url").pathToFileURL(__filename).href;'
+        }
+      }
     }
   }
   if (tsEntries.length > 0) {
