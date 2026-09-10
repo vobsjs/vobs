@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const execFile = promisify(execFileCallback)
 const root = fileURLToPath(new URL('..', import.meta.url))
-const packageNames = ['reactivity', 'runtime', 'dom', 'vobs', 'compiler', 'icon-core', 'notification', 'auth', 'i18n', 'layout', 'resource', 'theme', 'ui', 'kit', 'router', 'forms', 'table']
+const packageNames = ['reactivity', 'runtime', 'dom', 'vobs', 'compiler', 'icon-core', 'notification', 'auth', 'i18n', 'layout', 'resource', 'theme', 'ui', 'kit', 'router', 'forms', 'table', 'captcha', 'devtools', 'devtools-ui', 'dict', 'http', 'jwt-auth', 'logger', 'preferences', 'queue', 'ssr', 'storage', 'sync', 'tailwind', 'test-utils', 'transition', 'upload', 'vite-plugin', 'cli', 'payment']
 const packageManager = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
@@ -24,12 +24,24 @@ try {
 
   const tarballs = Object.fromEntries((await readdir(artifacts)).map(file => [file.replace(/^vobs-/, '').replace(/-\d+\.\d+\.\d+\.tgz$/, ''), file]))
   const dependencies = Object.fromEntries(packageNames.map(name => [`@vobs/${name}`, `file:../artifacts/${tarballs[name]}`]))
-  await writeFile(path.join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module', dependencies }, null, 2))
+  await writeFile(path.join(consumer, 'package.json'), JSON.stringify({
+    private: true,
+    type: 'module',
+    dependencies,
+    devDependencies: {
+      '@types/node': '24.13.3',
+      'alipay-sdk': '4.14.0',
+      'wechatpay-axios-plugin': '0.9.6',
+      'vite': '7.3.6'
+    },
+  }, null, 2))
   await execFile(npm, ['install', '--no-audit', '--no-fund', '--package-lock=false'], { cwd: consumer, shell: process.platform === 'win32' })
 
   await execFile(process.execPath, ['--input-type=module', '-e', "const r=await import('@vobs/vobs'); if(typeof r.createVobs!=='function'||typeof r.state!=='function') throw new Error('ESM entry failed')"], { cwd: consumer })
   await execFile(process.execPath, ['-e', "const r=require('@vobs/vobs'); if(typeof r.createVobs!=='function'||typeof r.state!=='function') throw new Error('CJS entry failed')"], { cwd: consumer })
   await execFile(process.execPath, ['--input-type=module', '-e', "const r=await import('@vobs/vobs/jsx-runtime'); if(typeof r.jsx!=='function') throw new Error('subpath entry failed')"], { cwd: consumer })
+  await execFile(process.execPath, ['--input-type=module', '-e', "const cli=await import('@vobs/cli'); const payment=await import('@vobs/payment'); const alipay=await import('@vobs/payment/alipay'); if(typeof cli.createCLI!=='function'||typeof payment.createPayment!=='function'||typeof alipay.AlipayClient!=='function') throw new Error('CLI/payment ESM entry failed')"], { cwd: consumer })
+  await execFile(process.execPath, ['-e', "const cli=require('@vobs/cli'); const payment=require('@vobs/payment'); if(typeof cli.createCLI!=='function'||typeof payment.createPayment!=='function') throw new Error('CLI/payment CJS entry failed')"], { cwd: consumer })
 
   await writeFile(path.join(consumer, 'source-check.ts'), [
     "import { state } from '@vobs/reactivity/source'",
@@ -47,21 +59,45 @@ try {
     "import { createIcon } from '@vobs/icon-core/source'",
     "import { createNotification } from '@vobs/notification/source'",
     "import { KitPage } from '@vobs/kit/source'",
+    "import { Captcha } from '@vobs/captcha/source'",
+    "import { createDevTools } from '@vobs/devtools/source'",
+    "import { DevToolsPanel } from '@vobs/devtools-ui/source'",
+    "import { createDict } from '@vobs/dict/source'",
+    "import { createHTTPClient } from '@vobs/http/source'",
+    "import { createJWTAuth } from '@vobs/jwt-auth/source'",
+    "import { createLogger } from '@vobs/logger/source'",
+    "import { createPreferences } from '@vobs/preferences/source'",
+    "import { createTaskQueue } from '@vobs/queue/source'",
+    "import { createSSRRenderer } from '@vobs/ssr/source'",
+    "import { createStorage } from '@vobs/storage/source'",
+    "import { createSync } from '@vobs/sync/source'",
+    "import { vobsTailwind } from '@vobs/tailwind/source'",
+    "import { createTestRenderer } from '@vobs/test-utils/source'",
+    "import { Transition } from '@vobs/transition/source'",
+    "import { createUpload } from '@vobs/upload/source'",
+    "import { vobsPlugin } from '@vobs/vite-plugin/source'",
+    "import { createCLI } from '@vobs/cli/source'",
+    "import { createPayment } from '@vobs/payment/source'",
     'const count = state(1)',
     'KitDataTable',
     'Button',
     'createVobs',
     'compile',
-    'count.value'
+    'count.value',
+    'createCLI',
+    'createPayment'
   ].join('\n'))
   await writeFile(path.join(consumer, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       strict: true,
       noEmit: true,
       skipLibCheck: true,
-      target: 'ES2020',
+      target: 'ES2022',
+      lib: ['ES2022', 'DOM', 'DOM.Iterable'],
       module: 'ESNext',
       moduleResolution: 'bundler',
+      jsx: 'preserve',
+      types: ['node'],
       allowImportingTsExtensions: true
     },
     include: ['source-check.ts']

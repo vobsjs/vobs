@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const packageNames = process.argv.slice(2).filter(argument => !argument.startsWith('-'))
-const packages = packageNames.length > 0 ? packageNames : ['reactivity', 'runtime', 'dom', 'vobs', 'compiler', 'icon-core', 'notification', 'auth', 'i18n', 'layout', 'resource', 'theme', 'ui', 'kit', 'router', 'forms', 'table']
+// This checks local build artifacts for every public package.
+const packages = packageNames.length > 0 ? packageNames : ['reactivity', 'runtime', 'dom', 'vobs', 'compiler', 'icon-core', 'notification', 'auth', 'i18n', 'layout', 'resource', 'theme', 'ui', 'kit', 'router', 'forms', 'table', 'captcha', 'devtools', 'devtools-ui', 'dict', 'http', 'jwt-auth', 'logger', 'preferences', 'queue', 'ssr', 'storage', 'sync', 'tailwind', 'test-utils', 'transition', 'upload', 'vite-plugin', 'cli', 'payment']
 
 for (const name of packages) {
   const directory = path.join(root, 'packages', name)

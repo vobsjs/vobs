@@ -1,25 +1,31 @@
 {
   "license": "MIT",
   "files": [
+    "dist",
     "src",
     "README.md",
     "LICENSE"
   ],
   "name": "@vobs/tailwind",
-  "version": "1.1.0",
+  "version": "1.2.0",
+  "publishConfig": { "access": "public" },
   "description": "Tailwind CSS integration for Vobs theme conventions.",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./vite": "./src/vite.ts",
-    "./theme.css": "./src/theme.css",
-    "./styles.css": "./src/styles.css",
-    "./styles-prefixed.css": "./src/styles-prefixed.css",
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
+    "./vite": { "types": "./dist/vite.d.ts", "import": "./dist/vite.js", "require": "./dist/vite.cjs", "default": "./dist/vite.js" },
+    "./theme.css": "./dist/theme.css",
+    "./styles.css": "./dist/styles.css",
+    "./styles-prefixed.css": "./dist/styles-prefixed.css",
+    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./source/*": "./src/*",
     "./package.json": "./package.json"
   },
   "sideEffects": [
+    "./dist/*.css",
     "./src/*.css"
   ],
   "dependencies": {

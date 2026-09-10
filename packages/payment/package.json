@@ -1,20 +1,42 @@
 {
   "license": "MIT",
-  "private": true,
+  "publishConfig": { "access": "public" },
   "files": [
+    "dist",
     "src",
     "README.md",
     "LICENSE"
   ],
   "name": "@vobs/payment",
-  "version": "0.1.0",
+  "version": "1.2.0",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./alipay": "./src/alipay/index.ts",
-    "./wechat": "./src/wechat/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./alipay": {
+      "types": "./dist/alipay/index.d.ts",
+      "import": "./dist/alipay/index.js",
+      "require": "./dist/alipay/index.cjs",
+      "default": "./dist/alipay/index.js"
+    },
+    "./wechat": {
+      "types": "./dist/wechat/index.d.ts",
+      "import": "./dist/wechat/index.js",
+      "require": "./dist/wechat/index.cjs",
+      "default": "./dist/wechat/index.js"
+    },
+    "./source": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./source/*": "./src/*"
   },
   "dependencies": {
     "@vobs/vobs": "workspace:*"

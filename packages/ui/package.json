@@ -7,7 +7,7 @@
     "LICENSE"
   ],
   "name": "@vobs/ui",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publishConfig": { "access": "public" },
   "description": "Optional UI components and UIStyle-compatible styles for Vobs.",
   "type": "module",

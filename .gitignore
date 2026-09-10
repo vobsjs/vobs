@@ -9,3 +9,6 @@ coverage/
 *.tsbuildinfo
 scripts/sync-uistyle.mjs
 docs/
+!docs/
+docs/*
+!docs/npm-release.md

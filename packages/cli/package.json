@@ -1,17 +1,28 @@
 {
   "name": "@vobs/cli",
-  "version": "1.0.0",
-  "private": true,
+  "version": "1.2.0",
+  "publishConfig": { "access": "public" },
   "type": "module",
   "license": "MIT",
   "description": "Vobs framework CLI - project scaffolding, code generation, and dev/build tools",
   "bin": {
     "vobs": "./bin/vobs.js"
   },
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./source": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./source/*": "./src/*"
   },
   "dependencies": {
     "@clack/prompts": "^0.7.0",
@@ -25,9 +36,7 @@
   },
   "files": [
     "bin",
+    "dist",
     "src"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }

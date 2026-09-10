@@ -50,7 +50,7 @@ type checking, published-package verification, and the framework/playground buil
 
 ## Releasing
 
-Releases are tag-driven. After updating the versions of the 17 publishable packages
+Releases are tag-driven. After updating the versions of the 36 publishable packages
 and the changelog, verify the tag locally and push it:
 
 ```bash

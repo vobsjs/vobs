@@ -93,9 +93,9 @@ pnpm test:run    # single pass
 pnpm typecheck   # tsc --noEmit
 pnpm dev         # playground
 pnpm build       # package artifacts + typecheck + playground production build
-pnpm verify:packages # tarball ESM/CJS/types/source smoke checks
+pnpm verify:packages # all publishable tarball ESM/CJS/types/source smoke checks
 ```
 
 - Node 20+, pnpm workspace
-- `packages/*` — framework packages; migrated core/UI/Kit/Router/Forms/Table packages publish `dist` ESM/CJS/types and retain `src` through an explicit `/source` entry
+- `packages/*` — framework packages; all 36 public packages publish `dist` ESM/CJS/types and retain `src` through an explicit `/source` entry
 - `playground/*` — integration examples covering router, devtools, i18n, theme, and more

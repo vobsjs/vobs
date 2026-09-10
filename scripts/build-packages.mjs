@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'tsup'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const corePackages = ['reactivity', 'runtime', 'dom', 'vobs', 'compiler', 'icon-core', 'notification', 'auth', 'i18n', 'layout', 'resource', 'theme', 'ui', 'kit', 'router', 'forms', 'table']
+// Keep this list aligned with the public package release allowlist.
+const corePackages = ['reactivity', 'runtime', 'dom', 'vobs', 'compiler', 'icon-core', 'notification', 'auth', 'i18n', 'layout', 'resource', 'theme', 'ui', 'kit', 'router', 'forms', 'table', 'captcha', 'devtools', 'devtools-ui', 'dict', 'http', 'jwt-auth', 'logger', 'preferences', 'queue', 'ssr', 'storage', 'sync', 'tailwind', 'test-utils', 'transition', 'upload', 'vite-plugin', 'cli', 'payment']
 const requested = process.argv.slice(2).filter(argument => !argument.startsWith('-'))
 const packageNames = requested.length > 0 ? requested : corePackages
 
