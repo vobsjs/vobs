@@ -1,28 +1,34 @@
 {
   "license": "MIT",
   "files": [
+    "dist",
     "src",
     "README.md",
     "LICENSE"
   ],
   "name": "@vobs/table",
   "version": "1.1.0",
+  "publishConfig": { "access": "public" },
   "description": "Optional data table primitives for Vobs.",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "test": "vitest --environment jsdom"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./data-table": "./src/data-table.ts",
-    "./column-settings": "./src/column-settings.ts",
-    "./styles.css": "./src/styles/styles.css",
-    "./table.css": "./src/styles/table.css",
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
+    "./data-table": { "types": "./dist/data-table.d.ts", "import": "./dist/data-table.js", "require": "./dist/data-table.cjs", "default": "./dist/data-table.js" },
+    "./column-settings": { "types": "./dist/column-settings.d.ts", "import": "./dist/column-settings.js", "require": "./dist/column-settings.cjs", "default": "./dist/column-settings.js" },
+    "./styles.css": "./dist/styles/styles.css",
+    "./table.css": "./dist/styles/table.css",
+    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./source/*": "./src/*",
     "./package.json": "./package.json"
   },
   "sideEffects": [
+    "./dist/styles/*.css",
     "./src/styles/*.css"
   ],
   "dependencies": {

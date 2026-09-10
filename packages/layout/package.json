@@ -1,34 +1,40 @@
 {
   "license": "MIT",
   "files": [
+    "dist",
     "src",
     "README.md",
     "LICENSE"
   ],
   "name": "@vobs/layout",
   "version": "1.1.0",
+  "publishConfig": { "access": "public" },
   "description": "Optional Kit layout primitives for Vobs.",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "test": "vitest --environment jsdom"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./layout": "./src/layout.ts",
-    "./header": "./src/header.ts",
-    "./sidebar": "./src/sidebar.ts",
-    "./menu": "./src/menu.ts",
-    "./breadcrumb": "./src/breadcrumb.ts",
-    "./tabs": "./src/tabs.ts",
-    "./context": "./src/context.ts",
-    "./viewport": "./src/viewport.ts",
-    "./layout.css": "./src/styles/layout.css",
-    "./styles.css": "./src/styles/styles.css",
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
+    "./layout": { "types": "./dist/layout.d.ts", "import": "./dist/layout.js", "require": "./dist/layout.cjs", "default": "./dist/layout.js" },
+    "./header": { "types": "./dist/header.d.ts", "import": "./dist/header.js", "require": "./dist/header.cjs", "default": "./dist/header.js" },
+    "./sidebar": { "types": "./dist/sidebar.d.ts", "import": "./dist/sidebar.js", "require": "./dist/sidebar.cjs", "default": "./dist/sidebar.js" },
+    "./menu": { "types": "./dist/menu.d.ts", "import": "./dist/menu.js", "require": "./dist/menu.cjs", "default": "./dist/menu.js" },
+    "./breadcrumb": { "types": "./dist/breadcrumb.d.ts", "import": "./dist/breadcrumb.js", "require": "./dist/breadcrumb.cjs", "default": "./dist/breadcrumb.js" },
+    "./tabs": { "types": "./dist/tabs.d.ts", "import": "./dist/tabs.js", "require": "./dist/tabs.cjs", "default": "./dist/tabs.js" },
+    "./context": { "types": "./dist/context.d.ts", "import": "./dist/context.js", "require": "./dist/context.cjs", "default": "./dist/context.js" },
+    "./viewport": { "types": "./dist/viewport.d.ts", "import": "./dist/viewport.js", "require": "./dist/viewport.cjs", "default": "./dist/viewport.js" },
+    "./layout.css": "./dist/styles/layout.css",
+    "./styles.css": "./dist/styles/styles.css",
+    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./source/*": "./src/*",
     "./package.json": "./package.json"
   },
   "sideEffects": [
+    "./dist/styles/*.css",
     "./src/styles/*.css"
   ],
   "dependencies": {

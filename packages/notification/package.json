@@ -1,22 +1,27 @@
 {
   "license": "MIT",
   "files": [
+    "dist",
     "src",
     "README.md",
     "LICENSE"
   ],
   "name": "@vobs/notification",
   "version": "1.1.0",
+  "publishConfig": { "access": "public" },
   "description": "Reactive notification state and lifecycle for Vobs applications.",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "sideEffects": false,
   "scripts": {
     "test": "vitest --environment jsdom"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
+    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./source/*": "./src/*"
   },
   "dependencies": {
     "@vobs/reactivity": "workspace:*",

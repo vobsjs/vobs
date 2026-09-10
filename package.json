@@ -6,7 +6,11 @@
   "type": "module",
   "description": "Signals First · Zero Re-renders · Ultra Lightweight",
   "scripts": {
-    "build": "pnpm run typecheck && pnpm --filter @vobs-playground/basic build",
+    "build": "pnpm run build:packages && pnpm run typecheck && pnpm --filter @vobs-playground/basic build",
+    "build:packages": "node scripts/build-packages.mjs",
+    "check:packages": "node scripts/check-packages.mjs",
+    "verify:packages": "pnpm run build:packages && pnpm run check:packages && node scripts/verify-packages.mjs",
+    "pack:packages": "pnpm --filter @vobs/reactivity --filter @vobs/runtime --filter @vobs/dom --filter @vobs/vobs --filter @vobs/compiler --filter @vobs/icon-core --filter @vobs/notification --filter @vobs/auth --filter @vobs/i18n --filter @vobs/layout --filter @vobs/resource --filter @vobs/theme --filter @vobs/ui --filter @vobs/kit --filter @vobs/router --filter @vobs/forms --filter @vobs/table pack --pack-destination .artifacts",
     "sync:uistyle": "node scripts/sync-uistyle.mjs",
     "test": "vitest --environment jsdom",
     "test:run": "vitest --environment jsdom --run",
@@ -17,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^24.13.3",
     "jsdom": "^30.0.1",
+    "tsup": "8.5.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.11"

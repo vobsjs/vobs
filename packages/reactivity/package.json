@@ -1,23 +1,28 @@
 {
   "license": "MIT",
   "files": [
+    "dist",
     "src",
     "README.md",
     "LICENSE"
   ],
   "name": "@vobs/reactivity",
   "version": "1.1.0",
+  "publishConfig": { "access": "public" },
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./state": "./src/signal.ts",
-    "./memo": "./src/memo.ts",
-    "./effect": "./src/effect.ts",
-    "./owner": "./src/owner.ts",
-    "./id": "./src/id.ts",
-    "./scheduler": "./src/scheduler.ts"
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs", "default": "./dist/index.js" },
+    "./state": { "types": "./dist/signal.d.ts", "import": "./dist/signal.js", "require": "./dist/signal.cjs", "default": "./dist/signal.js" },
+    "./memo": { "types": "./dist/memo.d.ts", "import": "./dist/memo.js", "require": "./dist/memo.cjs", "default": "./dist/memo.js" },
+    "./effect": { "types": "./dist/effect.d.ts", "import": "./dist/effect.js", "require": "./dist/effect.cjs", "default": "./dist/effect.js" },
+    "./owner": { "types": "./dist/owner.d.ts", "import": "./dist/owner.js", "require": "./dist/owner.cjs", "default": "./dist/owner.js" },
+    "./id": { "types": "./dist/id.d.ts", "import": "./dist/id.js", "require": "./dist/id.cjs", "default": "./dist/id.js" },
+    "./scheduler": { "types": "./dist/scheduler.d.ts", "import": "./dist/scheduler.js", "require": "./dist/scheduler.cjs", "default": "./dist/scheduler.js" },
+    "./source": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./source/*": "./src/*"
   },
   "scripts": {
     "test": "vitest"

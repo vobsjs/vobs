@@ -21,7 +21,8 @@ pnpm dev         # playground with HMR
 | `pnpm test` | Vitest in watch mode |
 | `pnpm test:run` | Single test pass across all packages |
 | `pnpm typecheck` | `tsc --noEmit` across the workspace |
-| `pnpm build` | Typecheck + playground production build |
+| `pnpm build` | Build core package artifacts, typecheck, and build the playground |
+| `pnpm verify:packages` | Pack core packages and verify ESM, CJS, subpaths, types, and source entries |
 | `pnpm lint` | ESLint |
 
 ## Repository layout
