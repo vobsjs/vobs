@@ -42,6 +42,10 @@ pnpm dev         # playground with HMR
 1. Fork the repository and create a branch from `develop`.
 2. Make your change with tests.
 3. Run `pnpm test:run` and `pnpm typecheck` — both must pass.
-4. Open a pull request targeting `develop` with a short description of the what and the why.
+4. Run `pnpm verify:packages` before changing package manifests or exports.
+5. Open a pull request targeting `develop` with a short description of the what and the why.
+
+Pull requests and pushes to `main` run the same checks in GitHub Actions: tests,
+type checking, published-package verification, and the framework/playground build.
 
 Commit messages should state the intent of the change (for example: "fix: dispose swapped array children to stop ghost effects").
