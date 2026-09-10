@@ -3,3 +3,5 @@ packages:
   - playground/*
 allowBuilds:
   esbuild: true
+minimumReleaseAgeExclude:
+  - magic-string
