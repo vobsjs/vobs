@@ -48,4 +48,20 @@ pnpm dev         # playground with HMR
 Pull requests and pushes to `main` run the same checks in GitHub Actions: tests,
 type checking, published-package verification, and the framework/playground build.
 
+## Releasing
+
+Releases are tag-driven. After updating the versions of the 17 publishable packages
+and the changelog, verify the tag locally and push it:
+
+```bash
+pnpm run check:release -- v1.1.1
+git tag v1.1.1
+git push origin v1.1.1
+```
+
+The `publish` workflow reruns the full verification and publishes only the
+allowlisted public packages. Each package must have the repository's
+`publish.yml` workflow configured as an npm Trusted Publisher before its first
+automated release.
+
 Commit messages should state the intent of the change (for example: "fix: dispose swapped array children to stop ghost effects").
