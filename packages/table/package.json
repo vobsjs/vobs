@@ -7,6 +7,7 @@
     "LICENSE"
   ],
   "name": "@vobs/table",
+  "repository": { "type": "git", "url": "git+https://github.com/vobsjs/vobs.git" },
   "version": "1.2.0",
   "publishConfig": { "access": "public" },
   "description": "Optional data table primitives for Vobs.",

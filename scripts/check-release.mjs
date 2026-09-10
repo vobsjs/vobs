@@ -42,7 +42,7 @@ const publishablePackages = [
 
 const tag = process.argv.slice(2).find((argument) => argument !== '--') ?? process.env.GITHUB_REF_NAME ?? ''
 if (!tag.startsWith('v') || tag.length < 2) {
-  throw new Error(`Expected a release tag such as v1.1.1, received: ${tag || '(empty)'}`)
+  throw new Error(`Expected a release tag such as v1.2.0, received: ${tag || '(empty)'}`)
 }
 
 const releaseVersion = tag.slice(1)

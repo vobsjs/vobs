@@ -7,6 +7,7 @@
     "LICENSE"
   ],
   "name": "@vobs/resource",
+  "repository": { "type": "git", "url": "git+https://github.com/vobsjs/vobs.git" },
   "version": "1.2.0",
   "publishConfig": { "access": "public" },
   "type": "module",
