@@ -6,6 +6,7 @@ type VobsEventHandler<T extends Event = Event> = (event: T) => void
 
 interface VobsHTMLAttributes {
   ref?: RefTarget<any>
+  accept?: string
   accessKey?: string
   autofocus?: boolean
   checked?: boolean
