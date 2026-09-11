@@ -1,9 +1,40 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { createDOMRenderer, setRenderer } from '@vobs/vobs'
-import { setStaticProps, spreadProps } from './index'
+import { setProperty, setStaticProps, spreadProps } from './index'
 
 setRenderer(createDOMRenderer())
+
+describe('select value sync', () => {
+  it('option 子节点就绪后重放 value 赋值（微任务）', async () => {
+    const select = document.createElement('select') as HTMLSelectElement
+    // 模拟编译产物顺序：先设置 value，后插入 option 子节点
+    setProperty(select, 'value', 'b')
+    select.innerHTML = '<option value="a">A</option><option value="b">B</option>'
+    // 子节点插入使 value 回落到首个 option
+    expect(select.value).toBe('a')
+    await Promise.resolve()
+    expect(select.value).toBe('b')
+  })
+
+  it('setStaticProps 的 value 走同一重放路径', async () => {
+    const select = document.createElement('select') as HTMLSelectElement
+    setStaticProps(select, { value: 'x' })
+    select.innerHTML = '<option value="x">X</option>'
+    expect(select.value).toBe('x')
+    await Promise.resolve()
+    expect(select.value).toBe('x')
+  })
+
+  it('同一微任务内多次赋值以最后一次为准', async () => {
+    const select = document.createElement('select') as HTMLSelectElement
+    setProperty(select, 'value', 'a')
+    setProperty(select, 'value', 'c')
+    select.innerHTML = '<option value="a">A</option><option value="c">C</option>'
+    await Promise.resolve()
+    expect(select.value).toBe('c')
+  })
+})
 
 describe('static and spread prop application', () => {
   it('spreadProps applies false for property keys to clear them', () => {

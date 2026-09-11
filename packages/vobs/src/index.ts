@@ -67,6 +67,7 @@ export type {
 export {
   createHmrStateStore,
   disposeHmrModule,
+  hmrStateRef,
   resolveComponent,
   updateHmrModule
 } from '@vobs/runtime'

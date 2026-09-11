@@ -1,6 +1,6 @@
 // 编译产物调用的基础操作
 
-import { createOwner, getCurrentOwner, setOwnerDebugName, type Owner } from '@vobs/reactivity'
+import { createOwner, getCurrentOwner, setOwnerDebugName, untrack, type Owner } from '@vobs/reactivity'
 import { isVobsFragment, type VobsNode } from './fragment'
 import { describeDebugNode, getRuntimeDebugHooks, invokeRuntimeDebug, readDebugValue } from './debug'
 import {
@@ -118,6 +118,9 @@ export function setProperty(
     ? readDebugValue(() => Reflect.get(node, key))
     : undefined
   getRenderer().setProperty(node, key, value)
+  if (key === 'value' && (node as { tagName?: unknown }).tagName === 'SELECT') {
+    scheduleSelectValueSync(node, value)
+  }
   if (getRuntimeDebugHooks()) {
     invokeRuntimeDebug('domMutation', {
       operation: 'property',
@@ -127,6 +130,30 @@ export function setProperty(
       nextValue: value
     })
   }
+}
+
+const pendingSelectValues = new WeakMap<Element, unknown>()
+const selectSyncScheduled = new WeakSet<Element>()
+
+/**
+ * `<select value>` 在 option 子节点存在前赋值不生效（HTML 规范：select 的 value
+ * 由已存在的 option 决定）。编译产物先设置属性、后插入子节点，静态写法必然丢初始值
+ * （消费方此前只能用 ref + queueMicrotask 规避）。
+ * 这里对 select 的 value 赋值统一延迟到微任务重放一次：静态子节点在同一同步任务内
+ * 插入完毕，重放即命中。动态（insertList/insertDynamic）插入的 option 晚于该微任务时，
+ * 由 value 的绑定 effect 在后续信号更新中正常覆盖。
+ */
+function scheduleSelectValueSync(node: Element, value: unknown): void {
+  pendingSelectValues.set(node, value)
+  if (selectSyncScheduled.has(node)) return
+  selectSyncScheduled.add(node)
+  queueMicrotask(() => {
+    selectSyncScheduled.delete(node)
+    if (!pendingSelectValues.has(node)) return
+    const pending = pendingSelectValues.get(node)
+    pendingSelectValues.delete(node)
+    getRenderer().setProperty(node, 'value', pending)
+  })
 }
 
 export function setAttribute(
@@ -207,6 +234,9 @@ export function addEventListener(
   if (previous && previous.original === handler && previous.owner === owner) return
   if (previous) renderer.removeEventListener(node, event, previous.handler)
   const listener = owner ? (reason: Event) => {
+    // Owner 已销毁说明节点所属子树已被卸载/替换，事件来自游离 DOM，直接忽略。
+    // 否则 owner.run 会抛"已销毁的 Owner"，在事件流里制造无意义的错误噪音。
+    if (owner.disposed) return
     try {
       owner.run(() => handler(reason))
     } catch (error) {
@@ -273,7 +303,12 @@ export function createComponent<Component extends VobsComponent>(
   })
   let node: VobsNode
   try {
-    node = owner.run(() => component(props))
+    // 组件渲染必须 untrack：组件是 run-once 的，其渲染发生在某次 effect 求值
+    // （insertDynamic/insertBoundary 的渲染工厂、路由挂载）内时，若不切断追踪，
+    // 组件体内读取的信号会被收集为祖先 effect 的依赖——一次无关编辑就会触发
+    // 整棵子树销毁重建（输入框被换掉、焦点丢失、事件监听随旧树一起被清理）。
+    // 结构性响应只属于条件工厂与绑定 effect，组件本体渲染一次即止。
+    node = owner.run(() => untrack(() => component(props)))
   } catch (error) {
     owner.dispose()
     attachSourceLocation(error, source)
@@ -288,7 +323,7 @@ export function createComponent<Component extends VobsComponent>(
       parent: null,
       refresh(): void {
         const previous = instance.node
-        const next = owner.run(() => component(props))
+        const next = owner.run(() => untrack(() => component(props)))
         if (instance.parent && !isVobsFragment(previous) && !isVobsFragment(next)) {
           getRenderer().insertBefore(instance.parent, next, previous)
           getRenderer().removeChild(instance.parent, previous)

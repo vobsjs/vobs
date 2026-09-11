@@ -39,6 +39,8 @@ interface CompileState {
   localBindings: ReadonlySet<string>
   /** 编译器自身产出的诊断（如不支持的 JSX 形态），与 TypeScript 解析诊断合并返回。 */
   diagnostics: CompilerDiagnostic[]
+  /** HMR 模块标识：提供后模块顶层 state() 声明包装为 hmrStateRef，跨热更新保活信号。 */
+  hmrModuleId: string | null
 }
 
 interface SourcePosition {
@@ -101,7 +103,8 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
     sourceLocation: options.sourceLocation ?? true,
     stateAliases: collectStateAliases(sourceFile),
     localBindings: collectLocallyDeclaredNames(sourceFile),
-    diagnostics: []
+    diagnostics: [],
+    hmrModuleId: options.hmrModuleId ?? null
   }
   const cleanFilename = filename.split(/[?#]/u, 1)[0] || filename
   const diagnostics = ts.transpileModule(code, {
@@ -130,16 +133,17 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
   for (const plugin of plugins) sourceFile = transformPluginNodes(sourceFile, plugin, context)
 
   const statements = sourceFile.statements.map(statement =>
-    ts.isImportDeclaration(statement) ? rebuildImport(state, statement) : transformStatement(state, statement)
+    ts.isImportDeclaration(statement) ? rebuildImport(state, statement) : transformStatement(state, statement, true)
   )
   // 模板声明必须先于 runtime import 生成：声明里的 createTemplate 依赖
   // helperRef 注册别名，import 需要在别名全部就绪后再构建。
   const templateDeclarations = createTemplateDeclarations(state)
-  const resultFile = ts.factory.updateSourceFile(sourceFile, [
+  let resultFile = ts.factory.updateSourceFile(sourceFile, [
     ...createRuntimeImports(state),
     ...templateDeclarations,
     ...statements
   ])
+  resultFile = transformResidualJsx(state, resultFile)
 
   const generated = ts.createPrinter().printFile(resultFile)
   return {
@@ -490,7 +494,7 @@ function rebuildImport(state: CompileState, node: ts.ImportDeclaration): ts.Impo
   ), node)
 }
 
-function transformStatement(state: CompileState, node: ts.Statement): ts.Statement {
+function transformStatement(state: CompileState, node: ts.Statement, moduleScope = false): ts.Statement {
   if (ts.isFunctionDeclaration(node) && node.body) {
     return tagStatement(state, ts.factory.updateFunctionDeclaration(
       node,
@@ -504,7 +508,7 @@ function transformStatement(state: CompileState, node: ts.Statement): ts.Stateme
     ), node)
   }
 
-  if (ts.isVariableStatement(node)) return transformVariableStatement(state, node)
+  if (ts.isVariableStatement(node)) return transformVariableStatement(state, node, moduleScope)
   if (ts.isExportAssignment(node) && containsJsx(node.expression)) {
     return tagStatement(state, ts.factory.updateExportAssignment(node, node.modifiers, transformEmbeddedExpression(state, node.expression)), node)
   }
@@ -517,7 +521,7 @@ function transformStatement(state: CompileState, node: ts.Statement): ts.Stateme
   return node
 }
 
-function transformVariableStatement(state: CompileState, node: ts.VariableStatement): ts.VariableStatement {
+function transformVariableStatement(state: CompileState, node: ts.VariableStatement, moduleScope = false): ts.VariableStatement {
   let changed = false
   const declarations = node.declarationList.declarations.map(declaration => {
     const initializer = declaration.initializer
@@ -526,6 +530,9 @@ function transformVariableStatement(state: CompileState, node: ts.VariableStatem
     let nextInitializer = inferStateDebugName(state, declaration, initializer) ?? initializer
     if (containsJsx(nextInitializer)) {
       nextInitializer = transformEmbeddedExpression(state, nextInitializer)
+    } else if (moduleScope && state.hmrModuleId !== null) {
+      // HMR 状态保鲜仅限模块顶层：函数内局部 state 每次调用都应创建新信号
+      nextInitializer = wrapStateWithHmrRef(state, declaration, nextInitializer) ?? nextInitializer
     }
     if (nextInitializer === initializer) return declaration
 
@@ -578,7 +585,41 @@ function inferStateDebugName(
   ])
 }
 
-function containsJsx(expression: ts.Expression): boolean {
+/**
+ * HMR 状态保鲜：模块热更新重执行时，模块级 state() 会创建全新信号实例，与未重执行的
+ * 导入方持有旧实例并存，形成"两份状态"（症状：编辑不生效、页面半边失灵，全量刷新也无法
+ * 消除）。开启 hmrModuleId 后，模块顶层的 state 声明改经运行时注册表取值：
+ * `const x = state(init)` → `const x = hmrStateRef(moduleId, 'x', () => state(init, 'x'))`。
+ * 首次执行照常创建；模块重执行时直接复用既有信号，模块逻辑（副作用、导出绑定）照常重跑。
+ */
+function wrapStateWithHmrRef(
+  state: CompileState,
+  declaration: ts.VariableDeclaration,
+  initializer: ts.Expression
+): ts.Expression | undefined {
+  let call = initializer
+  while (ts.isParenthesizedExpression(call) || ts.isAsExpression(call) || ts.isTypeAssertionExpression(call) || ts.isSatisfiesExpression(call)) {
+    call = call.expression
+  }
+  if (!ts.isCallExpression(call)) return undefined
+  const callee = call.expression
+  if (!ts.isIdentifier(callee) || !state.stateAliases.has(callee.text)) return undefined
+  if (state.localBindings.has(callee.text)) return undefined
+  if (!ts.isIdentifier(declaration.name)) return undefined
+  return ts.factory.createCallExpression(helperRef(state, 'hmrStateRef'), undefined, [
+    ts.factory.createStringLiteral(`${state.hmrModuleId}#${declaration.name.text}`),
+    ts.factory.createArrowFunction(
+      undefined,
+      undefined,
+      [],
+      undefined,
+      ts.factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+      initializer
+    )
+  ])
+}
+
+function containsJsx(expression: ts.Expression | ts.SourceFile): boolean {
   let found = false
   const visit = (node: ts.Node): void => {
     if (isJsxExpression(node as ts.Expression)) {
@@ -895,6 +936,28 @@ function transformEmbeddedExpression(state: CompileState, expression: ts.Express
   }
 }
 
+
+function transformResidualJsx(state: CompileState, sourceFile: ts.SourceFile): ts.SourceFile {
+  if (!containsJsx(sourceFile)) return sourceFile
+  const result = ts.transform(sourceFile, [context => root => {
+    const visit: ts.Visitor = node => {
+      if (ts.isReturnStatement(node) && node.expression && containsJsx(node.expression)) {
+        return ts.factory.updateReturnStatement(node, transformEmbeddedExpression(state, node.expression))
+      }
+      if (isJsxExpression(node as ts.Expression)) {
+        return transformJsxExpression(state, node as ts.JsxElement | ts.JsxSelfClosingElement | ts.JsxFragment)
+      }
+      return ts.visitEachChild(node, visit, context)
+    }
+    return ts.visitNode(root, visit) as ts.SourceFile
+  }])
+  try {
+    return result.transformed[0]
+  } finally {
+    result.dispose()
+  }
+}
+
 /**
  * 静态元素判定：DOM 标签 + 全部属性为字符串字面量或无值 + 全部子节点为文本或递归静态元素。
  * 保守排除项（语义或序列化等价性无把握，走原路径）：
@@ -1194,38 +1257,71 @@ function createSourceLocation(node: ts.Node): ts.ObjectLiteralExpression {
 }
 
 function transformDynamicExpression(state: CompileState, expression: ts.Expression): ts.ArrowFunction | null {
+  const converted = convertDynamicNodeExpression(state, expression)
+  return converted ? createGetter(converted) : null
+}
+
+/**
+ * 把产出节点的动态表达式（`cond ? <A/> : <B/>`、`cond && <A/>`，含任意嵌套组合）
+ * 转换为条件表达式树；各分支中的 JSX 递归编译为节点工厂，由 insertDynamic 挂载/卸载。
+ * 返回 null 表示没有任何分支产出节点（纯文本/数值场景走 insertDynamicValue 文本绑定）。
+ */
+function convertDynamicNodeExpression(state: CompileState, expression: ts.Expression): ts.ConditionalExpression | null {
   if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
     const right = unwrapExpression(expression.right)
-    if (!isJsxExpression(right)) return null
-    return createGetter(ts.factory.createConditionalExpression(
-      expression.left,
-      ts.factory.createToken(ts.SyntaxKind.QuestionToken),
-      transformJsxExpression(state, right),
-      ts.factory.createToken(ts.SyntaxKind.ColonToken),
-      ts.factory.createNull()
-    ))
+    if (isJsxExpression(right)) {
+      return createNodeConditional(expression.left, transformJsxExpression(state, right), null)
+    }
+    // 右侧是嵌套的动态节点表达式（如 cond && (sub ? <A/> : <B/>)）时递归转换，
+    // 转换失败（纯文本分支）则整体回落为动态值绑定，保持语义可静态判定。
+    const convertedRight = convertDynamicNodeExpression(state, right)
+    if (convertedRight) return createNodeConditional(expression.left, convertedRight, null)
+    return null
   }
 
   if (ts.isConditionalExpression(expression)) {
     const whenTrue = transformDynamicBranch(state, expression.whenTrue)
     const whenFalse = transformDynamicBranch(state, expression.whenFalse)
     if (!whenTrue && !whenFalse) return null
-    return createGetter(ts.factory.createConditionalExpression(
+    return ts.factory.createConditionalExpression(
       expression.condition,
       ts.factory.createToken(ts.SyntaxKind.QuestionToken),
       whenTrue ?? ts.factory.createNull(),
       ts.factory.createToken(ts.SyntaxKind.ColonToken),
       whenFalse ?? ts.factory.createNull()
-    ))
+    )
   }
 
   return null
 }
 
+function createNodeConditional(
+  condition: ts.Expression,
+  whenTrue: ts.Expression,
+  whenFalse: ts.Expression | null
+): ts.ConditionalExpression {
+  return ts.factory.createConditionalExpression(
+    condition,
+    ts.factory.createToken(ts.SyntaxKind.QuestionToken),
+    whenTrue,
+    ts.factory.createToken(ts.SyntaxKind.ColonToken),
+    whenFalse ?? ts.factory.createNull()
+  )
+}
+
+/**
+ * 转换单个分支：JSX → 节点工厂；null/false 原样保留；嵌套的三元与 `&&`
+ * 动态节点表达式递归转换（此前嵌套三元只编译第一个分支，其余分支被静默丢弃）。
+ * 其余表达式（字符串、数值等）返回 null，由调用方回落为 null 分支。
+ */
 function transformDynamicBranch(state: CompileState, expression: ts.Expression): ts.Expression | null {
   const branch = unwrapExpression(expression)
   if (isJsxExpression(branch)) return transformJsxExpression(state, branch)
   if (branch.kind === ts.SyntaxKind.NullKeyword || branch.kind === ts.SyntaxKind.FalseKeyword) return branch
+  if (ts.isConditionalExpression(branch)
+    || (ts.isBinaryExpression(branch) && branch.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken)) {
+    return convertDynamicNodeExpression(state, branch)
+  }
   return null
 }
 

@@ -141,6 +141,54 @@ describe('vobsPlugin', () => {
     expect(keys).toEqual(['page.title', 'common.ok'])
   })
 
+  it('为 .ts 状态模块注入 HMR 保鲜与接受器（dev 默认开启）', () => {
+    const plugin = vobsPlugin()
+    const transform = plugin.transform
+    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: 缺少 transform 钩子')
+
+    const result = transform.call({} as ThisParameterType<typeof transform>,
+      `import { state } from '@vobs/reactivity'\nexport const count = state(0)\n`,
+      'src/stores/counter.ts'
+    ) as { code: string }
+
+    expect(result.code).toContain('hmrStateRef("src/stores/counter.ts#count"')
+    expect(result.code).toContain('import.meta.hot.accept')
+  })
+
+  it('普通 .ts 模块与 .d.ts 不参与编译', () => {
+    const plugin = vobsPlugin()
+    const transform = plugin.transform
+    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: 缺少 transform 钩子')
+
+    expect(transform.call({} as ThisParameterType<typeof transform>, `export const value = 1`, 'src/utils/math.ts')).toBeNull()
+    expect(transform.call({} as ThisParameterType<typeof transform>, `export declare const x: number`, 'src/types.d.ts')).toBeNull()
+  })
+
+  it('hmrState: false 关闭 .ts 状态模块处理', () => {
+    const plugin = vobsPlugin({ hmrState: false })
+    const transform = plugin.transform
+    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: 缺少 transform 钩子')
+
+    const result = transform.call({} as ThisParameterType<typeof transform>,
+      `import { state } from '@vobs/reactivity'\nexport const count = state(0)\n`,
+      'src/stores/counter.ts'
+    )
+    expect(result).toBeNull()
+  })
+
+  it('生产构建不为 .ts 状态模块注入 HMR', () => {
+    const plugin = vobsPlugin()
+    ;(plugin.configResolved as (config: unknown) => void)?.({ command: 'build' })
+    const transform = plugin.transform
+    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: 缺少 transform 钩子')
+
+    const result = transform.call({} as ThisParameterType<typeof transform>,
+      `import { state } from '@vobs/reactivity'\nexport const count = state(0)\n`,
+      'src/stores/counter.ts'
+    )
+    expect(result).toBeNull()
+  })
+
   it('将 HTML 模块编译为无 innerHTML 的 Vobs 组件', () => {
     const result = compileHtmlComponent('<article class="copy"><h1>Hello</h1><p>Safe</p></article>', {
       filename: 'src/content.html'

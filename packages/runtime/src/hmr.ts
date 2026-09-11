@@ -96,6 +96,20 @@ export function createHmrStateStore(moduleId: string): HmrStateStore {
   }
 }
 
+/**
+ * 编译器为模块顶层 state() 声明生成的取值入口（`#state:` 前缀与手动 store 键隔离）。
+ * 模块热更新重执行时复用既有信号实例：旧导入方持有的实例与新模块实例共享同一份状态，
+ * 消除"两份模块、两份状态"导致的编辑不生效/页面半边失灵。
+ */
+export function hmrStateRef<T>(moduleId: string, key: string, create: () => T): T {
+  const state = getModule(moduleId).state
+  const registryKey = `#state:${key}`
+  if (state.has(registryKey)) return state.get(registryKey) as T
+  const value = create()
+  state.set(registryKey, value)
+  return value
+}
+
 export function registerHmrInstance(moduleId: string, instance: HmrInstance): () => void {
   const instances = getModule(moduleId).instances
   instances.add(instance)

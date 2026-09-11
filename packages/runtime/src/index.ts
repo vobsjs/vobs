@@ -65,6 +65,7 @@ export type {
 export {
   createHmrStateStore,
   disposeHmrModule,
+  hmrStateRef,
   markHmrInstanceMounted,
   registerHmrInstance,
   resolveComponent,

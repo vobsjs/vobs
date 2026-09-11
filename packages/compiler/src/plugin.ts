@@ -41,6 +41,12 @@ export interface CompileOptions extends CompilerOptions {
    * 默认 true。生产构建应传 false 以减小产物体积，省略后错误仍带组件名，定位走 source map。
    */
   sourceLocation?: boolean
+  /**
+   * HMR 模块标识（dev 由 Vite 插件注入，通常为模块绝对路径）。提供后，模块顶层的
+   * state() 声明会包装为 hmrStateRef(...)：热更新重执行模块时复用既有信号实例，
+   * 避免"新旧两份模块实例、两份状态"导致的页面半边失灵。
+   */
+  hmrModuleId?: string
 }
 
 export interface VobsSourceMap {

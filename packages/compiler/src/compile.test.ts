@@ -170,6 +170,80 @@ describe('compiler', () => {
     expect(result).not.toContain('setAttribute(_el2, "key"')
   })
 
+  it('编译嵌套三元的全部分支（不再只保留第一个分支）', () => {
+    const result = compile(`const el = <div>{flag ? <A /> : other ? <B /> : <C />}</div>`)
+
+    expect(result).toContain('insertDynamic')
+    // 三个分支全部编译为组件调用
+    expect(result.match(/createComponent\(resolveComponent/gu)).toHaveLength(3)
+    expect(result).not.toContain('React')
+  })
+
+  it('编译 && 与嵌套动态节点组合', () => {
+    const result = compile(`const el = <div>{flag && (other ? <A /> : <B />)}</div>`)
+
+    expect(result).toContain('insertDynamic')
+    expect(result.match(/createComponent\(resolveComponent/gu)).toHaveLength(2)
+  })
+
+  it('编译 if 块内的 JSX 早返回（不再泄漏到 React 降级路径）', () => {
+    const code = `
+  function App() {
+    if (items.value.length === 0) return <Empty />
+    return <div><Footer /></div>
+  }
+  `
+    const result = compile(code)
+
+    // 早返回分支与主 return 分支都编译为 vobs 组件调用，源码中不残留 JSX
+    expect(result.match(/createComponent\(resolveComponent/gu)).toHaveLength(2)
+    expect(result).not.toContain('<Empty')
+    expect(result).not.toContain('<Footer')
+    expect(result).not.toContain('React')
+  })
+
+  it('编译函数体内部初始化器与嵌套函数中的 JSX', () => {
+    const code = `
+  function App() {
+    const render = () => <Inner />
+    if (cond.value) { slot = <Aside /> }
+    return <div>{render()}</div>
+  }
+  `
+    const result = compile(code)
+
+    expect(result.match(/createComponent\(resolveComponent/gu)).toHaveLength(2)
+    expect(result).not.toContain('<Inner')
+    expect(result).not.toContain('<Aside')
+    expect(result).not.toContain('React')
+  })
+
+  it('hmrModuleId 将模块顶层 state 包装为 HMR 保鲜引用', () => {
+    const code = `import { state } from '@vobs/reactivity'
+export const count = state(0)
+function helper() {
+  const local = state(1)
+  return local.value
+}
+`
+    const result = compile(code, { hmrModuleId: 'src/stores/counter.ts' })
+
+    // 顶层声明被包装，函数内的局部声明不受影响
+    expect(result).toContain('hmrStateRef("src/stores/counter.ts#count"')
+    expect(result).toContain('() => state(0, "count")')
+    expect(result).not.toContain('hmrStateRef("src/stores/counter.ts#local"')
+  })
+
+  it('hmrModuleId 保留显式 debugName 且兼容别名导入', () => {
+    const code = `import { state as st } from '@vobs/reactivity'
+export const width = st(50, 'doc.width')
+`
+    const result = compile(code, { hmrModuleId: 'src/stores/doc.ts' })
+
+    expect(result).toContain('hmrStateRef("src/stores/doc.ts#width"')
+    expect(result).toContain("() => st(50, 'doc.width')")
+  })
+
   it('在 JSX 转换前执行编译器插件的分析、程序与节点钩子', () => {
     const filenames: string[] = []
     const plugin: CompilerPlugin = {

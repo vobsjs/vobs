@@ -7,14 +7,24 @@ export type ErrorBoundaryFallback = (
   retry: BoundaryRetry
 ) => ReturnType<NodeFactory>
 
+/**
+ * 子节点双形态：JSX 属性经编译器编译为惰性 getter（工厂），手写对象字面量可直接传节点。
+ */
+export type ErrorBoundaryChildren = NodeFactory | VobsNode
+
 export interface ErrorBoundaryOptions {
-  children: NodeFactory
+  children: ErrorBoundaryChildren
   fallback: ErrorBoundaryFallback
 }
 
 export interface ErrorBoundaryProps {
-  children: NodeFactory
+  children: ErrorBoundaryChildren
   fallback: ErrorBoundaryFallback
+}
+
+/** Normalize child sources to the lazy factory shape insertBoundary expects. */
+function resolveBoundaryChildren(children: ErrorBoundaryChildren): NodeFactory {
+  return typeof children === 'function' ? children : () => children
 }
 
 /**
@@ -26,7 +36,7 @@ export function insertErrorBoundary(
   anchor: Node | null,
   options: ErrorBoundaryOptions
 ): void {
-  insertBoundary(parent, anchor, options)
+  insertBoundary(parent, anchor, { ...options, children: resolveBoundaryChildren(options.children) })
 }
 
 /** Component-shaped API backed by the same no-wrapper host instruction. */

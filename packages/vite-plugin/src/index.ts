@@ -11,6 +11,13 @@ export interface VobsVitePluginOptions {
   include?: RegExp
   compiler?: CompileOptions
   hmr?: boolean
+  /**
+   * 模块级状态 HMR 保鲜（默认开启，仅 dev 生效）。开启后：
+   * - 模块顶层 state() 声明编译为 hmrStateRef(...)，热更新重执行模块时复用既有信号，
+   *   消除"新旧两份模块实例、两份状态"导致的编辑不生效/页面半边失灵；
+   * - 声明了模块级 state 的 .ts 文件（store 类模块）也纳入 HMR 处理。
+   */
+  hmrState?: boolean
   extractI18n?: (key: string, filename: string) => void
   html?: boolean | { readonly extensions?: readonly string[] }
 }
@@ -19,6 +26,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
   const include = options.include ?? /\.tsx(?:$|\?)/
   const htmlModules = new Set<string>()
   let productionBuild = false
+  let hmrStateEnabled = (options.hmr ?? true) && (options.hmrState ?? true)
 
   return {
     name: 'vobs',
@@ -27,6 +35,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
 
     configResolved(config) {
       productionBuild = config.command === 'build'
+      hmrStateEnabled = (options.hmr ?? true) && !productionBuild && (options.hmrState ?? true)
     },
 
     resolveId(source: string, importer: string | undefined) {
@@ -44,17 +53,30 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
     },
 
     transform(code: string, id: string) {
-      include.lastIndex = 0
-      if (!include.test(id)) return null
+      const cleanId = id.split(/[?#]/u, 1)[0]
+      const isTsx = cleanId.endsWith('.tsx')
+      const isStateTs = isStateModulePath(cleanId)
+      if (!isTsx && !isStateTs) return null
+      if (options.include) {
+        include.lastIndex = 0
+        if (!include.test(id)) return null
+      }
+
+      // .ts 状态模块（store 类）：声明了模块级 state 才纳入编译与 HMR，
+      // 避免对普通 .ts 全量重印。
+      if (!isTsx && (!hmrStateEnabled || !isStatefulModule(code))) return null
 
       const extractor = options.extractI18n
         ? createI18nExtractor({ onKey: options.extractI18n })
         : undefined
+      const hmr = options.hmr ?? !productionBuild
       const result = compileWithSourceMap(code, {
         ...options.compiler,
         // 生产构建默认剔除组件源码位置（错误定位走 source map）；显式配置优先。
         sourceLocation: options.compiler?.sourceLocation ?? !productionBuild,
         filename: id,
+        // HMR 模块标识必须跨 ?t= 查询稳定（registry 复用语义依赖它），用干净路径。
+        hmrModuleId: hmr ? cleanId : options.compiler?.hmrModuleId,
         plugins: [
           ...(options.compiler?.plugins ?? []),
           ...(extractor ? [extractor.plugin] : [])
@@ -71,14 +93,26 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
           fix: diagnostic.fix
         })
       }
-      const hmr = options.hmr ?? !productionBuild
-      const hmrCode = hmr ? createHmrCode(id) : ''
+      const hmrCode = hmr ? createHmrCode(cleanId) : ''
       return {
         code: `${result.code}${hmrCode}`,
         map: result.map
       }
     }
   }
+}
+
+/** 模块级 state 的 store 类 .ts 模块判定：从 @vobs 导入 state 且实际调用。 */
+function isStatefulModule(code: string): boolean {
+  return /\bimport\s+(?:type\s+)?\{[^}]*\bstate\b[^}]*\}\s*from\s*['"]@vobs\/(?:reactivity|vobs)['"]/u.test(code)
+    && /(?<![\w$.])state\s*\(/u.test(code)
+}
+
+function isStateModulePath(cleanId: string): boolean {
+  if (!cleanId.endsWith('.ts')) return false
+  if (cleanId.endsWith('.d.ts')) return false
+  if (cleanId.includes('node_modules')) return false
+  return true
 }
 
 function isRelativeModule(source: string): boolean {

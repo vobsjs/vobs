@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createHmrStateStore,
   disposeHmrModule,
+  hmrStateRef,
   resolveComponent,
   updateHmrModule
 } from './hmr'
@@ -52,5 +53,21 @@ describe('runtime HMR', () => {
     expect(store.get('count', 0)).toBe(3)
     disposeHmrModule(moduleId)
     expect(createHmrStateStore(moduleId).get('count', 0)).toBe(3)
+  })
+})
+
+describe('hmrStateRef', () => {
+  it('模块重执行时复用既有信号实例（状态保鲜）', () => {
+    let first: unknown
+    const create = () => ({ value: 0, tag: Math.random() })
+    // 模拟模块首执行
+    const firstRef = hmrStateRef('src/stores/a.ts', 'count', create)
+    first = firstRef
+    // 模拟热更新后模块重执行：新实例、同一 key
+    const secondRef = hmrStateRef('src/stores/a.ts', 'count', create)
+    expect(secondRef).toBe(first)
+    // 不同 key / 不同模块各自独立
+    expect(hmrStateRef('src/stores/a.ts', 'other', create)).not.toBe(first)
+    expect(hmrStateRef('src/stores/b.ts', 'count', create)).not.toBe(first)
   })
 })

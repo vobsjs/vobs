@@ -1,5 +1,4 @@
-import type { VobsNode } from './fragment'
-import type { Ref, RefTarget } from '@vobs/runtime'
+import type { Ref, RefTarget, VobsNode } from '@vobs/runtime'
 
 // JSX 类型声明
 
@@ -9,6 +8,7 @@ interface VobsHTMLAttributes {
   ref?: RefTarget<any>
   accessKey?: string
   autofocus?: boolean
+  checked?: boolean
   class?: string
   className?: string
   cols?: number
@@ -57,30 +57,62 @@ declare global {
     interface ElementChildrenAttribute { children: {} }
     interface IntrinsicElements {
       a: VobsHTMLAttributes
+      abbr: VobsHTMLAttributes
+      address: VobsHTMLAttributes
       article: VobsHTMLAttributes
       aside: VobsHTMLAttributes
+      b: VobsHTMLAttributes
       button: VobsHTMLAttributes
+      canvas: VobsHTMLAttributes
       code: VobsHTMLAttributes
+      dd: VobsHTMLAttributes
+      del: VobsHTMLAttributes
+      details: VobsHTMLAttributes
+      dialog: VobsHTMLAttributes
       div: VobsHTMLAttributes
+      dl: VobsHTMLAttributes
+      dt: VobsHTMLAttributes
+      em: VobsHTMLAttributes
+      fieldset: VobsHTMLAttributes
+      figcaption: VobsHTMLAttributes
+      figure: VobsHTMLAttributes
       footer: VobsHTMLAttributes
       form: VobsHTMLAttributes
       h1: VobsHTMLAttributes
       h2: VobsHTMLAttributes
       h3: VobsHTMLAttributes
+      h4: VobsHTMLAttributes
+      h5: VobsHTMLAttributes
+      h6: VobsHTMLAttributes
       header: VobsHTMLAttributes
+      hr: VobsHTMLAttributes
+      i: VobsHTMLAttributes
       img: VobsHTMLAttributes
       input: VobsHTMLAttributes
+      ins: VobsHTMLAttributes
+      kbd: VobsHTMLAttributes
       label: VobsHTMLAttributes
+      legend: VobsHTMLAttributes
       li: VobsHTMLAttributes
       main: VobsHTMLAttributes
+      mark: VobsHTMLAttributes
       nav: VobsHTMLAttributes
       ol: VobsHTMLAttributes
+      optgroup: VobsHTMLAttributes
       option: VobsHTMLAttributes
+      output: VobsHTMLAttributes
       pre: VobsHTMLAttributes
       p: VobsHTMLAttributes
+      q: VobsHTMLAttributes
+      s: VobsHTMLAttributes
       section: VobsHTMLAttributes
       select: VobsHTMLAttributes
+      small: VobsHTMLAttributes
       span: VobsHTMLAttributes
+      strong: VobsHTMLAttributes
+      sub: VobsHTMLAttributes
+      summary: VobsHTMLAttributes
+      sup: VobsHTMLAttributes
       table: VobsHTMLAttributes
       tbody: VobsHTMLAttributes
       td: VobsHTMLAttributes
@@ -88,8 +120,11 @@ declare global {
       tfoot: VobsHTMLAttributes
       th: VobsHTMLAttributes
       thead: VobsHTMLAttributes
+      time: VobsHTMLAttributes
       tr: VobsHTMLAttributes
+      u: VobsHTMLAttributes
       ul: VobsHTMLAttributes
+      video: VobsHTMLAttributes
     }
   }
 }

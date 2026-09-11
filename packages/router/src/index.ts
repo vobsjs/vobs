@@ -252,7 +252,8 @@ export interface Router {
 
 export interface RouterViewProps {
   readonly router?: Router
-  readonly loading?: () => VobsNode | null | undefined
+  /** 加载占位：JSX 属性经编译器编译为惰性 getter，手写对象字面量可传节点或工厂。 */
+  readonly loading?: VobsNode | (() => VobsNode | null | undefined)
   readonly notFound?: (route: RouteLocation) => VobsNode | null | undefined
   readonly error?: (error: Error, retry: () => void) => VobsNode | null | undefined
 }
@@ -817,7 +818,9 @@ export function RouterView(props: RouterViewProps = {}): VobsNode {
       const route = router.currentRoute.value
       const view = router.getViewState(route)
       routeRetry = view.retry
-      if (view.status === 'loading') return props.loading?.() ?? null
+      if (view.status === 'loading') {
+        return (typeof props.loading === 'function' ? props.loading() : props.loading) ?? null
+      }
       if (view.status === 'not-found') return props.notFound?.(route) ?? null
       if (view.status === 'error') {
         throw view.error ?? new Error('路由组件加载失败')

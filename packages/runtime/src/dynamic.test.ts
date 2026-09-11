@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { createDOMRenderer, setRenderer, createText, insertDynamicValue, insertList, createComponent } from '@vobs/vobs'
+import { createDOMRenderer, setRenderer, createText, insertDynamicValue, insertList, insertDynamic, addEventListener, createComponent } from '@vobs/vobs'
 import { effect, state } from '@vobs/reactivity'
 import { bindText } from './bind'
 import { createFragment, type VobsNode } from './fragment'
@@ -397,3 +397,67 @@ describe('keyed list minimal-move reconciliation', () => {
   })
 })
 
+
+describe('component render isolation (untrack)', () => {
+  const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+
+  it('组件体内的信号读取不成为 insertDynamic 的结构依赖', async () => {
+    setRenderer(createDOMRenderer())
+    const visible = state(false)
+    const unrelated = state(0)
+    let builds = 0
+    function Panel(): Node {
+      builds += 1
+      // 组件体读取信号：修复前会被追踪为祖先 effect 依赖，触发整树重建
+      unrelated.value
+      return document.createElement('input')
+    }
+    const parent = document.createElement('div')
+    insertDynamic(parent, null, () => (visible.value ? createComponent(Panel, {}) : null))
+    expect(builds).toBe(0)
+
+    visible.value = true
+    await flush()
+    expect(builds).toBe(1)
+    expect(parent.querySelector('input')).not.toBeNull()
+
+    unrelated.value = 99
+    await flush()
+    // 无关信号变化不重建子树
+    expect(builds).toBe(1)
+
+    visible.value = false
+    await flush()
+    // 条件工厂自身的依赖仍然生效
+    expect(parent.querySelector('input')).toBeNull()
+    expect(builds).toBe(1)
+  })
+
+  it('动态组件的事件监听在信号变化后持续可用', async () => {
+    setRenderer(createDOMRenderer())
+    const visible = state(true)
+    const content = state('')
+    function Field(): Node {
+      const input = document.createElement('input')
+      addEventListener(input, 'input', event => {
+        content.set((event.target as HTMLInputElement).value)
+      })
+      return input
+    }
+    const parent = document.createElement('div')
+    insertDynamic(parent, null, () => (visible.value ? createComponent(Field, {}) : null))
+    await flush()
+
+    const input = parent.querySelector('input')!
+    input.value = 'hello'
+    input.dispatchEvent(new Event('input'))
+    expect(content.value).toBe('hello')
+
+    // 触发一次渲染期读取过的信号变化后，事件监听依旧有效
+    visible.value = true
+    await flush()
+    input.value = 'world'
+    input.dispatchEvent(new Event('input'))
+    expect(content.value).toBe('world')
+  })
+})

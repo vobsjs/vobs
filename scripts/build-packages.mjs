@@ -43,7 +43,16 @@ async function copyAssets(directory, outDir) {
         await visit(source)
         continue
       }
-      if (/\.(?:ts|tsx|js|jsx)$/.test(item.name) || /\.d\.ts$/.test(item.name)) continue
+      // 独立的 .d.ts（如 jsx.d.ts 全局类型声明）不是构建入口，tsup 不会为它们生成产物，
+      // 这里直接复制进 dist（已存在的目标说明是 tsup 生成的同入口类型，不覆盖）。
+      // 注意先于通用 .ts$ 判断：.d.ts 同样以 .ts 结尾。
+      if (/\.d\.ts$/.test(item.name)) {
+        if (existsSync(target)) continue
+        await mkdir(path.dirname(target), { recursive: true })
+        await copyFile(source, target)
+        continue
+      }
+      if (/\.(?:ts|tsx|js|jsx)$/.test(item.name)) continue
       await mkdir(path.dirname(target), { recursive: true })
       await copyFile(source, target)
     }
