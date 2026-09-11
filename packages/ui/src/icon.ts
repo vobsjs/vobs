@@ -5,6 +5,7 @@ import {
   type SvgIconDefinition,
   type VobsIconProps
 } from '@vobs/icon-core'
+import { state } from '@vobs/vobs'
 import { hasProp, mountSlot, readProp } from './utils'
 import type { VobsNode } from '@vobs/vobs'
 import type { VuiCommonProps } from './types'
@@ -18,13 +19,19 @@ export interface IconProps extends VuiCommonProps, VobsIconProps {
 
 export function Icon(props: IconProps = {}): VobsNode {
   const root = createSvgIconNode(() => {
+    // 读取注册表版本号：registerIcon 后已挂载的 Icon 自动补渲染，
+    // 支持异步/按需注册（如 Iconify 集合、在线加载）。
+    registryVersion.value
     const definition = resolveIcon(
       readProp<IconDefinition | string | undefined>(props, 'icon', undefined)
         ?? readProp<string | undefined>(props, 'name', undefined)
     )
     if (!definition) {
       if (hasProp(props, 'children')) return undefined
-      throw new Error('Vobs UI: Icon requires a registered `name` or an `icon` definition')
+      const requested = readProp<IconDefinition | string | undefined>(props, 'icon', undefined)
+        ?? readProp<string | undefined>(props, 'name', undefined)
+      console.warn(`Vobs UI: 未注册的图标 "${String(requested)}"，已渲染为空。请先 registerIcon 或改用已注册的名称。`)
+      return undefined
     }
     return iconDefinitionToSvg(definition)
   }, props, {
@@ -101,15 +108,20 @@ const iconRegistry = new Map<string, IconDefinition>(
   Object.entries(VUI_ICON_PATHS).map(([name, path]) => [name, { name, path }])
 )
 
+/** 注册表版本号：registerIcon/注销时递增，驱动已挂载 Icon 的 effect 重取定义。 */
+const registryVersion = state(0, 'vui.iconRegistry.version')
+
 export { VUI_ICON_PATHS }
 export { createIcon, registerIcon, resolveIcon }
 
 function registerIcon(icon: IconDefinition): () => void {
   const previous = iconRegistry.get(icon.name)
   iconRegistry.set(icon.name, icon)
+  registryVersion.value++
   return () => {
     if (previous) iconRegistry.set(icon.name, previous)
     else iconRegistry.delete(icon.name)
+    registryVersion.value++
   }
 }
 
