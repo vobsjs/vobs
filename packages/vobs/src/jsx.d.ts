@@ -8,6 +8,7 @@ interface VobsHTMLAttributes {
   ref?: RefTarget<any>
   accept?: string
   accessKey?: string
+  alt?: string
   autofocus?: boolean
   checked?: boolean
   class?: string
