@@ -302,11 +302,11 @@
 /* ── Dialog ────────────────────────────────────────────────── */
 /* ===== Dialog / Modal ===== */
     .vui-backdrop {
-      position: relative;
+      position: fixed; inset: 0;
       background: rgba(0,0,0,.5);
-      border: 1px solid var(--border-neutral-l1);
       padding: var(--spacer-32) var(--spacer-24);
       display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
     }
     .vui-dialog {
       background: var(--bg-base-secondary);
@@ -642,6 +642,7 @@
       min-width: 180px;
     }
     .vui-menu__item {
+      appearance: none; background: transparent; border: none; font-family: inherit;
       display: flex; align-items: center; gap: var(--spacer-8);
       padding: var(--spacer-6) var(--spacer-8);
       border-radius: var(--radius-2);
@@ -649,10 +650,10 @@
       font-size: var(--body-sm-font-size);
       cursor: pointer;
     }
-    .vui-menu__item .icon { color: var(--icon-secondary); }
+    .vui-menu__item .vui-menu__icon { color: var(--icon-secondary); }
     .vui-menu__item:hover { background: var(--bg-overlay-l2); }
     .vui-menu__item--danger { color: var(--status-error-default); }
-    .vui-menu__item--danger .icon { color: var(--status-error-default); }
+    .vui-menu__item--danger .vui-menu__icon { color: var(--status-error-default); }
     .vui-menu__divider { height: 1px; background: var(--border-neutral-l1); margin: var(--spacer-4) 0; }
     .vui-menu__shortcut { margin-left: auto; color: var(--text-tertiary); font-size: var(--body-xs-font-size); font-family: var(--code-editor-font-family); }
 

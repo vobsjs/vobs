@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.5] - 2026-09-11
+
+### Fixed
+
+- `@vobs/ui` Menu: menu items now reset browser button default styles (`appearance: none; background: transparent; border: none; font-family: inherit`), previously the UA dark-mode button chrome (2px border + gray background) leaked through.
+- `@vobs/ui` Menu: icon color selector aligned with the actual class name (`vui-menu__icon`, previously `.icon` which never matched).
+- `@vobs/ui` Dialog: `.vui-backdrop` is now a full-screen overlay (`position: fixed; inset: 0; z-index: 1000`), previously `position: relative` which pushed dialogs to the end of the document flow instead of overlaying the viewport.
+
 ## [1.3.4] - 2026-09-11
 
 ### Fixed
