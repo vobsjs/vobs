@@ -55,25 +55,29 @@ export function resolveComponent<Props extends object>(
   return proxy
 }
 
-export function updateHmrModule(_moduleId: string, nextModule: Record<string, unknown>): void {
-  const modules = [...hmrGlobal.modules.values()]
-  for (const module of modules) {
-    let changed = false
-    for (const [name, proxy] of module.components) {
-      const next = nextModule[name]
-      if (typeof next !== 'function') continue
-      const hmrProxy = proxy as HmrComponent & { current: HmrComponent; displayName?: string }
-      hmrProxy.current = next as HmrComponent
-      Object.defineProperty(hmrProxy, 'displayName', { configurable: true, value: next.name || name })
-      changed = true
-    }
-    if (!changed) continue
-    for (const instance of module.instances) {
-      try {
-        instance.refresh()
-      } catch {
-        // HMR failures remain application errors on the next normal render.
-      }
+export function updateHmrModule(moduleId: string, nextModule: Record<string, unknown>): void {
+  const module = hmrGlobal.modules.get(moduleId)
+  if (!module) return
+  let changed = false
+  for (const [name, proxy] of module.components) {
+    const next = nextModule[name]
+    if (typeof next !== 'function') continue
+    const hmrProxy = proxy as HmrComponent & { current: HmrComponent; displayName?: string }
+    hmrProxy.current = next as HmrComponent
+    Object.defineProperty(hmrProxy, 'displayName', { configurable: true, value: next.name || name })
+    changed = true
+  }
+  if (!changed) return
+  // 快照后正序遍历：实例在自身渲染开始前注册，祖先必然先于后代入列——
+  // 祖先先刷新会 dispose 上一轮渲染作用域，其树内旧后代实例的 refresh
+  // 命中已销毁守卫被跳过，避免同一组件在一次热更新中重渲染两次。
+  // 同时 refresh 重渲染以新代码创建的全新实例不在快照中，天然不会再刷新。
+  const instances = [...module.instances]
+  for (const instance of instances) {
+    try {
+      instance.refresh()
+    } catch {
+      // HMR failures remain application errors on the next normal render.
     }
   }
 }

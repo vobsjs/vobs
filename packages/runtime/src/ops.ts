@@ -59,6 +59,7 @@ export function insertBefore(
 ): void {
   if (isVobsFragment(child)) {
     child.mount(parent, isVobsFragment(anchor) ? anchor.start : anchor)
+    markHmrInstanceMounted(child, parent)
     return
   }
   getRenderer().insertBefore(parent, child, isVobsFragment(anchor) ? anchor.start : anchor)
@@ -301,6 +302,22 @@ export function createComponent<Component extends VobsComponent>(
     attachComponentContext(reason, componentName, owner.id)
     throw reason
   })
+  // HMR 注册先于渲染作用域标记：注册清理必须跨热更新保活，不能被
+  // disposeSince 当作上一轮渲染的清理释放掉。
+  const hmrKey = (component as typeof component & { hmrKey?: string }).hmrKey
+  let instance: HmrInstance | null = null
+  if (hmrKey) {
+    const separator = hmrKey.lastIndexOf(':')
+    const moduleId = separator < 0 ? hmrKey : hmrKey.slice(0, separator)
+    instance = { node: null as unknown as VobsNode, parent: null, refresh: () => refreshInstance() }
+    const cleanup = registerHmrInstance(moduleId, instance)
+    owner.onDispose(cleanup)
+  }
+  // 渲染作用域：组件 Owner 只承载 HMR 注册与错误处理，每轮渲染注册的 effect、
+  // onDispose（含 portal 清理）与嵌套组件 Owner 都归属该轮作用域。HMR refresh
+  // 重渲染前释放上一轮作用域，旧实例的 effect 不再订阅信号、portal 节点不再
+  // 残留在 body 中每轮热更新叠加；组件 Owner 与 HMR 注册保活。
+  const renderScope = owner.mark()
   let node: VobsNode
   try {
     // 组件渲染必须 untrack：组件是 run-once 的，其渲染发生在某次 effect 求值
@@ -316,29 +333,31 @@ export function createComponent<Component extends VobsComponent>(
     throw error
   }
   associateNodeOwner(node, owner)
-  const hmrKey = (component as typeof component & { hmrKey?: string }).hmrKey
-  if (hmrKey) {
-    const instance: HmrInstance = {
-      node,
-      parent: null,
-      refresh(): void {
-        const previous = instance.node
-        const next = owner.run(() => untrack(() => component(props)))
-        if (instance.parent && !isVobsFragment(previous) && !isVobsFragment(next)) {
-          getRenderer().insertBefore(instance.parent, next, previous)
-          getRenderer().removeChild(instance.parent, previous)
-        }
-        nodeOwners.delete(previous as object)
-        nodeOwners.set(next as object, owner)
-        associateHmrInstance(next, instance)
-        instance.node = next
-      }
-    }
+  if (instance) {
+    instance.node = node
     associateHmrInstance(node, instance)
-    const separator = hmrKey.lastIndexOf(':')
-    const moduleId = separator < 0 ? hmrKey : hmrKey.slice(0, separator)
-    const cleanup = registerHmrInstance(moduleId, instance)
-    owner.onDispose(cleanup)
+  }
+  function refreshInstance(): void {
+    // 组件已随旧渲染树一起卸载（如父级在同一次热更新中先完成刷新），
+    // 无法也无需再刷新。
+    if (owner.disposed) return
+    const previous = instance!.node
+    owner.disposeSince(renderScope)
+    const next = owner.run(() => untrack(() => component(props)))
+    const parent = instance!.parent
+    if (parent) {
+      // 先插入新树再卸载旧树：替换锚点始终取自仍在文档中的旧树，
+      // fragment 与普通节点两种形态任意组合都能正确定位插入点。
+      const anchor = isVobsFragment(previous) ? previous.start : previous
+      if (isVobsFragment(next)) next.mount(parent, anchor)
+      else getRenderer().insertBefore(parent, next, anchor)
+      if (isVobsFragment(previous)) previous.unmount(parent)
+      else getRenderer().removeChild(parent, previous)
+    }
+    nodeOwners.delete(previous as object)
+    nodeOwners.set(next as object, owner)
+    associateHmrInstance(next, instance!)
+    instance!.node = next
   }
   return node
 }

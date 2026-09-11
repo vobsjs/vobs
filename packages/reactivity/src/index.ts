@@ -7,7 +7,7 @@ export type { Memo } from './memo'
 export { scheduler, batch, scheduleLow } from './scheduler'
 export type { Scheduler } from './scheduler'
 export { createOwner, getCurrentOwner, getOwnerDebugName, onDispose, runWithOwner, setOwnerDebugName } from './owner'
-export type { Owner } from './owner'
+export type { Owner, OwnerScopeMark } from './owner'
 export { createId, useId } from './id'
 export {
   getDebugHooks,

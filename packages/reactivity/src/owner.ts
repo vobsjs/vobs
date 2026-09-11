@@ -1,5 +1,10 @@
 import { invokeDebug, hasDebugHooks } from './debug'
 
+export interface OwnerScopeMark {
+  readonly cleanups: number
+  readonly children: number
+}
+
 export interface Owner {
   readonly id: string
   readonly parent: Owner | null
@@ -12,6 +17,10 @@ export interface Owner {
   onError(handler: (error: unknown) => void): () => void
   handleError(error: unknown): boolean
   dispose(): void
+  /** 记录当前清理/子 Owner 注册位置，供 disposeSince 成对使用（渲染作用域）。 */
+  mark(): OwnerScopeMark
+  /** 释放 mark 之后注册的清理与期间创建的子 Owner，Owner 自身保活。 */
+  disposeSince(mark: OwnerScopeMark): void
 }
 
 let currentOwner: Owner | null = null
@@ -98,6 +107,28 @@ export function createOwner(): Owner {
         if (index >= 0) (parent.children as Owner[]).splice(index, 1)
       }
       if (hasDebugHooks()) invokeDebug('ownerDisposed', owner)
+      if (firstError) throw firstError
+    },
+
+    mark(): OwnerScopeMark {
+      return { cleanups: cleanups.length, children: children.length }
+    },
+
+    disposeSince(mark: OwnerScopeMark): void {
+      if (disposed) return
+      // 先释放 mark 之后创建的子 Owner（dispose 会自行从 children 摘除），
+      // 再逆序执行 mark 之后注册的清理，顺序语义与 dispose 一致。
+      let firstError: unknown
+      for (const child of children.slice(mark.children)) child.dispose()
+
+      for (let index = cleanups.length - 1; index >= mark.cleanups; index--) {
+        try {
+          cleanups[index]()
+        } catch (error) {
+          firstError ??= error
+        }
+      }
+      cleanups.length = Math.min(cleanups.length, mark.cleanups)
       if (firstError) throw firstError
     }
   }
