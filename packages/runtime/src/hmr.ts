@@ -25,10 +25,12 @@ interface HmrModuleState {
 
 interface HmrGlobal {
   modules: Map<string, HmrModuleState>
+  /** 编译器生成的 hmrStateRef 注册表：键为 `${moduleId}#${声明名}`，值跨模块重执行保活。 */
+  states: Map<string, unknown>
 }
 
 const globalTarget = globalThis as typeof globalThis & { __VOBS_HMR__?: HmrGlobal }
-const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: new Map<string, HmrModuleState>() }
+const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: new Map<string, HmrModuleState>(), states: new Map<string, unknown>() }
 globalTarget.__VOBS_HMR__ = hmrGlobal
 
 export function resolveComponent<Props extends object>(
@@ -97,16 +99,15 @@ export function createHmrStateStore(moduleId: string): HmrStateStore {
 }
 
 /**
- * 编译器为模块顶层 state() 声明生成的取值入口（`#state:` 前缀与手动 store 键隔离）。
- * 模块热更新重执行时复用既有信号实例：旧导入方持有的实例与新模块实例共享同一份状态，
- * 消除"两份模块、两份状态"导致的编辑不生效/页面半边失灵。
+ * 编译器为模块顶层 state() 声明生成的取值入口。键为 `${moduleId}#${声明名}`，
+ * 与手动 store 键空间隔离。模块热更新重执行时复用既有信号实例：旧导入方持有的
+ * 实例与新模块实例共享同一份状态，消除"两份模块、两份状态"导致的编辑不生效/页面半边失灵。
  */
-export function hmrStateRef<T>(moduleId: string, key: string, create: () => T): T {
-  const state = getModule(moduleId).state
-  const registryKey = `#state:${key}`
-  if (state.has(registryKey)) return state.get(registryKey) as T
+export function hmrStateRef<T>(key: string, create: () => T): T {
+  const states = hmrGlobal.states
+  if (states.has(key)) return states.get(key) as T
   const value = create()
-  state.set(registryKey, value)
+  states.set(key, value)
   return value
 }
 
