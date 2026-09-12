@@ -653,8 +653,16 @@
     }
     .vui-menu__item .vui-menu__icon { color: var(--icon-secondary); }
     .vui-menu__item:hover { background: var(--bg-overlay-l2); }
+    .vui-menu__item:disabled,
+    .vui-menu__item[aria-disabled='true'] { color: var(--text-tertiary); cursor: not-allowed; }
+    .vui-menu__item:disabled .vui-menu__icon,
+    .vui-menu__item[aria-disabled='true'] .vui-menu__icon { color: var(--icon-secondary); opacity: .5; }
+    .vui-menu__item:disabled:hover,
+    .vui-menu__item[aria-disabled='true']:hover { background: transparent; }
     .vui-menu__item--danger { color: var(--status-error-default); }
     .vui-menu__item--danger .vui-menu__icon { color: var(--status-error-default); }
+    .vui-menu__item--danger:disabled,
+    .vui-menu__item--danger[aria-disabled='true'] { color: var(--text-tertiary); }
     .vui-menu__divider { height: 1px; background: var(--border-neutral-l1); margin: var(--spacer-4) 0; }
     .vui-menu__shortcut { margin-left: auto; color: var(--text-tertiary); font-size: var(--body-xs-font-size); font-family: var(--code-editor-font-family); }
 
