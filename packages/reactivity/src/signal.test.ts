@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import * as reactivity from './index'
 import { state, effect, memo, createOwner, batch, scheduler, runWithOwner } from './index'
+import type { Signal } from './index'
 import { state as stateFromSubpath } from '@vobs/reactivity/state'
 
 describe('reactivity', () => {
@@ -112,6 +113,39 @@ describe('reactivity', () => {
     count.value = 1
     await Promise.resolve()
     expect(callback).toHaveBeenCalledTimes(1)
+  })
+
+  it('state 不随 owner 销毁：作用域释放后信号仍可写、可被新效果订阅', async () => {
+    // 方案 A 语义锁定：信号寿命 = 可达性。事件处理器经 owner.run 执行时创建的
+    // state（如 store 数据），在触发它的 UI 作用域（如菜单下拉）销毁后必须仍有效。
+    const owner = createOwner()
+    let created!: Signal<number>
+    owner.run(() => { created = state(1, 'scoped.state') })
+    owner.dispose()
+    expect(created.value).toBe(1)
+
+    const callback = vi.fn(() => { void created.value })
+    effect(callback)
+    expect(callback).toHaveBeenCalledTimes(1)
+    created.set(7)
+    await Promise.resolve()
+    expect(created.value).toBe(7)
+    expect(callback).toHaveBeenCalledTimes(2)
+  })
+
+  it('显式 dispose 后写入被忽略并警告一次（含调试名）', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const count = state(0, 'legacy.count')
+      count.dispose()
+      count.value = 1
+      count.set(2)
+      expect(count.value).toBe(0)
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toContain('legacy.count')
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('batch 内多次修改只 flush 一次', () => {
