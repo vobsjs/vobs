@@ -57,6 +57,11 @@ declare global {
   namespace JSX {
     type Element = VobsNode
     interface ElementChildrenAttribute { children: {} }
+    // 组件 props 注入可选 key：编译器在列表 map 中提取 key 生成 keyOf（keyed 调和），
+    // key 不传入组件 props，仅供类型层面放行（IntrinsicAttributes 合并进所有 JSX 元素）。
+    interface IntrinsicAttributes {
+      key?: string | number
+    }
     interface IntrinsicElements {
       a: VobsHTMLAttributes
       abbr: VobsHTMLAttributes
