@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-09-13
+
+### Fixed
+
+- Router: `RouterView` no longer renders a silently blank page when a route render/effect error is captured by its boundary and no `error` fallback prop was provided. A built-in fallback (`.vobs-route-error`: error title, message, and a Retry button) is now rendered instead; apps that pass `error` keep full control of the fallback output (including an explicit `null`). This was the root cause of "the whole page disappears after closing a dialog" reported by downstream apps: a signal write that both closes a dialog and invalidates inner text bindings runs the deeper (child) effects first — an unguarded nullable read (e.g. `req.value.message`) throws before the structural teardown disposes the branch, the error is captured by the route boundary, and the old default fallback rendered `null`.
+- Tests: regression coverage for the dialog teardown pattern (runtime `dialog-teardown.test.ts`: conditional dialog children coexisting with sibling content, user-component children passthrough, `insertDynamic` disposal of replaced subtrees) and for the router fallback behavior (router `index.test.ts`: built-in fallback rendered on render/effect errors, explicit `null` fallback respected, retry recovery, and an end-to-end reproduction of the dialog-unmount error race).
+
 ## [1.4.0] - 2026-09-12
 
 ### Changed

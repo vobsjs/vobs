@@ -1,6 +1,7 @@
 import { state, type Signal } from '@vobs/reactivity'
 import {
   createComponent,
+  createElement,
   createFragment,
   createInjectionKey,
   inject,
@@ -812,7 +813,11 @@ export function RouterView(props: RouterViewProps = {}): VobsNode {
       onRetry: () => routeRetry(),
       fallback: (error, retry) => {
         router.devtools.reportError('render', error, router.currentRoute.value.fullPath)
-        return props.error?.(error, () => { void retry() }) ?? null
+        // 提供了 error 兜底时完全尊重其返回值（含显式 null）；
+        // 未提供时渲染内置错误界面（含重试），不再静默渲染空白页——
+        // 子 effect 抛错（如弹窗条件 children 内层裸读可空信号）会把整页换成空白
+        if (props.error !== undefined) return props.error(error, () => { void retry() })
+        return createRouteErrorFallback(error, () => { void retry() })
       },
       children: () => {
       const route = router.currentRoute.value
@@ -848,6 +853,44 @@ export function useRouter(): Router {
   const router = inject(ROUTER_KEY)
   if (!router) throw new Error('Vobs Router: useRouter 找不到 Router，请安装 routerPlugin')
   return router
+}
+
+/** 路由错误默认兜底界面：类名 .vobs-route-error 供应用覆盖样式；重试重新渲染当前路由 */
+function createRouteErrorFallback(error: Error, retry: () => void): HTMLElement {
+  // createElement 返回框架中立 Element；兜底界面仅在浏览器端呈现，按 HTMLElement 设置样式
+  const box = createElement('div') as HTMLElement
+  box.setAttribute('class', 'vobs-route-error')
+  box.style.padding = '48px 24px'
+  box.style.display = 'flex'
+  box.style.flexDirection = 'column'
+  box.style.alignItems = 'center'
+  box.style.gap = '12px'
+  box.style.fontFamily = 'system-ui, -apple-system, sans-serif'
+  box.style.color = '#5a5f6a'
+
+  const title = createElement('div') as HTMLElement
+  title.textContent = '页面渲染出错'
+  title.style.fontSize = '16px'
+  title.style.fontWeight = '600'
+  title.style.color = '#1c1c1e'
+
+  const message = createElement('code') as HTMLElement
+  message.textContent = error.message
+  message.style.fontSize = '12px'
+  message.style.maxWidth = '520px'
+  message.style.wordBreak = 'break-word'
+  message.style.opacity = '0.75'
+
+  const button = createElement('button') as HTMLElement
+  button.setAttribute('type', 'button')
+  button.textContent = '重试'
+  button.style.padding = '6px 20px'
+  button.style.fontSize = '13px'
+  button.style.cursor = 'pointer'
+  button.addEventListener('click', retry)
+
+  box.append(title, message, button)
+  return box
 }
 
 export function useRoute(): Signal<RouteLocation> {

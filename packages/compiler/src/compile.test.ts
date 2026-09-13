@@ -343,6 +343,25 @@ export const width = st(50, 'doc.width')
     expect(result).toContain('() => content')
   })
 
+  // 回归（Labelune 踩坑备忘）：用户态组件透传 children 曾渲染为 "[object HTMLDivElement]"。
+  // children 必须编译为 getter 返回节点/节点数组，{children} 表达式走 insertDynamicValue
+  // 直传节点，任何一侧都不允许落入文本序列化路径。
+  it('用户态组件透传 children 编译为节点 getter 与节点直传（不字符串化）', () => {
+    const result = compile(`
+      function Section({ children }) {
+        return <section>{children}</section>
+      }
+      const el = <Section><div class="inner">inner</div></Section>
+    `)
+    // 调用方：children 是 getter，值为构建好的节点（transformElement 求值结果 / 静态提升 clone）
+    expect(result).toContain('get children()')
+    expect(result).toContain('createComponent(')
+    // 被调方：{children} 标识符表达式直传节点（insertDynamicValue），不走 createText(String(...))
+    expect(result).toContain('insertDynamicValue')
+    expect(result).toContain('() => children')
+    expect(result).not.toContain('String(children)')
+  })
+
   it('支持 DOM spread 和对象样式', () => {
     const result = compile(`const props = { className: 'card' }; const el = <div {...props} style={{ backgroundColor: 'red' }} />`)
     expect(result).toContain('spreadProps')

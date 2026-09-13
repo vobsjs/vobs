@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createElement, createText, createVobs, insertBefore, setRenderer, createDOMRenderer, type VobsNode } from '@vobs/vobs'
+import { effect, state } from '@vobs/reactivity'
 import {
   createMemoryHistory,
   createBrowserHistory,
@@ -569,6 +570,131 @@ describe('@vobs/router', () => {
     expect(events[0]).toMatchObject({ status: 'loading', trigger: 'manual', route: '/' })
     expect(events[1]).toMatchObject({ status: 'success', duration: expect.any(Number) })
     stop()
+    router.destroy()
+  })
+
+  // 回归：未提供 error 兜底时，路由子树抛错不能静默渲染成空白页。
+  // 真实场景：弹窗条件 children 内层绑定裸读可空信号，信号置 null 时
+  // 子 effect（depth 深）先于结构卸载 effect 执行 → null.message 抛错 →
+  // RouterView boundary 捕获 → 旧实现 fallback 返回 null → 整页空白。
+  it('路由渲染抛错且未提供 error 时渲染内置兜底界面（非空白）', async () => {
+    const router = createRouter({
+      history: createMemoryHistory('/'),
+      routes: [
+        { path: '/', component: () => createText('home') },
+        {
+          path: '/boom',
+          component: () => {
+            throw new Error('render exploded')
+          }
+        }
+      ]
+    })
+    const container = document.createElement('div')
+    const app = createVobs({ render: () => RouterView({ router }), plugins: [routerPlugin({ router })] })
+    app.mount(container)
+    expect(container.textContent).toBe('home')
+
+    void router.push('/boom')
+    await vi.waitFor(() => {
+      const fallback = container.querySelector('.vobs-route-error')
+      expect(fallback).not.toBeNull()
+      expect(fallback?.textContent).toContain('页面渲染出错')
+      expect(fallback?.textContent).toContain('render exploded')
+      expect(fallback?.querySelector('button')).not.toBeNull()
+    })
+    app.destroy()
+    router.destroy()
+  })
+
+  it('显式 error 兜底返回 null 时尊重用户选择渲染空白', () => {
+    const router = createRouter({
+      history: createMemoryHistory('/'),
+      routes: [
+        {
+          path: '/',
+          component: () => {
+            throw new Error('boom')
+          }
+        }
+      ]
+    })
+    const container = document.createElement('div')
+    const app = createVobs({
+      render: () => RouterView({ router, error: () => null }),
+      plugins: [routerPlugin({ router })]
+    })
+    app.mount(container)
+    expect(container.textContent).toBe('')
+    expect(container.querySelector('.vobs-route-error')).toBeNull()
+    app.destroy()
+    router.destroy()
+  })
+
+  it('兜底界面点击重试可恢复渲染', async () => {
+    let shouldThrow = true
+    const router = createRouter({
+      history: createMemoryHistory('/'),
+      routes: [{
+        path: '/',
+        component: () => {
+          if (shouldThrow) throw new Error('first render fails')
+          return createText('recovered')
+        }
+      }]
+    })
+    const container = document.createElement('div')
+    const app = createVobs({ render: () => RouterView({ router }), plugins: [routerPlugin({ router })] })
+    app.mount(container)
+    await vi.waitFor(() => {
+      expect(container.querySelector('.vobs-route-error')).not.toBeNull()
+    })
+
+    shouldThrow = false
+    const button = container.querySelector('.vobs-route-error button') as HTMLButtonElement
+    button.click()
+    await vi.waitFor(() => {
+      expect(container.textContent).toBe('recovered')
+    })
+    app.destroy()
+    router.destroy()
+  })
+
+  it('路由子树内 effect 抛错由 boundary 捕获并切换到兜底（弹窗卸载竞态场景）', async () => {
+    // 复刻 Labelune 崩溃链：条件渲染的子树内层 effect 裸读可空信号，
+    // 信号置 null 时该 effect 先于结构卸载执行并抛错，错误必须被
+    // RouterView boundary 兜住（默认兜底界面），而不是炸掉整个页面。
+    const data = state<{ message: string } | null>({ message: 'init' })
+    const router = createRouter({
+      history: createMemoryHistory('/'),
+      routes: [{
+        path: '/',
+        component: () => {
+          const box = createElement('div')
+          box.className = 'page-content'
+          const text = document.createTextNode('')
+          box.appendChild(text)
+          // 模拟编译产物：{req.value.message} → bindText 裸读可空信号
+          effect(() => {
+            text.textContent = `msg:${data.value!.message}`
+          })
+          return box
+        }
+      }]
+    })
+    const container = document.createElement('div')
+    const app = createVobs({ render: () => RouterView({ router }), plugins: [routerPlugin({ router })] })
+    app.mount(container)
+    expect(container.querySelector('.page-content')).not.toBeNull()
+
+    // 置 null：内层 effect 抛 null.message（depth 优先，先于任何结构卸载执行），
+    // 错误必须被 boundary 接住并显示兜底界面
+    data.set(null)
+    await vi.waitFor(() => {
+      expect(container.querySelector('.vobs-route-error')).not.toBeNull()
+    })
+    expect(container.textContent).toContain('页面渲染出错')
+    app.destroy()
     router.destroy()
   })
 })
