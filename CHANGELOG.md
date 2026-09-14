@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-09-14
+
+### Fixed
+
+- Compiler: residual JSX (JSX left untouched by the main transform in early returns or nested branches) is now transformed before runtime imports and template declarations are generated. The fallback pass registers new helper aliases (e.g. `insertDynamicValue`) and `_tpl` template declarations; when it ran last, generated references pointed at identifiers that were never imported or declared, producing a runtime `ReferenceError`.
+- Tests: regression coverage for residual JSX in early-return and nested-branch positions (compiler `compile.test.ts`).
+
 ## [1.4.1] - 2026-09-13
 
 ### Fixed

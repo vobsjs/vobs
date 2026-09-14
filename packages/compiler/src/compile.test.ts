@@ -394,6 +394,56 @@ export const width = st(50, 'doc.width')
     expect(result).not.toContain('createComponent(ErrorBoundary')
   })
 
+  // 回归（Labelune 踩坑备忘）：残留 JSX（早返回/嵌套分支中主转换未覆盖的 JSX）此前在
+  // runtime import 与模板声明生成之后才转换，其引用的 _tplN 模板与 insertDynamicValue
+  // 等 helper 不会出现在最终产物中，运行时抛 "XXX is not defined"。
+  // 产物自检：每个被引用的 _tplN 必须有声明，每个 helper 调用必须有对应导入。
+  function assertNoDanglingReferences(result: string): void {
+    const usedTemplates = [...result.matchAll(/_tpl\d+/gu)].map(match => match[0])
+    const declaredTemplates = new Set([...result.matchAll(/const (_tpl\d+)\s*=/gu)].map(match => match[1]))
+    for (const template of new Set(usedTemplates)) {
+      expect(declaredTemplates.has(template), `引用了未声明的模板 ${template}`).toBe(true)
+    }
+    const runtimeHelpers = [
+      'createElement', 'createText', 'createFragment', 'createTemplate', 'cloneTemplate',
+      'insertBefore', 'insertDynamic', 'insertDynamicValue', 'insertList',
+      'bindText', 'bindAttribute', 'bindProperty', 'setStaticProps', 'addEventListener', 'setRef'
+    ]
+    const importSection = result.slice(0, result.indexOf('@vobs/vobs'))
+    for (const helper of runtimeHelpers) {
+      const used = new RegExp(`\\b${helper}\\(`, 'u').test(result)
+      if (used) expect(importSection.includes(helper), `调用了 helper ${helper} 但未导入`).toBe(true)
+    }
+  }
+
+  it('三元分支 JSX：模板声明与 helper 导入完整（残留转换先于 import 生成）', () => {
+    const result = compile(`
+      const HINT = '未发现设备'
+      function DiscoveryResults() {
+        const list = results.value ?? []
+        return list.length === 0 ? (
+          <p class="hint">{HINT}</p>
+        ) : (
+          <div class="section">
+            <h3>发现 {list.length} 个</h3>
+            <p class="hint">{HINT}</p>
+          </div>
+        )
+      }
+    `)
+    assertNoDanglingReferences(result)
+  })
+
+  it('早返回 JSX：模板声明与 helper 导入完整（残留转换先于 import 生成）', () => {
+    const result = compile(`
+      function DiscoveryResults() {
+        if (list.length === 0) return <p class="hint">未发现设备</p>
+        return <div class="section">发现 {list.length} 个</div>
+      }
+    `)
+    assertNoDanglingReferences(result)
+  })
+
   it('不为没有运行时调用的源码注入 import', () => {
     const result = compile(`export const version = '0.1.0'`)
 

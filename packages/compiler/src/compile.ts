@@ -135,15 +135,18 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
   const statements = sourceFile.statements.map(statement =>
     ts.isImportDeclaration(statement) ? rebuildImport(state, statement) : transformStatement(state, statement, true)
   )
+  // 残留 JSX（主转换未覆盖的早返回/嵌套分支）必须先于 runtime import 与模板声明转换：
+  // 兜底过程会注册新的 helper 别名（如 insertDynamicValue）与 _tpl 模板声明，
+  // 若在其之后才构建 import 与声明，生成的引用将指向未定义的标识符（运行时 ReferenceError）。
+  sourceFile = transformResidualJsx(state, ts.factory.updateSourceFile(sourceFile, statements))
   // 模板声明必须先于 runtime import 生成：声明里的 createTemplate 依赖
   // helperRef 注册别名，import 需要在别名全部就绪后再构建。
   const templateDeclarations = createTemplateDeclarations(state)
-  let resultFile = ts.factory.updateSourceFile(sourceFile, [
+  const resultFile = ts.factory.updateSourceFile(sourceFile, [
     ...createRuntimeImports(state),
     ...templateDeclarations,
-    ...statements
+    ...sourceFile.statements
   ])
-  resultFile = transformResidualJsx(state, resultFile)
 
   const generated = ts.createPrinter().printFile(resultFile)
   return {
