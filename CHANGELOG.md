@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-09-17
+
+### Added
+
+- UI: `Combobox` — searchable dropdown component (filter-as-you-type, keyboard navigation with ArrowUp/ArrowDown/Enter/Escape, outside-click close, empty-text hint). Accepts a controlled `value`, a two-way `bind` signal, or an `onChange(value)` callback; options may be provided reactively. Styled via `vui-combobox` classes using theme tokens.
+- Types: JSX event handler types now cover pointer (`onPointerDown/Up/Move/Enter/Leave`), mouse (`onMouseDown/Up/Move/Enter/Leave`), touch (`onTouchStart/Move/End`), wheel and scroll events. The runtime event channel was already generic — these were type-level restrictions only.
+
+### Changed
+
+- Types/Compiler: `VobsHTMLAttributes` now includes `role`, `spellCheck`, `autoComplete`, `colSpan` and `rowSpan`. The compiler and runtime map camelCase aliases (`htmlFor` → `for`, `autoComplete` → `autocomplete`, `spellCheck` → `spellcheck`) onto real HTML attribute names; `colSpan`/`rowSpan` go through the property channel.
+
+### Tests
+
+- Runtime: new `jsx-integration.test.ts` compiles JSX through the real compiler and executes it against the runtime. It locks down two long-reported downstream issues — dynamic `style` expressions inside lists and node↔null conditionals inside list items — both of which work correctly on the current 1.4.x pipeline (the failures dated back to 1.3.x-era transforms and are now guarded against regressions).
+
 ## [1.4.2] - 2026-09-14
 
 ### Fixed
