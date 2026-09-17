@@ -11,6 +11,9 @@ export type {
   TextareaProps
 } from './forms'
 
+export { Combobox } from './combobox'
+export type { ComboboxOption, ComboboxProps } from './combobox'
+
 export { Card, CardHeader } from './card'
 export type { CardProps, CardHeaderProps } from './card'
 

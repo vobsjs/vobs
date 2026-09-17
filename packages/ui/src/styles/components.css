@@ -498,6 +498,51 @@
     }
     .vui-select:focus { border-color: var(--border-brand); outline: none; }
 
+    /* ===== Combobox（可搜索下拉）===== */
+    .vui-combobox { position: relative; width: 100%; }
+    .vui-combobox.is-disabled { opacity: 0.55; pointer-events: none; }
+    .vui-combobox__input {
+      width: 100%; height: 28px;
+      padding: 0 var(--spacer-28) 0 var(--spacer-12);
+      background: var(--bg-overlay-l1);
+      border: 1px solid var(--border-neutral-l1);
+      border-radius: var(--radius-4);
+      color: var(--text-default);
+      font: inherit; font-size: var(--body-sm-font-size);
+      outline: none;
+    }
+    .vui-combobox__input::placeholder { color: var(--text-tertiary); }
+    .vui-combobox__input:focus { border-color: var(--border-brand); background: var(--bg-overlay-l2); }
+    .vui-combobox__toggle {
+      position: absolute; right: var(--spacer-8); top: 50%; transform: translateY(-50%);
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 16px; height: 16px; padding: 0;
+      border: none; background: transparent; color: var(--icon-secondary);
+      cursor: pointer;
+    }
+    .vui-combobox__toggle:hover { color: var(--text-default); }
+    .vui-combobox__panel {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      z-index: 60;
+      background: var(--bg-overlay-l1, var(--bg-base-secondary));
+      border: 1px solid var(--border-neutral-l1, var(--bg-base-tertiary));
+      border-radius: var(--radius-8);
+      box-shadow: var(--shadow-popup, 0 8px 24px rgb(0 0 0 / 18%));
+    }
+    .vui-combobox__list { max-height: 240px; overflow-y: auto; padding: 4px 0; }
+    .vui-combobox__option {
+      display: block; width: 100%; padding: 5px 12px;
+      border: none; background: transparent;
+      color: var(--text-default); font-size: var(--body-sm-font-size);
+      text-align: left; cursor: pointer;
+    }
+    .vui-combobox__option.is-active { background: var(--bg-overlay-l2); }
+    .vui-combobox__option.is-selected { color: var(--text-brand); font-weight: 600; }
+    .vui-combobox__empty {
+      margin: 0; padding: 8px 12px;
+      font-size: var(--body-sm-font-size); color: var(--text-tertiary);
+    }
+
     /* ===== Textarea ===== */
     .vui-textarea {
       width: 100%; min-height: 96px; padding: var(--spacer-8) var(--spacer-12);
