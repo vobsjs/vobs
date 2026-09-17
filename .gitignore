@@ -12,3 +12,4 @@ docs/
 !docs/
 docs/*
 !docs/npm-release.md
+!docs/TODO.md
