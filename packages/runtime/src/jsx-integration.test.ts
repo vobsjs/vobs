@@ -145,10 +145,39 @@ describe('JSX 编译 × runtime 集成回归', () => {
     expect(input.getAttribute('spellcheck')).toBe('false')
     expect((el.querySelector('td') as HTMLTableCellElement).colSpan).toBe(2)
   })
+
+  it('⑥ select 绑定 value 时选项异步到达自动重同步（不再需要 ref 兜底）', async () => {
+    setRenderer(createDOMRenderer())
+    const items = state<string[]>([])
+    const el = runJsxWith(`
+      const current = { value: 'b' }
+      const el = <select value={current.value}>{items.value.map(o => <option value={o}>{o}</option>)}</select>
+    `, { items }) as HTMLSelectElement
+    expect(el.value).toBe('')
+    items.value = ['a', 'b', 'c']
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(el.value).toBe('b')
+  })
+
+  it('⑥b select 选项经 optgroup 插入同样重同步', async () => {
+    setRenderer(createDOMRenderer())
+    interface Group { readonly label: string; readonly options: readonly string[] }
+    const groups = state<readonly Group[]>([])
+    const el = runJsxWith(`
+      const current = { value: 'b' }
+      const el = <select value={current.value}>{groups.value.map(group => (
+        <optgroup label={group.label}>{group.options.map(o => <option value={o}>{o}</option>)}</optgroup>
+      ))}</select>
+    `, { groups }) as HTMLSelectElement
+    expect(el.value).toBe('')
+    groups.value = [{ label: 'G', options: ['a', 'b'] }]
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(el.value).toBe('b')
+  })
 })
 
 /** runJsx 变体：额外注入外部依赖（真实信号等），供编译产物闭包引用 */
-function runJsxWith(source: string, deps: Record<string, unknown>): unknown {
+function runJsxWith(source: string, deps: Record<string, unknown> = {}): unknown {
   const compiled = compile(source, { filename: 'integration-deps.tsx' }) as unknown as string
   const imports = compiled.match(/import \{([^}]+)\} from "@vobs\/vobs";/)
   if (!imports) throw new Error('编译产物缺少 runtime 导入')

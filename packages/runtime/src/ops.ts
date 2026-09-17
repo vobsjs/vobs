@@ -64,12 +64,39 @@ export function insertBefore(
   }
   getRenderer().insertBefore(parent, child, isVobsFragment(anchor) ? anchor.start : anchor)
   markHmrInstanceMounted(child, parent)
+  const nodeName = (child as Element).nodeName
+  if (nodeName === 'OPTION' || nodeName === 'OPTGROUP') syncSelectValue(parent)
   if (getRuntimeDebugHooks()) {
     invokeRuntimeDebug('domMutation', {
       operation: 'insert',
       target: describeDebugNode(child),
       parent: describeDebugNode(parent)
     })
+  }
+}
+
+/**
+ * Select initial-value auto resync: `bindProperty(node, 'value', …)` registers the value
+ * reader for `<select>` elements; whenever an `<option>` is inserted into the select
+ * (directly or through an `<optgroup>`), the current bound value is re-applied. This
+ * removes the last reason for apps to keep `ref + queueMicrotask` value-sync workarounds
+ * for options that arrive after the value binding (e.g. asynchronously loaded lists).
+ */
+const selectValueReaders = new WeakMap<object, () => unknown>()
+
+export function registerSelectValueBinding(select: Element, read: () => unknown): void {
+  selectValueReaders.set(select, read)
+}
+
+function syncSelectValue(parent: Node): void {
+  let current: Node | null = parent
+  while (current !== null) {
+    if ((current as Element).nodeName === 'SELECT') {
+      const read = selectValueReaders.get(current)
+      if (read !== undefined) setProperty(current as Element, 'value', read())
+      return
+    }
+    current = current.parentNode
   }
 }
 

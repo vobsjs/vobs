@@ -2,7 +2,7 @@
 
 import { effect } from '@vobs/reactivity'
 import type { Signal } from '@vobs/reactivity'
-import { setAttribute, setProperty, setTextContent } from './ops'
+import { registerSelectValueBinding, setAttribute, setProperty, setTextContent } from './ops'
 
 export type ValueSource<T> = Signal<T> | (() => T)
 
@@ -41,6 +41,11 @@ export function bindProperty(
   key: string,
   source: ValueSource<unknown>
 ): void {
+  // Select initial-value auto resync: remember the bound reader so that inserting
+  // <option> children later re-applies the current value (see ops.insertBefore).
+  if (key === 'value' && node.nodeName === 'SELECT') {
+    registerSelectValueBinding(node, () => readSource(source))
+  }
   effect(() => {
     setProperty(node, key, readSource(source))
   })
