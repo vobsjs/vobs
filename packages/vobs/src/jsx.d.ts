@@ -9,11 +9,13 @@ interface VobsHTMLAttributes {
   accept?: string
   accessKey?: string
   alt?: string
+  autoComplete?: string
   autofocus?: boolean
   checked?: boolean
   class?: string
   className?: string
   cols?: number
+  colSpan?: number
   disabled?: boolean
   height?: number | string
   hidden?: boolean
@@ -27,9 +29,12 @@ interface VobsHTMLAttributes {
   placeholder?: string
   readOnly?: boolean
   required?: boolean
+  role?: string
   rows?: number
+  rowSpan?: number
   selected?: boolean
   size?: number
+  spellCheck?: boolean
   src?: string
   step?: number | string
   style?: string | Readonly<Record<string, string | number | boolean | null | undefined>>
@@ -49,6 +54,21 @@ interface VobsHTMLAttributes {
   onKeyDown?: VobsEventHandler<KeyboardEvent>
   onKeyUp?: VobsEventHandler<KeyboardEvent>
   onSubmit?: VobsEventHandler<SubmitEvent>
+  onPointerDown?: VobsEventHandler<PointerEvent>
+  onPointerUp?: VobsEventHandler<PointerEvent>
+  onPointerMove?: VobsEventHandler<PointerEvent>
+  onPointerEnter?: VobsEventHandler<PointerEvent>
+  onPointerLeave?: VobsEventHandler<PointerEvent>
+  onMouseDown?: VobsEventHandler<MouseEvent>
+  onMouseUp?: VobsEventHandler<MouseEvent>
+  onMouseMove?: VobsEventHandler<MouseEvent>
+  onMouseEnter?: VobsEventHandler<MouseEvent>
+  onMouseLeave?: VobsEventHandler<MouseEvent>
+  onTouchStart?: VobsEventHandler<TouchEvent>
+  onTouchMove?: VobsEventHandler<TouchEvent>
+  onTouchEnd?: VobsEventHandler<TouchEvent>
+  onWheel?: VobsEventHandler<WheelEvent>
+  onScroll?: VobsEventHandler<Event>
   [name: `data-${string}`]: string | number | boolean | undefined
   [name: `aria-${string}`]: string | number | boolean | undefined
 }

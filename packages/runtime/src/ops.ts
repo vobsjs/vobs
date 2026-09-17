@@ -189,7 +189,7 @@ export function spreadProps(node: Element, props: Record<string, unknown>): void
     // attribute 键的 false 表示“不设置”，与 HTML 语义一致。
     else if (isPropertyKey(key)) setProperty(node, key, value)
     else if (value === false) continue
-    else setAttribute(node, key === 'className' ? 'class' : key, key === 'style' && isStyleObject(value) ? formatStyle(value) : String(value))
+    else setAttribute(node, domAttributeName(key), key === 'style' && isStyleObject(value) ? formatStyle(value) : String(value))
   }
 }
 
@@ -200,7 +200,7 @@ export function setStaticProps(node: Element, props: Record<string, unknown>): v
     if (value === null || value === undefined) continue
     if (isPropertyKey(key)) setProperty(node, key, value)
     else if (value === false) continue
-    else setAttribute(node, key === 'className' ? 'class' : key, key === 'style' && isStyleObject(value) ? formatStyle(value) : String(value))
+    else setAttribute(node, domAttributeName(key), key === 'style' && isStyleObject(value) ? formatStyle(value) : String(value))
   }
 }
 
@@ -208,6 +208,18 @@ function isPropertyKey(key: string): boolean {
   return key === 'value' || key === 'checked' || key === 'selected' || key === 'disabled'
     || key === 'multiple' || key === 'readOnly' || key === 'required'
     || key === 'autofocus' || key === 'hidden' || key === 'tabIndex'
+    || key === 'colSpan' || key === 'rowSpan'
+}
+
+/** camelCase JSX 属性名 → HTML attribute 名（与 compiler 的 domAttributeName 保持一致） */
+function domAttributeName(key: string): string {
+  switch (key) {
+    case 'className': return 'class'
+    case 'htmlFor': return 'for'
+    case 'autoComplete': return 'autocomplete'
+    case 'spellCheck': return 'spellcheck'
+    default: return key
+  }
 }
 
 function isStyleObject(value: unknown): value is Record<string, unknown> {

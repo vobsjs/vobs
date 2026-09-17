@@ -1114,24 +1114,24 @@ function appendAttributes(
 
     if (!initializer) {
       if (hasSpread) {
-        statements.push(callStatement(state, isPropertyAttribute(name) ? 'setProperty' : 'setAttribute', [element, ts.factory.createStringLiteral(isPropertyAttribute(name) ? name : name === 'className' ? 'class' : name), isPropertyAttribute(name) ? ts.factory.createTrue() : ts.factory.createStringLiteral('')], attribute))
+        statements.push(callStatement(state, isPropertyAttribute(name) ? 'setProperty' : 'setAttribute', [element, ts.factory.createStringLiteral(isPropertyAttribute(name) ? name : domAttributeName(name)), isPropertyAttribute(name) ? ts.factory.createTrue() : ts.factory.createStringLiteral('')], attribute))
         continue
       }
       if (isPropertyAttribute(name)) staticProps.push(createStaticProperty(name, ts.factory.createTrue()))
-      else staticProps.push(createStaticProperty(name === 'className' ? 'class' : name, ts.factory.createStringLiteral('')))
+      else staticProps.push(createStaticProperty(domAttributeName(name), ts.factory.createStringLiteral('')))
       continue
     }
     if (ts.isStringLiteral(initializer)) {
       if (hasSpread) {
-        statements.push(callStatement(state, isPropertyAttribute(name) ? 'setProperty' : 'setAttribute', [element, ts.factory.createStringLiteral(isPropertyAttribute(name) ? name : name === 'className' ? 'class' : name), ts.factory.createStringLiteral(initializer.text)], attribute))
+        statements.push(callStatement(state, isPropertyAttribute(name) ? 'setProperty' : 'setAttribute', [element, ts.factory.createStringLiteral(isPropertyAttribute(name) ? name : domAttributeName(name)), ts.factory.createStringLiteral(initializer.text)], attribute))
         continue
       }
-      staticProps.push(createStaticProperty(isPropertyAttribute(name) ? name : name === 'className' ? 'class' : name,
+      staticProps.push(createStaticProperty(isPropertyAttribute(name) ? name : domAttributeName(name),
         ts.factory.createStringLiteral(initializer.text)))
       continue
     }
 
-    const attributeName = name === 'className' ? 'class' : name
+    const attributeName = domAttributeName(name)
     const propertyAttribute = isPropertyAttribute(name)
     if (ts.isJsxExpression(initializer) && initializer.expression) {
       statements.push(callStatement(state, propertyAttribute ? 'bindProperty' : 'bindAttribute', [
@@ -1155,6 +1155,21 @@ function isPropertyAttribute(name: string): boolean {
   return name === 'value' || name === 'checked' || name === 'selected' || name === 'disabled'
     || name === 'multiple' || name === 'readOnly' || name === 'required'
     || name === 'autofocus' || name === 'hidden' || name === 'tabIndex'
+    || name === 'colSpan' || name === 'rowSpan'
+}
+
+/**
+ * camelCase JSX 属性名 → DOM 键（attribute 路径）：className 之外的常见别名。
+ * property 路径（isPropertyAttribute）不经此映射——colSpan/rowSpan 的 JS 属性名本就是驼峰。
+ */
+function domAttributeName(name: string): string {
+  switch (name) {
+    case 'className': return 'class'
+    case 'htmlFor': return 'for'
+    case 'autoComplete': return 'autocomplete'
+    case 'spellCheck': return 'spellcheck'
+    default: return name
+  }
 }
 
 function appendChildren(
