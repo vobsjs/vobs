@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.5.1] - 2026-09-17
 
+### Changed
+
+- Theme: the built-in brand color system is now preset-driven. Ten brand presets are defined as tokens (`--brand-neon` `#08FC2E`, `--brand-orange` `#FD742D`, `--brand-blue` `#0F64B5`, `--brand-jasmine` `#DA2357`, `--brand-tangerine` `#FF6047`, `--brand-purple` `#690DAD`, `--brand-pine` `#185A56`, `--brand-deep-purple` `#47176D`, `--brand-crimson` `#9D1F2F`, `--brand-pink` `#EA6097`); the previous neon-green scale (`--brand-green-100…1000`) was removed. All active brand tokens (`--bg-brand`, `--text-brand`, `--icon-brand`, `--border-brand` and their hover/disabled/popup variants) now derive from a single `--brand` alias (default: `--brand-neon`) with variants generated via `color-mix`. Switching the active brand is a one-line override: `--brand: var(--brand-blue)`. Dark presets need an `--text-onbrand` override (kept dark for bright presets).
+
 ### Fixed
 
 - Runtime: `<select>` elements with a bound `value` now automatically re-apply the current value whenever an `<option>` (directly or through an `<optgroup>`) is inserted into them. Previously, options that arrived after the value binding — e.g. asynchronously loaded lists — left the select showing a blank selection, which forced apps to keep `ref + queueMicrotask` value-sync workarounds. `bindProperty` registers the value reader for selects; `insertBefore` re-applies it on option/optgroup insertion (walking up from an inserted option to the owning select). Regression tests cover async options and optgroup-nested options.

@@ -14,7 +14,7 @@
  */
 
 /* @dark-only */
-/* @group-priority: brand-green, status, brand-blue, brand-purple, brand-yellow */
+/* @group-priority: brand-presets, status, brand-blue, brand-purple, brand-yellow */
 
 :root {
   /* Native controls use this hint for their browser-rendered menus. */
@@ -173,11 +173,27 @@
   --color-tooltip: var(--bg-tooltip);
   --color-menu: var(--bg-menu);
 
-  /* bg-brand */
-  --bg-brand: #32F08C;
-  --bg-brand-hover: #0FDC78;
-  --bg-brand-disabled: rgba(50, 240, 140, 0.2);
-  --bg-brand-popup: rgba(50, 240, 140, 0.12);
+  /* bg-brand
+   * Built-in brand presets — switch the active brand by overriding `--brand`
+   * with one of the preset values (e.g. `--brand: var(--brand-blue)`).
+   * Variants are derived with color-mix so presets only need the base hex.
+   * Note: --text-onbrand stays dark for bright presets; override it when
+   * switching to a dark preset (e.g. deep purple, crimson). */
+  --brand-neon: #08FC2E;
+  --brand-orange: #FD742D;
+  --brand-blue: #0F64B5;
+  --brand-jasmine: #DA2357;
+  --brand-tangerine: #FF6047;
+  --brand-purple: #690DAD;
+  --brand-pine: #185A56;
+  --brand-deep-purple: #47176D;
+  --brand-crimson: #9D1F2F;
+  --brand-pink: #EA6097;
+  --brand: var(--brand-neon);
+  --bg-brand: var(--brand);
+  --bg-brand-hover: color-mix(in srgb, var(--brand) 88%, #000000);
+  --bg-brand-disabled: color-mix(in srgb, var(--brand) 20%, transparent);
+  --bg-brand-popup: color-mix(in srgb, var(--brand) 12%, transparent);
   --color-primary: var(--bg-brand);
   --color-primary-hover: var(--bg-brand-hover);
   --color-primary-disabled: var(--bg-brand-disabled);
@@ -204,8 +220,8 @@
   --color-on-primary: var(--text-onbrand);
 
   /* text-brand */
-  --text-brand: #32F08C;
-  --text-brand-hover: #0FDC78;
+  --text-brand: var(--brand);
+  --text-brand-hover: var(--bg-brand-hover);
 
   /* icon */
   --icon-default: #D1D3DB;
@@ -220,15 +236,15 @@
   --icon-onaccent: #0C0C0D;
 
   /* icon-brand */
-  --icon-brand: #32F08C;
-  --icon-brand-hover: #0FDC78;
+  --icon-brand: var(--brand);
+  --icon-brand-hover: var(--bg-brand-hover);
 
   /* border */
   --border-neutral-l1: rgba(224, 226, 242, 0.1);
   --border-neutral-l2: rgba(224, 226, 242, 0.16);
   --border-neutral-l3: rgba(224, 226, 242, 0.2);
   --border-contrast: #FFFFFF;
-  --border-brand: #32F08C;
+  --border-brand: var(--brand);
   --color-border: var(--border-neutral-l1);
   --color-border-strong: var(--border-neutral-l2);
   --color-border-stronger: var(--border-neutral-l3);
@@ -284,16 +300,6 @@
   --color-error-soft: var(--status-error-surface-l1);
 
   /* brand */
-  --brand-green-100: #E5FFF2;
-  --brand-green-200: #B4FDD9;
-  --brand-green-300: #85FABF;
-  --brand-green-400: #5CF5A8;
-  --brand-green-500: #32F08C;
-  --brand-green-600: #0FDC78;
-  --brand-green-700: #0AB861;
-  --brand-green-800: #05994F;
-  --brand-green-900: #02743B;
-  --brand-green-1000: #004D26;
   --brand-red-100: #FFE5E5;
   --brand-red-200: #FFCCCC;
   --brand-red-300: #FFB2B2;
