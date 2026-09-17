@@ -179,16 +179,16 @@
    * Variants are derived with color-mix so presets only need the base hex.
    * Note: --text-onbrand stays dark for bright presets; override it when
    * switching to a dark preset (e.g. deep purple, crimson). */
-  --brand-neon: #00DD00;
+  --brand-neon: #00dd00;
   --brand-orange: #FD742D;
   --brand-blue: #0F64B5;
   --brand-jasmine: #DA2357;
   --brand-tangerine: #FF6047;
   --brand-purple: #690DAD;
-  --brand-pine: #027C74;
-  --brand-deep-purple: #821E8F;
+  --brand-pine: #027c74;
+  --brand-deep-purple: #821e8f;
   --brand-crimson: #9D1F2F;
-  --brand-pink: #E0538C;
+  --brand-pink: #e0538c;
   --brand: var(--brand-neon);
   --bg-brand: var(--brand);
   --bg-brand-hover: color-mix(in srgb, var(--brand) 88%, #000000);
