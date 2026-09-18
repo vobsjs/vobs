@@ -504,8 +504,8 @@
     .vui-combobox__input {
       width: 100%; height: 28px;
       padding: 0 var(--spacer-28) 0 var(--spacer-12);
-      background: var(--bg-overlay-l1);
-      border: 1px solid var(--border-neutral-l1);
+      background: var(--bg-overlay-l1, var(--bg-base-secondary));
+      border: 1px solid var(--border-neutral-l1, var(--bg-base-tertiary));
       border-radius: var(--radius-4);
       color: var(--text-default);
       font: inherit; font-size: var(--body-sm-font-size);
