@@ -21,26 +21,41 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
     predicate: (node: ChildNode) => node is T,
     expected: string
   ): T {
-    const nodes = currentParent.childNodes
-    const seen = claimed.get(currentParent) ?? new Set<ChildNode>()
-    claimed.set(currentParent, seen)
-
-    for (const node of nodes) {
-      if (seen.has(node) || isSeparatorComment(node)) continue
-      if (predicate(node)) {
-        seen.add(node)
-        return node
+    // 先在当前父认领；失败时沿祖先链回退到水合容器——"先连续创建兄弟、后统一插入"
+    // 的产物模式（数组 map 经 insertDynamicValue/insertList）会在创建游标仍停留在
+    // 上一个元素内部时认领下一个兄弟，回退扫描让这类合法产物按文档序正确认领。
+    let parent: Node | null = currentParent
+    while (parent) {
+      const seen = claimed.get(parent) ?? new Set<ChildNode>()
+      claimed.set(parent, seen)
+      for (const node of parent.childNodes) {
+        if (seen.has(node) || isSeparatorComment(node)) continue
+        if (predicate(node)) {
+          seen.add(node)
+          return node
+        }
       }
+      if (parent === container) break
+      parent = parent.parentNode
     }
 
-    const actual = [...nodes]
-      .find(node => !seen.has(node) && !isSeparatorComment(node))
+    const actual = [...container.querySelectorAll('*')]
+      .find(node => !isSeparatorComment(node) && !isClaimed(node))
     throwHydrationMismatch(
       actual?.nodeType === 3 && expected.startsWith('文本节点') ? 'content' : 'missing-node',
       expected,
       actual ? describeHydrationNode(actual) : '<none>',
       currentParent
     )
+  }
+
+  function isClaimed(node: ChildNode): boolean {
+    let parent: Node | null = node.parentNode
+    while (parent) {
+      if (claimed.get(parent)?.has(node)) return true
+      parent = parent.parentNode
+    }
+    return false
   }
 
   function assertAllNodesClaimed(parent: Node): void {
