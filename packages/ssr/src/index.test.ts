@@ -443,6 +443,35 @@ describe('SSR', () => {
     document.body.innerHTML = ''
   })
 
+  it('空动态文本：SSR 输出占位注释，水合原位替换且不误抢相邻文本', () => {
+    const render = () => {
+      const div = createElement('div')
+      insertBefore(div, createText('前缀'), null)
+      const empty = createText('')
+      bindText(empty, () => '')
+      insertBefore(div, empty, null)
+      insertBefore(div, createText('后缀'), null)
+      return div
+    }
+    // SSR：空动态文本序列化为 <!----> 占位，前后静态文本由分隔符保边界
+    expect(renderToString(render)).toBe('<div>前缀<!---->后缀</div>')
+
+    document.body.innerHTML = '<div id="app"><div>前缀<!---->后缀</div></div>'
+    const app = hydrate(() => {
+      const div = createElement('div')
+      insertBefore(div, createText('前缀'), null)
+      const empty = createText('')
+      bindText(empty, () => '已填充')
+      insertBefore(div, empty, null)
+      insertBefore(div, createText('后缀'), null)
+      return div
+    }, '#app')
+    // 占位注释被原位替换为文本节点，绑定覆写后不影响相邻文本
+    expect(document.querySelector('#app')?.textContent).toBe('前缀已填充后缀')
+    app.destroy()
+    document.body.innerHTML = ''
+  })
+
   it('head 标签序列化转义文本与属性', () => {
     const head = serializeHeadTags([
       { tag: 'title', text: 'A < B & "C"' },

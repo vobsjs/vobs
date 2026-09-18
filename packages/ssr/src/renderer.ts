@@ -115,7 +115,11 @@ function removeChildNode(parent: SSRElement, child: SSRNode): void {
 }
 
 function serialize(node: SSRNode | SSRElement): string {
-  if (node.type === 'text') return escapeHTML(node.content === '' ? ZERO_WIDTH_SPACE : node.content)
+  // 空文本节点序列化为空注释占位：HTML 无法表示空文本节点，客户端水合时认领该
+  // 占位并原地替换为真实文本节点（见 hydration.ts createText）。
+  if (node.type === 'text') {
+    return node.content === '' ? '<!---->' : escapeHTML(node.content)
+  }
   if (node.type === 'comment') return `<!--${escapeComment(node.content)}-->`
 
   if (node.tag === 'root') return serializeChildren(node.children)
@@ -125,9 +129,6 @@ function serialize(node: SSRNode | SSRElement): string {
   return `<${node.tag}${attributes}>${serializeChildren(node.children)}</${node.tag}>`
 }
 
-/** 空文本节点在 HTML 中无法表示（解析后不存在），用零宽空格占位：客户端水合按"任意文本"认领后由绑定 effect 覆写为真实值。 */
-const ZERO_WIDTH_SPACE = '\u200B'
-
 /**
  * 相邻文本节点会被 HTML 解析器合并为一个节点，导致客户端水合的严格逐节点认领必然失配；
  * 在相邻文本之间插入注释分隔符保持节点边界（注释节点会打断解析器合并，水合侧将其视为透明）。
@@ -136,7 +137,8 @@ function serializeChildren(children: readonly SSRNode[]): string {
   let html = ''
   let previousIsText = false
   for (const child of children) {
-    const isText = child.type === 'text'
+    // 空文本输出为注释占位（非文本形态），天然打断相邻文本合并，不参与分隔符判定
+    const isText = child.type === 'text' && child.content !== ''
     if (isText && previousIsText) html += '<!-- -->'
     html += serialize(child)
     previousIsText = isText

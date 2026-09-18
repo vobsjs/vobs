@@ -17,27 +17,44 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
     return node instanceof Comment && node.data === ' '
   }
 
-  function claim<T extends ChildNode>(
-    predicate: (node: ChildNode) => node is T,
-    expected: string
-  ): T {
+  // 水合会话内全部已认领节点（认领顺序）：回退层的候选若落在任何已认领节点的
+  // 子树内即为"服务端多余节点"，必须跳过（见 tryClaim 回退层规则）。
+  const claimedNodes: ChildNode[] = []
+
+  function tryClaim<T extends ChildNode>(
+    predicate: (node: ChildNode) => node is T
+  ): T | null {
     // 先在当前父认领；失败时沿祖先链回退到水合容器——"先连续创建兄弟、后统一插入"
     // 的产物模式（数组 map 经 insertDynamicValue/insertList）会在创建游标仍停留在
     // 上一个元素内部时认领下一个兄弟，回退扫描让这类合法产物按文档序正确认领。
     let parent: Node | null = currentParent
     while (parent) {
+      // 回退层（跨出起始游标所在层级）的候选若落在任何已认领节点的子树内，
+      // 即为服务端多余节点，跳过（由 assertAllNodesClaimed 精确报 extra-node）。
+      const isFallback = parent !== currentParent
       const seen = claimed.get(parent) ?? new Set<ChildNode>()
       claimed.set(parent, seen)
       for (const node of parent.childNodes) {
         if (seen.has(node) || isSeparatorComment(node)) continue
+        if (isFallback && claimedNodes.some(claimed => claimed.contains(node))) continue
         if (predicate(node)) {
           seen.add(node)
+          claimedNodes.push(node)
           return node
         }
       }
       if (parent === container) break
       parent = parent.parentNode
     }
+    return null
+  }
+
+  function claim<T extends ChildNode>(
+    predicate: (node: ChildNode) => node is T,
+    expected: string
+  ): T {
+    const node = tryClaim(predicate)
+    if (node) return node
 
     const actual = [...container.querySelectorAll('*')]
       .find(node => !isSeparatorComment(node) && !isClaimed(node))
@@ -74,10 +91,29 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
       // 水合完成后退化为真实 DOM 创建：后续的动态重渲染（状态切换重建分支等）
       // 需要创建全新节点，不能再走认领（服务端 DOM 早已全部认领完毕）。
       if (!hydrating) return document.createTextNode(content)
+      // 空动态文本：SSR 输出空注释占位（<!---->，HTML 无法表示空文本节点）。
+      // 1) 服务端渲染值为空 → 占位存在：认领占位注释并原地替换为真实文本节点，
+      //    位置精确，不会误抢后续兄弟文本；
+      // 2) 服务端渲染值非空 → 占位不存在、DOM 中是真实文本：认领任意未认领文本
+      //    （绑定 effect 随后覆写为真实值）。
+      if (content === '') {
+        const marker = tryClaim(
+          (node): node is Comment => node instanceof Comment && node.data === '',
+        )
+        if (marker) {
+          const parent = marker.parentNode!
+          const textNode = document.createTextNode('')
+          parent.replaceChild(textNode, marker)
+          claimedNodes.push(textNode)
+          const seen = claimed.get(parent)
+          seen?.add(textNode)
+          return textNode
+        }
+      }
       return claim(
         (node): node is Text => node instanceof Text
-          && (content.length === 0 || node.data === content),
-        content.length === 0 ? '动态文本节点' : `文本节点 "${content}"`
+          && (content === '' || node.data === content),
+        content === '' ? '动态文本节点' : `文本节点 "${content}"`
       )
     },
 
@@ -102,6 +138,18 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
 
     insertBefore(parent: Node, child: Node, anchor: Node | null): void {
       if (hydrating) {
+        // 水合期间新创建的节点（空动态文本等）：服务端 DOM 无对应节点，直接真实
+        // 插入到动态槽位锚点前，并计入认领状态。
+        if (child.parentNode === null) {
+          const inserted = child as ChildNode
+          parent.insertBefore(inserted, anchor)
+          const seen = claimed.get(parent) ?? new Set<ChildNode>()
+          claimed.set(parent, seen)
+          seen.add(inserted)
+          claimedNodes.push(inserted)
+          currentParent = parent
+          return
+        }
         if (child.parentNode !== parent || (anchor && anchor.parentNode !== parent)) {
           throwHydrationMismatch('position', describeHydrationNode(parent), describeHydrationNode(child), parent)
         }
