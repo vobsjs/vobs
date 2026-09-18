@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.4] - 2026-09-18
+
+### Added
+
+- SSR: static site generation (SSG). `prerenderRoutes` renders each route at build time through a boot-path memory-history router (so `/` guards and loaders execute fully), `renderPage` assembles the complete HTML document (charset, viewport, custom template hook for CSS links and `lang`), and the head utilities `serializeHeadTags` / `applyHead` / `createHeadSync` cover server injection and client-side `<head>` sync. Output is pure static HTML — deploy to any static host.
+- Router: `createHashHistory` (single `hashchange` listener + `pushState`-written hash, state round-trips through `history.state`).
+- Compiler: `hoistTemplates` option (default `true`, behavior unchanged). The vite plugin auto-disables it for SSR builds because `createTemplate`/`cloneTemplate` depend on `document`.
+- Vobs: full JSX element coverage. `IntrinsicElements` now derives from `HTMLElementTagNameMap` / `SVGElementTagNameMap` mapped types (no hand-maintained tag list; new elements arrive with TS lib updates), plus an exported `VobsSVGAttributes` interface. `VobsHTMLAttributes` gains `href`, `target`, `rel`, `download`, `hrefLang`. The attribute interfaces are re-exported from the package entry so the global JSX augmentation ships with npm installs — tsup drops triple-slash references, which previously left monorepo-external projects without `JSX.IntrinsicElements`.
+- Website demo playground (`playground/website`) exercising the SSG pipeline end-to-end (client build + SSR build + prerender to `dist/*.html`).
+
+### Fixed
+
+- SSR/hydration (silent post-hydration event failures): adjacent text nodes are serialized with `<!-- -->` separators — the HTML parser previously merged them into one node, so strict per-node claiming failed mid-hydration and event listeners never bound. Empty dynamic text serializes to an `<!---->` placeholder; hydration claims the placeholder in place and swaps it for a real text node (position-exact, never stealing sibling text), falling back to any unclaimed text when the server rendered a non-empty value.
+- SSR/hydration (array children): claiming falls back through ancestors up to the container (scanning direct children only) so "create all siblings first, insert later" patterns — array maps through `insertDynamicValue`/`insertList` — hydrate correctly; server-extra nodes remain precisely reported by `assertAllNodesClaimed`.
+- SSR/hydration (post-hydration re-renders): after hydration completes the renderer degrades to real DOM creation, so state-driven branch swaps that create fresh nodes no longer fail.
+- Router: the built-in route error fallback is renderer-neutral (`setAttribute`/`insertBefore` instead of DOM-only `style`/`append`/`addEventListener`), so a render error during prerender serializes instead of crashing Node and masking the original error.
+- Vite plugin: `transform` return type annotation fixed (`map: unknown` → `VobsSourceMap`) — this failed the dts build; the plugin now reads Vite's SSR transform option to disable template hoisting automatically.
+
+### Changed
+
+- All 36 packages version in lockstep; the 1.6.1–1.6.4 patch line only touches `@vobs/ssr`.
+
+### Tests
+
+- SSR: empty dynamic text placeholder round-trip (SSR serialization + hydration in-place replacement without stealing adjacent text) and a RouterView SSG full-tree hydration test reproducing the website demo. Full suite green across the line (535 tests).
+
 ## [1.5.1] - 2026-09-17
 
 ### Changed
