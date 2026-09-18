@@ -17,29 +17,22 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
     return node instanceof Comment && node.data === ' '
   }
 
-  // 水合会话内全部已认领节点（认领顺序）：回退层的候选若落在任何已认领节点的
-  // 子树内即为"服务端多余节点"，必须跳过（见 tryClaim 回退层规则）。
-  const claimedNodes: ChildNode[] = []
-
   function tryClaim<T extends ChildNode>(
     predicate: (node: ChildNode) => node is T
   ): T | null {
     // 先在当前父认领；失败时沿祖先链回退到水合容器——"先连续创建兄弟、后统一插入"
     // 的产物模式（数组 map 经 insertDynamicValue/insertList）会在创建游标仍停留在
     // 上一个元素内部时认领下一个兄弟，回退扫描让这类合法产物按文档序正确认领。
+    // 只扫各层直接孩子：服务端多余节点不会在此被误认领，由
+    // assertAllNodesClaimed 在水合结束时精确报 extra-node。
     let parent: Node | null = currentParent
     while (parent) {
-      // 回退层（跨出起始游标所在层级）的候选若落在任何已认领节点的子树内，
-      // 即为服务端多余节点，跳过（由 assertAllNodesClaimed 精确报 extra-node）。
-      const isFallback = parent !== currentParent
       const seen = claimed.get(parent) ?? new Set<ChildNode>()
       claimed.set(parent, seen)
       for (const node of parent.childNodes) {
         if (seen.has(node) || isSeparatorComment(node)) continue
-        if (isFallback && claimedNodes.some(claimed => claimed.contains(node))) continue
         if (predicate(node)) {
           seen.add(node)
-          claimedNodes.push(node)
           return node
         }
       }
@@ -104,9 +97,9 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
           const parent = marker.parentNode!
           const textNode = document.createTextNode('')
           parent.replaceChild(textNode, marker)
-          claimedNodes.push(textNode)
-          const seen = claimed.get(parent)
-          seen?.add(textNode)
+          const seen = claimed.get(parent) ?? new Set<ChildNode>()
+          claimed.set(parent, seen)
+          seen.add(textNode)
           return textNode
         }
       }
@@ -146,7 +139,6 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
           const seen = claimed.get(parent) ?? new Set<ChildNode>()
           claimed.set(parent, seen)
           seen.add(inserted)
-          claimedNodes.push(inserted)
           currentParent = parent
           return
         }
