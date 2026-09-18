@@ -4,6 +4,7 @@ import { effect, state } from '@vobs/reactivity'
 import {
   createMemoryHistory,
   createBrowserHistory,
+  createHashHistory,
   createRouter,
   lazy,
   NavigationCancelledError,
@@ -177,6 +178,33 @@ describe('@vobs/router', () => {
     window.history.pushState(null, '', '/vobs/users/3')
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(paths).toEqual(['/users/3'])
+
+    stop()
+    window.history.replaceState(null, '', originalURL)
+  })
+
+  it('hash history 挂载 URL hash 并转发 hashchange', () => {
+    const originalURL = window.location.href
+    window.history.replaceState(null, '', '/#/users?tab=all')
+    const history = createHashHistory()
+    const paths: string[] = []
+    const stop = history.listen(path => paths.push(path))
+
+    // hash 为空视为根路径；带 hash 时读取路径 + query
+    expect(history.location).toBe('/users?tab=all')
+
+    // push/replace 写 URL hash（pushState 不触发 hashchange，不误报）
+    history.push('/users/2')
+    expect(window.location.hash).toBe('#/users/2')
+    history.replace('/orders?page=2', { page: 2 })
+    expect(window.location.hash).toBe('#/orders?page=2')
+    expect(history.state).toEqual({ page: 2 })
+
+    // 手动改 URL / 前进后退 → hashchange 转发新路径，state 从当前条目回读
+    window.history.pushState({ page: 3 }, '', '#/users/3')
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    expect(paths).toEqual(['/users/3'])
+    expect(history.state).toEqual({ page: 3 })
 
     stop()
     window.history.replaceState(null, '', originalURL)

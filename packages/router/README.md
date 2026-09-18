@@ -55,6 +55,7 @@ router.currentRoute.value.fullPath // '/users/7?tab=activity'
 | `lazy(loader: RouteComponentLoader): LazyRouteComponent` | Wraps a dynamic import as a lazy route component. |
 | `createMemoryHistory(initial?): RouterHistory` | In-memory history for tests and SSR. |
 | `createBrowserHistory(base?): RouterHistory` | History API adapter with `popstate` support. |
+| `createHashHistory(): RouterHistory` | Hash-based history (`#/path?query`) with `hashchange` support; no server fallback needed. |
 
 Guards and route `loader`s run before a navigation commits. A newer navigation cancels the pending one: its promise rejects with `NavigationCancelledError`, and a late loader result cannot overwrite the current route or history. Guard redirects are capped at 10 hops (`NavigationRedirectError`).
 

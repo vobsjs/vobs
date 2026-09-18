@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { state, createId } from '@vobs/vobs'
+import { createMemoryHistory, createRouter } from '@vobs/router'
 import { createDict } from '@vobs/dict'
 import { createI18n } from '../../i18n/src/index'
 import { createResourceClient, resourcePlugin } from '@vobs/resource'
@@ -16,7 +17,7 @@ import {
   setProperty
 } from '@vobs/dom'
 import { insertDynamic, insertList } from '@vobs/dom'
-import { hydrate, renderToString, renderToStringAsync, serializeState } from './index'
+import { hydrate, renderToString, renderToStringAsync, serializeState, prerenderRoutes, renderPage, applyHead, createHeadSync, serializeHeadTags } from './index'
 
 describe('SSR', () => {
   it('为每个 SSR 请求生成稳定且隔离的 ID', () => {
@@ -349,5 +350,135 @@ describe('SSR', () => {
     expect(() => hydrate(() => createText(''), document.body, {
       state: JSON.stringify({ version: 1, i18n: { version: 1, locale: 'en-US', messages: { 'en-US': { bad: 1 } } } })
     })).toThrow('i18n')
+  })
+
+  it('预渲染逐页产出 HTML、head 与脱水状态，首页 loader 也完整执行', async () => {
+    const loaders: string[] = []
+    const result = await prerenderRoutes({
+      routes: ['/', '/pricing'],
+      routeRecords: [
+        {
+          path: '/',
+          loader: () => { loaders.push('/') },
+          component: () => {
+            const heading = createElement('h1')
+            insertBefore(heading, createText('官网首页'), null)
+            return heading
+          }
+        },
+        {
+          path: '/pricing',
+          component: () => {
+            const paragraph = createElement('p')
+            insertBefore(paragraph, createText('定价页'), null)
+            return paragraph
+          }
+        }
+      ],
+      head: path => [
+        { tag: 'title', text: path === '/' ? '官网首页' : '定价 - Labelune' },
+        { tag: 'meta', attrs: { name: 'description', content: path === '/' ? '首页描述' : '定价描述' } }
+      ]
+    })
+
+    expect(result.pages).toHaveLength(2)
+    expect(result.pages[0]).toMatchObject({ path: '/', fullPath: '/' })
+    // RouterView 范围锚点注释是水合所需产物，html 内含真实内容即可
+    expect(result.pages[0]!.html).toContain('<h1>官网首页</h1>')
+    expect(loaders).toEqual(['/'])
+    expect(result.pages[0]!.head).toContain('<title>官网首页</title>')
+    expect(result.pages[0]!.head).toContain('<meta name="description" content="首页描述">')
+    expect(result.pages[1]!.html).toContain('<p>定价页</p>')
+    expect(result.pages[1]!.state).toEqual({ version: 1 })
+  })
+
+  it('renderPage 组装完整 HTML 并内联脱水状态', () => {
+    const html = renderPage({
+      path: '/',
+      fullPath: '/',
+      html: '<h1>标题</h1>',
+      head: '<title>官网</title>',
+      state: { version: 1 }
+    }, { entryScript: '<script type="module" src="/assets/entry.js"></script>' })
+
+    expect(html).toContain('<!doctype html>')
+    expect(html).toContain('<meta charset="UTF-8">')
+    expect(html).toContain('<title>官网</title>')
+    expect(html).toContain('<div id="app"><h1>标题</h1></div>')
+    expect(html).toContain('window.__VOBS_STATE__={"version":1}</script>')
+    expect(html).toContain('<script type="module" src="/assets/entry.js"></script>')
+  })
+
+  it('RouterView SSG 产物可完整水合（复现官网 demo 场景）', async () => {
+    const { createRouter, RouterView, createMemoryHistory } = await import('@vobs/router')
+    const routes = [
+      {
+        path: '/features',
+        component: () => {
+          const main = createElement('main')
+          setAttribute(main, 'class', 'page')
+          const h1 = createElement('h1')
+          insertBefore(h1, createText('功能'), null)
+          insertBefore(main, h1, null)
+          const ul = createElement('ul')
+          const li = createElement('li')
+          insertBefore(li, createText('Signals First'), null)
+          insertBefore(ul, li, null)
+          insertBefore(main, ul, null)
+          return main
+        }
+      }
+    ]
+    const serverRouter = createRouter({ history: createMemoryHistory('/features'), routes })
+    const result = await renderToStringAsync(() => RouterView({ router: serverRouter }))
+    serverRouter.destroy()
+
+    document.body.innerHTML = `<div id="app">${result.html}</div>`
+    const clientRouter = createRouter({ history: createMemoryHistory('/features'), routes })
+    const container = document.querySelector('#app')!
+    const app = hydrate(() => RouterView({ router: clientRouter }), container)
+    expect(document.querySelector('#app h1')?.textContent).toBe('功能')
+    app.destroy()
+    clientRouter.destroy()
+    document.body.innerHTML = ''
+  })
+
+  it('head 标签序列化转义文本与属性', () => {
+    const head = serializeHeadTags([
+      { tag: 'title', text: 'A < B & "C"' },
+      { tag: 'meta', attrs: { name: 'description', content: 'x"y<z' } }
+    ])
+    // title 是文本节点（< > & 转义、引号合法保留）；meta content 是属性（引号转义）
+    expect(head).toBe('<title>A &lt; B &amp; "C"</title><meta name="description" content="x&quot;y&lt;z">')
+  })
+
+  it('applyHead 更新 title 并按识别键复用 meta', () => {
+    document.head.innerHTML = '<meta name="description" content="旧描述">'
+    applyHead([
+      { tag: 'title', text: '新标题' },
+      { tag: 'meta', attrs: { name: 'description', content: '新描述' } },
+      { tag: 'meta', attrs: { property: 'og:title', content: 'OG 标题' } }
+    ])
+
+    expect(document.title).toBe('新标题')
+    expect(document.head.querySelectorAll('meta')).toHaveLength(2)
+    expect(document.head.querySelector('meta[name="description"]')?.getAttribute('content')).toBe('新描述')
+    expect(document.head.querySelector('meta[property="og:title"]')?.getAttribute('content')).toBe('OG 标题')
+  })
+
+  it('createHeadSync 在路由切换时同步 head', async () => {
+    const router = createRouter({
+      history: createMemoryHistory('/'),
+      routes: [
+        { path: '/', component: () => createText('home') },
+        { path: '/about', component: () => createText('about') }
+      ]
+    })
+    const stop = createHeadSync(router, path => [{ tag: 'title', text: path === '/' ? '首页' : '关于' }])
+    await router.push('/about')
+
+    expect(document.title).toBe('关于')
+    stop()
+    router.destroy()
   })
 })

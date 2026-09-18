@@ -1,5 +1,11 @@
 /// <reference path="./jsx.d.ts" />
 
+// Re-export JSX attribute interfaces: this real type dependency keeps jsx.d.ts in the
+// shipped type graph. tsup's dts bundling drops triple-slash references, so without
+// this export the global JSX augmentation would never load outside the monorepo and
+// every JSX element would fail with "no interface 'JSX.IntrinsicElements'".
+export type { VobsHTMLAttributes, VobsSVGAttributes } from './jsx.js'
+
 export * from '@vobs/reactivity'
 export { createDOMRenderer } from '@vobs/dom'
 export type { VobsRenderer } from '@vobs/runtime'

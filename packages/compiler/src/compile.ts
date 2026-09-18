@@ -41,6 +41,8 @@ interface CompileState {
   diagnostics: CompilerDiagnostic[]
   /** HMR 模块标识：提供后模块顶层 state() 声明包装为 hmrStateRef，跨热更新保活信号。 */
   hmrModuleId: string | null
+  /** 是否把完全静态的 DOM 子树提升为 HTML 模板（createTemplate 依赖 document，SSR/Node 构建必须关闭）。 */
+  hoistTemplates: boolean
 }
 
 interface SourcePosition {
@@ -104,7 +106,8 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
     stateAliases: collectStateAliases(sourceFile),
     localBindings: collectLocallyDeclaredNames(sourceFile),
     diagnostics: [],
-    hmrModuleId: options.hmrModuleId ?? null
+    hmrModuleId: options.hmrModuleId ?? null,
+    hoistTemplates: options.hoistTemplates ?? true
   }
   const cleanFilename = filename.split(/[?#]/u, 1)[0] || filename
   const diagnostics = ts.transpileModule(code, {
@@ -701,7 +704,8 @@ function transformElement(
 
   // 静态模板提升：完全静态的 DOM 子树（无事件/动态绑定/spread/property 属性）序列化为
   // 模块级模板，运行时一次 cloneNode 替代 createElement + setStaticProps + 逐子插入。
-  if (isStaticElement(tagName, attributes, children)) {
+  // hoistTemplates=false（SSR/Node 构建）时跳过：createTemplate 依赖 document。
+  if (state.hoistTemplates && isStaticElement(tagName, attributes, children)) {
     return ts.factory.createCallExpression(
       helperRef(state, 'cloneTemplate'),
       undefined,

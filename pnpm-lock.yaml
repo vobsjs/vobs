@@ -330,6 +330,9 @@ importers:
       '@vobs/resource':
         specifier: workspace:*
         version: link:../resource
+      '@vobs/router':
+        specifier: workspace:*
+        version: link:../router
       '@vobs/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -566,6 +569,25 @@ importers:
       '@vobs/tailwind':
         specifier: workspace:*
         version: link:../../packages/tailwind
+      '@vobs/vite-plugin':
+        specifier: workspace:*
+        version: link:../../packages/vite-plugin
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)
+
+  playground/website:
+    dependencies:
+      '@vobs/router':
+        specifier: workspace:*
+        version: link:../../packages/router
+      '@vobs/ssr':
+        specifier: workspace:*
+        version: link:../../packages/ssr
+      '@vobs/vobs':
+        specifier: workspace:*
+        version: link:../../packages/vobs
+    devDependencies:
       '@vobs/vite-plugin':
         specifier: workspace:*
         version: link:../../packages/vite-plugin

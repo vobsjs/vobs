@@ -115,14 +115,33 @@ function removeChildNode(parent: SSRElement, child: SSRNode): void {
 }
 
 function serialize(node: SSRNode | SSRElement): string {
-  if (node.type === 'text') return escapeHTML(node.content)
+  if (node.type === 'text') return escapeHTML(node.content === '' ? ZERO_WIDTH_SPACE : node.content)
   if (node.type === 'comment') return `<!--${escapeComment(node.content)}-->`
 
-  if (node.tag === 'root') return node.children.map(serialize).join('')
+  if (node.tag === 'root') return serializeChildren(node.children)
 
   const attributes = serializeAttributes(node)
   if (voidElements.has(node.tag)) return `<${node.tag}${attributes}>`
-  return `<${node.tag}${attributes}>${node.children.map(serialize).join('')}</${node.tag}>`
+  return `<${node.tag}${attributes}>${serializeChildren(node.children)}</${node.tag}>`
+}
+
+/** 空文本节点在 HTML 中无法表示（解析后不存在），用零宽空格占位：客户端水合按"任意文本"认领后由绑定 effect 覆写为真实值。 */
+const ZERO_WIDTH_SPACE = '\u200B'
+
+/**
+ * 相邻文本节点会被 HTML 解析器合并为一个节点，导致客户端水合的严格逐节点认领必然失配；
+ * 在相邻文本之间插入注释分隔符保持节点边界（注释节点会打断解析器合并，水合侧将其视为透明）。
+ */
+function serializeChildren(children: readonly SSRNode[]): string {
+  let html = ''
+  let previousIsText = false
+  for (const child of children) {
+    const isText = child.type === 'text'
+    if (isText && previousIsText) html += '<!-- -->'
+    html += serialize(child)
+    previousIsText = isText
+  }
+  return html
 }
 
 function serializeAttributes(node: SSRElement): string {
@@ -152,14 +171,14 @@ function propertyAttribute(key: string, value: unknown): { key: string; value: s
   return null
 }
 
-function escapeHTML(value: string): string {
+export function escapeHTML(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 }
 
-function escapeAttribute(value: string): string {
+export function escapeAttribute(value: string): string {
   return escapeHTML(value)
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')

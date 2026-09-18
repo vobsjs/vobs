@@ -42,6 +42,12 @@ export interface CompileOptions extends CompilerOptions {
    */
   sourceLocation?: boolean
   /**
+   * 是否把完全静态的 DOM 子树提升为 HTML 模板（createTemplate/cloneTemplate，
+   * 运行时依赖 document）。默认 true；SSR/Node 构建（vite build --ssr）必须传 false，
+   * 否则产物在无 DOM 环境加载即崩溃。
+   */
+  hoistTemplates?: boolean
+  /**
    * HMR 模块标识（dev 由 Vite 插件注入，通常为模块绝对路径）。提供后，模块顶层的
    * state() 声明会包装为 hmrStateRef(...)：热更新重执行模块时复用既有信号实例，
    * 避免"新旧两份模块实例、两份状态"导致的页面半边失灵。

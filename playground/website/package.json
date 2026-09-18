@@ -1,0 +1,23 @@
+{
+  "name": "@vobs-playground/website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:client": "vite build",
+    "build:ssr": "vite build --ssr src/entry-server.tsx --outDir dist-server --emptyOutDir",
+    "prerender": "node scripts/prerender.mjs",
+    "build": "pnpm run build:client && pnpm run build:ssr && pnpm run prerender",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vobs/router": "workspace:*",
+    "@vobs/ssr": "workspace:*",
+    "@vobs/vobs": "workspace:*"
+  },
+  "devDependencies": {
+    "@vobs/vite-plugin": "workspace:*",
+    "vite": "^7.3.6"
+  }
+}

@@ -4,7 +4,7 @@ import type { Ref, RefTarget, VobsNode } from '@vobs/runtime'
 
 type VobsEventHandler<T extends Event = Event> = (event: T) => void
 
-interface VobsHTMLAttributes {
+export interface VobsHTMLAttributes {
   ref?: RefTarget<any>
   accept?: string
   accessKey?: string
@@ -17,7 +17,10 @@ interface VobsHTMLAttributes {
   cols?: number
   colSpan?: number
   disabled?: boolean
+  download?: string | boolean
   height?: number | string
+  href?: string
+  hrefLang?: string
   hidden?: boolean
   id?: string
   max?: number | string
@@ -28,6 +31,7 @@ interface VobsHTMLAttributes {
   name?: string
   placeholder?: string
   readOnly?: boolean
+  rel?: string
   required?: boolean
   role?: string
   rows?: number
@@ -39,6 +43,7 @@ interface VobsHTMLAttributes {
   step?: number | string
   style?: string | Readonly<Record<string, string | number | boolean | null | undefined>>
   tabIndex?: number
+  target?: string
   title?: string
   type?: string
   value?: string | number | readonly string[]
@@ -73,6 +78,21 @@ interface VobsHTMLAttributes {
   [name: `aria-${string}`]: string | number | boolean | undefined
 }
 
+/** SVG 元素属性：属性体系庞大且以 kebab-case 为主（stroke-width 等），通用索引放行；编译器对未知属性名原样 setAttribute。 */
+export interface VobsSVGAttributes {
+  children?: unknown
+  class?: string
+  width?: number | string
+  height?: number | string
+  viewBox?: string
+  fill?: string
+  stroke?: string
+  strokeWidth?: number | string
+  strokeLinecap?: 'butt' | 'round' | 'square' | 'inherit'
+  strokeLinejoin?: 'miter' | 'round' | 'bevel' | 'inherit'
+  [name: string]: unknown
+}
+
 declare global {
   namespace JSX {
     type Element = VobsNode
@@ -82,76 +102,13 @@ declare global {
     interface IntrinsicAttributes {
       key?: string | number
     }
-    interface IntrinsicElements {
-      a: VobsHTMLAttributes
-      abbr: VobsHTMLAttributes
-      address: VobsHTMLAttributes
-      article: VobsHTMLAttributes
-      aside: VobsHTMLAttributes
-      b: VobsHTMLAttributes
-      button: VobsHTMLAttributes
-      canvas: VobsHTMLAttributes
-      code: VobsHTMLAttributes
-      dd: VobsHTMLAttributes
-      del: VobsHTMLAttributes
-      details: VobsHTMLAttributes
-      dialog: VobsHTMLAttributes
-      div: VobsHTMLAttributes
-      dl: VobsHTMLAttributes
-      dt: VobsHTMLAttributes
-      em: VobsHTMLAttributes
-      fieldset: VobsHTMLAttributes
-      figcaption: VobsHTMLAttributes
-      figure: VobsHTMLAttributes
-      footer: VobsHTMLAttributes
-      form: VobsHTMLAttributes
-      h1: VobsHTMLAttributes
-      h2: VobsHTMLAttributes
-      h3: VobsHTMLAttributes
-      h4: VobsHTMLAttributes
-      h5: VobsHTMLAttributes
-      h6: VobsHTMLAttributes
-      header: VobsHTMLAttributes
-      hr: VobsHTMLAttributes
-      i: VobsHTMLAttributes
-      img: VobsHTMLAttributes
-      input: VobsHTMLAttributes
-      ins: VobsHTMLAttributes
-      kbd: VobsHTMLAttributes
-      label: VobsHTMLAttributes
-      legend: VobsHTMLAttributes
-      li: VobsHTMLAttributes
-      main: VobsHTMLAttributes
-      mark: VobsHTMLAttributes
-      nav: VobsHTMLAttributes
-      ol: VobsHTMLAttributes
-      optgroup: VobsHTMLAttributes
-      option: VobsHTMLAttributes
-      output: VobsHTMLAttributes
-      pre: VobsHTMLAttributes
-      p: VobsHTMLAttributes
-      q: VobsHTMLAttributes
-      s: VobsHTMLAttributes
-      section: VobsHTMLAttributes
-      select: VobsHTMLAttributes
-      small: VobsHTMLAttributes
-      span: VobsHTMLAttributes
-      strong: VobsHTMLAttributes
-      sub: VobsHTMLAttributes
-      summary: VobsHTMLAttributes
-      sup: VobsHTMLAttributes
-      table: VobsHTMLAttributes
-      tbody: VobsHTMLAttributes
-      td: VobsHTMLAttributes
-      textarea: VobsHTMLAttributes
-      tfoot: VobsHTMLAttributes
-      th: VobsHTMLAttributes
-      thead: VobsHTMLAttributes
-      time: VobsHTMLAttributes
-      tr: VobsHTMLAttributes
-      u: VobsHTMLAttributes
-      ul: VobsHTMLAttributes
-      video: VobsHTMLAttributes
+    // 内置元素全量自动映射：HTML 元素与 SVG 元素分别来自 lib.dom 的标签映射表，
+    // 属性统一走 vobs 的属性模型（setAttribute/property 混合）。新增元素随 TS
+    // 的 lib.dom 升级自动获得，无需手工维护元素枚举。
+    type IntrinsicElements = {
+      [K in keyof HTMLElementTagNameMap]: VobsHTMLAttributes
+    } & {
+      [K in keyof SVGElementTagNameMap]: VobsSVGAttributes
     }
   }
 }

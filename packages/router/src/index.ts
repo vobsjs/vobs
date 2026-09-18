@@ -15,8 +15,12 @@ import {
   emitRouterDebug
 } from './debug'
 import {
+  addEventListener,
+  createText,
   getRuntimeDebugContext,
+  insertBefore,
   runWithRuntimeDebugContext,
+  setAttribute,
   type RuntimeDebugContext
 } from '@vobs/runtime'
 
@@ -350,6 +354,55 @@ export function createBrowserHistory(base = ''): RouterHistory {
       return () => {
         listeners.delete(listener)
         if (listeners.size === 0) window.removeEventListener('popstate', onPopState)
+      }
+    }
+  }
+}
+
+export function createHashHistory(): RouterHistory {
+  if (typeof window === 'undefined') {
+    throw new Error('Vobs Router: createHashHistory 需要浏览器环境')
+  }
+
+  const listeners = new Set<(path: string, state: unknown) => void>()
+  // hash 模式：路由路径整体挂在 URL # 后面（如 /users?tab=all → #/users?tab=all）；
+  // hash 为空视为根路径。服务端只服务 index.html，刷新/直达不产生额外请求。
+  const readHashLocation = (): string =>
+    normalizeHistoryPath(window.location.hash.replace(/^#/, '') || '/')
+  // pushState/replaceState 不触发 hashchange（与 browserHistory 的 popstate 语义对齐）；
+  // 手动改 URL、前进/后退、点击锚点均触发 hashchange，单监听即可覆盖，
+  // state 经 window.history.state 回读（pushState 写入，history 遍历时浏览器自动恢复）。
+  const onHashChange = (): void => {
+    notifyListeners(listeners, readHashLocation(), window.history.state)
+  }
+
+  return {
+    get location(): string {
+      return readHashLocation()
+    },
+
+    get state(): unknown {
+      return window.history.state
+    },
+
+    push(path: string, state?: unknown): void {
+      window.history.pushState(state ?? null, '', `#${normalizeHistoryPath(path)}`)
+    },
+
+    replace(path: string, state?: unknown): void {
+      window.history.replaceState(state ?? null, '', `#${normalizeHistoryPath(path)}`)
+    },
+
+    back(): void {
+      window.history.back()
+    },
+
+    listen(listener: (path: string, state: unknown) => void): () => void {
+      if (listeners.size === 0) window.addEventListener('hashchange', onHashChange)
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+        if (listeners.size === 0) window.removeEventListener('hashchange', onHashChange)
       }
     }
   }
@@ -856,40 +909,30 @@ export function useRouter(): Router {
 }
 
 /** 路由错误默认兜底界面：类名 .vobs-route-error 供应用覆盖样式；重试重新渲染当前路由 */
-function createRouteErrorFallback(error: Error, retry: () => void): HTMLElement {
-  // createElement 返回框架中立 Element；兜底界面仅在浏览器端呈现，按 HTMLElement 设置样式
-  const box = createElement('div') as HTMLElement
-  box.setAttribute('class', 'vobs-route-error')
-  box.style.padding = '48px 24px'
-  box.style.display = 'flex'
-  box.style.flexDirection = 'column'
-  box.style.alignItems = 'center'
-  box.style.gap = '12px'
-  box.style.fontFamily = 'system-ui, -apple-system, sans-serif'
-  box.style.color = '#5a5f6a'
+function createRouteErrorFallback(error: Error, retry: () => void): VobsNode {
+  // 全部走渲染器中立 API：SSR 预渲染时路由组件渲染错误同样会触发 fallback，
+  // 直接操作 DOM API（style/append/addEventListener）在 Node 下会崩溃并掩盖原始错误。
+  const box = createElement('div')
+  setAttribute(box, 'class', 'vobs-route-error')
+  setAttribute(box, 'style', 'padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:12px;font-family:system-ui, -apple-system, sans-serif;color:#5a5f6a')
 
-  const title = createElement('div') as HTMLElement
-  title.textContent = '页面渲染出错'
-  title.style.fontSize = '16px'
-  title.style.fontWeight = '600'
-  title.style.color = '#1c1c1e'
+  const title = createElement('div')
+  setAttribute(title, 'style', 'font-size:16px;font-weight:600;color:#1c1c1e')
+  insertBefore(title, createText('页面渲染出错'), null)
 
-  const message = createElement('code') as HTMLElement
-  message.textContent = error.message
-  message.style.fontSize = '12px'
-  message.style.maxWidth = '520px'
-  message.style.wordBreak = 'break-word'
-  message.style.opacity = '0.75'
+  const message = createElement('code')
+  setAttribute(message, 'style', 'font-size:12px;max-width:520px;word-break:break-word;opacity:0.75')
+  insertBefore(message, createText(error.message), null)
 
-  const button = createElement('button') as HTMLElement
-  button.setAttribute('type', 'button')
-  button.textContent = '重试'
-  button.style.padding = '6px 20px'
-  button.style.fontSize = '13px'
-  button.style.cursor = 'pointer'
-  button.addEventListener('click', retry)
+  const button = createElement('button')
+  setAttribute(button, 'type', 'button')
+  setAttribute(button, 'style', 'padding:6px 20px;font-size:13px;cursor:pointer')
+  insertBefore(button, createText('重试'), null)
+  addEventListener(button, 'click', retry)
 
-  box.append(title, message, button)
+  insertBefore(box, title, null)
+  insertBefore(box, message, null)
+  insertBefore(box, button, null)
   return box
 }
 

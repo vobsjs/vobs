@@ -3,7 +3,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Plugin } from 'vite'
-import { compileWithSourceMap, createI18nExtractor, type CompileOptions } from '@vobs/compiler'
+import { compileWithSourceMap, createI18nExtractor, type CompileOptions, type VobsSourceMap } from '@vobs/compiler'
 import { VobsError } from '@vobs/runtime/error'
 import { compileHtmlComponent } from './html-component.ts'
 
@@ -52,7 +52,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
       return compileHtmlComponent(await readFile(id, 'utf8'), { filename: id })
     },
 
-    transform(code: string, id: string) {
+    transform(code: string, id: string, transformOptions?: { readonly ssr?: boolean }): { code: string; map: VobsSourceMap } | null {
       const cleanId = id.split(/[?#]/u, 1)[0]
       const isTsx = cleanId.endsWith('.tsx')
       const isStateTs = isStateModulePath(cleanId)
@@ -70,6 +70,8 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
         ? createI18nExtractor({ onKey: options.extractI18n })
         : undefined
       const hmr = options.hmr ?? !productionBuild
+      // SSR/Node 构建必须关闭静态模板提升：createTemplate 依赖 document，产物在服务端加载即崩。
+      const hoistTemplates = !transformOptions?.ssr
       const result = compileWithSourceMap(code, {
         ...options.compiler,
         // 生产构建默认剔除组件源码位置（错误定位走 source map）；显式配置优先。
@@ -77,6 +79,8 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
         filename: id,
         // HMR 模块标识必须跨 ?t= 查询稳定（registry 复用语义依赖它），用干净路径。
         hmrModuleId: hmr ? cleanId : options.compiler?.hmrModuleId,
+        // 显式配置优先；SSR 构建未显式配置时强制关闭（browser-only 优化）。
+        hoistTemplates: options.compiler?.hoistTemplates ?? hoistTemplates,
         plugins: [
           ...(options.compiler?.plugins ?? []),
           ...(extractor ? [extractor.plugin] : [])

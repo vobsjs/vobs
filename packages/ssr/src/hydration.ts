@@ -9,6 +9,14 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
   let currentParent: Node = container
   let hydrating = false
 
+  /**
+   * SSR 序列化在相邻文本节点间插入的边界注释（见 renderer.ts serializeChildren）。
+   * 它只为阻止 HTML 解析器合并文本节点，不参与客户端声明，认领与完整性校验均视为透明。
+   */
+  function isSeparatorComment(node: ChildNode): boolean {
+    return node instanceof Comment && node.data === ' '
+  }
+
   function claim<T extends ChildNode>(
     predicate: (node: ChildNode) => node is T,
     expected: string
@@ -18,14 +26,15 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
     claimed.set(currentParent, seen)
 
     for (const node of nodes) {
-      if (!seen.has(node) && predicate(node)) {
+      if (seen.has(node) || isSeparatorComment(node)) continue
+      if (predicate(node)) {
         seen.add(node)
         return node
       }
     }
 
     const actual = [...nodes]
-      .find(node => !seen.has(node))
+      .find(node => !seen.has(node) && !isSeparatorComment(node))
     throwHydrationMismatch(
       actual?.nodeType === 3 && expected.startsWith('文本节点') ? 'content' : 'missing-node',
       expected,
@@ -37,6 +46,7 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
   function assertAllNodesClaimed(parent: Node): void {
     const seen = claimed.get(parent)
     for (const child of parent.childNodes) {
+      if (isSeparatorComment(child)) continue
       if (!seen?.has(child)) {
         throwHydrationMismatch('extra-node', '<claimed node>', describeHydrationNode(child), parent)
       }
@@ -140,7 +150,8 @@ function throwHydrationMismatch(
       ? 'Vobs hydration: 节点位置与客户端渲染结果不一致'
       : `Vobs hydration: 未找到匹配的 ${expected}`
   const details = { kind, expected, actual, path, message } as const
-  const error = Object.assign(new Error(message), {
+  // message 自包含关键诊断（浏览器控制台看不到 vobsHydration 附件），便于直接定位水合差异。
+  const error = Object.assign(new Error(`${message} [${kind}] expected=${expected} actual=${actual} path=${path}`), {
     name: 'HydrationMismatchError',
     vobsCode: 'VOBS_HYDRATION_MISMATCH',
     vobsHydration: details
