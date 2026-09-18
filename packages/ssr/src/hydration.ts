@@ -71,6 +71,9 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
 
   const renderer: VobsRenderer<Node, Text, Element, Comment> = {
     createText(content: string): Text {
+      // 水合完成后退化为真实 DOM 创建：后续的动态重渲染（状态切换重建分支等）
+      // 需要创建全新节点，不能再走认领（服务端 DOM 早已全部认领完毕）。
+      if (!hydrating) return document.createTextNode(content)
       return claim(
         (node): node is Text => node instanceof Text
           && (content.length === 0 || node.data === content),
@@ -79,6 +82,7 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
     },
 
     createElement(tag: string): Element {
+      if (!hydrating) return document.createElement(tag)
       const element = claim(
         (node): node is Element => node instanceof Element
           && node.tagName.toLowerCase() === tag.toLowerCase(),
@@ -89,6 +93,7 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
     },
 
     createComment(content: string): Comment {
+      if (!hydrating) return document.createComment(content)
       return claim(
         (node): node is Comment => node instanceof Comment && node.data === content,
         `注释 "${content}"`
