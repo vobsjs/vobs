@@ -23,6 +23,10 @@ export interface VobsHTMLAttributes {
   hrefLang?: string
   hidden?: boolean
   id?: string
+  /** 原生图片懒加载（img） */
+  loading?: 'lazy' | 'eager'
+  /** 原生图片解码时机（img） */
+  decoding?: 'sync' | 'async' | 'auto'
   max?: number | string
   maxLength?: number
   min?: number | string

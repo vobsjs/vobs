@@ -121,6 +121,16 @@ export type SliderCaptchaValue<T> = T | Signal<T> | (() => T)
 
 const sessionId = createSessionId()
 
+/** 内置刷新图标：span + CSS mask（data URI，currentColor 上色）。
+ *  不走 @vobs/ui（captcha 不依赖它），也不用 SVG 命名空间（vobs JSX createElement
+ *  为 HTML 命名空间，SVG 不渲染）；空 span 在 SSR 序列化与水合认领下均安全。 */
+function createDefaultRetryIcon(): VobsNode {
+  const icon = createElement('span')
+  setAttribute(icon, 'class', 'vobs-captcha__retry-icon')
+  setAttribute(icon, 'aria-hidden', 'true')
+  return icon
+}
+
 export function collectCaptchaDeviceSignals(): CaptchaDeviceSignals {
   if (typeof navigator === 'undefined' || typeof window === 'undefined') {
     return { sessionId }
@@ -199,7 +209,7 @@ export function SliderCaptcha(props: SliderCaptchaProps = {}): VobsNode {
         ? readValue(props, 'refreshingLabel', 'Refreshing…')
         : readValue(props, 'retryLabel', 'Retry')
     },
-    get retryIcon() { return props.retryIcon },
+    get retryIcon() { return props.retryIcon ?? createDefaultRetryIcon },
     get cancelLabel() { return readValue(props, 'cancelLabel', 'Cancel') },
     get loadingLabel() { return readValue(props, 'loadingLabel', 'Loading captcha…') },
     get emptyLabel() { return readValue(props, 'emptyLabel', 'Captcha is not ready.') },

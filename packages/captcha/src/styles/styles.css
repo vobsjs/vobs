@@ -108,6 +108,22 @@
   justify-content: center;
 }
 
+/* 内置刷新图标（SliderCaptcha 默认 retryIcon）：mask data URI + currentColor 上色 */
+.vobs-captcha__retry-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 0 1 9-9a9.75 9.75 0 0 1 6.74 2.74L21 8'/%3E%3Cpath d='M21 3v5h-5m5 4a9 9 0 0 1-9 9a9.75 9.75 0 0 1-6.74-2.74L3 16'/%3E%3Cpath d='M8 16H3v5'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 0 1 9-9a9.75 9.75 0 0 1 6.74 2.74L21 8'/%3E%3Cpath d='M21 3v5h-5m5 4a9 9 0 0 1-9 9a9.75 9.75 0 0 1-6.74-2.74L3 16'/%3E%3Cpath d='M8 16H3v5'/%3E%3C/g%3E%3C/svg%3E");
+}
+
 .vobs-captcha__action-icon > svg {
   width: 100%;
   height: 100%;
@@ -169,8 +185,8 @@
 }
 
 .vobs-slider-captcha .vobs-captcha__action--retry {
-  top: 176px;
-  right: 20px;
+  top: 8px;
+  right: 8px;
 }
 
 .vobs-slider-captcha .vobs-captcha__action--cancel {
@@ -233,9 +249,6 @@
   box-sizing: border-box;
   overflow: hidden;
   border: 0;
-}
-
-.vobs-slider-captcha__target {
 }
 
 .vobs-slider-captcha__decoy {

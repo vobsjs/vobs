@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-09-20
+
+### Added
+
+- Vobs: `VobsHTMLAttributes` gains native image loading hints `loading?: 'lazy' | 'eager'` and `decoding?: 'sync' | 'async' | 'auto'` — JSX `<img loading="lazy">` now typechecks for image-heavy pages.
+- Captcha: `SliderCaptcha` ships a built-in refresh icon (span + CSS mask data URI, tinted by `currentColor`) used when `retryIcon` is not provided. The icon avoids `@vobs/ui` and SVG-namespace elements, so it renders under the DOM renderer, SSG serialization, and hydration claiming alike. Explicit `retryIcon` props still win.
+
+### Fixed
+
+- Captcha: the slider retry button is now anchored to the top-right corner of the challenge image (`top/right: 8px`) instead of a hard-coded `top: 176px` offset that assumed a 260px-tall visual and landed off-image for any other challenge size.
+
 ## [1.6.4] - 2026-09-18
 
 ### Added
