@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-09-20
+
+### Added
+
+- Vobs: `VobsHTMLAttributes` gains `draggable`, `inputMode`, `onError` (ErrorEvent) and `onLoad` (Event) — completes the attribute whitelist for native drag control, virtual-keyboard hints, and image load/error handlers (`<img onError>` fallback swaps, `draggable={false}` on logo images).
+
 ## [1.7.0] - 2026-09-20
 
 ### Added

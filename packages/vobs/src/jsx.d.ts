@@ -17,12 +17,16 @@ export interface VobsHTMLAttributes {
   cols?: number
   colSpan?: number
   disabled?: boolean
+  /** 原生拖拽开关（img 防误拖等） */
+  draggable?: boolean
   download?: string | boolean
   height?: number | string
   href?: string
   hrefLang?: string
   hidden?: boolean
   id?: string
+  /** 虚拟键盘类型提示（移动端 input） */
+  inputMode?: 'none' | 'text' | 'tel' | 'url' | 'email' | 'numeric' | 'decimal' | 'search'
   /** 原生图片懒加载（img） */
   loading?: 'lazy' | 'eager'
   /** 原生图片解码时机（img） */
@@ -56,6 +60,10 @@ export interface VobsHTMLAttributes {
   children?: unknown
   onClick?: VobsEventHandler<MouseEvent>
   onDblClick?: VobsEventHandler<MouseEvent>
+  /** 资源加载失败（img error） */
+  onError?: VobsEventHandler<ErrorEvent>
+  /** 资源加载完成（img load） */
+  onLoad?: VobsEventHandler<Event>
   onFocus?: VobsEventHandler<FocusEvent>
   onBlur?: VobsEventHandler<FocusEvent>
   onInput?: VobsEventHandler<InputEvent>
