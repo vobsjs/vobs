@@ -76,6 +76,8 @@ export type { DrawerCloseReason, DrawerProps } from './drawer'
 
 export { ToastHost } from './toast'
 export type { ToastHostProps, ToastPosition } from './toast'
+export { MESSAGE_TYPE_ICONS, MessageHost } from './message'
+export type { MessageHostProps, MessagePosition } from './message'
 
 export {
   createDOMPortalAdapter,

@@ -11,7 +11,7 @@
     "type": "git",
     "url": "git+https://github.com/vobsjs/vobs.git"
   },
-  "version": "1.7.1",
+  "version": "1.7.2",
   "publishConfig": {
     "access": "public"
   },
@@ -175,6 +175,13 @@
       "default": "./dist/toast.js"
     },
     "./toast.css": "./dist/styles/toast.css",
+    "./message": {
+      "types": "./dist/message.d.ts",
+      "import": "./dist/message.js",
+      "require": "./dist/message.cjs",
+      "default": "./dist/message.js"
+    },
+    "./message.css": "./dist/styles/message.css",
     "./overlay": {
       "types": "./dist/overlay.d.ts",
       "import": "./dist/overlay.js",

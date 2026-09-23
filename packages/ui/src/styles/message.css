@@ -1,0 +1,74 @@
+/* Message：顶部居中轻提示（纯文字胶囊 / 类型图标可选），与 toast 相互独立 */
+
+.vui-message-host {
+  position: fixed;
+  z-index: 1010;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacer-8);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+.vui-message-host--top-center { top: var(--spacer-24, 24px); left: 50%; transform: translateX(-50%); }
+.vui-message-host--top-left { top: var(--spacer-24, 24px); left: var(--spacer-24, 24px); align-items: flex-start; }
+.vui-message-host--top-right { top: var(--spacer-24, 24px); right: var(--spacer-24, 24px); align-items: flex-end; }
+.vui-message-host--bottom-center { bottom: var(--spacer-24, 24px); left: 50%; transform: translateX(-50%); flex-direction: column-reverse; }
+.vui-message-host--bottom-left { bottom: var(--spacer-24, 24px); left: var(--spacer-24, 24px); align-items: flex-start; flex-direction: column-reverse; }
+.vui-message-host--bottom-right { bottom: var(--spacer-24, 24px); right: var(--spacer-24, 24px); align-items: flex-end; flex-direction: column-reverse; }
+
+.vui-message {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  min-height: 36px;
+  padding: var(--spacer-8) var(--spacer-16);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-default);
+  background: var(--bg-base-secondary);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  pointer-events: auto;
+  animation: vui-message-in 180ms ease-out;
+}
+
+.vui-message--clickable { cursor: pointer; }
+
+.vui-message__content { min-width: 0; overflow-wrap: anywhere; }
+
+.vui-message__icon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+.vui-message__icon--info { color: var(--status-primary-default); }
+.vui-message__icon--success { color: var(--status-success-default); }
+.vui-message__icon--warning { color: var(--status-warning-default); }
+.vui-message__icon--error { color: var(--status-error-default); }
+
+@keyframes vui-message-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.vui-message-host--bottom-center .vui-message,
+.vui-message-host--bottom-left .vui-message,
+.vui-message-host--bottom-right .vui-message {
+  animation-name: vui-message-in-bottom;
+}
+
+@keyframes vui-message-in-bottom {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vui-message { animation: none; }
+}

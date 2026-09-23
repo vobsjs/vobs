@@ -218,6 +218,96 @@ export function useNotification(): NotificationContext {
   return notification
 }
 
+/* ---------- Message（顶部居中轻提示）：独立队列，与 toast 互不混流 ---------- */
+
+export const MESSAGE_KEY: InjectionKey<NotificationContext> = createInjectionKey<NotificationContext>('vobs.message')
+
+/** 单条消息的点击回调与图标偏好通过 data 传给 MessageHost（复用 Notification 的 data 通道） */
+export interface MessageData {
+  readonly onClick?: () => void
+  readonly icon?: string | false
+}
+
+export interface MessageInput {
+  readonly content: string
+  readonly type?: NotificationType
+  /** 自动关闭毫秒数（缺省用全局默认；0 = 不自动关闭） */
+  readonly duration?: number
+  /** 去重 key：同 key 新消息顶替旧的（旧的以 replaced 原因触发 onClose） */
+  readonly key?: string
+  /** 点击整条消息 */
+  readonly onClick?: () => void
+  /** 自定义图标名（如 'lucide:loader'）；false 强制隐藏（宿主开了图标也不显示） */
+  readonly icon?: string | false
+  /** 关闭回调：reason 含 timeout（自动关闭）/ replaced（被同 key 顶替）/ cleared / disposed */
+  readonly onClose?: (notification: Notification, reason: NotificationDismissReason) => void
+}
+
+export type MessageOptions = Omit<MessageInput, 'content' | 'type'>
+
+export interface MessageApi {
+  readonly notifications: Signal<readonly Notification[]>
+  open(input: MessageInput): string
+  info(content: string, options?: MessageOptions): string
+  success(content: string, options?: MessageOptions): string
+  warning(content: string, options?: MessageOptions): string
+  error(content: string, options?: MessageOptions): string
+  destroy(): void
+  dispose(): void
+}
+
+export interface MessagePluginOptions {
+  /** 全局默认自动关闭毫秒数（默认 3000；0 = 不自动关闭） */
+  readonly defaultDuration?: number
+  /** 同时最多条数（默认 3，超出挤掉最早的） */
+  readonly maxCount?: number
+  readonly now?: () => number
+  readonly idFactory?: () => string
+  readonly message?: NotificationContext
+}
+
+export function messagePlugin(options: MessagePluginOptions = {}): VobsPlugin {
+  return {
+    name: '@vobs/message',
+    version: '0.1.0',
+    install(context) {
+      const ownedMessage = options.message ? undefined : createNotification({
+        defaultDuration: options.defaultDuration ?? 3000,
+        maxNotifications: options.maxCount ?? 3,
+        now: options.now,
+        idFactory: options.idFactory
+      })
+      context.provide(MESSAGE_KEY, options.message ?? ownedMessage!)
+      return () => ownedMessage?.dispose()
+    }
+  }
+}
+
+export function useMessage(): MessageApi {
+  const context = inject(MESSAGE_KEY)
+  if (!context) {
+    throw new NotificationError('NOTIFICATION_CONTEXT_MISSING', 'Vobs Message: 找不到上下文，请安装 messagePlugin')
+  }
+  const open = (input: MessageInput): string => context.notify({
+    id: input.key,
+    type: input.type ?? 'info',
+    content: input.content,
+    duration: input.duration,
+    data: { onClick: input.onClick, icon: input.icon } satisfies MessageData,
+    onDismiss: input.onClose
+  })
+  return {
+    notifications: context.notifications,
+    open,
+    info: (content, options) => open({ ...options, content, type: 'info' }),
+    success: (content, options) => open({ ...options, content, type: 'success' }),
+    warning: (content, options) => open({ ...options, content, type: 'warning' }),
+    error: (content, options) => open({ ...options, content, type: 'error' }),
+    destroy: () => context.clear(),
+    dispose: () => context.dispose()
+  }
+}
+
 function validateDuration(value: number): number {
   if (!Number.isFinite(value) || value < 0) {
     throw new NotificationError('INVALID_DURATION', 'Vobs Notification: duration 必须是大于等于 0 的有限数字')
