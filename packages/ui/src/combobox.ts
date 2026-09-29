@@ -37,14 +37,28 @@ export interface ComboboxProps extends VuiCommonProps {
   readonly disabled?: boolean
   /** 选中回调（入参为选项 value） */
   readonly onChange?: (value: string) => void
+  /** 面板展开方向：down 固定向下（默认，兼容旧行为）；up 固定向上；
+   *  auto = 每次打开时测量触发器下方视口剩余空间，不足容纳面板且上方充足则向上展开 */
+  readonly direction?: 'down' | 'up' | 'auto'
+  /** 面板水平对齐：start = 左对齐且与触发器同宽（默认）；end = 右缘对齐触发器右缘，
+   *  宽度随内容（max-content）向左伸展，长选项不被截断；超宽场景可另行覆盖 max-width */
+  readonly align?: 'start' | 'end'
 }
 
 export function Combobox(props: ComboboxProps = {}): VobsNode {
   const root = createElement('div')
-  bindClassList(root, props, () => [
-    'vui-combobox',
-    readProp(props, 'disabled', false) ? 'is-disabled' : undefined
-  ])
+  // auto 方向的测量结果走信号：类名统一由 bindClassList 管理（整体覆盖 className），
+  // 手动 classList.toggle 的类会在其 effect 重跑时被抹掉
+  const flipUp = state(false)
+  bindClassList(root, props, () => {
+    const direction = readProp<'down' | 'up' | 'auto'>(props, 'direction', 'down')
+    return [
+      'vui-combobox',
+      direction === 'up' || (direction === 'auto' && flipUp.value) ? 'vui-combobox--up' : undefined,
+      readProp<'start' | 'end'>(props, 'align', 'start') === 'end' ? 'vui-combobox--align-end' : undefined,
+      readProp(props, 'disabled', false) ? 'is-disabled' : undefined
+    ]
+  })
   bindUserStyle(root, props)
 
   const input = createElement('input') as HTMLInputElement
@@ -140,22 +154,32 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
       setAttribute(empty, 'class', 'vui-combobox__empty')
       empty.textContent = emptyText()
       list.append(empty)
-      return
-    }
-    const current = currentValue()
-    matches.forEach((option, index) => {
-      const item = createElement('button') as HTMLButtonElement
-      item.type = 'button'
-      setAttribute(item, 'class', 'vui-combobox__option'
-        + (option.value === current ? ' is-selected' : '')
-        + (index === active.value ? ' is-active' : ''))
-      item.textContent = optionLabel(option)
-      item.addEventListener('click', () => select(option))
-      item.addEventListener('mousemove', () => {
-        if (active.value !== index) active.set(index)
+    } else {
+      const current = currentValue()
+      matches.forEach((option, index) => {
+        const item = createElement('button') as HTMLButtonElement
+        item.type = 'button'
+        setAttribute(item, 'class', 'vui-combobox__option'
+          + (option.value === current ? ' is-selected' : '')
+          + (index === active.value ? ' is-active' : ''))
+        item.textContent = optionLabel(option)
+        item.addEventListener('click', () => select(option))
+        item.addEventListener('mousemove', () => {
+          if (active.value !== index) active.set(index)
+        })
+        list.append(item)
       })
-      list.append(item)
-    })
+    }
+    // auto 方向：面板渲染后测量（强制 layout 拿实际面板高），下方空间不足且上方充足则向上展开；
+    // 每次打开重测（窗口位置/滚动可能变化）；非 auto 复位（up/down 由类绑定直出）
+    if (readProp<'down' | 'up' | 'auto'>(props, 'direction', 'down') === 'auto') {
+      const rootRect = root.getBoundingClientRect()
+      const panelHeight = panel.getBoundingClientRect().height
+      const spaceBelow = window.innerHeight - rootRect.bottom
+      flipUp.value = spaceBelow < panelHeight + 8 && rootRect.top > panelHeight + 8
+    } else {
+      flipUp.value = false
+    }
   })
 
   /* ---------- 键盘导航 ---------- */

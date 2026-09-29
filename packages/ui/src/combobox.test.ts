@@ -85,4 +85,22 @@ describe('Combobox', () => {
     await tick()
     expect(root.querySelector('.vui-combobox__panel')).toBeNull()
   })
+
+  it('align="end" 与 direction="up" 输出对应修饰类', async () => {
+    const root = await mount({ options: FRUITS, value: 'apple', align: 'end', direction: 'up' })
+    expect(root.classList.contains('vui-combobox--align-end')).toBe(true)
+    expect(root.classList.contains('vui-combobox--up')).toBe(true)
+  })
+
+  it('direction 默认 down：不加向上类，auto 打开时视口充足保持向下', async () => {
+    const fallback = await mount({ options: FRUITS, value: 'apple' })
+    expect(fallback.classList.contains('vui-combobox--up')).toBe(false)
+    const auto = await mount({ options: FRUITS, value: 'apple', direction: 'auto' })
+    const input = auto.querySelector('input') as HTMLInputElement
+    input.dispatchEvent(new FocusEvent('focus'))
+    await tick()
+    expect(auto.querySelector('.vui-combobox__panel')).not.toBeNull()
+    // jsdom 视口（innerHeight 768）远大于面板高：auto 不翻转
+    expect(auto.classList.contains('vui-combobox--up')).toBe(false)
+  })
 })
