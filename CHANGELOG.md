@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.3] - 2026-09-29
+
+### Changed
+
+- Compiler: JSX child expressions are no longer classified by a static heuristic. Every non-static child (function calls, member accesses, identifiers, literals) now compiles to the polymorphic `insertDynamicValue` — the compiler no longer guesses whether a call returns text or a node. Returning a `VobsNode`/Fragment from a helper called in JSX position (`{renderSections(doc)}`) renders correctly; previously the call fell into the `bindText` path and was stringified to `[object Object]` (regression found in Labelune's legal document pages).
+- Runtime: `insertDynamicValue` is now the single polymorphic child inserter (Solid-style runtime dispatch). Primitive values (string/number) hit an in-place text fast path — the mounted text node is reused and its content mutated, matching the previous `bindText` performance (zero node churn on high-frequency text). Nodes/Fragments/arrays keep the scope-isolated mount/unmount semantics (inner component owners are disposed when the subtree is swapped). `null`/`undefined`/`boolean` clear the mounted child. Mixed-type values (`cond ? <A/> : 'plain text'`) now work across type changes.
+
+## [1.7.2] - 2026-09-28
+
+### Added
+
+- Notification: `messagePlugin` / `useMessage` — MessageHost top-center toast queue (independent queue, 3s auto-close, max 3 stacked, key dedup); single messages can override icon behavior via a three-mode switch (text-only / mapped by type / fixed icon name).
+- UI: `MessageHost` pill-style message renderer used by the notification package.
+
 ## [1.7.1] - 2026-09-20
 
 ### Added

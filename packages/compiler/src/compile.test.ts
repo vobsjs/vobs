@@ -106,7 +106,8 @@ describe('compiler', () => {
 
     expect(result).toContain('bindProperty')
     expect(result).toContain('() => name.value')
-    expect(result).toContain('bindText')
+    // 子节点表达式统一走 insertDynamicValue 多态插入（原始值在运行时命中文本快路径）
+    expect(result).toContain('insertDynamicValue')
   })
 
   it('将首字母大写的标签编译为组件实例', () => {
@@ -341,6 +342,18 @@ export const width = st(50, 'doc.width')
     const result = compile(`const content = <strong>ready</strong>; const el = <div>{content}</div>`)
     expect(result).toContain('insertDynamicValue')
     expect(result).toContain('() => content')
+  })
+
+  // 回归（Labelune 踩坑备忘）：JSX 子节点里的函数调用曾被编译为 bindText 文本绑定
+  // （String(fragment) → "[object Object]"）。现在所有非静态子表达式统一走
+  // insertDynamicValue 多态插入：值类型由运行时判断，返回节点的辅助函数与返回
+  // 字符串的 t('...') 同样安全。
+  it('函数调用子表达式编译为 insertDynamicValue 多态插入（不文本绑定）', () => {
+    const result = compile(`const el = <div>{renderSections(doc)}{t('greeting')}</div>`)
+    expect(result).not.toContain('bindText')
+    expect(result).toContain('insertDynamicValue')
+    expect(result).toContain('() => renderSections(doc)')
+    expect(result).toContain(`() => t('greeting')`)
   })
 
   // 回归（Labelune 踩坑备忘）：用户态组件透传 children 曾渲染为 "[object HTMLDivElement]"。
@@ -598,8 +611,8 @@ export const width = st(50, 'doc.width')
     // JSX 元素与属性映射回标签所在行（含列号）
     expect(findSourceLine(segments, codeLines, 'createElement("div")')).toBe(5)
     expect(findSourceLine(segments, codeLines, 'addEventListener(')).toBe(5)
-    // IIFE 内的文本绑定映射回表达式子节点所在行
-    expect(findSourceLine(segments, codeLines, 'bindText(')).toBe(6)
+    // IIFE 内的动态子表达式插入映射回表达式子节点所在行
+    expect(findSourceLine(segments, codeLines, 'insertDynamicValue(')).toBe(6)
     // 注入的 import 不产生错误映射
     const importLine = codeLines.findIndex(line => line.startsWith('import { createElement'))
     expect(segments.some(segment => segment.genLine === importLine)).toBe(false)

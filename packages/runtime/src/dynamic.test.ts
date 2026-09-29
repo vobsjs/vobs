@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { createDOMRenderer, setRenderer, createText, insertDynamicValue, insertList, insertDynamic, addEventListener, createComponent } from '@vobs/vobs'
+import { createDOMRenderer, setRenderer, createText, insertDynamicValue, insertList, insertDynamic, addEventListener, createComponent, type DynamicChild } from '@vobs/vobs'
 import { effect, state } from '@vobs/reactivity'
 import { bindText } from './bind'
 import { createFragment, type VobsNode } from './fragment'
@@ -459,5 +459,121 @@ describe('component render isolation (untrack)', () => {
     input.value = 'world'
     input.dispatchEvent(new Event('input'))
     expect(content.value).toBe('world')
+  })
+})
+
+describe('polymorphic insertDynamicValue (Solid 式运行时多态)', () => {
+  const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+
+  it('字符串更新原地改写文本节点（节点身份保持，bindText 级性能）', async () => {
+    setRenderer(createDOMRenderer())
+    const parent = document.createElement('div')
+    const label = state('hello')
+    insertDynamicValue(parent, null, () => label.value)
+    const textNode = parent.firstChild
+    expect(textNode?.nodeType).toBe(3)
+    expect(parent.textContent).toBe('hello')
+
+    label.value = 'world'
+    await flush()
+    // 快路径：同一个文本节点被复用，只改内容
+    expect(parent.firstChild).toBe(textNode)
+    expect(parent.textContent).toBe('world')
+  })
+
+  it('数值子节点同样命中文本快路径', async () => {
+    setRenderer(createDOMRenderer())
+    const parent = document.createElement('div')
+    const count = state(0)
+    insertDynamicValue(parent, null, () => count.value)
+    const textNode = parent.firstChild
+    expect(parent.textContent).toBe('0')
+
+    count.value = 42
+    await flush()
+    expect(parent.firstChild).toBe(textNode)
+    expect(parent.textContent).toBe('42')
+  })
+
+  // 回归（Labelune 踩坑备忘）：JSX 子节点里的函数调用返回 Fragment 曾被
+  // String() 成 "[object Object]"；多态插入后节点值正确挂载，且可与原始值互切。
+  it('函数调用返回 Fragment 正确挂载，并与字符串互切', async () => {
+    setRenderer(createDOMRenderer())
+    const parent = document.createElement('div')
+    const mode = state<'doc' | 'plain'>('doc')
+    const renderDoc = (): VobsNode => {
+      const section = document.createElement('p')
+      section.textContent = '条款正文'
+      return createFragment((fragmentParent, anchor) => {
+        fragmentParent.insertBefore(section, anchor)
+      })
+    }
+    insertDynamicValue(parent, null, () => (mode.value === 'doc' ? renderDoc() : '纯文本'))
+    expect(parent.textContent).toBe('条款正文')
+
+    mode.value = 'plain'
+    await flush()
+    expect(parent.textContent).toBe('纯文本')
+
+    mode.value = 'doc'
+    await flush()
+    expect(parent.textContent).toBe('条款正文')
+  })
+
+  it('节点值变化时整体替换，旧子树 effect 被清理', async () => {
+    setRenderer(createDOMRenderer())
+    const log: string[] = []
+    const version = state(0)
+    function Panel(): Node {
+      effect(() => {
+        log.push(`run:v${version.value}`)
+        return () => log.push('cleanup')
+      })
+      const el = document.createElement('p')
+      el.textContent = `v${version.value}`
+      return el
+    }
+    const parent = document.createElement('div')
+    // 工厂读取 version 建立结构依赖：version 变化 → 工厂重跑 → 新组件替换旧子树
+    // （组件体 untrack，自身渲染不建立依赖——与编译产物的 insertDynamicValue 语义一致）
+    insertDynamicValue(parent, null, () => {
+      void version.value
+      return createComponent(Panel, {})
+    })
+    expect(parent.textContent).toBe('v0')
+
+    version.value = 1
+    await flush()
+    expect(parent.textContent).toBe('v1')
+    expect(log).toContain('cleanup')
+    expect(log).toContain('run:v1')
+  })
+
+  it('null/undefined/boolean 清空文本与节点子树', async () => {
+    setRenderer(createDOMRenderer())
+    const parent = document.createElement('div')
+    const value = state<DynamicChild>('text')
+    insertDynamicValue(parent, null, () => value.value)
+    expect(parent.textContent).toBe('text')
+    const textNode = parent.firstChild
+
+    value.value = null
+    await flush()
+    expect(parent.textContent).toBe('')
+
+    value.value = false
+    await flush()
+    expect(parent.textContent).toBe('')
+
+    const el = document.createElement('span')
+    value.value = el
+    await flush()
+    expect(parent.contains(el)).toBe(true)
+
+    value.value = false
+    await flush()
+    expect(parent.contains(el)).toBe(false)
+    // 文本节点身份在字符串轮次间保持（此前的 textNode 已随 null 清除）
+    expect(parent.contains(textNode as Node)).toBe(false)
   })
 })

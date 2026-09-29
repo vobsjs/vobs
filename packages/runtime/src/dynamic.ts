@@ -5,7 +5,8 @@ import {
   createComment,
   createText,
   insertBefore,
-  removeChild
+  removeChild,
+  setTextContent
 } from './ops'
 import { createFragment, isVobsFragment, type VobsNode } from './fragment'
 
@@ -41,6 +42,10 @@ export function insertDynamic(parent: Node, anchor: Node | null, factory: NodeFa
 /**
  * Inserts any Vobs child value. This is the escape hatch for JSX expressions
  * that return a node, an array of nodes, text, or an empty conditional value.
+ *
+ * 多态插入（Solid 式）：编译器把所有非静态子表达式统一路由到这里，值类型在运行时
+ * 分发——原始值走自管理文本节点的原地更新快路径（等价 bindText 性能），节点/Fragment/
+ * 数组走 scope 隔离的挂载/卸载路径。函数调用返回节点因此与返回字符串同样安全。
  */
 export function insertDynamicValue(
   parent: Node,
@@ -50,13 +55,43 @@ export function insertDynamicValue(
   const marker = createComment('vobs:value')
   insertBefore(parent, marker, anchor)
   let current: VobsNode | null = null
+  /** current 是否为本 effect 自建的文本节点（可安全原地改写内容） */
+  let currentIsText = false
   let scope: Owner | null = null
 
   effect(() => {
     // 每轮求值使用独立 scope Owner：factory 求值与挂载期间创建的组件 Owner 全部挂在它下面。
     // 数组/节点被替换时整体 dispose 旧 scope，避免被丢弃子树的 effect 继续订阅信号（幽灵更新与内存泄漏）。
     const nextScope = createOwner()
-    const next = nextScope.run(() => normalizeDynamicChild(factory()))
+    const value = nextScope.run(factory)
+    // ── 原始值快路径：自建文本节点原地改写，不销毁重建（高频文本零 GC）──
+    if (typeof value === 'string' || typeof value === 'number') {
+      if (currentIsText) {
+        setTextContent(current as Text, String(value))
+        nextScope.dispose()
+        return
+      }
+      if (current) removeChild(parent, current)
+      scope?.dispose()
+      scope = null
+      const text = createText(String(value))
+      insertBefore(parent, text, marker)
+      current = text
+      currentIsText = true
+      nextScope.dispose()
+      return
+    }
+    if (value === null || value === undefined || typeof value === 'boolean') {
+      if (current) removeChild(parent, current)
+      scope?.dispose()
+      scope = null
+      current = null
+      currentIsText = false
+      nextScope.dispose()
+      return
+    }
+    // ── 节点/Fragment/数组路径：scope 隔离的挂载与整体替换 ──
+    const next = nextScope.run(() => normalizeDynamicChild(value))
     if (next === current) {
       nextScope.dispose()
       return
@@ -65,6 +100,7 @@ export function insertDynamicValue(
     scope?.dispose()
     scope = nextScope
     current = next
+    currentIsText = false
     if (current) insertBefore(parent, current, marker)
   })
 }

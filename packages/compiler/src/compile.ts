@@ -1220,13 +1220,10 @@ function appendChildren(
         statements.push(callStatement(state, 'insertDynamic', [element, anchor, dynamic], child))
         continue
       }
-      if (!containsJsx(expression) && !ts.isIdentifier(expression)) {
-        const textId = nextIdentifier(state, '_text')
-        statements.push(createConstStatement(state, textId, ts.factory.createCallExpression(helperRef(state, 'createText'), undefined, [ts.factory.createStringLiteral('')]), child))
-        statements.push(callStatement(state, 'insertBefore', [element, textId, anchor], child))
-        statements.push(callStatement(state, 'bindText', [textId, createGetter(expression)], child))
-        continue
-      }
+      // 其余表达式（函数调用、成员访问、字面量、标识符……）一律走 insertDynamicValue
+      // 多态插入：值类型在运行时分发——字符串/数值命中自建文本节点的原地更新快路径
+      // （等价 bindText 性能），节点/Fragment/数组正确挂载。编译期不猜测调用返回类型，
+      // 返回节点的辅助函数（如 renderXxx()）与返回字符串的 t('...') 同样安全。
       const value = transformEmbeddedExpression(state, expression)
       statements.push(callStatement(state, 'insertDynamicValue', [element, anchor, createGetter(value)], child))
     }
@@ -1286,7 +1283,7 @@ function transformDynamicExpression(state: CompileState, expression: ts.Expressi
 /**
  * 把产出节点的动态表达式（`cond ? <A/> : <B/>`、`cond && <A/>`，含任意嵌套组合）
  * 转换为条件表达式树；各分支中的 JSX 递归编译为节点工厂，由 insertDynamic 挂载/卸载。
- * 返回 null 表示没有任何分支产出节点（纯文本/数值场景走 insertDynamicValue 文本绑定）。
+ * 返回 null 表示没有任何分支产出节点（纯文本/数值/混合场景回落 insertDynamicValue 多态插入）。
  */
 function convertDynamicNodeExpression(state: CompileState, expression: ts.Expression): ts.ConditionalExpression | null {
   if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
