@@ -6,6 +6,11 @@ export interface VobsRenderer<
 > {
   createText(content: string): TextNode
   createElement(tag: string): ElementNode
+  /**
+   * 创建 SVG 命名空间元素（http://www.w3.org/2000/svg）。可选：未实现时运行时按
+   * createElement 兜底（HTML namespace，SVG 内容不渲染）。DOM/SSR/水合渲染器均需实现。
+   */
+  createSvgElement?(tag: string): ElementNode
   createComment(content: string): CommentNode
   insertBefore(parent: NodeType, child: NodeType, anchor: NodeType | null): void
   removeChild(parent: NodeType, child: NodeType): void

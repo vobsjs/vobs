@@ -44,7 +44,35 @@ export function createText(content: string): Text {
   return getRenderer().createText(content)
 }
 
+/** SVG 命名空间（与 HTML 解析器 foreign-content 规则一致） */
+export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
+
+/**
+ * SVG 标签全集（= TypeScript SVGElementTagNameMap 的键，运行时分发依据）。
+ * 与 React 的运行时清单同思路：只含纯 SVG 标签，刻意排除与 HTML 同名的
+ * a/script/style/title（它们在 JSX 类型里归 HTMLElement，按 HTML 创建）。
+ */
+const SVG_TAGS = new Set([
+  'animate', 'animateMotion', 'animateTransform', 'circle', 'clipPath', 'defs', 'desc',
+  'ellipse', 'feBlend', 'feColorMatrix', 'feComponentTransfer', 'feComposite',
+  'feConvolveMatrix', 'feDiffuseLighting', 'feDisplacementMap', 'feDistantLight',
+  'feDropShadow', 'feFlood', 'feFuncA', 'feFuncB', 'feFuncG', 'feFuncR',
+  'feGaussianBlur', 'feImage', 'feMerge', 'feMergeNode', 'feMorphology', 'feOffset',
+  'fePointLight', 'feSpecularLighting', 'feSpotLight', 'feTile', 'feTurbulence',
+  'filter', 'foreignObject', 'g', 'image', 'line', 'linearGradient', 'marker', 'mask',
+  'metadata', 'mpath', 'path', 'pattern', 'polygon', 'polyline', 'radialGradient',
+  'rect', 'set', 'stop', 'svg', 'switch', 'symbol', 'text', 'textPath', 'tspan',
+  'use', 'view'
+])
+
 export function createElement(tag: string): Element {
+  // SVG 标签走命名空间创建：document.createElement('rect') 产物是 HTMLUnknownElement，
+  // 整棵 SVG 子树都不会渲染（无报错）。渲染器未实现 createSvgElement 时按 createElement
+  // 兜底（旧自定义渲染器保持原行为）。
+  if (SVG_TAGS.has(tag)) {
+    const renderer = getRenderer()
+    if (renderer.createSvgElement) return renderer.createSvgElement(tag)
+  }
   return getRenderer().createElement(tag)
 }
 

@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.4] - 2026-09-29
+
+### Added
+
+- Runtime: SVG namespace support. `createElement` now dispatches SVG tags (the full `SVGElementTagNameMap` key set) to a new optional `VobsRenderer.createSvgElement(tag)` — the DOM renderer creates via `createElementNS`, so JSX `<svg><rect/></svg>` produces real, renderable, queryable SVG elements. Previously `createElement('rect')` yielded an `HTMLUnknownElement` and the whole SVG subtree silently failed to render (no error) — the framework's own icon system had to work around it with `innerHTML` injection. Hydration claims SVG nodes by namespace + tag name; SSR serialization is unchanged (nodes are data). Renderers that don't implement `createSvgElement` keep the previous behavior via fallback. Deliberately excludes tags that share names with HTML elements (`a`, `script`, `style`, `title`) — those keep HTML creation, matching the JSX typings. Known limitation: HTML children inside `foreignObject` are still created with the SVG namespace.
+
 ## [1.7.3] - 2026-09-29
 
 ### Changed

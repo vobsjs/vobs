@@ -12,6 +12,10 @@ export function createDOMRenderer(): VobsRenderer<Node, Text, Element, Comment> 
       return document.createElement(tag)
     },
 
+    createSvgElement(tag: string): Element {
+      return document.createElementNS('http://www.w3.org/2000/svg', tag)
+    },
+
     createComment(content: string): Comment {
       return document.createComment(content)
     },

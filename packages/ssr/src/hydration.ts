@@ -121,6 +121,20 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
       return element
     },
 
+    createSvgElement(tag: string): Element {
+      if (!hydrating) return document.createElementNS('http://www.w3.org/2000/svg', tag)
+      // 水合：按标签名（大小写不敏感，SVG 的 clipPath 等驼峰标签由 HTML 解析器
+      // 调整为规范大小写，toLowerCase 后一致）认领服务端序列化的 SVG 元素
+      const element = claim(
+        (node): node is Element => node instanceof Element
+          && node.namespaceURI === 'http://www.w3.org/2000/svg'
+          && node.tagName.toLowerCase() === tag.toLowerCase(),
+        `<${tag}>`
+      )
+      currentParent = element
+      return element
+    },
+
     createComment(content: string): Comment {
       if (!hydrating) return document.createComment(content)
       return claim(

@@ -39,6 +39,23 @@ describe('SSR', () => {
     expect(html).toBe('<h1>Vobs</h1>')
   })
 
+  // SVG 命名空间支持（1.7.4）：createElement 按 SVG 标签集分发（SSR 节点为数据形态，
+  // 序列化原样保留 tag 与属性大小写），客户端水合按 SVG namespace + 标签名认领
+  it('序列化 SVG 子树并保留属性大小写', () => {
+    const html = renderToString(() => {
+      const svg = createElement('svg')
+      setAttribute(svg, 'viewBox', '0 0 50 30')
+      const rect = createElement('rect')
+      setAttribute(rect, 'x', '0')
+      setAttribute(rect, 'y', '0')
+      setAttribute(rect, 'width', '50')
+      setAttribute(rect, 'height', '30')
+      insertBefore(svg, rect, null)
+      return svg
+    })
+    expect(html).toBe('<svg viewBox="0 0 50 30"><rect x="0" y="0" width="50" height="30"></rect></svg>')
+  })
+
   it('异步 SSR 可显式返回服务端请求诊断 side-channel', async () => {
     const http = createHTTPClient({
       adapter: async config => new Response(JSON.stringify({ url: config.url }), {

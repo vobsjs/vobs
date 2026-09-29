@@ -44,6 +44,12 @@ export function createSSRRenderer(): SSRRenderer {
       return createElementNode(tag)
     },
 
+    // SSR 节点是数据形态（tag 原样保留 + 序列化），命名空间由客户端解析器在
+    // foreign content（<svg> 内）中自动处理，无需单独的 SVG 形态
+    createSvgElement(tag: string): SSRElement {
+      return createElementNode(tag)
+    },
+
     createComment(content: string): SSRComment {
       return { type: 'comment', content, parent: null }
     },
