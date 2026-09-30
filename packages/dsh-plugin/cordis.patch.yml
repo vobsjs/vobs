@@ -1,0 +1,7 @@
+# DSH 组合包补丁层：只追加自己的插件行，不覆盖任何官方条目。
+#
+# 应用顺序在 profile 自己的 cordis.patch.yml 之前，因此用户在
+# 「插件」页里做的开关（最后一条同名 override 的 disabled）始终优先。
+- insert:
+    - id: vobs-panel
+      name: dsh-plugin-vobs

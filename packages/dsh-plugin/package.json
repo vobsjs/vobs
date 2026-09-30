@@ -1,0 +1,38 @@
+{
+  "name": "dsh-plugin-vobs",
+  "version": "0.1.0",
+  "description": "vobs 面板：在 DeepSeek Harness 界面里用 @vobs/vobs 渲染的一块 Signals First 浮层",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git",
+    "directory": "packages/dsh-plugin"
+  },
+  "homepage": "https://github.com/vobsjs/vobs/tree/main/packages/dsh-plugin",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-dsh-plugin.mjs",
+    "verify": "node scripts/verify-client.mjs"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}

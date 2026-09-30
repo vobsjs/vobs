@@ -8,6 +8,7 @@
   "scripts": {
     "build": "pnpm run build:packages && pnpm run typecheck && pnpm --filter @vobs-playground/basic build",
     "build:packages": "node scripts/build-packages.mjs",
+    "build:dsh-plugin": "node scripts/build-dsh-plugin.mjs",
     "check:packages": "node scripts/check-packages.mjs",
     "check:release": "node scripts/check-release.mjs",
     "verify:packages": "pnpm run build:packages && pnpm run check:packages && node scripts/verify-packages.mjs",

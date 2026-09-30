@@ -84,6 +84,18 @@ The compiler emits plain DOM operations — a component's initial render is a st
 | [`@vobs/tailwind`](packages/tailwind) | Tailwind CSS v4 integration and theme bridge |
 | [`@vobs/test-utils`](packages/test-utils) | Test helpers for component and renderer assertions |
 
+## DSH 插件
+
+[`packages/dsh-plugin`](packages/dsh-plugin) 是把 vobs 接到 DeepSeek Harness 的插件组合包：它是 DSH 客户端插件契约（`dsh.bundle.patch` + `dsh.client` + `window.__ModuleLoader__` factory）的一份可用参考实现，用 vobs 在 DSH 界面右下角渲染一块浮层（信号计数、memo 派生值、effect 执行次数、`insertList` 增删的标签列表），外壳只有一个极薄的 React 宿主。
+
+```bash
+pnpm build:packages      # 首次：产出 @vobs/vite-plugin 的构建产物
+pnpm build:dsh-plugin    # 产出 packages/dsh-plugin/lib/{index,client}.js
+node packages/dsh-plugin/scripts/verify-client.mjs   # 对已构建产物做 jsdom 校验
+```
+
+插件契约、GitHub 子目录直装方式（`github:vobsjs/vobs#<tag>&path:/packages/dsh-plugin`）与 Windows CLI 的 `&` 陷阱都写在 [`packages/dsh-plugin/README.md`](packages/dsh-plugin/README.md)。该包不参与 `@vobs/*` 发布火车（不在 `publish:packages` 白名单里），版本号独立。
+
 ## Development
 
 ```bash
