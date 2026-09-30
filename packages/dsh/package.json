@@ -12,7 +12,7 @@
     "url": "git+https://github.com/vobsjs/vobs.git",
     "directory": "packages/dsh"
   },
-  "version": "1.7.7",
+  "version": "1.7.8",
   "publishConfig": {
     "access": "public"
   },

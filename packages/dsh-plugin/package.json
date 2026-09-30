@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-vobs",
-  "version": "0.1.0",
+  "version": "1.7.8",
   "description": "vobs 面板：在 DeepSeek Harness 界面里用 @vobs/vobs 渲染的一块 Signals First 浮层",
   "license": "MIT",
   "type": "module",

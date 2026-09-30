@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-vobs-console",
-  "version": "0.1.0",
+  "version": "1.7.8",
   "description": "Vobs Console：用 vobs 渲染的 DSH 多会话实时驾驶舱",
   "license": "MIT",
   "type": "module",
