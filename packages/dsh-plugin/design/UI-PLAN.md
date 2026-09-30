@@ -21,6 +21,43 @@
 > 目标：用 vobs 给 DeepSeek Harness 做一套**真正有用**的 UI，而不是把 DSH 重画一遍。
 > 状态：**方案，未编码**。预览图见 [`preview/`](preview)。
 
+---
+
+## Vobs 开发台（面向「AI 写 vobs 代码」）
+
+上面三层解决的是「**看见运行态**」；这一层解决另一个问题：**vobs 太新，模型没有它的训练数据**。
+
+答案不是等模型学会，而是把框架变成**它能加载的上下文** + **能自我验证的反馈回路**。
+围绕这件事一共九项能力，其中只有一部分需要界面 —— 下面就是它们的落点。
+
+| 界面 | 装什么 | 对应能力 |
+| --- | --- | --- |
+| Tab 1 · 项目 | `vobs check` 问题清单（每条带正确写法 + `文件:行`）、项目健康、测试结果 | check 可读化 · 脚手架测试 |
+| Tab 2 · API | 左组件树 + 右签名 / 参数 / 示例，一键复制给 AI | `vobs docs` · AI 上下文包 |
+| Tab 3 · 示例 | 12 个可运行示例，每个都有对应的无头测试 | 示例库 |
+| Tab 4 · 护栏 | 把「静默卡死 / 静默丢内容」变成明确告警，附前后对照 | 开发期运行时护栏 |
+| 右侧栏 | 一行状态：check 通过 / 未通过、问题数、护栏告警 | check 状态 |
+| 聊天内嵌 | `vobs check` / `vobs docs` 的输出渲染成可点卡片 | 工具渲染器（原方案 ②） |
+
+**最重要的一条设计取舍**：这是给**审阅 AI 写的代码**的人用的，不是给**自己写代码**的人用的。
+所以每一条问题都必须带「正确写法」和「复制给 AI」，而不是只报错。
+
+### Tab 1 · 项目
+![项目 tab](preview/04-devkit-project.png)
+
+### Tab 2 · API
+![API tab](preview/05-devkit-api.png)
+
+### Tab 3 · 示例
+![示例 tab](preview/06-devkit-examples.png)
+
+### Tab 4 · 护栏
+![护栏 tab](preview/07-devkit-guardrails.png)
+
+### 聊天内嵌卡片 + 右侧栏
+![聊天内嵌与右侧栏](preview/08-devkit-chat.png)
+
+
 ![总览](preview/01-console-overview.png)
 ![工具分析](preview/02-console-tools.png)
 ![工具渲染器](preview/03-chat-toolview.png)
