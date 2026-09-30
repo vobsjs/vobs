@@ -86,15 +86,24 @@ The compiler emits plain DOM operations — a component's initial render is a st
 
 ## DSH 插件
 
-[`packages/dsh-plugin`](packages/dsh-plugin) 是把 vobs 接到 DeepSeek Harness 的插件组合包：它是 DSH 客户端插件契约（`dsh.bundle.patch` + `dsh.client` + `window.__ModuleLoader__` factory）的一份可用参考实现，用 vobs 在 DSH 界面右下角渲染一块浮层（信号计数、memo 派生值、effect 执行次数、`insertList` 增删的标签列表），外壳只有一个极薄的 React 宿主。
+vobs 可以拿来写 [DeepSeek Harness](https://github.com/deepseek-ai) 的客户端插件。仓库里有三块：
+
+| 包 | 作用 |
+| --- | --- |
+| [`@vobs/dsh`](packages/dsh) | 运行时适配（`defineDshPlugin` / `defineDshOverlay` / `defineDshPanel`）+ `dshBundle()` 构建插件 + `@vobs/dsh/preview` 本地预览运行时 |
+| [`@vobs/cli`](packages/cli) | `vobs dsh init / dev / build / check / install` 命令组与插件模板 |
+| [`packages/dsh-plugin`](packages/dsh-plugin) | 最小可用插件（浮层），也是「vobs → DSH」的参考实现 |
+| [`packages/dsh-console`](packages/dsh-console) | **Vobs Console**：注册进 `main` slot 的多会话实时驾驶舱（总览 / 事件流 / 工具分析 / 产物） |
 
 ```bash
-pnpm build:packages      # 首次：产出 @vobs/vite-plugin 的构建产物
-pnpm build:dsh-plugin    # 产出 packages/dsh-plugin/lib/{index,client}.js
-node packages/dsh-plugin/scripts/verify-client.mjs   # 对已构建产物做 jsdom 校验
+pnpm build:packages      # 首次：产出 @vobs/dsh 与 @vobs/vite-plugin 的构建产物
+pnpm build:dsh           # 构建两个插件包的 lib/{index,client}.js
+node packages/dsh-plugin/scripts/verify-client.mjs     # 53 项产物校验
+node packages/dsh-console/scripts/verify-console.mjs   # 60 项产物校验
 ```
 
-插件契约、GitHub 子目录直装方式（`github:vobsjs/vobs#<tag>&path:/packages/dsh-plugin`）与 Windows CLI 的 `&` 陷阱都写在 [`packages/dsh-plugin/README.md`](packages/dsh-plugin/README.md)。该包不参与 `@vobs/*` 发布火车（不在 `publish:packages` 白名单里），版本号独立。
+插件契约、GitHub 子目录直装方式（`github:vobsjs/vobs#<tag>&path:/packages/<pkg>`）与 Windows CLI 的 `&` 陷阱都写在
+[`packages/dsh/README.md`](packages/dsh/README.md)。这两个 `dsh-plugin*` 包不参与 `@vobs/*` 发布火车，版本号独立。
 
 ## Development
 

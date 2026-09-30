@@ -1,23 +1,13 @@
 /**
- * 面板样式。全部注入到 attachShadow 出来的 shadow root 里：
+ * 面板样式。全部注入到 attachShadow 出来的 shadow root 里（由 @vobs/dsh 的宿主完成）：
  * DSH 的全局 CSS 进不来，这里的规则也不会漏出去。
  *
  * 配色读两处信号，都是标准 API，不依赖 DSH 内部实现：
  *   1. `getComputedStyle(document.documentElement).colorScheme` —— DSH 的主题服务
  *      把它写进根元素的 color-scheme；
  *   2. `prefers-color-scheme` —— 兜底。
- * 解析结果落在 `.vobs-dsh-root[data-scheme]` 上，见 index.tsx 的 resolveScheme()。
+ * 解析结果由 @vobs/dsh 落在 `.vobs-dsh-root[data-scheme]` 上。
  */
-
-/** React 宿主元素的定位样式：浮在 DSH 窗口右下角。 */
-export const HOST_STYLE = {
-  position: 'fixed',
-  right: '18px',
-  bottom: '18px',
-  zIndex: 2147483000,
-  pointerEvents: 'auto',
-  contain: 'layout style'
-} as const
 
 export const PANEL_CSS = `
 :where(*, *::before, *::after) { box-sizing: border-box; }

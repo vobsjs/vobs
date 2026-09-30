@@ -73,7 +73,7 @@ DSH 安装时**不会**构建你的包，`lib/index.js` 与 `lib/client.js` 必�
 ```bash
 pnpm build:packages      # 首次需要，产出 @vobs/vite-plugin 的 dist
 pnpm build:dsh-plugin    # 产出 packages/dsh-plugin/lib/*
-git add packages/dsh-plugin scripts/build-dsh-plugin.mjs package.json
+git add packages/dsh-plugin scripts/build-dsh-plugins.mjs package.json
 git commit -m "feat(dsh-plugin): vobs DSH 插件包"
 git tag v1.7.6           # 用一个包含本包的 tag
 git push origin main --tags
@@ -131,7 +131,7 @@ Host 侧新增了模块，**完全退出 DSH 再打开**（关窗口不一定退
 ## 四、开发
 
 ```bash
-pnpm build:packages                     # 首次：build-dsh-plugin 依赖 @vobs/vite-plugin 的 dist
+pnpm build:packages                     # 首次：build-dsh 依赖 @vobs/vite-plugin 的 dist
 pnpm build:dsh-plugin                   # 构建 lib/index.js 与 lib/client.js
 node packages/dsh-plugin/scripts/verify-client.mjs   # 对已构建产物做 jsdom 校验
 pnpm typecheck                          # 仓库级类型检查
@@ -157,7 +157,7 @@ packages/dsh-plugin/
 └── scripts/verify-client.mjs
 ```
 
-根目录的 `scripts/build-dsh-plugin.mjs` 负责构建，它刻意**不**走 `build-packages.mjs`：客户端产物要包一层 `__ModuleLoader__`，且必须自包含、不能拆 chunk。
+根目录的 `scripts/build-dsh-plugins.mjs` 负责构建，它刻意**不**走 `build-packages.mjs`：客户端产物要包一层 `__ModuleLoader__`，且必须自包含、不能拆 chunk。
 
 ---
 
@@ -177,3 +177,4 @@ packages/dsh-plugin/
 - **没有 `@deepseek-ai/cordis` peer 声明**：官方组合包会声明 `peerDependencies: { "@deepseek-ai/cordis": "~4.0.4" }`，但 profile 里并不安装 cordis（它在 app 内），声明 peer 可能让安装前的兼容性检查直接失败。本包因此**不声明**任何 peer，与 `dsh-plugin-whale-pet` 的做法一致。
 - **只做 UI**：不注册工具、不订阅事件、不读写会话内容，也不发模型请求。
 - **未在真实 Web GUI 里目视确认**：产物侧的协议、渲染、响应式、清理，以及 DSH 插件管理器的安装与组合树插入都已实测通过；面板在真实页面上的呈现仍需在装进 `desktop` profile 后刷新确认一次。
+

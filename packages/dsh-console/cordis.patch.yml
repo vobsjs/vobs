@@ -1,0 +1,7 @@
+# DSH 组合包补丁层：只追加自己的插件行，不覆盖任何官方条目。
+#
+# 注册进 main（keyed）与 sidebar.panellist，因此在左侧栏多一个「Console」入口，
+# 点开占满主区域。
+- insert:
+    - id: vobs-console
+      name: dsh-plugin-vobs-console

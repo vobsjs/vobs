@@ -185,7 +185,11 @@ check('shadow root 里有 <style> 与面板根', !!shadow?.querySelector('style'
 check('.vobs-panel 已渲染', !!shadow?.querySelector('.vobs-panel'))
 
 const text = shadow?.textContent ?? ''
-check('渲染出版本号', text.includes('v1.7.5'), text.slice(0, 140))
+// 版本号由构建期的 define 注入，每次发版都会变 —— 从产物里读出它自己内嵌的值来断言，
+// 而不是在脚本里写死一个版本（写死会在 bump 版本时变成假失败）。
+const embeddedVersion = /VOBS_VERSION\s*=\s*`v\$\{("([^"]+)")\}`/u.exec(bundleCode)?.[2]
+check('产物里带构建期注入的版本号', typeof embeddedVersion === 'string' && /^\d+\.\d+\.\d+/u.test(embeddedVersion), String(embeddedVersion))
+check('界面渲染出这个版本号', embeddedVersion !== undefined && text.includes(`v${embeddedVersion}`), text.slice(0, 140))
 check('渲染出标语', text.includes('Signals First'))
 
 const statValue = index => shadow.querySelectorAll('.vobs-stat__value')[index]?.textContent?.trim()

@@ -1,8 +1,9 @@
-// 由 scripts/build-dsh-plugin.mjs 生成，请勿手改；改 src/ 后运行 pnpm build:dsh-plugin。
+// 由 @vobs/dsh 的 dshBundle() 生成，请勿手改；改 src/ 后重新构建。
 // DSH 客户端模块协议：只注册 factory，模块副作用延后到首次物化。
 window.__ModuleLoader__.load({id:"dsh-plugin-vobs",factory:function(require){
 "use strict";
 var module={exports:{}};var exports=module.exports;
+globalThis["__VOBS_DSH_REACT__"]=require("react");
 Object.defineProperties(exports, { __esModule: { value: true }, [Symbol.toStringTag]: { value: "Module" } });
 const signalNames = /* @__PURE__ */ new WeakMap();
 function setSignalDebugName(signal, name) {
@@ -1372,6 +1373,114 @@ function createVobs(config) {
   }
   return app;
 }
+const DSH_REACT_GLOBAL = "__VOBS_DSH_REACT__";
+function resolveDshReact() {
+  const fromGlobal = globalThis[DSH_REACT_GLOBAL];
+  const react = fromGlobal;
+  if (!react) {
+    throw new Error(
+      '@vobs/dsh: 拿不到 DSH 平台提供的 React。\n  用 dshBundle() 构建客户端产物（它会自动注入），或在入口模块调用 useDshReact(require("react"))。'
+    );
+  }
+  return react;
+}
+const DEFAULT_OVERLAY_HOST_STYLE = {
+  position: "fixed",
+  right: "18px",
+  bottom: "18px",
+  zIndex: 2147483e3,
+  pointerEvents: "auto",
+  contain: "layout style"
+};
+function resolveScheme() {
+  if (typeof document === "undefined") return "light";
+  const declared = (getComputedStyle(document.documentElement).colorScheme ?? "").toLowerCase();
+  if (declared.includes("dark")) return "dark";
+  if (declared.includes("light")) return "light";
+  const prefersDark = typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;
+  return prefersDark ? "dark" : "light";
+}
+const DSH_ROOT_CLASS = "vobs-dsh-root";
+function createVobsSlotHost(render, options = {}) {
+  const hostStyle = options.hostStyle ?? DEFAULT_OVERLAY_HOST_STYLE;
+  const readScheme = options.scheme ?? resolveScheme;
+  const styles = options.styles;
+  return function VobsSlotHost() {
+    const React = resolveDshReact();
+    const holder = React.useRef(null);
+    React.useEffect(() => {
+      const host = holder.current;
+      if (!host) return void 0;
+      const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+      if (styles) {
+        const style = document.createElement("style");
+        style.textContent = styles;
+        shadow.appendChild(style);
+      }
+      const root = document.createElement("div");
+      root.className = DSH_ROOT_CLASS;
+      root.dataset.scheme = readScheme();
+      shadow.appendChild(root);
+      const media = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+      const onSchemeChange = () => {
+        root.dataset.scheme = readScheme();
+      };
+      media?.addEventListener("change", onSchemeChange);
+      const app = createVobs({ render });
+      app.mount(root);
+      return () => {
+        media?.removeEventListener("change", onSchemeChange);
+        app.destroy();
+        host.shadowRoot?.replaceChildren();
+      };
+    }, []);
+    return React.createElement("div", { ref: holder, style: hostStyle });
+  };
+}
+const BASE_INJECT = ["slots"];
+function defineDshPlugin(spec) {
+  const inject = [.../* @__PURE__ */ new Set([...BASE_INJECT, ...spec.inject ?? []])];
+  return {
+    inject,
+    apply(ctx) {
+      const dispose = spec.setup(ctx);
+      if (typeof dispose === "function" && typeof ctx.effect === "function") {
+        ctx.effect(() => dispose);
+      }
+    }
+  };
+}
+function registerInSlot(ctx, options, component) {
+  ctx.slots.inject(options.name, () => ctx.slots.register(options, component));
+}
+function surfaceOf(options) {
+  const surface = {};
+  if (options.styles !== void 0) surface.styles = options.styles;
+  if (options.hostStyle !== void 0) surface.hostStyle = options.hostStyle;
+  if (options.scheme !== void 0) surface.scheme = options.scheme;
+  return surface;
+}
+function defineDshOverlay(options, render) {
+  const host = createVobsSlotHost(render, {
+    ...surfaceOf(options),
+    hostStyle: options.hostStyle ?? DEFAULT_OVERLAY_HOST_STYLE
+  });
+  const registration = {
+    name: "shell.overlay",
+    id: options.id ?? "vobs-overlay",
+    order: options.order ?? 100
+  };
+  if (options.locale !== void 0) registration.locale = options.locale;
+  if (options.label !== void 0) registration.label = options.label;
+  return defineDshPlugin({
+    inject: options.injectServices,
+    setup(ctx) {
+      const dispose = options.setup?.(ctx);
+      registerInSlot(ctx, registration, host);
+      return dispose;
+    }
+  });
+}
 const _tpl3 = createTemplate('<span class="vobs-panel__brand">vobs</span>');
 const _tpl5 = createTemplate('<span class="vobs-panel__tagline">Signals First · Zero Re-renders</span>');
 const _tpl11 = createTemplate('<div class="vobs-stat__label">组件体执行</div>');
@@ -1380,7 +1489,7 @@ const _tpl17 = createTemplate('<span class="vobs-hint">count</span>');
 const _tpl19 = createTemplate('<span class="vobs-hint">memo ×2</span>');
 const _tpl29 = createTemplate('<span class="vobs-empty">列表为空（insertList 已清空所有行）</span>');
 const _tpl31 = createTemplate('<span class="vobs-badge__dot"></span>');
-const VOBS_VERSION = `v${"1.7.5"}`;
+const VOBS_VERSION = `v${"1.7.7"}`;
 let bodyExecutions = 0;
 function VobsPanel() {
   bodyExecutions += 1;
@@ -1625,14 +1734,6 @@ function VobsPanel() {
     return _el0;
   })();
 }
-const HOST_STYLE = {
-  position: "fixed",
-  right: "18px",
-  bottom: "18px",
-  zIndex: 2147483e3,
-  pointerEvents: "auto",
-  contain: "layout style"
-};
 const PANEL_CSS = `
 :where(*, *::before, *::after) { box-sizing: border-box; }
 
@@ -1840,55 +1941,12 @@ const PANEL_CSS = `
   background: var(--vobs-accent);
 }
 `;
-const React = require("react");
-function resolveScheme() {
-  if (typeof document === "undefined")
-    return "light";
-  const declared = (getComputedStyle(document.documentElement).colorScheme ?? "").toLowerCase();
-  if (declared.includes("dark"))
-    return "dark";
-  if (declared.includes("light"))
-    return "light";
-  const prefersDark = typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;
-  return prefersDark ? "dark" : "light";
-}
-function VobsHost() {
-  const holder = React.useRef(null);
-  React.useEffect(() => {
-    const host = holder.current;
-    if (!host)
-      return void 0;
-    const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
-    const style = document.createElement("style");
-    style.textContent = PANEL_CSS;
-    shadow.appendChild(style);
-    const root = document.createElement("div");
-    root.className = "vobs-dsh-root";
-    root.dataset.scheme = resolveScheme();
-    shadow.appendChild(root);
-    const media = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
-    const onSchemeChange = () => {
-      root.dataset.scheme = resolveScheme();
-    };
-    media?.addEventListener("change", onSchemeChange);
-    const app = createVobs({ render: () => createComponent(resolveComponent(VobsPanel, "C:/Users/ck/Desktop/vobs framework/packages/dsh-plugin/src/client/index.tsx", "VobsPanel"), {}) });
-    app.mount(root);
-    return () => {
-      media?.removeEventListener("change", onSchemeChange);
-      app.destroy();
-      host.shadowRoot?.replaceChildren();
-    };
-  }, []);
-  return React.createElement("div", { ref: holder, style: HOST_STYLE });
-}
-const inject = ["slots"];
-function apply(ctx) {
-  ctx.slots.inject("shell.overlay", () => ctx.slots.register({ name: "shell.overlay", id: "vobs-panel", order: 120 }, VobsHost));
-}
-const index = { inject, apply };
-exports.apply = apply;
+const index = defineDshOverlay({
+  id: "vobs-panel",
+  order: 120,
+  styles: PANEL_CSS
+}, () => createComponent(resolveComponent(VobsPanel, "C:/Users/ck/Desktop/vobs framework/packages/dsh-plugin/src/client/index.tsx", "VobsPanel"), {}));
 exports.default = index;
-exports.inject = inject;
 var out=module.exports;
 return (out&&out.__esModule&&Object.prototype.hasOwnProperty.call(out,"default"))?out.default:out;
 }});

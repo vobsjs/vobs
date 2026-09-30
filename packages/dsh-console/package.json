@@ -1,0 +1,38 @@
+{
+  "name": "dsh-plugin-vobs-console",
+  "version": "0.1.0",
+  "description": "Vobs Console：用 vobs 渲染的 DSH 多会话实时驾驶舱",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git",
+    "directory": "packages/dsh-console"
+  },
+  "homepage": "https://github.com/vobsjs/vobs/tree/main/packages/dsh-console",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-dsh-plugins.mjs dsh-console",
+    "verify": "node scripts/verify-console.mjs"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}
