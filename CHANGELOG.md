@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.7] - 2026-09-30
+
+### Added
+
+- **`@vobs/dsh`** — a new public package for building DeepSeek Harness client plugins with vobs. It ships three things: (1) a **runtime adapter** — `defineDshPlugin`, `defineDshOverlay` and `defineDshPanel` register a vobs render function into a DSH slot, and `createVobsSlotHost` encapsulates the whole React-host-plus-shadow-root dance so a plugin author never writes React; (2) a **typed DSH client contract** (`DshClientContext`, `DshSlotsService`, `DshSlotRegistration`, …) reverse-engineered from the installed DSH client bundles, with every DSH-specific field optional and unknown fields passed through verbatim; (3) **`@vobs/dsh/vite`** — `dshBundle()`, a Vite plugin that wraps the CJS output into DSH's `window.__ModuleLoader__.load({ id, factory })` protocol, injects the `module`/`exports` shim and the platform `react` bootstrap, derives the output directory and file name from `exports["./client"]`, and **fails the build** on the three ways a plugin bundle can be silently invalid: more than one chunk, a standalone asset, or a non-CJS format. `react` (and anything in `platformModules`) is always external — bundling it would give the plugin a second React instance.
+- **`@vobs/dsh/preview`** — a dependency-free browser runtime that renders a plugin outside DSH. It installs a `window.__ModuleLoader__` shim, substitutes a minimal React implementation (`createElement` / `useRef` / `useEffect` — the only three APIs the adapter's host component uses), builds a mock DSH shell (rail / sidebar / main / right bar / overlay) and mounts each registered slot entry into its matching region, surfacing thrown errors in the page instead of a blank screen. `?static=1` disables the hot-reload stream for headless screenshots and CI assertions.
+- **`@vobs/cli`** gains the `vobs dsh` command group: `init` (scaffolds a standalone plugin project from a new `dsh-plugin` template — manifest, cordis patch, Vite config, and a `.gitignore` that deliberately does **not** ignore `lib/`, because DSH never builds your package), `dev` (build + watch + the preview runtime), `build` (builds **both** halves — the Vite config only covers the client), `check` (pre-install conformance: manifest fields, patch `insert`, install-time lifecycle hooks, `workspace:` protocol, artifact shape and purity, `require` targets), and `install` (assembles the install spec and shells out to `dsh plugin add`).
+
+### Fixed
+
+- **Compiler: conditional branches that are not node factories were silently dropped.** `convertDynamicNodeExpression` committed to a conditional expression tree as soon as *one* branch produced a node, writing `null` for every other branch — and the `insertDynamicValue` fallback only triggered when *no* branch produced a node. So `{cond ? <A/> : items.map(i => <B key={i}/>)}` compiled to `cond ? <A/> : null` and the entire list disappeared with no error, and `{cond ? <Icon/> : label.value}` lost the text branch the same way. A new `isDynamicNodeBranch()` pre-check now requires *every* branch to be a guaranteed node factory (JSX, explicit `null`/`false`, or a nested conditional/`&&` where every level holds); otherwise the whole conditional falls back to the polymorphic `insertDynamicValue`, which renders nodes, fragments, arrays and primitives alike. Correctness over the fast path: that position loses `insertList` keyed reconciliation, but it no longer loses content. Lists written as a direct child expression (`{items.map(…)}`) and conditionals whose branches are all nodes (`{cond ? <A/> : <B/>}`) are unaffected.
+
+### Notes
+
+- This release also contains two DSH plugin packages that are **not** published to npm — `dsh-plugin-vobs` (the minimal reference plugin, migrated onto `@vobs/dsh`, with its client entry reduced from 87 to 25 lines) and `dsh-plugin-vobs-console` (Vobs Console). Both are distributed through Git tags and installed with `github:vobsjs/vobs#<tag>&path:/packages/<name>`; each ships committed prebuilt `lib/` artifacts and its own jsdom conformance script (53 and 60 assertions respectively). They carry independent `0.1.0` versions and sit outside the lockstep release train.
+
 ## [1.7.5] - 2026-09-30
 
 ### Added
