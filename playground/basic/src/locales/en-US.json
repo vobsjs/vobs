@@ -44,7 +44,8 @@
     "payment": "Alipay Pay",
     "errors": "Error diagnostics",
     "runtime": "Core runtime",
-    "ssr": "SSR & hydration"
+    "ssr": "SSR & hydration",
+    "inbox": "Inbox"
   },
   "dashboard": {
     "title": "Vobs Playground",

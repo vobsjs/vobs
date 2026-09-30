@@ -1,0 +1,1 @@
+KitSidebar 菜单钉靠与悬浮角标：KitMenuItem 新增 pin（'bottom' 钉到侧边栏底部区，渲染顺序固定「普通菜单 → pin 菜单 → footer 插槽」；'top' 预留）与 badgePill（钉在图标右上角的红色数字胶囊，展开/收起两态通用，0/空值不渲染；函数形态在菜单渲染作用域求值，信号变化随 insertDynamic 重建菜单树）。钉靠项与普通项共用 activeKey/onSelect/collapsed 机制，hover、激活（品牌色指示条）与折叠样式完全一致；playground 加收件箱 pin 演示项（点击角标 +1 验证联动）；补 3 项测试（pin 分流与激活一致/角标两态与空值/函数形态响应式）。全量版本 1.7.5 + CHANGELOG。

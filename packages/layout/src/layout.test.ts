@@ -268,4 +268,86 @@ describe('@vobs/layout', () => {
     expect(selected).toEqual(['/child'])
     app.destroy()
   })
+
+  it('KitSidebar 将 pin:"bottom" 菜单项分流到底部菜单区，激活态与普通项一致', () => {
+    const container = document.createElement('main')
+    const app = createVobs({
+      render: () => createComponent(KitSidebar, {
+        items: [
+          { key: '/home', label: 'Home', icon: createElement('svg') },
+          { key: '/queue', label: 'Queue', icon: createElement('svg'), pin: 'bottom' }
+        ],
+        activeKey: '/queue',
+        footer: () => createElement('button') as Node
+      })
+    })
+    app.mount(container)
+
+    const menus = container.querySelectorAll('ul.vobs-kit-menu')
+    expect(menus.length).toBe(2)
+    expect(menus[0].classList.contains('vobs-kit-menu--bottom')).toBe(false)
+    expect(menus[0].querySelector('[data-menu-key="/home"]')).toBeTruthy()
+    expect(menus[0].querySelector('[data-menu-key="/queue"]')).toBeNull()
+    expect(menus[1].classList.contains('vobs-kit-menu--bottom')).toBe(true)
+    expect(menus[1].querySelector('[data-menu-key="/queue"]')).toBeTruthy()
+
+    // 激活态由同一 activeKey 机制驱动，与普通项样式一致
+    expect(menus[1].querySelector('[data-menu-key="/queue"]')?.classList.contains('is-active')).toBe(true)
+    expect(menus[1].querySelector('[data-menu-key="/queue"] a, [data-menu-key="/queue"] button')
+      ?.getAttribute('aria-current')).toBe('page')
+
+    // 渲染顺序固定：普通菜单 → pin 菜单 → footer 插槽
+    const sidebar = container.querySelector('.vobs-kit-sidebar') as HTMLElement
+    const footer = sidebar.querySelector('.vobs-kit-sidebar__footer') as HTMLElement
+    const sidebarChildren = Array.from(sidebar.children)
+    expect(sidebarChildren.indexOf(menus[0])).toBeLessThan(sidebarChildren.indexOf(menus[1]))
+    expect(sidebarChildren.indexOf(menus[1])).toBeLessThan(sidebarChildren.indexOf(footer))
+    app.destroy()
+  })
+
+  it('badgePill 渲染悬浮角标：0 不渲染、折叠态保留、支持字符串透传', () => {
+    const container = document.createElement('main')
+    const app = createVobs({
+      render: () => createComponent(KitSidebar, {
+        items: [
+          { key: '/empty', label: 'Empty', icon: createElement('svg'), badgePill: 0 },
+          { key: '/count', label: 'Count', icon: createElement('svg'), badgePill: () => 3 },
+          { key: '/text', label: 'Text', icon: createElement('svg'), badgePill: '99+' }
+        ],
+        collapsed: true
+      })
+    })
+    app.mount(container)
+
+    expect(container.querySelector('[data-menu-key="/empty"] .vobs-kit-menu__badge-pill')).toBeNull()
+    expect(container.querySelector('[data-menu-key="/count"] .vobs-kit-menu__badge-pill')?.textContent).toBe('3')
+    expect(container.querySelector('[data-menu-key="/text"] .vobs-kit-menu__badge-pill')?.textContent).toBe('99+')
+
+    // 折叠态：普通 badge 由 CSS 隐藏，悬浮角标保留（跟随图标居中位置）
+    expect(container.querySelector('.vobs-kit-sidebar')?.classList.contains('is-collapsed')).toBe(true)
+    expect(container.querySelectorAll('.vobs-kit-menu__badge-pill').length).toBe(2)
+    app.destroy()
+  })
+
+  it('badgePill 函数形态随信号变化重建角标', async () => {
+    const count = state(0)
+    const container = document.createElement('main')
+    const app = createVobs({
+      render: () => createComponent(KitSidebar, {
+        items: [{ key: '/queue', label: 'Queue', icon: createElement('svg'), badgePill: () => count.value }]
+      })
+    })
+    app.mount(container)
+
+    expect(container.querySelector('.vobs-kit-menu__badge-pill')).toBeNull()
+
+    count.value = 5
+    await Promise.resolve()
+    expect(container.querySelector('.vobs-kit-menu__badge-pill')?.textContent).toBe('5')
+
+    count.value = 0
+    await Promise.resolve()
+    expect(container.querySelector('.vobs-kit-menu__badge-pill')).toBeNull()
+    app.destroy()
+  })
 })

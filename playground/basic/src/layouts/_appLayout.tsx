@@ -1,4 +1,4 @@
-﻿import { KitLayout, KitSidebar, useKitLayout, type KitMenuItem } from '@vobs/kit'
+import { KitLayout, KitSidebar, useKitLayout, type KitMenuItem } from '@vobs/kit'
 import { useAuth } from '@vobs/auth'
 import { useRoute, useRouter } from '@vobs/router'
 import { Button, Icon, StatusBar, Switch, Tag, ToastHost } from '@vobs/ui'
@@ -18,6 +18,9 @@ export function AppLayout(props: AppLayoutProps) {
   const router = useRouter()
   const i18n = useI18n()
   const activeKey = route.value.path.split('/')[1] ?? ''
+  // pin:'bottom' 演示：钉在侧边栏底部的收件箱入口，悬浮角标由信号驱动；
+  // 点击不跳转、角标 +1，用于人工验证 badgePill 函数形态的响应式重建
+  const inboxBadge = state(0)
   const menuItems: readonly KitMenuItem[] = [
     {
       key: '',
@@ -79,9 +82,20 @@ export function AppLayout(props: AppLayoutProps) {
       label: i18n.t('nav.errors'),
       icon: <Icon name="alert-triangle" />
     },
+    {
+      key: 'inbox',
+      label: i18n.t('nav.inbox'),
+      icon: <Icon name="bell" />,
+      pin: 'bottom',
+      badgePill: () => inboxBadge.value
+    },
   ]
 
   const handleMenuSelect = (key: string) => {
+    if (key === 'inbox') {
+      inboxBadge.value += 1
+      return
+    }
     void router.push(key ? `/${key}` : '/')
   }
 

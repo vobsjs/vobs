@@ -3,6 +3,7 @@ import {
   addEventListener,
   createComponent,
   createElement,
+  createFragment,
   createText,
   insertBefore,
   insertDynamic,
@@ -73,11 +74,23 @@ function createDefaultMenu(props: KitSidebarProps): VobsNode | null {
     ?? readProp<readonly KitMenuItem[]>(props, 'menu', [])
   if (items.length === 0 && hasProp(props, 'children')) return null
 
-  return createComponent(KitMenu, {
-    get items() { return items },
-    get collapsed() { return readProp(props, 'collapsed', false) },
-    get activeKey() { return readProp<string | undefined>(props, 'activeKey', undefined) },
-    get onSelect() { return readProp<KitSidebarProps['onSelect'] | undefined>(props, 'onSelect', undefined) }
+  // pin:'bottom' 的项分流到底部菜单区（渲染顺序固定：普通菜单 → pin 菜单 → footer 插槽）；
+  // 两组菜单共用 activeKey/onSelect/collapsed，激活与折叠行为与普通项完全一致
+  const mainItems = items.filter(item => item.pin !== 'bottom')
+  const bottomItems = items.filter(item => item.pin === 'bottom')
+  const createMenu = (menuItems: readonly KitMenuItem[], className?: string): VobsNode =>
+    createComponent(KitMenu, {
+      ...(className === undefined ? null : { class: className }),
+      get items() { return menuItems },
+      get collapsed() { return readProp(props, 'collapsed', false) },
+      get activeKey() { return readProp<string | undefined>(props, 'activeKey', undefined) },
+      get onSelect() { return readProp<KitSidebarProps['onSelect'] | undefined>(props, 'onSelect', undefined) }
+    })
+
+  if (bottomItems.length === 0) return createMenu(mainItems)
+  return createFragment((parent, anchor) => {
+    insertBefore(parent, createMenu(mainItems), anchor)
+    insertBefore(parent, createMenu(bottomItems, 'vobs-kit-menu--bottom'), anchor)
   })
 }
 

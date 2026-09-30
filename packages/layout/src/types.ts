@@ -28,6 +28,17 @@ export interface KitMenuItem {
   readonly label: string
   readonly icon?: LayoutChildren
   readonly badge?: LayoutChildren
+  /**
+   * 悬浮角标：渲染在图标右上角的红色数字胶囊，展开/收起两态通用（普通 badge 折叠时会隐藏）。
+   * 仅在配置了 icon 的菜单项上生效；0、''、null、undefined 不渲染。
+   * 传函数时在菜单渲染作用域内求值，内部信号变化会触发菜单树重建（与 items getter 同机制）。
+   */
+  readonly badgePill?: number | string | (() => number | string)
+  /**
+   * 钉靠位置：'bottom' 将菜单项钉到侧边栏底部区（渲染顺序固定：普通菜单 → pin 菜单 → footer 插槽）。
+   * 钉靠项与普通项走同一套激活/hover/折叠样式，仅位置不同；'top' 为预留枚举，当前等同缺省。
+   */
+  readonly pin?: 'top' | 'bottom'
   readonly href?: string
   readonly target?: string
   readonly rel?: string

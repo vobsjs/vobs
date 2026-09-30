@@ -209,6 +209,28 @@
   flex: 0 0 20px;
 }
 
+/* 悬浮角标的定位基准：钉在图标右上角，随图标在展开/收起两态下的位置自动跟随 */
+.vobs-kit-menu__icon {
+  position: relative;
+}
+
+.vobs-kit-menu__badge-pill {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: var(--radius-full, 999px);
+  color: #fff;
+  background: var(--status-error-default, #ef4444);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+
 .vobs-kit-menu__label {
   min-width: 0;
   flex: 1 1 auto;
@@ -236,6 +258,17 @@
 .vobs-kit-sidebar.is-collapsed .vobs-kit-menu__link {
   justify-content: center;
   padding-inline: 6px;
+}
+
+/* pin:'bottom' 菜单区：推到侧边栏底部；与 footer 插槽共存时由自身承担推移，
+   footer 紧随其下（渲染顺序固定：普通菜单 → pin 菜单 → footer 插槽） */
+.vobs-kit-menu--bottom {
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.vobs-kit-menu--bottom + .vobs-kit-sidebar__footer {
+  margin-top: 0;
 }
 
 .vobs-kit-sidebar__footer {

@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.5] - 2026-09-30
+
+### Added
+
+- Layout: `KitMenuItem` gains `pin?: 'top' | 'bottom'`. Items with `pin: 'bottom'` are split into a dedicated bottom menu region pinned to the sidebar's lower edge (fixed render order: normal menu → pinned menu → footer slot). Pinned items share the same `activeKey`/`onSelect`/`collapsed` machinery as normal items — identical hover, active (brand accent bar) and collapsed styles; only the position differs. `'top'` is a reserved enum value with default behavior for now.
+- Layout: `KitMenuItem` gains `badgePill?: number | string | (() => number | string)` — a floating badge pill anchored to the top-right corner of the item icon, visible in both expanded and collapsed states (the regular `badge` is CSS-hidden when collapsed). `0`, `''`, `null` and `undefined` render nothing; the function form is evaluated inside the menu render scope, so signal changes rebuild the menu tree (same mechanism as the `items` getter). Requires `icon` to be configured.
+
 ## [1.7.4] - 2026-09-29
 
 ### Added

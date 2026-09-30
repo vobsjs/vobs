@@ -120,6 +120,15 @@ function appendMenuContent(parent: Element, item: KitMenuItem, collapsed: boolea
     const icon = createElement('span')
     setAttribute(icon, 'class', 'vobs-kit-menu__icon')
     mountSlot(icon, item, 'icon')
+    // 悬浮角标钉在图标右上角（绝对定位于 __icon），展开/收起两态通用；
+    // 函数形态在此处调用，信号读取落在 insertDynamic 的追踪作用域内，变化即重建菜单树
+    const badgePill = readBadgePill(item)
+    if (badgePill !== null) {
+      const pill = createElement('span')
+      setAttribute(pill, 'class', 'vobs-kit-menu__badge-pill')
+      insertBefore(pill, createText(badgePill), null)
+      insertBefore(icon, pill, null)
+    }
     insertBefore(parent, icon, null)
   }
 
@@ -148,6 +157,12 @@ function toggleExpanded(expanded: { value: ReadonlySet<string> }, key: string): 
   if (next.has(key)) next.delete(key)
   else next.add(key)
   expanded.value = next
+}
+
+function readBadgePill(item: KitMenuItem): string | null {
+  const raw = typeof item.badgePill === 'function' ? item.badgePill() : item.badgePill
+  if (raw === undefined || raw === null || raw === 0 || raw === '') return null
+  return String(raw)
 }
 
 function emitSelect(props: KitMenuProps, item: KitMenuItem): void {
