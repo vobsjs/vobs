@@ -38,6 +38,7 @@ const publishablePackages = [
   'vite-plugin',
   'cli',
   'payment',
+  'dsh',
 ]
 
 const tag = process.argv.slice(2).find((argument) => argument !== '--') ?? process.env.GITHUB_REF_NAME ?? ''

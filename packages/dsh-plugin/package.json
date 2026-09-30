@@ -23,7 +23,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "node ../../scripts/build-dsh-plugin.mjs",
+    "build": "node ../../scripts/build-dsh-plugins.mjs dsh-plugin",
     "verify": "node scripts/verify-client.mjs"
   },
   "dsh": {

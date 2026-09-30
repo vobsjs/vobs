@@ -1,0 +1,20 @@
+/**
+ * Host 半侧。
+ *
+ * DSH 的组合包在该 profile 的 cordis 树里插入一行，这一行指向本模块。
+ * 客户端模块系统扫描**已启用的 Loader 条目**，读取本包的 `dsh.client` 声明，
+ * 把 `exports['./client']`（lib/client.js）作为浏览器 bundle 提供给页面。
+ *
+ * 也就是说：Host 侧只负责「被挂载」，从而让客户端 bundle 进入启动图。
+ * 要给 Agent 加工具、订阅 session/event、注册服务，才需要在这里写。
+ */
+
+/** cordis 插件名，用于调试命名空间；与 npm 包名无关。 */
+export const name = '{{rowId}}'
+
+/** 需要先就绪的 Host 服务名。 */
+export const inject: readonly string[] = []
+
+export function apply(_ctx: unknown): void {
+  // 有意留空：默认插件的可观察行为全部发生在浏览器半侧。
+}

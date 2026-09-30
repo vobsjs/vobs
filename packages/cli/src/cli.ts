@@ -4,6 +4,7 @@ import { devCommand } from './commands/dev.js'
 import { buildCommand } from './commands/build.js'
 import { generateCommand } from './commands/generate.js'
 import { addCommand } from './commands/add.js'
+import { dshCommand } from './commands/dsh.js'
 import { showBanner, showLogo, showDevBanner } from './banner.js'
 
 export function createCLI(): ReturnType<typeof cac> {
@@ -88,6 +89,33 @@ export function createCLI(): ReturnType<typeof cac> {
       await addCommand({
         package: pkg,
         dev: options.dev as boolean | undefined
+      })
+    })
+
+  cli
+    .command('dsh <action> [target]', 'DSH 插件工具链（init / dev / build / check / install）')
+    .option('--dir <dir>', 'init：目标目录')
+    .option('--pm <pm>', 'init：包管理器（pnpm/npm）')
+    .option('--port <port>', 'dev：预览端口', { default: 5199 })
+    .option('--profile <name>', 'install：DSH profile 名', { default: 'desktop' })
+    .option('--spec <spec>', 'install：完整安装 spec')
+    .option('--repo <owner/name>', 'install：GitHub owner/name')
+    .option('--tag <ref>', 'install：Git tag / 分支 / commit')
+    .option('--subpath <path>', 'install：仓库内子目录')
+    .option('--from <path>', 'install：从本地目录安装')
+    .option('--dry', 'install：只打印命令，不执行')
+    .action(async (action: string, target: string | undefined, options: Record<string, unknown>) => {
+      await dshCommand(action, target, {
+        dir: options.dir as string | undefined,
+        pm: options.pm as 'pnpm' | 'npm' | undefined,
+        profile: options.profile as string | undefined,
+        spec: options.spec as string | undefined,
+        repo: options.repo as string | undefined,
+        tag: options.tag as string | undefined,
+        subpath: options.subpath as string | undefined,
+        from: options.from as string | undefined,
+        dry: options.dry === true,
+        port: options.port === undefined ? undefined : Number(options.port)
       })
     })
 

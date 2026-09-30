@@ -1,0 +1,45 @@
+import { state } from '@vobs/vobs'
+
+/**
+ * 面板主体。整个函数**只执行一次** —— 下面每个 `{…}` 都会被编译成独立的
+ * DOM binding effect，更新只触碰变化的那个文本节点，不会有组件重渲染。
+ */
+export function Panel() {
+  const count = state(0)
+
+  return (
+    <div class="panel">
+      <header class="panel__head">
+        <span class="panel__brand">{{displayName}}</span>
+        <span class="panel__tag">vobs 渲染</span>
+      </header>
+
+      <div class="panel__body">
+        <p class="panel__hint">
+          改 <code>src/client/panel.tsx</code> 就能看到界面变化；
+          <code>vobs dsh dev</code> 可以在不装进 DSH 的情况下预览。
+        </p>
+
+        <div class="panel__row">
+          <button
+            class="panel__btn"
+            onClick={() => {
+              count.value -= 1
+            }}
+          >
+            −1
+          </button>
+          <span class="panel__count">{count.value}</span>
+          <button
+            class="panel__btn panel__btn--primary"
+            onClick={() => {
+              count.value += 1
+            }}
+          >
+            +1
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

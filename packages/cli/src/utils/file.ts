@@ -66,12 +66,16 @@ async function copyDirRecursive(srcDir: string, destDir: string, context: Record
   }
 }
 
-/** Scaffold a project from the basic template */
+/** Scaffold a project from a named template under `src/templates`. */
 export async function scaffoldProject(
   targetDir: string,
-  context: Record<string, unknown>
+  context: Record<string, unknown>,
+  template = 'basic'
 ): Promise<void> {
-  const templateDir = resolve(TEMPLATES_ROOT, 'basic')
+  const templateDir = resolve(TEMPLATES_ROOT, template)
+  if (!existsSync(templateDir)) {
+    throw new Error(`模板不存在: ${template}（可用模板见 ${TEMPLATES_ROOT}）`)
+  }
   ensureDir(targetDir)
   await copyDirRecursive(templateDir, targetDir, context)
 }

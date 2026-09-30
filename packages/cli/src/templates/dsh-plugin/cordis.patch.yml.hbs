@@ -1,0 +1,7 @@
+# DSH 组合包补丁层：只追加自己的插件行，不覆盖任何官方条目。
+#
+# 条目 id 是你在 DSH「插件」页里做开关时用的名字；
+# name 必须等于 package.json 的 name（去掉 scope 的裸包名亦可）。
+- insert:
+    - id: {{rowId}}
+      name: {{packageName}}

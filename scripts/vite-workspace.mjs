@@ -10,6 +10,7 @@ const packageNames = [
   'devtools-ui',
   'dict',
   'dom',
+  'dsh',
   'forms',
   'http',
   'icon-core',
@@ -41,6 +42,8 @@ const packageNames = [
 
 export function workspaceAliases() {
   const aliases = {
+    '@vobs/dsh/react': path.resolve(root, 'packages/dsh/src/react.ts'),
+    '@vobs/dsh/vite': path.resolve(root, 'packages/dsh/src/vite.ts'),
     '@vobs/reactivity/state': path.resolve(root, 'packages/reactivity/src/signal.ts'),
     '@vobs/runtime/error': path.resolve(root, 'packages/runtime/src/error.ts'),
     '@vobs/vobs/jsx-runtime': path.resolve(root, 'packages/vobs/src/jsx-runtime.ts'),

@@ -1,0 +1,40 @@
+{
+  "name": "{{packageName}}",
+  "version": "0.1.0",
+  "private": true,
+  "description": "{{displayName}} —— 用 vobs 渲染的 DSH 插件",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "vobs dsh dev",
+    "build": "vobs dsh build",
+    "check": "vobs dsh check"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "devDependencies": {
+    "@vobs/cli": "^{{vobsVersion}}",
+    "@vobs/dsh": "^{{vobsVersion}}",
+    "@vobs/vite-plugin": "^{{vobsVersion}}",
+    "@vobs/vobs": "^{{vobsVersion}}",
+    "vite": "^7.3.6"
+  }
+}
