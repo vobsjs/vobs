@@ -6,7 +6,7 @@
 >
 > | 方案里的落点 | 实现位置 |
 > | --- | --- |
-> | ① Vobs Console（`main` keyed slot 整页 + 侧栏入口） | [`packages/dsh-console`](../../dsh-console) —— 四个 tab、60 项产物校验、35 项单测 |
+> | ① Vobs Console（`main` keyed slot 整页 + 侧栏入口） | [`packages/dsh-console`](../../dsh-console) —— 四个 tab、62 项产物校验、35 项单测 |
 > | ② 聊天内嵌工具渲染器（`tool.call.toolview`） | **未做**（P3，仍是方案） |
 > | ③ 右侧栏「运行态」tab（`sidebar.right.pane.tab`） | **未做**（方案里把它当作 P0 最小闭环；实际先做了 Console） |
 >

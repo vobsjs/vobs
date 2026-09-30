@@ -155,6 +155,8 @@ const panelReg = registered.find(item => item.options.name === 'main')
 const entryReg = registered.find(item => item.options.name === 'sidebar.panellist')
 check('main 用 key 认领', panelReg?.options.key === 'vobs-console', JSON.stringify(panelReg?.options))
 check('sidebar.panellist 用同值 id 关联', entryReg?.options.id === 'vobs-console', JSON.stringify(entryReg?.options))
+check('侧栏入口标签为 Vobs Console', entryReg?.options.label === 'Vobs Console', String(entryReg?.options.label))
+check('侧栏入口标签与面板标题一致', entryReg?.options.label === panelReg?.options.label, `${entryReg?.options.label} / ${panelReg?.options.label}`)
 check('同时注册了入口图标组件', typeof entryReg?.component === 'function')
 check('演示定时器已启动', intervals.length === 1)
 

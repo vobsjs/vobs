@@ -92,7 +92,7 @@ dsh plugin --profile desktop add "github:vobsjs/vobs#<tag>&path:/packages/dsh-co
 ```bash
 pnpm build:packages        # 首次：产出 @vobs/dsh 与 @vobs/vite-plugin 的 dist
 pnpm build:dsh-console     # 产出 packages/dsh-console/lib/{index,client}.js
-pnpm --filter dsh-plugin-vobs-console verify     # 60 项产物校验
+pnpm --filter dsh-plugin-vobs-console verify     # 62 项产物校验
 ```
 
 `scripts/verify-console.mjs` 不看源码、只看产物，按 DSH 的模块协议真跑一遍：

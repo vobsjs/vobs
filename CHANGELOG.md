@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Notes
 
-- This release also contains two DSH plugin packages that are **not** published to npm — `dsh-plugin-vobs` (the minimal reference plugin, migrated onto `@vobs/dsh`, with its client entry reduced from 87 to 25 lines) and `dsh-plugin-vobs-console` (Vobs Console). Both are distributed through Git tags and installed with `github:vobsjs/vobs#<tag>&path:/packages/<name>`; each ships committed prebuilt `lib/` artifacts and its own jsdom conformance script (53 and 60 assertions respectively). They carry independent `0.1.0` versions and sit outside the lockstep release train.
+- This release also contains two DSH plugin packages that are **not** published to npm — `dsh-plugin-vobs` (the minimal reference plugin, migrated onto `@vobs/dsh`, with its client entry reduced from 87 to 25 lines) and `dsh-plugin-vobs-console` (Vobs Console). Both are distributed through Git tags and installed with `github:vobsjs/vobs#<tag>&path:/packages/<name>`; each ships committed prebuilt `lib/` artifacts and its own jsdom conformance script (54 and 62 assertions respectively). Their manifests share the repository-wide lockstep version.
 
 ## [1.7.5] - 2026-09-30
 

@@ -33,7 +33,8 @@ export default defineDshPanel(
     label: 'Vobs Console',
     styles: CONSOLE_CSS,
     sidebarEntry: {
-      label: 'Console',
+      // 与面板标题一致：侧栏只写 Console 会和 DSH 自带的生态混淆，也让人对不上是哪个面板。
+      label: 'Vobs Console',
       order: 9,
       renderIcon: () => <ConsoleIcon />
     },

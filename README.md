@@ -98,8 +98,8 @@ vobs 可以拿来写 [DeepSeek Harness](https://github.com/deepseek-ai) 的客�
 ```bash
 pnpm build:packages      # 首次：产出 @vobs/dsh 与 @vobs/vite-plugin 的构建产物
 pnpm build:dsh           # 构建两个插件包的 lib/{index,client}.js
-node packages/dsh-plugin/scripts/verify-client.mjs     # 53 项产物校验
-node packages/dsh-console/scripts/verify-console.mjs   # 60 项产物校验
+node packages/dsh-plugin/scripts/verify-client.mjs     # 54 项产物校验
+node packages/dsh-console/scripts/verify-console.mjs   # 62 项产物校验
 ```
 
 插件契约、GitHub 子目录直装方式（`github:vobsjs/vobs#<tag>&path:/packages/<pkg>`）与 Windows CLI 的 `&` 陷阱都写在
