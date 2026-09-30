@@ -1489,7 +1489,7 @@ const _tpl17 = createTemplate('<span class="vobs-hint">count</span>');
 const _tpl19 = createTemplate('<span class="vobs-hint">memo ×2</span>');
 const _tpl29 = createTemplate('<span class="vobs-empty">列表为空（insertList 已清空所有行）</span>');
 const _tpl31 = createTemplate('<span class="vobs-badge__dot"></span>');
-const VOBS_VERSION = `v${"1.7.7"}`;
+const VOBS_VERSION = `v${"1.7.8"}`;
 let bodyExecutions = 0;
 function VobsPanel() {
   bodyExecutions += 1;

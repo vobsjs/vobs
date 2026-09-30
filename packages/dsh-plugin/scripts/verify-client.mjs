@@ -190,6 +190,18 @@ const text = shadow?.textContent ?? ''
 const embeddedVersion = /VOBS_VERSION\s*=\s*`v\$\{("([^"]+)")\}`/u.exec(bundleCode)?.[2]
 check('产物里带构建期注入的版本号', typeof embeddedVersion === 'string' && /^\d+\.\d+\.\d+/u.test(embeddedVersion), String(embeddedVersion))
 check('界面渲染出这个版本号', embeddedVersion !== undefined && text.includes(`v${embeddedVersion}`), text.slice(0, 140))
+
+// 产物是签入仓库的，所以「改了源码/ bump 了版本，却忘记重建」不会在别处暴露 ——
+// 装进来的还是上一次构建的 bundle。把内嵌版本与框架当前版本对齐，CI 就能拦住这种疏漏。
+const frameworkVersion = JSON.parse(
+  await readFile(path.resolve(pluginDir, '..', 'vobs', 'package.json'), 'utf8')
+).version
+check(
+  '产物内嵌版本与框架版本一致',
+  embeddedVersion === frameworkVersion,
+  `产物内嵌 ${embeddedVersion} / 框架 ${frameworkVersion} —— 需要重新构建本插件产物`
+)
+
 check('渲染出标语', text.includes('Signals First'))
 
 const statValue = index => shadow.querySelectorAll('.vobs-stat__value')[index]?.textContent?.trim()
