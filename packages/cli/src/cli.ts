@@ -93,7 +93,7 @@ export function createCLI(): ReturnType<typeof cac> {
     })
 
   cli
-    .command('dsh <action> [target]', 'DSH 插件工具链（init / dev / build / check / install）')
+    .command('dsh [action] [target]', 'DSH 插件工具链（init / dev / build / check / install）')
     .option('--dir <dir>', 'init：目标目录')
     .option('--pm <pm>', 'init：包管理器（pnpm/npm）')
     .option('--port <port>', 'dev：预览端口', { default: 5199 })

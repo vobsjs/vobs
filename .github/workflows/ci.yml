@@ -40,6 +40,14 @@ jobs:
       - name: Run unit tests
         run: pnpm test:run
 
+      # 两个 DSH 插件包不在 npm 发布名单里，靠 Git 标签 + 提交进仓库的 lib/ 分发。
+      # 产物是签入的，所以源码改了却没重建时 CI 必须拦下来 —— 这两个脚本只读 lib/
+      # 并在 jsdom 里按 DSH 的客户端模块协议真跑一遍，不需要先构建任何东西。
+      - name: Verify DSH plugin artifacts
+        run: |
+          node packages/dsh-plugin/scripts/verify-client.mjs
+          node packages/dsh-console/scripts/verify-console.mjs
+
       - name: Verify published package artifacts
         run: pnpm run verify:packages
 

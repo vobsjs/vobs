@@ -6,7 +6,7 @@
 
 ```
 ┌──────────────────────────────────────┐
-│ vobs  v1.7.5    Signals First · Z…  – ×│
+│ vobs  v1.7.7    Signals First · Z…  – ×│
 ├──────────────────────────────────────┤
 │ 组件体执行   1 │ effect 执行   3       │
 │ count 1   memo ×2  2   [−1] [ +1 ]    │
@@ -75,7 +75,7 @@ pnpm build:packages      # 首次需要，产出 @vobs/vite-plugin 的 dist
 pnpm build:dsh-plugin    # 产出 packages/dsh-plugin/lib/*
 git add packages/dsh-plugin scripts/build-dsh-plugins.mjs package.json
 git commit -m "feat(dsh-plugin): vobs DSH 插件包"
-git tag v1.7.6           # 用一个包含本包的 tag
+git tag v1.7.7           # 用一个包含本包的 tag
 git push origin main --tags
 ```
 
@@ -84,7 +84,7 @@ git push origin main --tags
 在 DSH 侧边栏「插件」页的安装输入框里填：
 
 ```text
-github:vobsjs/vobs#v1.7.6&path:/packages/dsh-plugin
+github:vobsjs/vobs#v1.7.7&path:/packages/dsh-plugin
 ```
 
 `&path:` 是 pnpm 的 **Git 仓库子目录**语法，用来从 monorepo 里只取一个子包。已验证 DSH 内置的 pnpm 11.7.0 支持它。
@@ -95,13 +95,13 @@ github:vobsjs/vobs#v1.7.6&path:/packages/dsh-plugin
 ### 方式 B：命令行
 
 ```bash
-dsh plugin --profile desktop add "github:vobsjs/vobs#v1.7.6&path:/packages/dsh-plugin"
+dsh plugin --profile desktop add "github:vobsjs/vobs#v1.7.7&path:/packages/dsh-plugin"
 ```
 
 > **Windows 注意**：`dsh.cmd` 是 batch 包装，`&` 会被 `cmd.exe` 当命令分隔符吃掉，结果是**静默装错包**（装成 monorepo 根，并提示 `declares no dsh.bundle`）。用 PowerShell 时必须加停止解析符：
 >
 > ```powershell
-> dsh --% plugin --profile desktop add "github:vobsjs/vobs#v1.7.6&path:/packages/dsh-plugin"
+> dsh --% plugin --profile desktop add "github:vobsjs/vobs#v1.7.7&path:/packages/dsh-plugin"
 > ```
 >
 > 这条路已实测可用；图形界面那条路不受影响（服务直接拿字符串，不经过 shell）。

@@ -125,27 +125,76 @@ git push origin v1.7.7
 
 ## 手动发布
 
-推送标签不会触发任何发布。本地发布前先确认质量门禁全绿：
+推送标签不会触发任何发布。发布前先确认质量门禁全绿：
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm test:run
-pnpm run build          # build:packages + typecheck + playground 构建
-pnpm run verify:packages # 逐个 pack 并验证 ESM/CJS/类型/source 入口
+pnpm run build           # build:packages + typecheck + playground 构建
+pnpm run verify:packages # 逐个 pack 并验证 ESM/CJS/子路径/source 入口
 ```
 
-然后逐包发布。**必须去掉 `--provenance`** —— 该参数只在受支持的 CI 环境中才能
-生成来源证明，本地执行会直接失败：
+然后一条命令发布 37 个包（顺序与依赖大致一致，`workspace:*` 由 pnpm 在打包时
+换成真实版本，所以必须用 `pnpm publish`，`npm publish` 不认这个协议）：
 
 ```bash
-pnpm --filter @vobs/vobs --filter @vobs/ui --filter @vobs/dsh \
-  publish --no-git-checks --access public
+pnpm run publish:local
 ```
 
-`package.json` 里的 `publish:packages` 脚本保留了 `--provenance`，它是为
-GitHub Actions 那条链路准备的，**本地不要直接用**。
+`publish:packages` 与 `publish:local` 的包列表完全相同，唯一差别是前者带
+`--provenance`。**本地只能用 `publish:local`**，原因见下。
 
-`@vobs/dsh` 是首次发布，需要先 `npm login` 且账号对 `@vobs` scope 有发布权限。
+### 发布后核对：可见性滞后于接受
+
+**不要在发布命令返回后立刻核对版本，否则必然看到「一半没发出去」的假象。**
+
+实测（2026-09-30 发布 1.7.7 时）：注册表对上传返回 **202 Accepted**，写入即被接受，
+但 packument 是**异步**更新的 —— 单个包从接受到在 `npm view` 里可见，实测约
+**3～5 分钟**。在这段窗口内：
+
+- `npm view <pkg> version` 仍是旧版本；
+- 重新执行 publish 会返回
+  `409 Conflict - Cannot publish over previously staged version "<x.y.z>"`。
+
+**这条 409 不代表失败，只代表「已在途」**：不要重发、不要改版本号，等几分钟即可。
+（npm 11.6.1 没有 `npm stage` 子命令，这个暂存状态在客户端侧查不到。）
+
+因此核对要这样做：等 3–5 分钟 → 逐个 `npm view` → 把**请求异常**和**版本缺失**分开记，
+不要用同一个 catch 把网络错误也算成「没发出去」。
+
+```bash
+for p in reactivity runtime dom vobs compiler; do
+  echo -n "$p: "; npm view "@vobs/$p" version 2>/dev/null || echo "查询失败"
+done
+```
+
+### 为什么本地不能用 `--provenance`
+
+来源证明（provenance）要求运行在支持的 CI 环境里。npm 的
+`libnpmpublish/lib/publish.js` 里 `ensureProvenanceGeneration()` 的判定是：
+
+- GitHub Actions：要求 `id-token: write` 权限（即存在 `ACTIONS_ID_TOKEN_REQUEST_URL`）；
+- GitLab CI：要求存在 `SIGSTORE_ID_TOKEN`；
+- **其他环境（含本地终端）：直接抛错**
+  `Automatic provenance generation not supported for provider: <name>`（`EUSAGE`）。
+
+另外该检查只在**真实 publish** 里执行，所以 `pnpm publish --dry-run --provenance`
+会正常通过 —— 靠 dry-run 是发现不了这个问题的。此外，`--provenance` 对**全新包**
+还要求显式 `--access public`（我们的脚本已经带了）。
+
+### 首次发布新包
+
+`@vobs/dsh` 于 1.7.7 首次发布，需要：
+
+1. `npm login`（`npm whoami` 确认身份）；
+2. 账号对 `@vobs` scope 有发布权限；
+3. 作用域包首次发布必须 `--access public`，否则默认按私有包处理。
+
+若只补发个别包，可以单独过滤：
+
+```bash
+pnpm --filter @vobs/dsh --filter @vobs/cli publish --no-git-checks --access public
+```
 
 ## 发布后检查
 
@@ -166,9 +215,14 @@ pnpm add @vobs/vobs@1.7.7 @vobs/ui@1.7.7 @vobs/dsh@1.7.7
 ## 常见失败
 
 - `check-release` 失败：标签版本与 37 个包版本不一致。
-- `--provenance` 报错：本地环境不支持生成来源证明，去掉该参数。
+- `Automatic provenance generation not supported for provider: ...`：本地跑了带
+  `--provenance` 的命令，改用 `pnpm run publish:local`。
+- `409 Conflict - Cannot publish over previously staged version "x.y.z"`：
+  **通常不是失败，而是发布已在途**（注册表返回 202 后 packument 异步更新）。
+  等 3–5 分钟再核对；不要重发、不要改版本号。见上一节的「发布后核对」。
 - `There are no new packages that should be published`：该版本已经存在于 npm，
   需要递增到新的版本号；npm 已发布版本不能覆盖。
+- `EPUBLISHCONFLICT` / 403：账号没有该 scope 的发布权限，或包名已被他人占用。
 - OIDC 或权限失败：只在补齐 `publish.yml` 之后才可能出现，检查对应 npm 包是否已
   配置 Trusted Publisher，以及仓库和组织名称是否为 `vobsjs/vobs`。
 - 构建或 tarball 验证失败：不要强行发布，修复后重新提交新的版本。

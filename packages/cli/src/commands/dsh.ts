@@ -663,11 +663,13 @@ export async function dshCommand(
       dshInstallCommand(options)
       return
     default:
-      logger.error(`未知子命令: ${action ?? '(空)'}`)
+      // 不带子命令时只列用法（这是最自然的「我该用什么」入口），
+      // 真正写错子命令时才报错。
+      if (action !== undefined && action !== '') logger.error(`未知子命令: ${action}`)
       console.log('\n  可用子命令：')
       for (const [name, description] of Object.entries(ACTIONS)) {
         console.log(`    vobs dsh ${name.padEnd(8)} ${description}`)
       }
-      process.exitCode = 1
+      if (action !== undefined && action !== '') process.exitCode = 1
   }
 }
