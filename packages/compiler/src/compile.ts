@@ -1283,7 +1283,10 @@ function transformDynamicExpression(state: CompileState, expression: ts.Expressi
 /**
  * 把产出节点的动态表达式（`cond ? <A/> : <B/>`、`cond && <A/>`，含任意嵌套组合）
  * 转换为条件表达式树；各分支中的 JSX 递归编译为节点工厂，由 insertDynamic 挂载/卸载。
- * 返回 null 表示没有任何分支产出节点（纯文本/数值/混合场景回落 insertDynamicValue 多态插入）。
+ *
+ * **只有所有分支都能产出节点时**才走这条快路径。任一分支是列表（`.map`）、文本、
+ * 数值等非节点表达式时整体返回 null，由调用方回落 insertDynamicValue 多态插入 ——
+ * 否则那个分支会被编译成 `null`，内容**静默消失**。
  */
 function convertDynamicNodeExpression(state: CompileState, expression: ts.Expression): ts.ConditionalExpression | null {
   if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
@@ -1292,13 +1295,16 @@ function convertDynamicNodeExpression(state: CompileState, expression: ts.Expres
       return createNodeConditional(expression.left, transformJsxExpression(state, right), null)
     }
     // 右侧是嵌套的动态节点表达式（如 cond && (sub ? <A/> : <B/>)）时递归转换，
-    // 转换失败（纯文本分支）则整体回落为动态值绑定，保持语义可静态判定。
+    // 转换失败（列表/文本分支）则整体回落为动态值绑定，保持语义可静态判定。
     const convertedRight = convertDynamicNodeExpression(state, right)
     if (convertedRight) return createNodeConditional(expression.left, convertedRight, null)
     return null
   }
 
   if (ts.isConditionalExpression(expression)) {
+    if (!isDynamicNodeBranch(expression.whenTrue) || !isDynamicNodeBranch(expression.whenFalse)) {
+      return null
+    }
     const whenTrue = transformDynamicBranch(state, expression.whenTrue)
     const whenFalse = transformDynamicBranch(state, expression.whenFalse)
     if (!whenTrue && !whenFalse) return null
@@ -1312,6 +1318,26 @@ function convertDynamicNodeExpression(state: CompileState, expression: ts.Expres
   }
 
   return null
+}
+
+/**
+ * 该分支是否**保证**能编译成节点工厂。
+ *
+ * 只有 JSX、显式的 null/false、以及内部每一层都满足这个条件的嵌套三元/`&&` 才算。
+ * 列表表达式（`.map`）、文本、数值一律不算 —— 它们必须交给 insertDynamicValue，
+ * 否则会被写成 `null` 分支而丢失。
+ */
+function isDynamicNodeBranch(expression: ts.Expression): boolean {
+  const branch = unwrapExpression(expression)
+  if (isJsxExpression(branch)) return true
+  if (branch.kind === ts.SyntaxKind.NullKeyword || branch.kind === ts.SyntaxKind.FalseKeyword) return true
+  if (ts.isConditionalExpression(branch)) {
+    return isDynamicNodeBranch(branch.whenTrue) && isDynamicNodeBranch(branch.whenFalse)
+  }
+  if (ts.isBinaryExpression(branch) && branch.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+    return isDynamicNodeBranch(branch.right)
+  }
+  return false
 }
 
 function createNodeConditional(

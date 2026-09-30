@@ -344,6 +344,35 @@ export const width = st(50, 'doc.width')
     expect(result).toContain('() => content')
   })
 
+  // 回归（Vobs Console 踩坑备忘）：`{cond ? <A/> : items.map(...)}` 里列表那一支
+  // 曾被写成 `null` 分支而**静默消失** —— convertDynamicNodeExpression 只要有一支
+  // 产出节点就提交条件树，其余分支一律变 null。现在只要有一支不是节点表达式
+  // （列表、文本、数值…），整个条件就回落 insertDynamicValue 多态插入。
+  it('三元中非节点分支回落多态插入，不被写成 null', () => {
+    const withList = compile(`const el = <div>{ok ? <span>empty</span> : items.map(i => <b key={i}>{i}</b>)}</div>`)
+    expect(withList).toContain('insertDynamicValue')
+    expect(withList).toContain('items.map(i =>')
+    // 关键：列表那一支不能再被写成 null
+    expect(withList).not.toContain('? cloneTemplate(_tpl1) : null')
+    expect(withList).not.toMatch(/\? cloneTemplate\([^)]*\) : null/u)
+
+    const withText = compile(`const el = <div>{ok ? <i>icon</i> : label.value}</div>`)
+    expect(withText).toContain('insertDynamicValue')
+    expect(withText).toContain('label.value')
+    expect(withText).not.toContain(': null')
+  })
+
+  it('所有分支都是节点时仍走 insertDynamic 快路径', () => {
+    const result = compile(`const el = <div>{ok ? <A/> : <B/>}</div>`)
+    expect(result).toContain('insertDynamic(')
+    expect(result).not.toContain('insertDynamicValue')
+  })
+
+  it('列表作为直接子表达式时仍编译为 keyed insertList', () => {
+    const result = compile(`const el = <div>{items.map(i => <b key={i}>{i}</b>)}</div>`)
+    expect(result).toContain('insertList')
+  })
+
   // 回归（Labelune 踩坑备忘）：JSX 子节点里的函数调用曾被编译为 bindText 文本绑定
   // （String(fragment) → "[object Object]"）。现在所有非静态子表达式统一走
   // insertDynamicValue 多态插入：值类型由运行时判断，返回节点的辅助函数与返回
