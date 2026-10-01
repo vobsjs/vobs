@@ -18,7 +18,7 @@ import {
   setOptionalAttribute,
   setOptionalProperty
 } from './utils'
-import { createPortal, type VuiPortalAdapter } from './overlay'
+import { createFocusTrap, createPortal, type VuiPortalAdapter } from './overlay'
 import type { VuiCommonProps } from './types'
 
 export type DrawerCloseReason = 'close-button' | 'backdrop' | 'escape'
@@ -65,9 +65,18 @@ export function Drawer(props: DrawerProps = {}): VobsNode {
   setAttribute(surface, 'role', 'dialog')
   setAttribute(body, 'class', 'vui-drawer__body')
 
+  /*
+   * 与 Dialog 同样的问题、同样的修法：声明了 `aria-modal="true"` 却没有焦点管理
+   * （focus trap 早就实现好并导出，只是没有组件用）。只在 modal 时陷阱；
+   * 不传 onEscape —— 下面 root 上的 Escape 监听已经在处理，两处都接会重复 emitClose。
+   */
+  // createElement 返回 Element，但 DOM 渲染器产出的必然是 HTMLElement；trap 需要 .focus()。
+  const trap = createFocusTrap(surface as HTMLElement)
   effect(() => {
     const open = readProp(props, 'open', false)
     const modal = readProp(props, 'modal', true)
+    if (open && modal) trap.activate()
+    else trap.deactivate()
     setOptionalProperty(root, 'hidden', !open)
     setOptionalAttribute(root, 'data-state', open ? 'open' : 'closed')
     setOptionalAttribute(surface, 'aria-modal', modal ? 'true' : 'false')
