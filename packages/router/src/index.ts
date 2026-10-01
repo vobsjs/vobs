@@ -1,4 +1,4 @@
-import { state, getCurrentOwner, type Signal } from '@vobs/reactivity'
+import { state, getCurrentOwner, type ReadableSignal } from '@vobs/reactivity'
 import {
   createComponent,
   createElement,
@@ -243,7 +243,16 @@ export interface RouterDevToolsAPI {
 }
 
 export interface Router {
-  readonly currentRoute: Signal<RouteLocation>
+  /**
+   * **只读**。运行时它就是内部那个可写信号（框架自己要写它），但对外只暴露读接口 ——
+   * 原来类型是 `Signal<RouteLocation>`，实测 `router.currentRoute.value = {...}` 能直接把
+   * 路由改成任意地址（地址栏不同步、守卫不跑、视图不更新，静默不一致）。
+   *
+   * 说明：这只挡类型层面的误用（`.set(...)` 与 `value =` 在 TS 里报错），**运行时**仍不是
+   * 真冻结 —— 真要冻结得包一层代理，那会改变对象身份（有人拿引用做比较就会坏）。
+   * 权衡后选低风险的那种。
+   */
+  readonly currentRoute: ReadableSignal<RouteLocation>
   readonly history: RouterHistory
   resolve(to: RouteTarget): RouteLocation
   push(to: RouteTarget): Promise<RouteLocation | false>
@@ -945,7 +954,7 @@ function createRouteErrorFallback(error: Error, retry: () => void): VobsNode {
   return box
 }
 
-export function useRoute(): Signal<RouteLocation> {
+export function useRoute(): ReadableSignal<RouteLocation> {
   return useRouter().currentRoute
 }
 
