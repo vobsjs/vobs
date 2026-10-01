@@ -34,6 +34,7 @@ export interface ComboboxProps extends VuiCommonProps {
   readonly placeholder?: string
   /** 无匹配项时的提示文案 */
   readonly emptyText?: string
+  readonly toggleLabel?: string
   readonly disabled?: boolean
   /** 选中回调（入参为选项 value） */
   readonly onChange?: (value: string) => void
@@ -73,7 +74,9 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
   setAttribute(toggle, 'class', 'vui-combobox__toggle')
   toggle.type = 'button'
   toggle.setAttribute('tabindex', '-1')
-  toggle.setAttribute('aria-label', 'toggle')
+  // 原来写死字面量 'toggle' —— 连英文语义都不成立（它是个"展开选项"的按钮），也没法翻译。
+  // 按 dialog/drawer 的 closeLabel 惯例给一个可传入的标签；默认值改成真正描述动作的文案。
+  setAttribute(toggle, 'aria-label', readProp(props, 'toggleLabel', 'Show options'))
   toggle.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>'
 
   const panel = createElement('div')

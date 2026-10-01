@@ -32,7 +32,10 @@ export function ToastHost(props: ToastHostProps = {}): VobsNode {
   ])
   bindCommonAttributes(root, props, ['notification', 'position', 'closeLabel', 'portal', 'portalTarget'])
   bindUserStyle(root, props)
-  setAttribute(root, 'aria-label', 'Notifications')
+  // 作者传了 aria-label 就不覆盖（与 message 同一处问题）
+  if (readProp<string | undefined>(props, 'aria-label', undefined) === undefined) {
+    setAttribute(root, 'aria-label', 'Notifications')
+  }
   setAttribute(root, 'role', 'region')
 
   insertList(root, null, () => notification.notifications.value, entry => (
