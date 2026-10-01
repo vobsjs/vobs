@@ -968,6 +968,22 @@ export function RouterView(props: RouterViewProps = {}): VobsNode {
   return createFragment((parent, anchor) => {
     let routeRetry: () => void = () => undefined
     insertBoundary(parent, anchor, {
+      /*
+       * 整棵树按 fullPath 重置 —— **这是承重的，别"顺手优化"掉**。
+       *
+       * 组件体只执行一次（run-once），体里读的路由状态（`router.currentRoute.value.path`、
+       * `query.*`）本来会冻在首次渲染的值上。每次 fullPath 变化都重挂视图子树，正是让这些
+       * 读取重新求值的原因。深读里 playground 那条 C118（`const activeKey = route.value.path…`）
+       * "运行时不失效"，靠的就是这里。
+       *
+       * 代价：仅 query 变化（分页/筛选，`?page=1 → 2`）也会重挂页面组件，组件内 state、
+       * 滚动位置、未提交的草稿全丢。
+       *
+       * 为什么不改成按 path 或 matched record 做 key：那会让"体里读 query"的代码静默变陈旧
+       * （path 读刷新、query 读不刷新的不一致模型），比现在更糟。要真正解决，得先补上
+       * **路由派生值的 selector/memo helper**（目前 router 没有任何这类 helper），
+       * 让应用不必依赖重挂 —— 那是功能级改动，不是这里能顺手做的。
+       */
       resetKey: () => router.currentRoute.value.fullPath,
       onRetry: () => routeRetry(),
       fallback: (error, retry) => {
