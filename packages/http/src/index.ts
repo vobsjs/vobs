@@ -459,9 +459,19 @@ export function createHTTPClient(options: HTTPClientOptions = {}): HTTPClient {
           if (inputSignal?.aborted || isAbortError(error)) throw error
           const nextAttempt = attempt + 1
           if (nextAttempt > (config.retry ?? 0)) throw toError(error)
+          /*
+           * 默认只对**幂等**方法自动重试。
+           *
+           * 原来默认是 `isRetryable(error)`，完全不看方法 —— README 推荐的客户端级 `retry: 2`
+           * 会让 POST 在 503 下真的发 3 次（报告实测）。服务端可能因此写入两次：静默重复提交。
+           * HTTP 客户端的惯例是"自动重试只用于幂等方法"。
+           *
+           * 调用方一旦显式提供 `shouldRetry`，就完全交给它 —— 需要重试 POST 的人显式打开即可，
+           * `retry` 这个预算项本身不变。
+           */
           const shouldRetry = config.shouldRetry
             ? await config.shouldRetry(toError(error), nextAttempt)
-            : isRetryable(error)
+            : isRetryable(error) && isIdempotentMethod(config.method)
           if (!shouldRetry) throw toError(error)
           attempt = nextAttempt
           const retryContext = {
@@ -704,6 +714,12 @@ const builtInAxiosRequest: AxiosRequest = async <T = unknown>(config: AxiosReque
   }
 }
 
+/** 可以安全地自动重试的方法：重复执行与执行一次等价。 */
+const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE'])
+
+function isIdempotentMethod(method: string | undefined): boolean {
+  return IDEMPOTENT_METHODS.has((method ?? 'GET').toUpperCase())
+}
 function toAxiosCredentials(credentials?: RequestCredentials): boolean | undefined {
   if (credentials === 'include') return true
   if (credentials === 'omit') return false
