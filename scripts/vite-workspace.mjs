@@ -48,6 +48,9 @@ export function workspaceAliases() {
     '@vobs/runtime/error': path.resolve(root, 'packages/runtime/src/error.ts'),
     '@vobs/vobs/jsx-runtime': path.resolve(root, 'packages/vobs/src/jsx-runtime.ts'),
     '@vobs/vobs/jsx-dev-runtime': path.resolve(root, 'packages/vobs/src/jsx-dev-runtime.ts'),
+    // 子路径必须显式列出：别名是「精确匹配或 pattern + '/' 前缀匹配」，只写 @vobs/vobs
+    // 会把 @vobs/vobs/dev 拼成 index.ts/dev 这种不存在的路径。
+    '@vobs/vobs/dev': path.resolve(root, 'packages/vobs/src/dev.ts'),
     '@vobs/ui/styles.css': path.resolve(root, 'packages/ui/src/styles/styles.css'),
     '@vobs/devtools-ui/styles.css': path.resolve(root, 'packages/devtools-ui/src/styles/styles.css'),
     '@vobs/layout/styles.css': path.resolve(root, 'packages/layout/src/styles/styles.css'),

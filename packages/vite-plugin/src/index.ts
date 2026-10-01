@@ -2,10 +2,17 @@
 
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { Plugin } from 'vite'
+import type { Plugin, ViteDevServer } from 'vite'
 import { compileWithSourceMap, createI18nExtractor, type CompileOptions, type VobsSourceMap } from '@vobs/compiler'
-import { VobsError } from '@vobs/runtime/error'
+import { VobsError, formatVobsError, type VobsErrorLocation, type VobsErrorOptions } from '@vobs/runtime/error'
 import { compileHtmlComponent } from './html-component.ts'
+
+/** 虚拟模块 id（`\0` 前缀是 rollup 的惯例，避免被当成真实文件解析）。 */
+const GUARDRAILS_ID = '\0virtual:vobs-dev-guardrails'
+/** 浏览器里的 URL 形式：vite 把 `\0` 编码成 `__x00__`。 */
+const GUARDRAILS_URL = '/@id/__x00__virtual:vobs-dev-guardrails'
+/** 护栏违规上报端点。 */
+const VIOLATION_ENDPOINT = '/__vobs/violation'
 
 export interface VobsVitePluginOptions {
   include?: RegExp
@@ -20,13 +27,25 @@ export interface VobsVitePluginOptions {
   hmrState?: boolean
   extractI18n?: (key: string, filename: string) => void
   html?: boolean | { readonly extensions?: readonly string[] }
+  /**
+   * 开发期护栏（默认开启，仅 dev 生效）。开启后在页面里自动装上
+   * `@vobs/vobs/dev` 的 `installDevGuardrails()`，并把违规回传到 dev server
+   * 打印在终端 —— 这样 AI 读终端就能看到「effect 自订阅」这类静默错误的明确报错。
+   *
+   * 页面里没装 `@vobs/vobs` 时自动跳过，只在控制台留一句提示。
+   */
+  devGuardrails?: boolean
 }
 
 export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
   const include = options.include ?? /\.tsx(?:$|\?)/
   const htmlModules = new Set<string>()
+  const guardrailsEnabled = options.devGuardrails ?? true
   let productionBuild = false
   let hmrStateEnabled = (options.hmr ?? true) && (options.hmrState ?? true)
+
+  /** dev 且未关闭时才装护栏。 */
+  const guardrailsActive = (): boolean => !productionBuild && guardrailsEnabled
 
   return {
     name: 'vobs',
@@ -38,7 +57,35 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
       hmrStateEnabled = (options.hmr ?? true) && !productionBuild && (options.hmrState ?? true)
     },
 
+    transformIndexHtml() {
+      if (!guardrailsActive()) return undefined
+      // 只返回 tag 数组：返回 { html } 会**替换**整份 HTML（不是合并）
+      return [{
+        tag: 'script',
+        attrs: { type: 'module', src: GUARDRAILS_URL },
+        injectTo: 'head-prepend' as const
+      }]
+    },
+
+    configureServer(server: ViteDevServer) {
+      if (!guardrailsEnabled) return
+      server.middlewares.use((req, res, next) => {
+        if (req.method !== 'POST' || req.url?.split('?', 1)[0] !== VIOLATION_ENDPOINT) {
+          next()
+          return
+        }
+        let body = ''
+        req.on('data', chunk => { body += String(chunk) })
+        req.on('end', () => {
+          printViolation(server, body)
+          res.statusCode = 204
+          res.end()
+        })
+      })
+    },
+
     resolveId(source: string, importer: string | undefined) {
+      if (source === GUARDRAILS_ID) return GUARDRAILS_ID
       if (!importer || !isHtmlComponent(source, options.html) || !isRelativeModule(source)) return null
       const cleanImporter = importer.split(/[?#]/u, 1)[0]
       const cleanSource = source.split(/[?#]/u, 1)[0]
@@ -48,6 +95,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
     },
 
     async load(id: string) {
+      if (id === GUARDRAILS_ID) return guardrailsActive() ? createGuardrailsModule() : null
       if (!htmlModules.has(id)) return null
       return compileHtmlComponent(await readFile(id, 'utf8'), { filename: id })
     },
@@ -106,8 +154,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
   }
 }
 
-/** 模块级 state 的 store 类 .ts 模块判定：从 @vobs 导入 state 且实际调用。 */
-function isStatefulModule(code: string): boolean {
+/** 模块级 state 的 store 类 .ts 模块判定：从 @vobs 导入 state 且实际调用。 */function isStatefulModule(code: string): boolean {
   return /\bimport\s+(?:type\s+)?\{[^}]*\bstate\b[^}]*\}\s*from\s*['"]@vobs\/(?:reactivity|vobs)['"]/u.test(code)
     && /(?<![\w$.])state\s*\(/u.test(code)
 }
@@ -130,6 +177,58 @@ function isHtmlComponent(id: string, option: VobsVitePluginOptions['html']): boo
   return extensions.some(extension => cleanId.endsWith(extension))
 }
 
+
+/**
+ * 注入到页面里的护栏模块。
+ *
+ * 用**动态** import 而不是静态 import：app 不一定依赖 `@vobs/vobs`（只用
+ * `@vobs/reactivity` 的项目也存在），静态 import 解析失败会直接让页面白屏 ——
+ * 开发期护栏绝不该让开发环境变得更糟。
+ */
+function createGuardrailsModule(): string {
+  return `
+const endpoint = ${JSON.stringify(VIOLATION_ENDPOINT)}
+
+// 上报失败无所谓：护栏是开发期辅助，不影响应用本身
+const report = payload => {
+  fetch(endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(() => {})
+}
+
+const guardrails = await import('@vobs/vobs/dev').catch(error => {
+  console.warn('[vobs] 开发期护栏未启用：页面没有安装 @vobs/vobs。', error?.message ?? error)
+  return {}
+})
+
+guardrails.installDevGuardrails?.({
+  onViolation: ({ error, count }) => report({
+    code: error.code,
+    severity: error.severity,
+    layer: error.layer,
+    message: error.message,
+    fix: error.fix,
+    example: error.example,
+    location: error.location,
+    count
+  })
+})
+`
+}
+
+/** 把浏览器上报的违规打到 dev server 终端。重复命中（count > 1）不再打印。 */
+function printViolation(server: ViteDevServer, body: string): void {
+  let payload: VobsErrorOptions & { location?: VobsErrorLocation; count?: number }
+  try {
+    payload = JSON.parse(body) as typeof payload
+  } catch {
+    return
+  }
+  if (typeof payload?.code !== 'string' || (payload.count ?? 1) > 1) return
+  server.config.logger.error(formatVobsError(new VobsError(payload), { environment: 'development' }), { timestamp: true })
+}
 
 function createHmrCode(moduleId: string): string {
   const encodedId = JSON.stringify(moduleId)

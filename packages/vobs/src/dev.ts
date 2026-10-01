@@ -1,10 +1,14 @@
 /**
- * 开发期护栏 —— 把 vobs 里「静默失效」的两类写法变成明确报错。
+ * 开发期护栏 —— 把 vobs 里「静默失效」的两类写法变成结构化报错。
  *
  * 为什么需要它：模型（和人）最容易在 vobs 上犯的错，恰恰是**不发声**的错。
  * 最典型的是 effect 自订阅 —— `effect(() => { count.value++ })` 会自己把自己
  * 重新调度，实测能连续重跑上百轮，期间不报错、不崩溃，只是变慢，最后被别的问题
  * 掩盖掉。AI 拿到这种反馈只会照错的写法再改一遍。
+ *
+ * 产出的是框架里既有的 `VobsError`（`layer: 'constraint'`），不是另造一套形状 ——
+ * 这样终端/DevTools/开发台面板都能复用 `formatVobsError` 与同一组字段：
+ * `code` / `severity` / `fix` / `location` / `example`。
  *
  * 实现方式：**完全建立在 `@vobs/reactivity` 已有的 debug 钩子上**，不改热路径、
  * 不引入运行时开销（没人装 hooks 时 `hasDebugHooks()` 直接短路）。代价是护栏
@@ -16,7 +20,7 @@
  * import { installDevGuardrails } from '@vobs/vobs/dev'
  *
  * if (import.meta.env.DEV) {
- *   installDevGuardrails({ onDiagnostic: d => devkit.report(d) })
+ *   installDevGuardrails({ onViolation: v => devkit.report(v) })
  * }
  * ```
  */
@@ -31,58 +35,62 @@ import {
   type ReactivityDebugHooks,
   type ReadableSignal
 } from '@vobs/reactivity'
-
-/** 单条诊断。字段刻意做窄，方便直接渲染成开发台的问题卡片或输出成 JSON。 */
-export interface VobsDiagnostic {
-  /** 稳定错误码，AI 与文档按它检索。 */
-  code: string
-  severity: 'error' | 'warning'
-  /** 发生了什么。 */
-  message: string
-  /** 该怎么改 —— 护栏必须给出正确写法，只报错对 AI 没有价值。 */
-  hint: string
-  /** 调用点（尽力而为：从 stack 里取第一个像用户源码的帧），形如 `Counter.tsx:12:5`。 */
-  site?: string
-  /** 累计命中次数（同一位置合并计数，避免刷屏）。 */
-  count: number
-}
-
-export interface DevGuardrailOptions {
-  /** 每产生一条诊断为调用一次；合并计数时重复调用，count 递增。 */
-  onDiagnostic?: (diagnostic: VobsDiagnostic) => void
-  /**
-   * 时间窗内同一个 effect 连跑超过这个次数即判定为循环。默认 50。
-   * 为什么用时间窗而不是 flush：调度器可能每次写入都开一次刷新，循环会跨 flush，
-   * 按 flush 计数会漏；而真正的循环一定在极短时间内连跑很多次。
-   */
-  effectRerunLimit?: number
-  /** 连跑统计的时间窗（毫秒）。默认 100。 */
-  rerunWindowMs?: number
-  /** 是否同时打到 console.error（默认 true）。设 false 只走 onDiagnostic。 */
-  console?: boolean
-  /** 最多报告多少个不同位置（防循环把内存刷爆）。默认 50。 */
-  maxSites?: number
-}
+import { VobsError, formatVobsError, type VobsErrorLocation } from '@vobs/runtime/error'
 
 /** effect 写入了自己依赖的信号 —— 最常见的自订阅。 */
 export const VOBS_C210 = 'VOBS_C210'
 /** 时间窗内同一个 effect 连跑次数异常 —— 跨 effect 互相触发的循环兜底。 */
 export const VOBS_C211 = 'VOBS_C211'
 
+/** 一次护栏命中：结构化错误 + 该位置累计命中次数。 */
+export interface GuardrailViolation {
+  readonly error: VobsError
+  /** 同一位置第几次命中。首报为 1。 */
+  readonly count: number
+}
+
+export interface DevGuardrailOptions {
+  /** 每产生一条违规调用一次；同一位置合并计数时会重复调用，count 递增。 */
+  onViolation?: (violation: GuardrailViolation) => void
+  /**
+   * 时间窗内同一个 effect 连跑超过这个次数即判定为循环。默认 50。
+   * 为什么用时间窗而不是 flush 边界：调度器可能每次写入都开一次刷新，循环会跨 flush，
+   * 按 flush 计数会漏；而真正的循环一定在极短时间内连跑很多次。
+   */
+  effectRerunLimit?: number
+  /** 连跑统计的时间窗（毫秒）。默认 100。 */
+  rerunWindowMs?: number
+  /** 是否同时用 `formatVobsError` 打到 console.error（默认 true）。 */
+  console?: boolean
+  /** 最多报告多少个不同位置（防循环把内存刷爆）。默认 50。 */
+  maxSites?: number
+}
+
 let active: (() => void) | null = null
 
-/** 从 stack 里取第一个看起来像用户源码的帧。尽力而为。 */
-function captureSite(): string | undefined {
+/**
+ * 内部栈帧的函数名。**按函数名跳过而不是按目录跳过** —— 目录过滤会误伤用户自己的
+ * 文件（项目里叫 `src/effect.ts` 很正常），而函数名是框架自己的实现细节。
+ */
+const INTERNAL_FRAMES = /^(?:captureLocation|effectCreated|effectRunStart|effectRunEnd|signalChanged|invokeDebug|trackDependency|effect|renderEffect|run)$/u
+
+/** 从 stack 里找第一个用户代码帧，转成框架统一的位置结构。 */
+function captureLocation(): VobsErrorLocation | undefined {
   const stack = new Error().stack
   if (stack === undefined) return undefined
-  for (const line of stack.split('\n').slice(1)) {
-    const match = /\(?((?:[a-zA-Z]:)?[^()\s]+?\.(?:tsx|jsx|ts|js|mjs|cjs)):(\d+):(\d+)\)?$/u.exec(line.trim())
+  for (const raw of stack.split('\n').slice(1)) {
+    const text = raw.trim()
+    if (!text.startsWith('at ')) continue
+    const body = text.slice(3)
+    const named = /^(\S+?)\s+\((.+)\)$/u.exec(body)
+    const frameName = named?.[1]
+    const where = named?.[2] ?? body
+    if (frameName !== undefined && INTERNAL_FRAMES.test(frameName)) continue
+    if (where.includes('node_modules')) continue
+    if (/[/\\]dev\.(?:ts|js|cjs|mjs)$/u.test(where)) continue
+    const match = /^(.+?):(\d+):(\d+)$/u.exec(where)
     if (match === null) continue
-    const [, file, row, column] = match
-    // 跳过依赖与框架自身 —— 否则报出来的是护栏内部的位置
-    if (file.includes('node_modules')) continue
-    if (/\/(?:reactivity|vobs|runtime)\/(?:src|dist)\//u.test(file) || file.includes('dev.')) continue
-    return `${file.split(/[/\\]/u).slice(-2).join('/')}:${row}:${column}`
+    return { file: match[1], line: Number(match[2]), column: Number(match[3]) }
   }
   return undefined
 }
@@ -98,7 +106,7 @@ function signalLabel(signal: ReadableSignal<unknown>): string {
 export function installDevGuardrails(options: DevGuardrailOptions = {}): () => void {
   if (active !== null) return active
 
-  const report = options.onDiagnostic
+  const notify = options.onViolation
   const toConsole = options.console !== false
   const rerunLimit = options.effectRerunLimit ?? 50
   const rerunWindowMs = options.rerunWindowMs ?? 100
@@ -115,33 +123,24 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
    * 那时候的调用栈根本没有用户代码 —— 每次重跑都现抓，同一个 effect 会报出
    * 好几个不同位置，反而找不到源头。
    */
-  const sites = new WeakMap<Effect, string | undefined>()
-  /** 同一个位置只报一次，之后只累加计数。 */
-  const seen = new Map<string, VobsDiagnostic>()
+  const sites = new WeakMap<Effect, VobsErrorLocation | undefined>()
+  /** 同一个位置只留一条，之后只累加计数。 */
+  const seen = new Map<string, GuardrailViolation>()
 
-  const emit = (
-    code: string,
-    severity: VobsDiagnostic['severity'],
-    message: string,
-    hint: string,
-    site: string | undefined
-  ): void => {
-    const key = `${code}@${site ?? '?'}`
+  const emit = (error: VobsError): void => {
+    const key = `${error.code}@${error.location?.file ?? '?'}:${error.location?.line ?? '?'}`
     const existing = seen.get(key)
     if (existing !== undefined) {
-      existing.count += 1
-      // 传快照而不是内部对象：调用方存下来之后不该被后续命中改掉
-      report?.({ ...existing })
+      const merged: GuardrailViolation = { error: existing.error, count: existing.count + 1 }
+      seen.set(key, merged)
+      notify?.({ error: merged.error, count: merged.count })
       return
     }
     if (seen.size >= maxSites) return
-    const diagnostic: VobsDiagnostic = { code, severity, message, hint, site, count: 1 }
-    seen.set(key, diagnostic)
-    if (toConsole) {
-      const where = site === undefined ? '' : ` (${site})`
-      console.error(`[vobs] ${code} ${message}${where}\n  → ${hint}`)
-    }
-    report?.({ ...diagnostic })
+    const violation: GuardrailViolation = { error, count: 1 }
+    seen.set(key, violation)
+    if (toConsole) console.error(formatVobsError(error, { environment: 'development' }))
+    notify?.({ error, count: 1 })
   }
 
   const previous = getDebugHooks()
@@ -151,7 +150,7 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
 
     effectCreated(effect: Effect, owner: Owner | null): void {
       // 唯一一次能拿到用户代码栈的时机
-      sites.set(effect, captureSite())
+      sites.set(effect, captureLocation())
       previous?.effectCreated?.(effect, owner)
     },
 
@@ -166,14 +165,16 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
       } else {
         burst.runs += 1
         if (burst.runs === rerunLimit) {
-          emit(
-            VOBS_C211,
-            'error',
-            `同一个 effect 在 ${rerunWindowMs}ms 内连跑了 ${burst.runs} 次 —— 大概率是自订阅，或两个 effect 在互相触发`,
-            '检查这些 effect 对信号的写入：写自己读过的信号要用 untrack 包住；' +
-              '由其它信号派生的值改用 memo，而不是「读 A 写 B」。',
-            sites.get(effect)
-          )
+          emit(new VobsError({
+            code: VOBS_C211,
+            severity: 'error',
+            layer: 'constraint',
+            location: sites.get(effect),
+            message: `同一个 effect 在 ${rerunWindowMs}ms 内连跑了 ${burst.runs} 次 —— 大概率是自订阅，或两个 effect 在互相触发`,
+            fix: '检查这些 effect 对信号的写入：写自己读过的信号要用 untrack 包住；'
+              + '由其它信号派生的值改用 memo，而不是「读 A 写 B」。',
+            docs: 'https://github.com/vobsjs/vobs/blob/main/docs/dev-guardrails.md'
+          }))
         }
       }
 
@@ -194,14 +195,18 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
       // 这个 effect 现在就订着这个信号：这次写入会把它重新调度 → 自订阅
       if (!current.dependencies.has(signal as unknown as Dependency)) return
 
-      emit(
-        VOBS_C210,
-        'error',
-        `effect 写入了它自己依赖的信号 ${signalLabel(signal)} —— 这次写入会把它重新调度，形成自订阅循环`,
-        '把这次写入包进 untrack：untrack(() => { signal.value = next })；' +
-          '如果这个 effect 本来就只该做副作用，检查是不是误读了不该读的信号。',
-        sites.get(current)
-      )
+      const label = signalLabel(signal)
+      emit(new VobsError({
+        code: VOBS_C210,
+        severity: 'error',
+        layer: 'constraint',
+        location: sites.get(current),
+        message: `effect 写入了它自己依赖的信号 ${label} —— 这次写入会把它重新调度，形成自订阅循环`,
+        fix: `把这次写入包进 untrack：untrack(() => { ${label.replace(/"/gu, '')}.value = next })；`
+          + '如果这个 effect 本来就只该做副作用，检查是不是误读了不该读的信号。',
+        example: `effect(() => {\n  untrack(() => { ${label.replace(/"/gu, '')}.value = next })\n})`,
+        docs: 'https://github.com/vobsjs/vobs/blob/main/docs/dev-guardrails.md'
+      }))
     }
   }
 

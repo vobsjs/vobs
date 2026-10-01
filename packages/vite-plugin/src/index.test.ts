@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
 import { compileHtmlComponent } from './html-component'
 import { vobsPlugin } from './index'
+import { workspaceAliases } from '../../../scripts/vite-workspace.mjs'
 
 describe('vobsPlugin', () => {
   it('将编译器插件配置透传给 TSX 转换', () => {
@@ -239,5 +240,99 @@ describe('vobsPlugin', () => {
 
     expect(resolveId.call({} as ThisParameterType<typeof resolveId>, './content.html', 'src/Page.tsx', { attributes: {}, isEntry: false })).toBeTruthy()
     expect(resolveId.call({} as ThisParameterType<typeof resolveId>, './index.html', undefined, { attributes: {}, isEntry: false })).toBeNull()
+  })
+})
+
+describe('vobsPlugin 开发期护栏', () => {
+  const GUARDRAILS_ID = '\0virtual:vobs-dev-guardrails'
+
+  const asDev = (plugin: ReturnType<typeof vobsPlugin>): void => {
+    ;(plugin.configResolved as (config: unknown) => void | undefined)?.({ command: 'serve' })
+  }
+  const asBuild = (plugin: ReturnType<typeof vobsPlugin>): void => {
+    ;(plugin.configResolved as (config: unknown) => void | undefined)?.({ command: 'build' })
+  }
+
+  it('dev 下把护栏脚本注入 index.html，且只加 tag 不替换 HTML', () => {
+    const plugin = vobsPlugin()
+    asDev(plugin)
+    const tags = plugin.transformIndexHtml
+
+    expect(typeof tags === 'function' || (tags !== null && typeof tags === 'object')).toBe(true)
+    const hook = (typeof tags === 'object' && tags !== null && 'handler' in tags ? tags.handler : tags) as
+      | ((html: string, ctx: unknown) => unknown)
+      | undefined
+    const result = hook?.('<!doctype html><html><head></head><body></body></html>', {}) as
+      | { tag: string; attrs: Record<string, string>; injectTo: string }[]
+      | undefined
+
+    expect(Array.isArray(result)).toBe(true)
+    expect(result?.[0]?.tag).toBe('script')
+    expect(result?.[0]?.attrs.src).toContain('virtual:vobs-dev-guardrails')
+    // 返回 html 字段会替换整份 HTML —— 必须是 tag 数组
+    expect(result).not.toHaveProperty('html')
+  })
+
+  it('build 下不注入、也不产出护栏模块', async () => {
+    const plugin = vobsPlugin()
+    asBuild(plugin)
+    const load = plugin.load
+    if (typeof load !== 'function') throw new Error('缺少 load 钩子')
+
+    expect(await load.call({} as ThisParameterType<typeof load>, GUARDRAILS_ID)).toBeNull()
+  })
+
+  it('devGuardrails: false 时完全关闭', async () => {
+    const plugin = vobsPlugin({ devGuardrails: false })
+    asDev(plugin)
+    const load = plugin.load
+    if (typeof load !== 'function') throw new Error('缺少 load 钩子')
+
+    expect(plugin.transformIndexHtml).toBeDefined()
+    expect(await load.call({} as ThisParameterType<typeof load>, GUARDRAILS_ID)).toBeNull()
+  })
+
+  it('护栏模块用动态 import，缺少 @vobs/vobs 时不会白屏', async () => {
+    const plugin = vobsPlugin()
+    asDev(plugin)
+    const load = plugin.load
+    if (typeof load !== 'function') throw new Error('缺少 load 钩子')
+
+    const code = await load.call({} as ThisParameterType<typeof load>, GUARDRAILS_ID) as string
+    expect(code).toContain("await import('@vobs/vobs/dev')")
+    expect(code).not.toMatch(/^import\s/mu)
+    expect(code).toContain('/__vobs/violation')
+    expect(code).toContain('installDevGuardrails')
+    // 上报的是框架统一的诊断字段
+    expect(code).toContain('error.fix')
+    expect(code).toContain('error.location')
+  })
+
+  it('虚拟模块 id 会被 resolveId 认领', () => {
+    const plugin = vobsPlugin()
+    const resolveId = plugin.resolveId
+    if (typeof resolveId !== 'function') throw new Error('缺少 resolveId 钩子')
+    expect(resolveId.call({} as ThisParameterType<typeof resolveId>, GUARDRAILS_ID, undefined, { attributes: {}, isEntry: false }))
+      .toBe(GUARDRAILS_ID)
+  })
+
+  /*
+   * 这条不是为了覆盖率，是踩过的坑：playground 的别名表是「精确匹配，或 pattern + '/' 前缀匹配」，
+   * 所以 `@vobs/vobs/dev` 只写 `@vobs/vobs` 会被拼成 `index.ts/dev` —— 开发环境里直接
+   * 「Failed to resolve import」，而且只在页面真的加载这个模块时才炸。
+   */
+  it('护栏模块 import 的每个 @vobs 子路径，在 workspace 别名表里都是显式键', async () => {
+    const plugin = vobsPlugin()
+    asDev(plugin)
+    const load = plugin.load
+    if (typeof load !== 'function') throw new Error('缺少 load 钩子')
+
+    const code = await load.call({} as ThisParameterType<typeof load>, GUARDRAILS_ID) as string
+    const specifiers = [...code.matchAll(/['"](@vobs\/[^'"]+)['"]/gu)].map(match => match[1])
+    expect(specifiers.length).toBeGreaterThan(0)
+
+    const aliases = workspaceAliases()
+    const unaliased = specifiers.filter(specifier => !(specifier in aliases))
+    expect(unaliased).toEqual([])
   })
 })
