@@ -27,7 +27,16 @@ export function bindClassList(root: Element, props: object, classes: () => reado
 export function bindCommonAttributes(root: Element, props: object, skip: readonly string[]): void {
   const ignored = new Set([...skip, 'class', 'className', 'style', 'children'])
   effect(() => {
-    for (const name of Object.keys(props)) {
+    /*
+     * 用 `for...in` 而不是 `Object.keys`：props 袋**可以**继承自另一个对象。
+     *
+     * kit 的 `createTableProps`（resource-page.ts:64）就是 `Object.create(tableProps)` 再补几个
+     * 自有属性 —— 于是作者写在 `tableProps` 里的 id / role / aria- 与 data- 属性全在**原型**上，
+     * `Object.keys` 看不到，被静默丢弃（实测三者都是 null，而直接调 KitDataTable 就正常）。
+     * 反过来在 kit 那边摊平会更糟：`loading`/`empty` 是 getter，摊平会当场求值、把 i18n
+     * 兜底文案冻结住。所以修在消费侧。
+     */
+    for (const name in props) {
       if (ignored.has(name) || name.startsWith('on')) continue
       if (name !== 'id' && name !== 'title' && name !== 'role' && name !== 'tabIndex'
         && !name.startsWith('aria-') && !name.startsWith('data-')) continue
