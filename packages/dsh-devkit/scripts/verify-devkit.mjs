@@ -174,6 +174,28 @@ check('渲染了四个 tab', shadow.querySelectorAll('.vk-tab').length === 4, ta
 check('tab 名称正确', tabLabels().join(',') === '护栏,API,示例,状态', tabLabels().join(','))
 check('默认停在护栏页', tabLabels()[0] !== undefined && !!shadow.querySelector('.vk-tab--active')?.textContent.includes('护栏'))
 
+/*
+ * 侧栏图标。图标宿主的默认样式是 `width:100%; height:100%`，内联 svg 没有固有尺寸
+ * 时不会被撑开 —— 现象是「侧栏条目出现了，图标却是空的」。这条断言就是为它加的。
+ */
+const iconEffectsFrom = hostEffects.length
+const iconTree = entryReg.component()
+const iconElement = dom.window.document.createElement('div')
+iconTree.props.ref.current = iconElement
+dom.window.document.body.appendChild(iconElement)
+for (const effect of hostEffects.slice(iconEffectsFrom)) {
+  const cleanup = effect()
+  if (typeof cleanup === 'function') hostCleanups.push(cleanup)
+}
+const iconSvg = iconElement.shadowRoot?.querySelector('svg')
+check('侧栏图标渲染出 svg', !!iconSvg)
+check(
+  'svg 自带 width/height（否则图标是空的）',
+  iconSvg?.getAttribute('width') !== null && iconSvg?.getAttribute('height') !== null,
+  `${iconSvg?.getAttribute('width')} x ${iconSvg?.getAttribute('height')}`
+)
+check('图标有实际尺寸', Number(iconSvg?.getAttribute('width') ?? 0) > 0 && Number(iconSvg?.getAttribute('height') ?? 0) > 0)
+
 /* --------------------------------------------------------------- 6. 内容 */
 
 section('6. 内容与交互')
