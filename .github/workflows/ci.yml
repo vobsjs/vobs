@@ -41,8 +41,8 @@ jobs:
         run: pnpm test:run
 
       # 三个 DSH 插件包不在 npm 发布名单里，靠 Git 标签 + 提交进仓库的 lib/ 分发。
-      # 产物是签入的，所以源码改了却没重建时 CI 必须拦下来 —— 这些脚本只读 lib/
-      # 并在 jsdom 里按 DSH 的客户端模块协议真跑一遍，不需要先构建任何东西。
+      # 这一步校验**签入的产物本身能不能用**：脚本只读 lib/，在 jsdom 里按 DSH 的客户端
+      # 模块协议真跑一遍，不需要先构建任何东西。产物是否**与源码同步**由下面那一步负责。
       - name: Verify DSH plugin artifacts
         run: |
           node packages/dsh-plugin/scripts/verify-client.mjs
@@ -56,6 +56,15 @@ jobs:
 
       - name: Verify published package artifacts
         run: pnpm run verify:packages
+
+      # 「改了源码忘了重建」只有重建比对才拦得住 —— 产物内嵌版本号的那条断言只覆盖
+      # 「bump 了框架版本没重建」这一种，而 Console 与开发台的产物里根本没有版本号。
+      # 插件构建是确定性的（本地实测重建后逐字节一致），所以这里可以直接比对。
+      # 依赖上一步的 verify:packages（它会跑 build:packages，产出 @vobs/dsh 与 vite-plugin 的 dist）。
+      - name: DSH plugin artifacts match current source
+        run: |
+          pnpm run build:dsh
+          git diff --exit-code -- packages/dsh-plugin/lib packages/dsh-console/lib packages/dsh-devkit/lib
 
       - name: Build framework, typecheck, and playground
         run: pnpm run build
