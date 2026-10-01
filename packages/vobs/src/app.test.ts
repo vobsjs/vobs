@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { effect } from '@vobs/reactivity'
 import {
   createDOMRenderer,
@@ -241,5 +241,53 @@ describe('createVobs', () => {
     app.destroy()
     button.dispatchEvent(new Event('click'))
     expect(clicks).toBe(1)
+  })
+})
+
+/*
+ * 插件契约的三条「声明与实现之间」的缝。
+ * 都先实测复现过才动手（探针见 .artifacts/probe-plugin.mjs）。
+ */
+describe('插件契约的诊断', () => {
+  const mount = (plugins: VobsPlugin[]) =>
+    createVobs({ renderer: createDOMRenderer(), render: () => createText(''), plugins })
+
+  it('同名插件第二次传入不同对象时会警告（带版本），同一对象重复传则不吵', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const plugin = { name: '@x/a', version: '1.0.0', install: () => {} }
+
+    // 同一个对象 use 两次：正常用法，不该有噪音
+    mount([plugin, plugin])
+    expect(warn).not.toHaveBeenCalled()
+
+    // 名字相同但是另一个对象：原来静默跳过、毫无提示
+    mount([plugin, { name: '@x/a', version: '2.0.0', install: () => {} }])
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain('@x/a')
+    expect(String(warn.mock.calls[0][0])).toContain('1.0.0')
+
+    warn.mockRestore()
+  })
+
+  it('install 返回 Promise 会在安装期抛错，而不是拖到 destroy 才炸', () => {
+    const app = createVobs({ renderer: createDOMRenderer(), render: () => createText('') })
+    expect(() => app.use({ name: 'async', install: (async () => {}) as unknown as () => void }))
+      .toThrow(/必须同步返回清理函数或不返回/)
+    // 关键：错误发生在安装期，destroy 时不会再出问题
+    expect(() => app.destroy()).not.toThrow()
+  })
+
+  it('install 返回非函数也拒绝', () => {
+    const app = createVobs({ renderer: createDOMRenderer(), render: () => createText('') })
+    expect(() => app.use({ name: 'bad', install: (() => 42) as unknown as () => void }))
+      .toThrow(/必须同步返回清理函数或不返回/)
+    app.destroy()
+  })
+
+  it('optional 仅声明：不安装其中的插件（既有语义，测试锁住）', () => {
+    const calls: string[] = []
+    const optional: VobsPlugin = { name: 'opt', install: () => { calls.push('opt') } }
+    mount([{ name: 'main', optional: [optional], install: () => { calls.push('main') } }])
+    expect(calls).toEqual(['main'])
   })
 })

@@ -1524,6 +1524,7 @@ function createVobs(config) {
   const cleanups = [];
   const errorHandlers = /* @__PURE__ */ new Set();
   const installed = /* @__PURE__ */ new Set();
+  const installedPlugins = /* @__PURE__ */ new Map();
   const installing = /* @__PURE__ */ new Set();
   let mounted = false;
   let destroyed = false;
@@ -1569,7 +1570,15 @@ function createVobs(config) {
     }
   }
   function installPlugin(plugin) {
-    if (installed.has(plugin.name)) return;
+    const already = installedPlugins.get(plugin.name);
+    if (already !== void 0) {
+      if (already !== plugin) {
+        const before = already.version ? `（版本 ${already.version}）` : "";
+        const now = plugin.version ? `（版本 ${plugin.version}）` : "";
+        console.warn(`[vobs] 插件 "${plugin.name}" 已安装${before}，本次传入的是另一个对象${now}，已跳过。 同名插件只会安装一次 —— 若这是两个不同的插件，请给它们不同的 name。`);
+      }
+      return;
+    }
     if (installing.has(plugin.name)) {
       throw new Error(`Vobs: 插件依赖存在循环：${plugin.name}`);
     }
@@ -1577,8 +1586,16 @@ function createVobs(config) {
     try {
       for (const dependency of plugin.requires ?? []) installPlugin(dependency);
       const cleanup2 = plugin.install?.(context);
-      if (cleanup2) cleanups.push(cleanup2);
+      if (cleanup2 !== void 0 && cleanup2 !== null) {
+        if (typeof cleanup2 !== "function") {
+          const isThenable = typeof cleanup2.then === "function";
+          const kind = isThenable ? "Promise（install 不能是 async）" : typeof cleanup2;
+          throw new Error(`Vobs: 插件 "${plugin.name}" 的 install 必须同步返回清理函数或不返回，收到 ${kind}`);
+        }
+        cleanups.push(cleanup2);
+      }
       installed.add(plugin.name);
+      installedPlugins.set(plugin.name, plugin);
     } finally {
       installing.delete(plugin.name);
     }

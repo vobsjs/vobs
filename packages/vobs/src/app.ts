@@ -13,8 +13,18 @@ export interface ProvideOptions {
 
 export interface VobsPlugin {
   name: string
+  /**
+   * 元信息。**不参与任何判断** —— 唯一被用到的地方是「同名插件被跳过」时把它印进诊断，
+   * 让人看得出被跳过的是哪个版本。别指望它做兼容性检查。
+   */
   version?: string
+  /** 依赖：安装本插件前会先自动安装它们（按名字去重，检测循环）。 */
   requires?: readonly VobsPlugin[]
+  /**
+   * **仅声明**：框架不会自动安装它们，也不做任何校验 —— `requires` 才是"必须且自动安装"。
+   * 与 `version` 同属元信息，留给工具/诊断使用（`app.test.ts` 有一条测试锁住
+   * 「声明 optional 不会安装它」这个语义）。
+   */
   optional?: readonly VobsPlugin[]
   install?: (ctx: VobsContext) => void | (() => void)
 }
@@ -84,6 +94,8 @@ export function createVobs(
   const cleanups: Array<() => void> = []
   const errorHandlers = new Set<(error: unknown) => void>()
   const installed = new Set<string>()
+  /** 名字 → 插件对象：用于「同名但不同对象」的诊断（`installed` 只记名字）。 */
+  const installedPlugins = new Map<string, VobsPlugin>()
   const installing = new Set<string>()
   let mounted = false
   let destroyed = false
@@ -139,7 +151,23 @@ export function createVobs(
   }
 
   function installPlugin(plugin: VobsPlugin): void {
-    if (installed.has(plugin.name)) return
+    const already = installedPlugins.get(plugin.name)
+    if (already !== undefined) {
+      /*
+       * 按**名字**去重：同名插件第二次不会被安装。
+       *
+       * 但"换个对象却同名"是很容易踩的坑（两个包都叫 router、同名插件被重新创建一次），
+       * 结果是第二个**永不安装且毫无提示**。所以这里说一声。
+       * 注意不能改成按对象身份去重 —— 那会让「同一个插件 use 两次」重复安装，破坏现有语义。
+       */
+      if (already !== plugin) {
+        const before = already.version ? `（版本 ${already.version}）` : ''
+        const now = plugin.version ? `（版本 ${plugin.version}）` : ''
+        console.warn(`[vobs] 插件 "${plugin.name}" 已安装${before}，本次传入的是另一个对象${now}，已跳过。`
+          + ' 同名插件只会安装一次 —— 若这是两个不同的插件，请给它们不同的 name。')
+      }
+      return
+    }
     if (installing.has(plugin.name)) {
       throw new Error(`Vobs: 插件依赖存在循环：${plugin.name}`)
     }
@@ -148,8 +176,24 @@ export function createVobs(
     try {
       for (const dependency of plugin.requires ?? []) installPlugin(dependency)
       const cleanup = plugin.install?.(context)
-      if (cleanup) cleanups.push(cleanup)
+      /*
+       * install 的返回值必须是清理函数，或什么都不返回。
+       *
+       * 原来直接把返回值 push 进 cleanups：`install: async () => …` 返回的 Promise 会被当成
+       * 清理函数 —— 安装"成功"、初始化却没做完，直到 **destroy 时才以
+       * `TypeError: cleanups[index] is not a function` 爆出来**，那时现场早没了。
+       * 现在在安装期就拒绝，错误出现在它该出现的地方。
+       */
+      if (cleanup !== undefined && cleanup !== null) {
+        if (typeof cleanup !== 'function') {
+          const isThenable = typeof (cleanup as { then?: unknown }).then === 'function'
+          const kind = isThenable ? 'Promise（install 不能是 async）' : typeof cleanup
+          throw new Error(`Vobs: 插件 "${plugin.name}" 的 install 必须同步返回清理函数或不返回，收到 ${kind}`)
+        }
+        cleanups.push(cleanup)
+      }
       installed.add(plugin.name)
+      installedPlugins.set(plugin.name, plugin)
     } finally {
       installing.delete(plugin.name)
     }
