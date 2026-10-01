@@ -54,6 +54,8 @@ export function EditorTabs(props: EditorTabsProps = {}): VobsNode {
     'onClose'
   ])
   bindUserStyle(root, props)
+  // 行的容器此前没有任何角色 —— 行上有 role="tab"，屏幕阅读器却找不到它们所属的 tablist。
+  setAttribute(root, 'role', 'tablist')
   insertDynamic(root, null, () => createEditorTabs(props, internalValue))
   if (hasProp(props, 'children')) mountSlot(root, props, 'children')
   return root
@@ -94,6 +96,8 @@ function createEditorTab(
   const root = createElement('span')
   setAttribute(root, 'class', `vui-editortab${active ? ' is-active' : ''}`)
   setAttribute(root, 'role', 'tab')
+  // 供方向键切换后定位新行（见 focusEditorTab）
+  setAttribute(root, 'data-editor-tab-id', tab.id)
   setAttribute(root, 'aria-selected', active ? 'true' : 'false')
   setAttribute(root, 'tabindex', active ? '0' : '-1')
   setOptionalAttribute(root, 'data-editor-tab-id', tab.id)
@@ -141,7 +145,20 @@ function createEditorTab(
     keyboardEvent.preventDefault?.()
     const direction = keyboardEvent.key === 'ArrowLeft' ? -1 : 1
     const next = adjacentTab(tabs, tab.id, direction)
-    if (next) selectTab(next.id, props, internalValue, keyboardEvent)
+    if (next) {
+      /*
+       * 焦点要跟着走。
+       *
+       * 原来这里只改选中、不移动焦点 —— 于是焦点停在旧行上，而旧行的 tabindex 因为选中变化
+       * 已经变成 -1：DOM 焦点与 aria-selected 分家，键盘用户下一步按方向键仍从旧位置出发。
+       *
+       * 容器必须在 **selectTab 之前**抓住：选中会触发标签行重建，届时这一行已从 DOM 摘掉，
+       * 之后再取 parentElement 得到的是 null（实测踩到：焦点落在游离节点上，等于没动）。
+       */
+      const container = root.parentElement
+      selectTab(next.id, props, internalValue, keyboardEvent)
+      if (container) focusEditorTab(container, next.id)
+    }
   })
   return root
 }
@@ -157,6 +174,22 @@ function selectTab(
   if (typeof handler === 'function') (handler as EditorTabsProps['onChange'])!(id, event)
 }
 
+/**
+ * 把焦点移到目标标签行。
+ *
+ * 必须在选中触发的重渲染**之后**执行，并重新查一次节点：行的 `tabindex` 是按选中状态在创建时
+ * 写死的，所以选中一变整条标签行会重建 —— 对重建前的节点 `focus()` 会被紧接着的刷新丢掉
+ * （Tabs 那边实测踩过这个坑，这里同一套做法）。
+ *
+ * 用属性比较而不是拼选择器：`tab.id` 是使用方给的，含引号时 `querySelector` 会直接抛异常。
+ */
+function focusEditorTab(container: Element, id: string): void {
+  queueMicrotask(() => {
+    const target = [...container.querySelectorAll('[data-editor-tab-id]')]
+      .find(element => element.getAttribute('data-editor-tab-id') === id)
+    if (target instanceof HTMLElement) target.focus()
+  })
+}
 function adjacentTab(
   tabs: readonly EditorTabItem[],
   id: string,

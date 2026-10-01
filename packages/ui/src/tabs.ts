@@ -83,7 +83,9 @@ export function Tabs(props: TabsProps): VobsNode {
      * 更新是按微任务批处理的，所以这里再排一个微任务：它必定排在刷新之后。
      */
     queueMicrotask(() => {
-      const target = tablist.querySelector(`[data-tab-id="${next.id}"]`)
+      // 属性比较而不是拼选择器：作者给的 id 含引号时 querySelector 会抛异常。
+      const target = [...tablist.querySelectorAll('[data-tab-id]')]
+        .find(element => element.getAttribute('data-tab-id') === next.id)
       if (target instanceof HTMLElement) target.focus()
     })
   })
