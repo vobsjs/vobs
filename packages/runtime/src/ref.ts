@@ -1,4 +1,5 @@
 import { getCurrentOwner } from '@vobs/reactivity'
+import { formatVobsError } from './error'
 
 /** A mutable reference populated when a host node is mounted. */
 export interface Ref<T extends object = Node> {
@@ -44,7 +45,12 @@ function assignRef<T extends object>(target: RefTarget<T>, value: T | null): voi
   try {
     if (typeof target === 'function') target(value)
     else target.current = value
-  } catch {
-    // Ref callbacks are user code; never make mounting fail because of them.
+  } catch (error) {
+    /*
+     * ref 回调是用户代码，挂载不该因为它失败 —— 但也不能**完全无声**：
+     * 回调抛错时 ref 拿不到节点，界面看起来正常，用户完全不知道为什么。
+     * 保持吞掉（不冒泡），但打一条控制台记录。
+     */
+    console.error(formatVobsError(error, { includeStack: true }))
   }
 }

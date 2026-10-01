@@ -1,4 +1,5 @@
 import type { VobsNode } from './fragment'
+import { formatVobsError } from './error'
 
 export type HmrComponent<Props extends object = Record<string, unknown>> =
   (props: Props) => VobsNode
@@ -76,8 +77,13 @@ export function updateHmrModule(moduleId: string, nextModule: Record<string, unk
   for (const instance of instances) {
     try {
       instance.refresh()
-    } catch {
-      // HMR failures remain application errors on the next normal render.
+    } catch (error) {
+      /*
+       * 静默吞掉会让开发者以为热更新成功了，而屏幕上是旧的 —— 最容易被当成
+       * 「改了没生效」查半天。刷新失败本身不冒泡（下一次正常渲染会再抛），
+       * 但必须留下记录。
+       */
+      console.error(formatVobsError(error, { includeStack: true }))
     }
   }
 }

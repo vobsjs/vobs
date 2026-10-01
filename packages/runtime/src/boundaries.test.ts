@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { createDOMRenderer, createText, createVobs, Profiler, AsyncBoundary, state } from '@vobs/vobs'
+import { createDOMRenderer, createElement, createText, createVobs, insertErrorBoundary, Profiler, AsyncBoundary, setRuntimeDebugHooks, state } from '@vobs/vobs'
 
 describe('AsyncBoundary and Profiler', () => {
   it('renders loading then resolved content', async () => {
@@ -56,5 +56,58 @@ describe('AsyncBoundary and Profiler', () => {
     expect(events).toEqual(['mount'])
     app.destroy()
     vi.restoreAllMocks()
+  })
+})
+
+/*
+ * 边界捕获错误之后，原来只调 invokeRuntimeDebug('error', …) ——
+ * 没装 DevTools（也就没有 error 钩子）时控制台一个字都不输出：
+ * 错误被替换成 fallback，现场再无痕迹。
+ */
+describe('边界错误不再静默', () => {
+  const mountFailing = () => {
+    const host = document.createElement('div')
+    const app = createVobs({
+      renderer: createDOMRenderer(),
+      render: () => {
+        const root = createElement('div')
+        insertErrorBoundary(root, null, {
+          children: () => { throw new Error('boom') },
+          fallback: () => createText('failed')
+        })
+        return root
+      }
+    })
+    app.mount(host)
+    app.update()
+    return { host, app }
+  }
+
+  it('没有 error 钩子时写进控制台', () => {
+    setRuntimeDebugHooks(null)
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host, app } = mountFailing()
+
+    expect(host.textContent).toBe('failed')
+    expect(spy).toHaveBeenCalled()
+    expect(String(spy.mock.calls[0][0])).toContain('boom')
+
+    app.destroy()
+    spy.mockRestore()
+  })
+
+  it('装了 error 钩子时交给钩子，不重复输出', () => {
+    const events: unknown[] = []
+    const restore = setRuntimeDebugHooks({ error: event => events.push(event) })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host, app } = mountFailing()
+
+    expect(host.textContent).toBe('failed')
+    expect(events.length).toBeGreaterThan(0)
+    expect(spy).not.toHaveBeenCalled()
+
+    app.destroy()
+    setRuntimeDebugHooks(restore)
+    spy.mockRestore()
   })
 })

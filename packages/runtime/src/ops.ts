@@ -4,6 +4,7 @@ import { createOwner, getCurrentOwner, setOwnerDebugName, untrack, type Owner } 
 import { isVobsFragment, type VobsNode } from './fragment'
 import { domAttributeName, isPropertyName } from './dom-props'
 import { isSvgTag } from './svg'
+import { formatVobsError } from './error'
 import { describeDebugNode, getRuntimeDebugHooks, invokeRuntimeDebug, readDebugValue } from './debug'
 import {
   associateHmrInstance,
@@ -283,6 +284,14 @@ export function addEventListener(
         handled,
         recovery: handled ? 'handled' : 'propagated'
       })
+      /*
+       * 被 owner 的 onError 处理掉之后，错误就只剩 debug 钩子这一个出口 ——
+       * 没装 DevTools 时控制台一个字都没有：事件处理器抛错、界面没反应、无从查起。
+       * 没被处理的情况下面会 rethrow（浏览器自己会报），所以只在「被吞下」时补控制台。
+       */
+      if (handled && getRuntimeDebugHooks()?.error === undefined) {
+        console.error(formatVobsError(error, { includeStack: true }))
+      }
       if (!handled) throw error
     }
   } : handler

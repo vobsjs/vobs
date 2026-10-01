@@ -467,6 +467,10 @@ function createDOMRenderer() {
     }
   };
 }
+let activeRuntimeDebugHooks = null;
+function getRuntimeDebugHooks() {
+  return activeRuntimeDebugHooks;
+}
 function invokeRuntimeDebug(name, ...args) {
   return;
 }
@@ -635,6 +639,126 @@ const SVG_TAGS = /* @__PURE__ */ new Set([
 function isSvgTag(tag) {
   return SVG_TAGS.has(tag);
 }
+class VobsError extends Error {
+  constructor(options) {
+    super(options.message);
+    this.name = "VobsError";
+    this.code = options.code;
+    this.severity = options.severity ?? "error";
+    this.layer = options.layer ?? "runtime";
+    this.cause = options.cause;
+    this.fix = options.fix;
+    this.location = options.location;
+    this.trace = options.trace;
+    this.example = options.example;
+    this.docs = options.docs;
+    this.codeFrame = options.codeFrame;
+  }
+}
+function isVobsError(value) {
+  return value instanceof VobsError || Boolean(value && typeof value === "object" && typeof value.code === "string" && typeof value.message === "string");
+}
+function isForeignVobsError(value) {
+  return value instanceof Error && value.name === "VobsError" && typeof value.code === "string";
+}
+function describeUnknown(value) {
+  if (value === null || value === void 0) return String(value);
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const message = value.message;
+    if (typeof message === "string" && message !== "") return message;
+    try {
+      return JSON.stringify(value) ?? String(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+function adoptVobsError(value, defaults) {
+  return new VobsError({
+    code: value.code,
+    message: value.message,
+    severity: value.severity ?? defaults.severity,
+    layer: value.layer ?? defaults.layer,
+    cause: value.cause ?? (value instanceof Error ? value : void 0),
+    fix: value.fix ?? defaults.fix,
+    location: value.location,
+    trace: value.trace,
+    example: value.example,
+    docs: value.docs,
+    codeFrame: value.codeFrame
+  });
+}
+function normalizeVobsError(value, defaults = {}) {
+  if (value instanceof VobsError) return value;
+  if (isForeignVobsError(value)) return adoptVobsError(value, defaults);
+  if (value instanceof Error) {
+    const metadata = value;
+    const code = defaults.code ?? (typeof metadata.vobsCode === "string" ? metadata.vobsCode : void 0);
+    if (code) {
+      defineErrorMetadata(value, "code", code);
+      if (value.code !== code) {
+        return new VobsError({
+          code,
+          message: value.message,
+          severity: defaults.severity ?? "error",
+          layer: defaults.layer ?? "runtime",
+          cause: value,
+          fix: defaults.fix ?? (typeof metadata.vobsHint === "string" ? metadata.vobsHint : void 0)
+        });
+      }
+    }
+    defineErrorMetadata(value, "severity", defaults.severity ?? "error");
+    defineErrorMetadata(value, "layer", defaults.layer ?? "runtime");
+    const fix = defaults.fix ?? (typeof metadata.vobsHint === "string" ? metadata.vobsHint : void 0);
+    if (fix) defineErrorMetadata(value, "fix", fix);
+    const source = metadata.vobsSource;
+    if (source && typeof source === "object" && typeof source.file === "string" && typeof source.line === "number" && typeof source.column === "number") {
+      defineErrorMetadata(value, "location", source);
+    }
+    return value;
+  }
+  if (isVobsError(value)) return adoptVobsError(value, defaults);
+  return new VobsError({
+    code: defaults.code ?? "VOBS_UNKNOWN",
+    message: describeUnknown(value),
+    severity: defaults.severity ?? "error",
+    layer: defaults.layer ?? "runtime",
+    cause: void 0,
+    fix: defaults.fix
+  });
+}
+function defineErrorMetadata(target, key, value) {
+  if (key in target) return;
+  try {
+    Object.defineProperty(target, key, { configurable: true, enumerable: false, value, writable: true });
+  } catch {
+  }
+}
+function formatVobsError(value, options = {}) {
+  const error = normalizeVobsError(value);
+  const code = error.code || "VOBS_UNKNOWN";
+  const severity = error.severity || "error";
+  if (options.environment === "production") return `[Vobs ${code}] ${error.message}`;
+  const lines = [`[Vobs ${capitalize(severity)}] ${error.message}`, `Code: ${code}`];
+  if (error.location) lines.push(`Location: ${error.location.file}:${error.location.line}:${error.location.column}`);
+  if (error.codeFrame) lines.push("", error.codeFrame);
+  if (error.cause !== void 0) lines.push(`Cause: ${formatCause(error.cause)}`);
+  if (error.trace?.length) lines.push("", `Trace: ${error.trace.join(" → ")}`);
+  if (error.fix) lines.push("", `Fix: ${error.fix}`);
+  if (error.example) lines.push("", `Example:
+${error.example}`);
+  if (error.docs) lines.push(`Docs: ${error.docs}`);
+  if (options.includeStack && error.stack) lines.push("", error.stack);
+  return lines.join("\n");
+}
+function formatCause(value) {
+  return value instanceof Error ? `${value.name}: ${value.message}` : String(value);
+}
+function capitalize(value) {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
 const globalTarget = globalThis;
 const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: /* @__PURE__ */ new Map(), states: /* @__PURE__ */ new Map() };
 globalTarget.__VOBS_HMR__ = hmrGlobal;
@@ -799,6 +923,9 @@ function addEventListener(node, event, handler) {
         handled,
         recovery: handled ? "handled" : "propagated"
       });
+      if (handled && getRuntimeDebugHooks()?.error === void 0) {
+        console.error(formatVobsError(error, { includeStack: true }));
+      }
       if (!handled) throw error;
     }
   } : handler;
