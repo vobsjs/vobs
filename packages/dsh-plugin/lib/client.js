@@ -1266,6 +1266,32 @@ function insertList(parent, anchor, source, renderItem, keyOf) {
       }
       if (!allKeyed) keys = null;
     }
+    if (keys !== null && entries.length === items.length) {
+      let fast = true;
+      for (let index2 = 0; index2 < keys.length; index2++) {
+        if (!Object.is(entries[index2].key, keys[index2])) {
+          fast = false;
+          break;
+        }
+        const item = items[index2];
+        if (isPrimitiveItem(item) && !Object.is(entries[index2].current, item)) {
+          fast = false;
+          break;
+        }
+      }
+      if (fast) {
+        for (let index2 = 0; index2 < items.length; index2++) {
+          const entry = entries[index2];
+          entry.index = index2;
+          const item = items[index2];
+          if (!Object.is(entry.current, item)) {
+            entry.item.value = item;
+            entry.current = item;
+          }
+        }
+        return;
+      }
+    }
     const nextEntries = keys ? reconcileKeyed(items, keys, entries, renderItem) : reconcileIndexed(items, entries, renderItem);
     const refreshed = tracksIndex ? /* @__PURE__ */ new Set() : null;
     for (let index2 = 0; index2 < nextEntries.length; index2++) {
@@ -1351,7 +1377,8 @@ function computeKeptByLis(seq) {
   return keep;
 }
 function reconcileKeyed(items, keys, entries, renderItem) {
-  const previous = new Map(entries.map((entry) => [entry.key, entry]));
+  const previous = /* @__PURE__ */ new Map();
+  for (const entry of entries) previous.set(entry.key, entry);
   const seen = /* @__PURE__ */ new Set();
   const nextEntries = [];
   for (let index2 = 0; index2 < items.length; index2++) {
@@ -1364,12 +1391,12 @@ function reconcileKeyed(items, keys, entries, renderItem) {
     const entry = previous.get(key);
     if (entry) {
       previous.delete(key);
-      if (isPrimitiveItem(item) && !Object.is(entry.value, item)) {
+      if (isPrimitiveItem(item) && !Object.is(entry.current, item)) {
         nextEntries.push(createListEntry(item, index2, key, renderItem));
         continue;
       }
       entry.item.value = item;
-      entry.value = item;
+      entry.current = item;
       nextEntries.push(entry);
       continue;
     }
@@ -1382,13 +1409,13 @@ function reconcileIndexed(items, entries, renderItem) {
   for (let index2 = 0; index2 < items.length; index2++) {
     const item = items[index2];
     const entry = entries[index2];
-    if (entry && isPrimitiveItem(item) && !Object.is(entry.value, item)) {
+    if (entry && isPrimitiveItem(item) && !Object.is(entry.current, item)) {
       nextEntries.push(createListEntry(item, index2, index2, renderItem));
       continue;
     }
     if (entry) {
       entry.item.value = item;
-      entry.value = item;
+      entry.current = item;
       nextEntries.push(entry);
       continue;
     }
@@ -1410,7 +1437,7 @@ function createListEntry(item, index2, key, renderItem) {
     node = viewOwner.run(() => renderItem(toReactiveItem(itemSignal, item), index2));
   });
   associateNodeOwner(node, viewOwner);
-  return { key, node, owner, viewOwner, item: itemSignal, value: item, index: index2 };
+  return { key, node, owner, viewOwner, item: itemSignal, current: item, index: index2 };
 }
 function refreshListEntry(parent, entry, index2, renderItem) {
   removeChild(parent, entry.node);
@@ -1419,7 +1446,7 @@ function refreshListEntry(parent, entry, index2, renderItem) {
   entry.owner.run(() => {
     entry.viewOwner = createOwner();
     entry.node = entry.viewOwner.run(() => renderItem(
-      toReactiveItem(entry.item, entry.value),
+      toReactiveItem(entry.item, entry.current),
       index2
     ));
   });
