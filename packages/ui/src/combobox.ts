@@ -1,7 +1,7 @@
 // 可搜索下拉（Combobox）：输入过滤 + 键盘导航 + 选项列表，供选项较多的场景（系统字体等）。
 // 纯命令式 DOM 实现（与 forms.ts 同风格）：内部状态走 @vobs/reactivity 信号，
 // 组件随 Owner 销毁自动清理全局监听；受控 value / 双向 bind / onChange 三种接法。
-import { effect, state, type Signal } from '@vobs/reactivity'
+import { effect, state, untrack, type Signal } from '@vobs/reactivity'
 import {
   createElement,
   insertBefore,
@@ -147,7 +147,14 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
     }
     if (panel.parentElement !== root) insertBefore(root, panel, null)
     const matches = filtered()
-    active.set(Math.min(active.value, Math.max(0, matches.length - 1)))
+    /*
+     * 读在 untrack 之外：本次对 active 的订阅由下面第 164 行的 `active.value` 一并保持
+     * （它决定哪一项高亮，且必须在 clamp 之后读，所以 clamp 当场生效）。
+     * 写包进 untrack：否则这次写入会把自己重新调度一轮 —— clamp 幂等所以不会循环，
+     * 但那一轮纯属白跑，而且会被护栏报成 VOBS_C210。
+     */
+    const clamped = Math.min(active.value, Math.max(0, matches.length - 1))
+    untrack(() => { active.set(clamped) })
     list.replaceChildren()
     if (matches.length === 0) {
       const empty = createElement('p')
