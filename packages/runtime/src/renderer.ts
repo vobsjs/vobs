@@ -17,6 +17,8 @@ export interface VobsRenderer<
   setTextContent(node: TextNode, content: string): void
   setProperty(node: ElementNode, key: string, value: unknown): void
   setAttribute(node: ElementNode, key: string, value: string): void
+  /** 删除 attribute。可选：老自定义渲染器没实现时运行时退回 setAttribute(key, '')。 */
+  removeAttribute?(node: ElementNode, key: string): void
   addEventListener(node: ElementNode, event: string, handler: EventListener): void
   removeEventListener(node: ElementNode, event: string, handler: EventListener): void
   nextSibling(node: NodeType): NodeType | null

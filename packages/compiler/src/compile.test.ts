@@ -406,7 +406,8 @@ export const width = st(50, 'doc.width')
 
   it('支持 DOM spread 和对象样式', () => {
     const result = compile(`const props = { className: 'card' }; const el = <div {...props} style={{ backgroundColor: 'red' }} />`)
-    expect(result).toContain('spreadProps')
+    // 展开现在走响应式绑定（原来是创建时应用一次的 spreadProps）
+    expect(result).toContain('bindSpreadProps')
     expect(result).toContain('bindAttribute')
   })
 
@@ -1036,5 +1037,29 @@ function findSourceLine(segments: MappingSegment[], codeLines: string[], needle:
     it('SVG 子树一律不做静态提升（模板用的是 HTML 解析器）', () => {
       // <a> 本身是静态的，若提升成模板就会 clone 出 HTML 锚点
       expect(compileWithSourceMap(`const el = <svg><a href="/x">link</a></svg>`).code).not.toContain('createTemplate')
+    })
+  })
+
+  /*
+   * `{...props}` 展开必须是响应式的。
+   *
+   * 原来只发射 spreadProps（创建时应用一次）：改了 props 不生效、删掉的键留在 DOM 上，
+   * 两者都不报错。现在发射 bindSpreadProps（每轮增量应用 + 移除消失的键）。
+   */
+  describe('{...props} 展开', () => {
+    it('发射 bindSpreadProps 而不是一次性的 spreadProps', () => {
+      const code = compileWithSourceMap(`const el = <div {...props}>x</div>`).code
+      expect(code).toContain('bindSpreadProps(')
+      expect(code).not.toMatch(/[^d]spreadProps\(/)
+    })
+
+    it('静态属性与展开共存时也走绑定', () => {
+      const code = compileWithSourceMap(`const el = <div id="a" {...props}>x</div>`).code
+      expect(code).toContain('bindSpreadProps(')
+      expect(code).toContain('"a"')
+    })
+
+    it('没有展开时不发射', () => {
+      expect(compileWithSourceMap(`const el = <div id="a">x</div>`).code).not.toContain('bindSpreadProps')
     })
   })

@@ -513,6 +513,9 @@ function createDOMRenderer() {
     setAttribute(node, key, value) {
       node.setAttribute(key, value);
     },
+    removeAttribute(node, key) {
+      node.removeAttribute(key);
+    },
     addEventListener(node, event, handler) {
       node.addEventListener(event, handler);
     },

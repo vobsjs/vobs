@@ -40,6 +40,10 @@ export function createDOMRenderer(): VobsRenderer<Node, Text, Element, Comment> 
       node.setAttribute(key, value)
     },
 
+    removeAttribute(node: Element, key: string): void {
+      node.removeAttribute(key)
+    },
+
     addEventListener(node: Element, event: string, handler: EventListener): void {
       node.addEventListener(event, handler)
     },

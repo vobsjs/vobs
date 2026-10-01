@@ -39,6 +39,8 @@ export {
   setAttribute,
   setStaticProps,
   spreadProps,
+  bindSpreadProps,
+  removeAttribute,
   addEventListener,
   removeEventListener,
   clear,

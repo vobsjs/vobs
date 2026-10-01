@@ -1270,7 +1270,15 @@ function appendAttributes(
   const hasSpread = attributes.properties.some(attribute => ts.isJsxSpreadAttribute(attribute))
   for (const attribute of attributes.properties) {
     if (ts.isJsxSpreadAttribute(attribute)) {
-      statements.push(callStatement(state, 'spreadProps', [element, transformEmbeddedExpression(state, attribute.expression)], attribute))
+      /*
+       * `{...props}` 绑成**响应式**的。
+       *
+       * 原来只发射 `spreadProps` —— 创建时应用一次就完了，于是「改了 props 不生效」和
+       * 「对象里删掉的键永远留在 DOM 上」两个问题都不报错（静默失效）。
+       * bindSpreadProps 每轮增量应用：变了的键写进去、消失的键移除（attribute 删、
+       * property 复位、事件摘监听）。
+       */
+      statements.push(callStatement(state, 'bindSpreadProps', [element, createGetter(attribute.expression)], attribute))
       continue
     }
     if (!ts.isJsxAttribute(attribute)) continue

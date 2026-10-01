@@ -1,6 +1,6 @@
 // 编译产物调用的基础操作
 
-import { createOwner, getCurrentOwner, setOwnerDebugName, untrack, type Owner } from '@vobs/reactivity'
+import { createOwner, effect, getCurrentOwner, setOwnerDebugName, untrack, type Owner } from '@vobs/reactivity'
 import { isVobsFragment, type VobsNode } from './fragment'
 import { domAttributeName, isPropertyName } from './dom-props'
 import { isSvgTag } from './svg'
@@ -241,19 +241,93 @@ export function setAttribute(
 }
 
 export function spreadProps(node: Element, props: Record<string, unknown>): void {
-  for (const [key, value] of Object.entries(props)) {
-    if (key === 'key' || value === null || value === undefined) continue
+  applySpreadProps(node, null, props)
+}
+
+/** 删除一个 attribute。渲染器没实现时退回空串（属性仍在，但内容清空）—— 老自定义渲染器的降级行为。 */
+export function removeAttribute(node: Element, key: string): void {
+  const renderer = getRenderer()
+  if (renderer.removeAttribute) {
+    renderer.removeAttribute(node, key)
+    return
+  }
+  renderer.setAttribute(node, key, '')
+}
+
+/** 布尔型 property 的「清除」值是 false，其余是空串（与 React 的移除语义一致）。 */
+const BOOLEAN_PROPERTIES = new Set([
+  'checked', 'selected', 'disabled', 'multiple', 'readOnly', 'required',
+  'hidden', 'autofocus', 'open', 'indeterminate', 'defaultChecked', 'muted'
+])
+
+/**
+ * 把一份 props 应用（或**增量**应用到）节点上。
+ *
+ * `previous` 为 null 表示首次应用（`spreadProps` 的老路径）；否则只处理真正变化的键，
+ * 并**移除**新对象里已经消失的键 —— 这正是原来缺的那一半：`{...props}` 只在创建时应用一次，
+ * 之后对象里删掉的键会永远留在 DOM 上，而且改了的值也不会生效。
+ */
+function applySpreadProps(
+  node: Element,
+  previous: Record<string, unknown> | null,
+  next: Record<string, unknown>
+): void {
+  for (const [key, value] of Object.entries(next)) {
+    if (key === 'key') continue
+    if (previous !== null && Object.is(previous[key], value)) continue
+
+    if (key.startsWith('on')) {
+      // 事件：先摘旧监听（值变了、或新值不再是函数），再挂新的
+      const previousHandler = previous?.[key]
+      if (typeof previousHandler === 'function') {
+        removeEventListener(node, key.slice(2).toLowerCase(), previousHandler as EventListener)
+      }
+      if (typeof value === 'function') {
+        addEventListener(node, key.slice(2).toLowerCase(), value as EventListener)
+      }
+      continue
+    }
+    if (value === null || value === undefined) continue
     if (key === 'ref') {
       setRef(node, value)
       continue
     }
-    if (key.startsWith('on') && typeof value === 'function') addEventListener(node, key.slice(2).toLowerCase(), value as EventListener)
     // property 键的 false 有语义（如 disabled={false} 必须清除），不能跳过；
     // attribute 键的 false 表示“不设置”，与 HTML 语义一致。
     else if (isPropertyName(key)) setProperty(node, key, value)
     else if (value === false) continue
     else setAttribute(node, domAttributeName(key), key === 'style' && isStyleObject(value) ? formatStyle(value) : String(value))
   }
+
+  if (previous === null) return
+  for (const key of Object.keys(previous)) {
+    if (key in next || key === 'key') continue
+    if (key.startsWith('on')) {
+      const previousHandler = previous[key]
+      if (typeof previousHandler === 'function') {
+        removeEventListener(node, key.slice(2).toLowerCase(), previousHandler as EventListener)
+      }
+      continue
+    }
+    if (key === 'ref') continue
+    if (isPropertyName(key)) setProperty(node, key, BOOLEAN_PROPERTIES.has(key) ? false : '')
+    else removeAttribute(node, domAttributeName(key))
+  }
+}
+
+/**
+ * 把 `{...props}` 绑定成**响应式**的：对象变了就增量应用，消失的键会被移除。
+ *
+ * 编译器对带展开的 JSX 属性发射这个而不是 `spreadProps` —— 后者只在创建时应用一次，
+ * 于是「改了 props 不生效」「删掉的键留在 DOM 上」两个问题都**不报错**。
+ */
+export function bindSpreadProps(node: Element, source: () => Record<string, unknown>): void {
+  let previous: Record<string, unknown> | null = null
+  effect(() => {
+    const next = source() ?? {}
+    applySpreadProps(node, previous, next)
+    previous = next
+  })
 }
 
 /** Apply compile-time host properties in one renderer pass. */
