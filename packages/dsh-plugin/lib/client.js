@@ -1420,6 +1420,8 @@ function createVobsSlotHost(render, options = {}) {
       const root = document.createElement("div");
       root.className = DSH_ROOT_CLASS;
       root.dataset.scheme = readScheme();
+      root.style.width = "100%";
+      root.style.height = "100%";
       shadow.appendChild(root);
       const media = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
       const onSchemeChange = () => {

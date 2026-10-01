@@ -96,6 +96,15 @@ export function createVobsSlotHost(render: () => VobsNode, options: DshSurfaceOp
       const root = document.createElement('div')
       root.className = DSH_ROOT_CLASS
       root.dataset.scheme = readScheme()
+      /*
+       * 挂载容器必须填满宿主，百分比高度才能继续往下传导。
+       *
+       * 少了这两行，`height: 100%` 的父级是一个 auto 高度的 div，percent 高度会退化成
+       * auto —— 面板内部 `overflow: auto` 的滚动容器永远不触发，长内容只会被外层裁掉。
+       * 现象就是「某一页内容长出来了，但不能滚」。
+       */
+      root.style.width = '100%'
+      root.style.height = '100%'
       shadow.appendChild(root)
 
       const media = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null

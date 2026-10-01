@@ -188,6 +188,17 @@ for (const effect of hostEffects) {
 
 const shadow = hostElement.shadowRoot
 check('宿主元素上有 shadow root', !!shadow)
+/*
+ * 挂载容器必须填满宿主 —— 否则 `height: 100%` 的父级是 auto 高度，percent 高度退化成
+ * auto，面板内部的滚动容器（`.vk-body { overflow: auto }`）永远不触发：长页面被外层裁掉，
+ * 现象就是「示例页不能滚动」。
+ */
+const rootDiv = shadow?.querySelector('.vobs-dsh-root')
+check(
+  '挂载容器填满宿主（height: 100%）',
+  rootDiv?.style.height === '100%' && rootDiv?.style.width === '100%',
+  rootDiv?.getAttribute('style') ?? '(无 style)'
+)
 check('.vk-root 已挂载', !!shadow?.querySelector('.vk-root'))
 check('渲染出标题', (shadow?.textContent ?? '').includes('Vobs 开发台'))
 check('标签标记了 vobs 渲染', (shadow?.textContent ?? '').includes('vobs 渲染'))
