@@ -139,6 +139,23 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
     }
   })
 
+  /*
+   * 面板里的选项节点。高亮只切这些节点的 class，不再重建它们。
+   *
+   * 原来整个面板 effect 依赖 `active`（下面两处读了它）—— 于是鼠标在选项上滑过
+   * （mousemove 会改 active）就把全部选项重建一遍：50 项列表上 10 次 mousemove 实测**重建 9 次**。
+   * 现在 active 用 untrack 读（不进依赖），高亮交给下面那个只切 class 的 effect。
+   */
+  const optionNodes: HTMLButtonElement[] = []
+  const applyActiveClass = (index: number): void => {
+    for (let i = 0; i < optionNodes.length; i++) {
+      const isActive = i === index
+      if (optionNodes[i].classList.contains('is-active') !== isActive) {
+        optionNodes[i].classList.toggle('is-active', isActive)
+      }
+    }
+  }
+
   /* ---------- 面板渲染：open/query/options 变化时重建选项（无选项级 effect，重建即清理） ---------- */
   effect(() => {
     if (!open.value) {
@@ -153,9 +170,11 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
      * 写包进 untrack：否则这次写入会把自己重新调度一轮 —— clamp 幂等所以不会循环，
      * 但那一轮纯属白跑，而且会被护栏报成 VOBS_C210。
      */
-    const clamped = Math.min(active.value, Math.max(0, matches.length - 1))
+    const activeIndex = untrack(() => active.value)
+    const clamped = Math.min(activeIndex, Math.max(0, matches.length - 1))
     untrack(() => { active.set(clamped) })
     list.replaceChildren()
+    optionNodes.length = 0
     if (matches.length === 0) {
       const empty = createElement('p')
       setAttribute(empty, 'class', 'vui-combobox__empty')
@@ -168,17 +187,19 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
         item.type = 'button'
         setAttribute(item, 'class', 'vui-combobox__option'
           + (option.value === current ? ' is-selected' : '')
-          + (index === active.value ? ' is-active' : ''))
+          + (index === clamped ? ' is-active' : ''))
         item.textContent = optionLabel(option)
         item.addEventListener('click', () => select(option))
         item.addEventListener('mousemove', () => {
           if (active.value !== index) active.set(index)
         })
         list.append(item)
+        optionNodes.push(item)
       })
     }
     // auto 方向：面板渲染后测量（强制 layout 拿实际面板高），下方空间不足且上方充足则向上展开；
     // 每次打开重测（窗口位置/滚动可能变化）；非 auto 复位（up/down 由类绑定直出）
+    applyActiveClass(clamped)
     if (readProp<'down' | 'up' | 'auto'>(props, 'direction', 'down') === 'auto') {
       const rootRect = root.getBoundingClientRect()
       const panelHeight = panel.getBoundingClientRect().height
@@ -188,6 +209,11 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
       flipUp.value = false
     }
   })
+
+  /*
+   * 高亮：只切 class，不动 DOM 结构、不测布局。hover 换一项从这里走。
+   */
+  effect(() => { applyActiveClass(active.value) })
 
   /* ---------- 键盘导航 ---------- */
   input.addEventListener('keydown', (event: KeyboardEvent) => {
