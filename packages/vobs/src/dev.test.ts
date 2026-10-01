@@ -5,20 +5,25 @@ import {
   isDevGuardrailsInstalled,
   VOBS_C210,
   VOBS_C211,
-  type VobsDiagnostic
+  type GuardrailViolation
 } from './dev'
 
 /** 让调度器把挂起的微任务跑完。 */
 const settle = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0))
 
+const locationKey = (violation: GuardrailViolation): string => {
+  const { file, line } = violation.error.location ?? { file: '?', line: 0 }
+  return `${file}:${line}`
+}
+
 let uninstall: (() => void) | undefined
-const collected: VobsDiagnostic[] = []
+const collected: GuardrailViolation[] = []
 
 const start = (options: Parameters<typeof installDevGuardrails>[0] = {}): void => {
   collected.length = 0
   uninstall = installDevGuardrails({
     console: false,
-    onDiagnostic: diagnostic => collected.push({ ...diagnostic }),
+    onViolation: violation => collected.push({ error: violation.error, count: violation.count }),
     ...options
   })
 }
@@ -29,7 +34,7 @@ afterEach(() => {
 })
 
 describe('installDevGuardrails', () => {
-  it('抓到 effect 自订阅，并给出信号名与正确写法', async () => {
+  it('抓到 effect 自订阅，产出结构化 VobsError（码 / 层 / 修复建议 / 位置）', async () => {
     start()
     const count = state(0, 'count')
 
@@ -39,12 +44,19 @@ describe('installDevGuardrails', () => {
     })
     await settle()
 
-    const diagnostic = collected.find(item => item.code === VOBS_C210)
-    expect(diagnostic).toBeDefined()
-    expect(diagnostic?.severity).toBe('error')
-    expect(diagnostic?.message).toContain('"count"')
-    expect(diagnostic?.hint).toContain('untrack')
-    expect(diagnostic?.count).toBe(1)
+    const violation = collected.find(item => item.error.code === VOBS_C210)
+    expect(violation).toBeDefined()
+    expect(violation?.error).toBeInstanceOf(Error)
+    expect(violation?.error.severity).toBe('error')
+    expect(violation?.error.layer).toBe('constraint')
+    expect(violation?.error.message).toContain('"count"')
+    expect(violation?.error.fix).toContain('untrack')
+    expect(violation?.error.example).toContain('untrack')
+    // 位置指向用户调用处（本测试文件），而不是护栏内部或框架源码
+    expect(violation?.error.location?.line).toBeGreaterThan(0)
+    expect(violation?.error.location?.file).toContain('dev.test.ts')
+    expect(violation?.error.location?.file).not.toContain('node_modules')
+    expect(violation?.count).toBe(1)
     eff.dispose()
   })
 
@@ -76,7 +88,7 @@ describe('installDevGuardrails', () => {
     })
     await settle()
 
-    expect(collected.find(item => item.code === VOBS_C210)?.message).toContain('未命名信号')
+    expect(collected.find(item => item.error.code === VOBS_C210)?.error.message).toContain('未命名信号')
     eff.dispose()
   })
 
@@ -105,23 +117,23 @@ describe('installDevGuardrails', () => {
     expect(isDevGuardrailsInstalled()).toBe(true)
   })
 
-  it('同一位置只记一条，之后只累加计数', async () => {
+  it('同一位置只留一条 error 对象，只累加计数', async () => {
     start()
     const count = state(0, 'count')
 
-    // 顶到上限前每次运行都会自写一次，位置相同 → 应合并成一条
     const eff = effect(() => {
       const current = count.value
       if (current < 3) count.value = current + 1
     })
     await settle()
 
-    const matched = collected.filter(item => item.code === VOBS_C210)
+    const matched = collected.filter(item => item.error.code === VOBS_C210)
     expect(matched.length).toBeGreaterThan(1) // 每次命中都回调
-    expect(new Set(matched.map(item => item.site)).size).toBe(1) // 但只有一个位置
+    expect(new Set(matched.map(locationKey)).size).toBe(1) // 但只有一个位置
     expect(matched.at(-1)?.count).toBe(3) // 最后一次回调的计数是累计值
-    // 回调拿到的是快照：早先那几条不该被后续命中改写
-    expect(matched[0]?.count).toBe(1)
+    expect(matched[0]?.count).toBe(1) // 早先那几条是快照，不该被改写
+    // 合并时复用同一个 error 实例，调用方按引用去重即可
+    expect(matched[0]?.error).toBe(matched.at(-1)?.error)
     eff.dispose()
   })
 
@@ -150,16 +162,17 @@ describe('installDevGuardrails', () => {
     await settle()
     await settle()
 
-    const storm = collected.find(item => item.code === VOBS_C211)
+    const storm = collected.find(item => item.error.code === VOBS_C211)
     expect(storm).toBeDefined()
-    expect(storm?.severity).toBe('error')
-    expect(storm?.message).toContain('连跑')
-    expect(collected.some(item => item.code === VOBS_C210)).toBe(false)
+    expect(storm?.error.layer).toBe('constraint')
+    expect(storm?.error.message).toContain('连跑')
+    expect(storm?.error.fix).toContain('untrack')
+    expect(collected.some(item => item.error.code === VOBS_C210)).toBe(false)
     first.dispose()
     second.dispose()
   })
 
-  it('console: false 时不打 console，默认会打', async () => {
+  it('console: false 时不打 console，默认用 formatVobsError 打', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     start({ console: false })
@@ -174,7 +187,7 @@ describe('installDevGuardrails', () => {
 
     uninstall?.()
     collected.length = 0
-    uninstall = installDevGuardrails({ onDiagnostic: d => collected.push(d) })
+    uninstall = installDevGuardrails({ onViolation: v => collected.push({ error: v.error, count: v.count }) })
     const loud = state(0, 'loud')
     const eff2 = effect(() => {
       const value = loud.value
@@ -182,7 +195,10 @@ describe('installDevGuardrails', () => {
     })
     await settle()
     expect(spy).toHaveBeenCalled()
-    expect(String(spy.mock.calls[0]?.[0])).toContain(VOBS_C210)
+    // 复用框架的格式化器（开发环境布局：Code / Location / Fix）
+    const printed = String(spy.mock.calls[0]?.[0])
+    expect(printed).toContain(VOBS_C210)
+    expect(printed).toContain('Fix:')
     eff2.dispose()
     spy.mockRestore()
   })
@@ -202,7 +218,7 @@ describe('installDevGuardrails', () => {
     })
     await settle()
 
-    expect(new Set(collected.map(item => item.site)).size).toBeLessThanOrEqual(1)
+    expect(new Set(collected.map(locationKey)).size).toBeLessThanOrEqual(1)
     eff1.dispose()
     eff2.dispose()
   })
