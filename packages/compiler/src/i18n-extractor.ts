@@ -12,7 +12,21 @@ export interface I18nExtractor {
   reset(): void
 }
 
-/** Collects statically addressable translation keys without changing emitted code. */
+/**
+ * Collects statically addressable translation keys without changing emitted code.
+ *
+ * ## 已知限制（刻意的取舍，不是待办）
+ *
+ * 匹配只看**被调用者的名字**：`t('x')`、`i18n.t('x')`、`this.t('x')` 都收，
+ * 因此 `obj.t('x')`（名字恰好叫 t 的普通方法）与**被参数/局部变量遮蔽**的 `t` 也会被收进来。
+ *
+ * 为什么不做作用域分析把它排除掉：对一个词条收集器，两种错的代价**极不对称** ——
+ * 多收只是多几条用不到的词条（无副作用），漏收则意味着界面上真的没有翻译。
+ * 而任何近似的遮蔽分析都必然误判一部分（比如 `const { t } = useI18n()` 之后再调 `t(...)`），
+ * 那是往"漏收"的方向错。所以这里选择多收，并把限制写在这里而不是留给使用者踩。
+ *
+ * 要收紧的话，`options.functions` 可以指定精确的函数名（默认 `['t']`）。
+ */
 export function createI18nExtractor(options: I18nExtractorOptions = {}): I18nExtractor {
   const names = new Set(options.functions ?? ['t'])
   const keys = new Set<string>()

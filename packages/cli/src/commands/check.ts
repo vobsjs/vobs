@@ -9,6 +9,19 @@
  * `@vobs/runtime/error` 的 `VobsError`，因此能直接喂给开发台面板或 AI。
  *
  * 规则的高精度是刻意的：宁可少报，也不要误报 —— 误报会让 AI 去改本来正确的代码。
+ *
+ * ## 已知限制
+ *
+ * 三条规则都是**启发式**的（靠名字与形状判断），所以会撞到合法代码：
+ *
+ * - `VOBS_C210`：把「同一个 `X.value` 的读写」当作信号自订阅。**分不清信号与恰好叫 `value`
+ *   的普通字段** —— `entry.value = x`（DTO / ref / 配置对象）会被误报。收窄成「只认裸标识符」
+ *   会连 `props.name.value` 这种真信号一起放过，所以保持现状 + 提供行内抑制。
+ * - `VOBS_C232` / `VOBS_C118`：前者看的是「列表表达式是否写在分支里」，后者看「组件体里
+ *   是否把信号读取存进了局部变量」。都只看形状，不做类型推断。
+ *
+ * 撞上误报时的正规做法是**行内抑制**（`// vobs-check-ignore-next-line`），
+ * 而不是关掉整条规则或改写本来正确的代码。
  */
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
