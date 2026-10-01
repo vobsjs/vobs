@@ -267,7 +267,8 @@ export function ThemeBoundary(props: ThemeBoundaryProps = {}): VobsNode {
   const root = createElement('div') as HTMLElement
   renderEffect(() => {
     applyThemeVariables(root, local.theme.value)
-    root.dataset.vobsMode = local.resolvedMode.value
+    // 同上：SSR 元素没有 dataset，安静跳过（客户端水合时再标）
+    if (root.dataset) root.dataset.vobsMode = local.resolvedMode.value
   })
   const child = typeof props.children === 'function' ? props.children() : props.children
   if (child) insertBefore(root, child, null)
@@ -352,6 +353,15 @@ function parseDehydratedState(snapshot: unknown): ThemeDehydratedState {
 }
 
 function applyThemeVariables(root: HTMLElement, theme: ThemeTokens): void {
+  /*
+   * SSR 的元素是**纯数据对象**（ssr/src/renderer.ts:105 的 createElementNode：只有
+   * attrs/props/children，没有 style 也没有 dataset）。原来这里无条件写 root.style，
+   * 于是 renderToString 直接抛 `Cannot read properties of undefined (reading 'setProperty')`
+   * —— SSR + 主题边界整个不可用，而且一个用例都没有。
+   *
+   * 服务端本来也不该写内联变量（该由 <style>/class 交给客户端水合），所以安静跳过。
+   */
+  if (!root.style) return
   const next = flattenTheme(theme)
   const previous = appliedVariables.get(root) ?? new Set<string>()
   for (const [key, value] of Object.entries(next)) {
