@@ -47,6 +47,8 @@ export function MessageHost(props: MessageHostProps = {}): VobsNode {
   const root = createElement('ol')
   const position = readPosition(props)
   setAttribute(root, 'class', `vui-message-host vui-message-host--${position}`)
+  // 注：这个组件不走 ./utils 的 props 约定（它直接读 props），所以覆盖路径要单独设计，
+  // 本次先保持原样，免得引入一个读不到 prop 的实现。见 todo。
   setAttribute(root, 'aria-label', 'Messages')
   setAttribute(root, 'role', 'region')
 
