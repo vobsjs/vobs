@@ -470,6 +470,107 @@ function createDOMRenderer() {
 function invokeRuntimeDebug(name, ...args) {
   return;
 }
+const PROPERTY_NAMES = /* @__PURE__ */ new Set([
+  // 表单状态
+  "value",
+  "checked",
+  "selected",
+  "disabled",
+  "multiple",
+  "readOnly",
+  "required",
+  "defaultValue",
+  "defaultChecked",
+  "indeterminate",
+  // 常见布尔 / 数字 property
+  "autofocus",
+  "hidden",
+  "tabIndex",
+  "colSpan",
+  "rowSpan",
+  "open",
+  // 只能走 property 的（attribute 路径会静默无效）
+  "innerHTML",
+  "innerText",
+  "textContent",
+  // 媒体
+  "muted",
+  "volume",
+  "currentTime",
+  "playbackRate"
+]);
+const ATTRIBUTE_ALIASES = {
+  className: "class",
+  htmlFor: "for",
+  autoComplete: "autocomplete",
+  spellCheck: "spellcheck"
+};
+const SVG_KEBAB_ATTRIBUTES = /* @__PURE__ */ new Set([
+  // stroke
+  "strokeWidth",
+  "strokeLinecap",
+  "strokeLinejoin",
+  "strokeDasharray",
+  "strokeDashoffset",
+  "strokeMiterlimit",
+  "strokeOpacity",
+  // fill
+  "fillOpacity",
+  "fillRule",
+  // clip（注意 clipPathUnits 是结构属性，不在这里）
+  "clipPath",
+  "clipRule",
+  // 文本对齐
+  "textAnchor",
+  "dominantBaseline",
+  "alignmentBaseline",
+  "baselineShift",
+  // 字体
+  "fontFamily",
+  "fontSize",
+  "fontSizeAdjust",
+  "fontStretch",
+  "fontStyle",
+  "fontVariant",
+  "fontWeight",
+  "letterSpacing",
+  "wordSpacing",
+  // marker 的表现属性（markerWidth / markerHeight / markerUnits 是结构属性，不在这里）
+  "markerStart",
+  "markerMid",
+  "markerEnd",
+  // 颜色
+  "colorInterpolation",
+  "colorInterpolationFilters",
+  "colorProfile",
+  "colorRendering",
+  "floodColor",
+  "floodOpacity",
+  "lightingColor",
+  "stopColor",
+  "stopOpacity",
+  "glyphOrientationHorizontal",
+  "glyphOrientationVertical",
+  // 渲染与合成
+  "imageRendering",
+  "paintOrder",
+  "pointerEvents",
+  "shapeRendering",
+  "textDecoration",
+  "textRendering",
+  "transformOrigin",
+  "vectorEffect",
+  "writingMode"
+]);
+function isPropertyName(name) {
+  return PROPERTY_NAMES.has(name);
+}
+function domAttributeName(name) {
+  const alias = ATTRIBUTE_ALIASES[name];
+  if (alias !== void 0) return alias;
+  if (SVG_KEBAB_ATTRIBUTES.has(name)) return name.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
+  return name;
+}
 const globalTarget = globalThis;
 const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: /* @__PURE__ */ new Map(), states: /* @__PURE__ */ new Map() };
 globalTarget.__VOBS_HMR__ = hmrGlobal;
@@ -660,26 +761,9 @@ function setStaticProps(node, props) {
   for (const [key, value] of Object.entries(props)) {
     if (key === "key" || key === "ref" || key.startsWith("on")) continue;
     if (value === null || value === void 0) continue;
-    if (isPropertyKey(key)) setProperty(node, key, value);
+    if (isPropertyName(key)) setProperty(node, key, value);
     else if (value === false) continue;
     else setAttribute(node, domAttributeName(key), key === "style" && isStyleObject(value) ? formatStyle(value) : String(value));
-  }
-}
-function isPropertyKey(key) {
-  return key === "value" || key === "checked" || key === "selected" || key === "disabled" || key === "multiple" || key === "readOnly" || key === "required" || key === "autofocus" || key === "hidden" || key === "tabIndex" || key === "colSpan" || key === "rowSpan";
-}
-function domAttributeName(key) {
-  switch (key) {
-    case "className":
-      return "class";
-    case "htmlFor":
-      return "for";
-    case "autoComplete":
-      return "autocomplete";
-    case "spellCheck":
-      return "spellcheck";
-    default:
-      return key;
   }
 }
 function isStyleObject(value) {

@@ -1,5 +1,7 @@
 import ts from 'typescript'
 import { VobsError } from '@vobs/runtime/error'
+import { domAttributeName, isPropertyName } from '@vobs/runtime/dom-props'
+import { resolveEventName } from './dom-events'
 import type {
   CompilerContext,
   CompilerOptions,
@@ -209,6 +211,53 @@ function reportUnsupportedTag(state: CompileState, tagName: ts.JsxTagNameExpress
     location: { file: state.filename, line, column },
     codeFrame,
     fix: `把 <${label}> 改为 <Component /> 形式的组件或小写 DOM 标签；Fragment 请使用 <Fragment> 或 <>...</>。`
+  })
+}
+
+/**
+ * `on*` 属性名的诊断。
+ *
+ * 只在**不可能是对**的情况下报 error；能工作与自定义事件都只报警告 ——
+ * 目的不是拦人，而是把「绑到不存在的事件上、回调永不触发且毫无声音」这件事说出来。
+ */
+function reportEventName(state: CompileState, attribute: ts.JsxAttribute, name: string): void {
+  const resolved = resolveEventName(name)
+  if (resolved === undefined) return
+  const sourceFile = attribute.getSourceFile() ?? state.sourceFile
+  if (!sourceFile) return
+
+  const { eventName, camelCase, known } = resolved
+  let severity: CompilerDiagnostic['severity']
+  let message: string
+  let fix: string
+
+  if (!camelCase && !known) {
+    // once → "ce"：既不符合驼峰约定，又不是任何已知事件 —— 一定是写错了属性名
+    severity = 'error'
+    message = `"${name}" 被当成事件处理器，绑到的事件名是 "${eventName}"：既不符合 on + 大写字母的约定，也不是已知的 DOM 事件。回调永远不会触发，而且不会有任何报错。`
+    fix = `事件处理器写成 on + 大写字母开头（如 onClick / onDoubleClick）；若这本来不是事件处理器，请换个属性名，或在 effect 里用 addEventListener 显式绑定。`
+  } else if (!camelCase) {
+    // onclick → "click"：能工作，但不是约定写法
+    severity = 'warning'
+    message = `"${name}" 能工作（绑到 "${eventName}"），但事件属性按约定要写成 on + 大写字母开头。小写形式只是碰巧对得上，换个名字就会静默失效（"once" 会绑到 "ce"）。`
+    fix = `改成 on${name.slice(2, 3).toUpperCase()}${name.slice(3)}。`
+  } else if (!known) {
+    // onFoo → "foo"：可能是自定义事件，也可能是拼错
+    severity = 'warning'
+    message = `"${name}" 绑到的事件名 "${eventName}" 不是已知的 DOM 事件。若是自定义事件（dispatchEvent）可以忽略；若是拼写错误，回调不会触发且不会有任何报错。`
+    fix = `确认事件名拼写，或确认 "${eventName}" 确实由你的代码 dispatchEvent 出来。`
+  } else {
+    return
+  }
+
+  const { line, column, codeFrame } = buildCodeFrame(sourceFile, attribute.getStart(sourceFile), attribute.getWidth(sourceFile))
+  state.diagnostics.push({
+    code: 'VOBS_C102',
+    severity,
+    message,
+    location: { file: state.filename, line, column },
+    codeFrame,
+    fix
   })
 }
 
@@ -983,7 +1032,7 @@ function isStaticElement(
     if (!ts.isJsxAttribute(attribute)) return false
     const name = attribute.name.getText()
     if (name === 'key' || name === 'ref' || name.startsWith('on')) return false
-    if (isPropertyAttribute(name)) return false
+    if (isPropertyName(name)) return false
     const initializer = attribute.initializer
     if (initializer && !ts.isStringLiteral(initializer)) return false
   }
@@ -1108,9 +1157,16 @@ function appendAttributes(
     const initializer = attribute.initializer
 
     if (name.startsWith('on') && initializer && ts.isJsxExpression(initializer) && initializer.expression) {
+      const resolved = resolveEventName(name)
+      if (resolved === undefined) {
+        // 只有 "on" 本身：既不是事件属性也不是有意义的名字
+        reportEventName(state, attribute, name)
+        continue
+      }
+      reportEventName(state, attribute, name)
       statements.push(callStatement(state, 'addEventListener', [
         element,
-        ts.factory.createStringLiteral(name.slice(2).toLowerCase()),
+        ts.factory.createStringLiteral(resolved.eventName),
         initializer.expression
       ], attribute))
       continue
@@ -1118,25 +1174,25 @@ function appendAttributes(
 
     if (!initializer) {
       if (hasSpread) {
-        statements.push(callStatement(state, isPropertyAttribute(name) ? 'setProperty' : 'setAttribute', [element, ts.factory.createStringLiteral(isPropertyAttribute(name) ? name : domAttributeName(name)), isPropertyAttribute(name) ? ts.factory.createTrue() : ts.factory.createStringLiteral('')], attribute))
+        statements.push(callStatement(state, isPropertyName(name) ? 'setProperty' : 'setAttribute', [element, ts.factory.createStringLiteral(isPropertyName(name) ? name : domAttributeName(name)), isPropertyName(name) ? ts.factory.createTrue() : ts.factory.createStringLiteral('')], attribute))
         continue
       }
-      if (isPropertyAttribute(name)) staticProps.push(createStaticProperty(name, ts.factory.createTrue()))
+      if (isPropertyName(name)) staticProps.push(createStaticProperty(name, ts.factory.createTrue()))
       else staticProps.push(createStaticProperty(domAttributeName(name), ts.factory.createStringLiteral('')))
       continue
     }
     if (ts.isStringLiteral(initializer)) {
       if (hasSpread) {
-        statements.push(callStatement(state, isPropertyAttribute(name) ? 'setProperty' : 'setAttribute', [element, ts.factory.createStringLiteral(isPropertyAttribute(name) ? name : domAttributeName(name)), ts.factory.createStringLiteral(initializer.text)], attribute))
+        statements.push(callStatement(state, isPropertyName(name) ? 'setProperty' : 'setAttribute', [element, ts.factory.createStringLiteral(isPropertyName(name) ? name : domAttributeName(name)), ts.factory.createStringLiteral(initializer.text)], attribute))
         continue
       }
-      staticProps.push(createStaticProperty(isPropertyAttribute(name) ? name : domAttributeName(name),
+      staticProps.push(createStaticProperty(isPropertyName(name) ? name : domAttributeName(name),
         ts.factory.createStringLiteral(initializer.text)))
       continue
     }
 
     const attributeName = domAttributeName(name)
-    const propertyAttribute = isPropertyAttribute(name)
+    const propertyAttribute = isPropertyName(name)
     if (ts.isJsxExpression(initializer) && initializer.expression) {
       statements.push(callStatement(state, propertyAttribute ? 'bindProperty' : 'bindAttribute', [
         element,
@@ -1155,26 +1211,6 @@ function createStaticProperty(name: string, value: ts.Expression): ts.PropertyAs
   return ts.factory.createPropertyAssignment(ts.factory.createStringLiteral(name), value)
 }
 
-function isPropertyAttribute(name: string): boolean {
-  return name === 'value' || name === 'checked' || name === 'selected' || name === 'disabled'
-    || name === 'multiple' || name === 'readOnly' || name === 'required'
-    || name === 'autofocus' || name === 'hidden' || name === 'tabIndex'
-    || name === 'colSpan' || name === 'rowSpan'
-}
-
-/**
- * camelCase JSX 属性名 → DOM 键（attribute 路径）：className 之外的常见别名。
- * property 路径（isPropertyAttribute）不经此映射——colSpan/rowSpan 的 JS 属性名本就是驼峰。
- */
-function domAttributeName(name: string): string {
-  switch (name) {
-    case 'className': return 'class'
-    case 'htmlFor': return 'for'
-    case 'autoComplete': return 'autocomplete'
-    case 'spellCheck': return 'spellcheck'
-    default: return name
-  }
-}
 
 function appendChildren(
   state: CompileState,

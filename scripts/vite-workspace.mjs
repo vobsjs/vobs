@@ -46,6 +46,7 @@ export function workspaceAliases() {
     '@vobs/dsh/vite': path.resolve(root, 'packages/dsh/src/vite.ts'),
     '@vobs/reactivity/state': path.resolve(root, 'packages/reactivity/src/signal.ts'),
     '@vobs/runtime/error': path.resolve(root, 'packages/runtime/src/error.ts'),
+    '@vobs/runtime/dom-props': path.resolve(root, 'packages/runtime/src/dom-props.ts'),
     '@vobs/vobs/jsx-runtime': path.resolve(root, 'packages/vobs/src/jsx-runtime.ts'),
     '@vobs/vobs/jsx-dev-runtime': path.resolve(root, 'packages/vobs/src/jsx-dev-runtime.ts'),
     // 子路径必须显式列出：别名是「精确匹配或 pattern + '/' 前缀匹配」，只写 @vobs/vobs

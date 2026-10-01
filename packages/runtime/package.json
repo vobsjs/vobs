@@ -32,6 +32,12 @@
       "require": "./dist/error.cjs",
       "default": "./dist/error.js"
     },
+    "./dom-props": {
+      "types": "./dist/dom-props.d.ts",
+      "import": "./dist/dom-props.js",
+      "require": "./dist/dom-props.cjs",
+      "default": "./dist/dom-props.js"
+    },
     "./source": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"

@@ -2,6 +2,7 @@
 
 import { createOwner, getCurrentOwner, setOwnerDebugName, untrack, type Owner } from '@vobs/reactivity'
 import { isVobsFragment, type VobsNode } from './fragment'
+import { domAttributeName, isPropertyName } from './dom-props'
 import { describeDebugNode, getRuntimeDebugHooks, invokeRuntimeDebug, readDebugValue } from './debug'
 import {
   associateHmrInstance,
@@ -242,7 +243,7 @@ export function spreadProps(node: Element, props: Record<string, unknown>): void
     if (key.startsWith('on') && typeof value === 'function') addEventListener(node, key.slice(2).toLowerCase(), value as EventListener)
     // property 键的 false 有语义（如 disabled={false} 必须清除），不能跳过；
     // attribute 键的 false 表示“不设置”，与 HTML 语义一致。
-    else if (isPropertyKey(key)) setProperty(node, key, value)
+    else if (isPropertyName(key)) setProperty(node, key, value)
     else if (value === false) continue
     else setAttribute(node, domAttributeName(key), key === 'style' && isStyleObject(value) ? formatStyle(value) : String(value))
   }
@@ -253,29 +254,12 @@ export function setStaticProps(node: Element, props: Record<string, unknown>): v
   for (const [key, value] of Object.entries(props)) {
     if (key === 'key' || key === 'ref' || key.startsWith('on')) continue
     if (value === null || value === undefined) continue
-    if (isPropertyKey(key)) setProperty(node, key, value)
+    if (isPropertyName(key)) setProperty(node, key, value)
     else if (value === false) continue
     else setAttribute(node, domAttributeName(key), key === 'style' && isStyleObject(value) ? formatStyle(value) : String(value))
   }
 }
 
-function isPropertyKey(key: string): boolean {
-  return key === 'value' || key === 'checked' || key === 'selected' || key === 'disabled'
-    || key === 'multiple' || key === 'readOnly' || key === 'required'
-    || key === 'autofocus' || key === 'hidden' || key === 'tabIndex'
-    || key === 'colSpan' || key === 'rowSpan'
-}
-
-/** camelCase JSX 属性名 → HTML attribute 名（与 compiler 的 domAttributeName 保持一致） */
-function domAttributeName(key: string): string {
-  switch (key) {
-    case 'className': return 'class'
-    case 'htmlFor': return 'for'
-    case 'autoComplete': return 'autocomplete'
-    case 'spellCheck': return 'spellcheck'
-    default: return key
-  }
-}
 
 function isStyleObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)

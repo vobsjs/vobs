@@ -694,6 +694,59 @@ export const width = st(50, 'doc.width')
     expect(() => compile(`const el = <svg:rect width="1" />`)).toThrow(VobsError)
   })
 
+  /*
+   * 事件名。原来的实现是无条件 `name.slice(2).toLowerCase()`：
+   * onDoubleClick 绑到不存在的 "doubleclick"、once 绑到 "ce"，
+   * 两者都静默失效 —— 回调永不触发且没有任何报错。
+   */
+  it('onDoubleClick 编译成 dblclick（DOM 里没有 doubleclick 这个事件）', () => {
+    const result = compileWithSourceMap(`const el = <div onDoubleClick={fn}>x</div>`)
+
+    expect(result.code).toContain('"dblclick"')
+    expect(result.code).not.toContain('doubleclick')
+    expect(result.diagnostics.filter(item => item.code === 'VOBS_C102')).toEqual([])
+  })
+
+  it('onDblClick 同样归一到 dblclick', () => {
+    expect(compileWithSourceMap(`const el = <div onDblClick={fn}>x</div>`).code).toContain('"dblclick"')
+  })
+
+  it('once 这种「on + 非大写」且不是已知事件的属性报 VOBS_C102 错误', () => {
+    const result = compileWithSourceMap(`const el = <div once={fn}>x</div>`, { filename: 'src/Once.tsx' })
+    const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C102')
+
+    expect(diagnostic).toBeDefined()
+    expect(diagnostic?.severity).toBe('error')
+    expect(diagnostic?.message).toContain('"ce"')
+    expect(diagnostic?.location).toMatchObject({ file: 'src/Once.tsx', line: 1 })
+    expect(diagnostic?.codeFrame).toContain('once')
+    expect(diagnostic?.fix).toContain('大写')
+    expect(() => compile(`const el = <div once={fn}>x</div>`)).toThrow(VobsError)
+  })
+
+  it('onclick 能工作但给出警告（小写只是碰巧对得上）', () => {
+    const result = compileWithSourceMap(`const el = <div onclick={fn}>x</div>`)
+    const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C102')
+
+    expect(result.code).toContain('"click"')
+    expect(diagnostic?.severity).toBe('warning')
+    expect(diagnostic?.fix).toContain('onClick')
+  })
+
+  it('未知事件名给警告而不是错误（自定义事件必须继续可用）', () => {
+    const result = compileWithSourceMap(`const el = <div onFoo={fn}>x</div>`)
+    const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C102')
+
+    expect(result.code).toContain('"foo"')
+    expect(diagnostic?.severity).toBe('warning')
+    expect(diagnostic?.message).toContain('自定义事件')
+  })
+
+  it('常规事件属性不产生任何诊断', () => {
+    const result = compileWithSourceMap(`const el = <input onClick={a} onKeyDown={b} onPointerEnter={c} />`)
+    expect(result.diagnostics.filter(item => item.code === 'VOBS_C102')).toEqual([])
+  })
+
   it('小写成员表达式标签同样不被放行', () => {
     const result = compileWithSourceMap(`const el = <foo.bar />`)
     expect(result.diagnostics.find(item => item.code === 'VOBS_C101')).toBeDefined()
