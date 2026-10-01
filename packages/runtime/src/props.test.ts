@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { createDOMRenderer, setRenderer } from '@vobs/vobs'
-import { setProperty, setStaticProps, spreadProps } from './index'
+import { state } from '@vobs/reactivity'
+import { bindAttribute, bindProperty, setProperty, setStaticProps, spreadProps } from './index'
 
 setRenderer(createDOMRenderer())
 
@@ -81,5 +82,64 @@ describe('static and spread prop application', () => {
     const node = document.createElement('div') as HTMLDivElement
     setStaticProps(node, { title: false } as Record<string, unknown>)
     expect(node.hasAttribute('title')).toBe(false)
+  })
+})
+
+/*
+ * null / undefined 不该被 String() 成字面量写进 DOM。
+ *
+ * bindText 早就把 null/undefined 当 ''，静态路径 setStaticProps 也跳过它们，
+ * 只有响应式的 bindAttribute / bindProperty 漏了 —— 于是 placeholder={undefined}
+ * 会写进 "undefined"，input.value = undefined 也会被 DOM 强转成字符串。
+ */
+describe('绑定 null / undefined', () => {
+  // vobs 的更新是微任务批处理：写完要让它跑一轮，断言才成立
+  const flush = async () => { await Promise.resolve(); await Promise.resolve() }
+
+  it('bindAttribute 不把 undefined 写成字面量', async () => {
+    const input = document.createElement('input')
+    const source = state<unknown>('提示')
+    bindAttribute(input, 'placeholder', source)
+    await flush()
+    expect(input.getAttribute('placeholder')).toBe('提示')
+
+    source.value = undefined
+    await flush()
+    expect(input.getAttribute('placeholder')).not.toBe('undefined')
+
+    source.value = 'ok'
+    await flush()
+    expect(input.getAttribute('placeholder')).toBe('ok')
+  })
+
+  it('bindProperty 不把 undefined 写成字面量，但 false 必须透传', async () => {
+    const input = document.createElement('input')
+    const source = state<unknown>('a')
+    bindProperty(input, 'value', source)
+    await flush()
+    expect(input.value).toBe('a')
+
+    source.value = undefined
+    await flush()
+    expect(input.value).not.toBe('undefined')
+
+    const disabled = state<unknown>(true)
+    bindProperty(input, 'disabled', disabled)
+    await flush()
+    expect(input.disabled).toBe(true)
+    disabled.value = false
+    await flush()
+    expect(input.disabled).toBe(false)
+  })
+
+  it('null 同样被挡住', async () => {
+    const div = document.createElement('div')
+    const source = state<unknown>('x')
+    bindAttribute(div, 'title', source)
+    await flush()
+    expect(div.getAttribute('title')).toBe('x')
+    source.value = null
+    await flush()
+    expect(div.getAttribute('title')).not.toBe('null')
   })
 })
