@@ -461,7 +461,14 @@ function resolvePage<Row>(props: KitDataTableProps<Row>): { rows: readonly Row[]
   const supplied = resource?.data.value ?? readProp<readonly Row[]>(props, 'rows', [])
   const source = normalizeRows(supplied)
   const query = currentQuery(props)
-  const rows = applyFiltersAndSort(source.rows, visibleColumns(props), query, readProp(props, 'sortingMode', 'client'))
+  /*
+   * 筛选与排序按**全部列**走，与"列是否可见"无关。
+   *
+   * 原来这里传的是 `visibleColumns(props)`：把某个可筛选列隐藏掉，它的筛选条件就静默不再生效
+   * —— 数据悄悄变了（实测把被筛选的那列隐藏后行数从 2 变回 3），而查询条件里明明还在。
+   * 可见性是显示层的事，不该改变数据语义。
+   */
+  const rows = applyFiltersAndSort(source.rows, allColumns(props), query, readProp(props, 'sortingMode', 'client'))
   const remoteTotal = source.total ?? readProp<number | undefined>(props, 'total', undefined)
   const total = remoteTotal ?? rows.length
   const isRemotePage = source.total !== undefined || readProp(props, 'total', undefined) !== undefined
@@ -624,6 +631,11 @@ function emitQuery<Row>(props: KitDataTableProps<Row>, query: DataTableQuery): v
 
 function currentSort<Row>(props: KitDataTableProps<Row>): DataTableSort | null {
   return currentQuery(props).sort
+}
+
+/** 全部列（含 `visible: false` 与不在 visibleColumnIds 里的）：筛选/排序按数据语义走，不看可见性。 */
+function allColumns<Row>(props: KitDataTableProps<Row>): readonly DataTableColumn<Row>[] {
+  return readProp<readonly DataTableColumn<Row>[]>(props, 'columns', [])
 }
 
 function visibleColumns<Row>(props: KitDataTableProps<Row>): readonly DataTableColumn<Row>[] {
