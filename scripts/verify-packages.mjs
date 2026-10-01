@@ -1,3 +1,4 @@
+import { PUBLISHED_PACKAGES } from './packages.mjs'
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -7,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 const execFile = promisify(execFileCallback)
 const root = fileURLToPath(new URL('..', import.meta.url))
-const packageNames = ['reactivity', 'runtime', 'dom', 'vobs', 'compiler', 'icon-core', 'notification', 'auth', 'i18n', 'layout', 'resource', 'theme', 'ui', 'kit', 'router', 'forms', 'table', 'captcha', 'devtools', 'devtools-ui', 'dict', 'http', 'jwt-auth', 'logger', 'preferences', 'queue', 'ssr', 'storage', 'sync', 'tailwind', 'test-utils', 'transition', 'upload', 'vite-plugin', 'cli', 'payment', 'dsh']
+const packageNames = PUBLISHED_PACKAGES
 const packageManager = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 

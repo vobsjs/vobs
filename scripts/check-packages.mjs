@@ -1,3 +1,4 @@
+import { PUBLISHED_PACKAGES, findPackageScriptDrift } from './packages.mjs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -5,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const packageNames = process.argv.slice(2).filter(argument => !argument.startsWith('-'))
 // This checks local build artifacts for every public package.
-const packages = packageNames.length > 0 ? packageNames : ['reactivity', 'runtime', 'dom', 'vobs', 'compiler', 'icon-core', 'notification', 'auth', 'i18n', 'layout', 'resource', 'theme', 'ui', 'kit', 'router', 'forms', 'table', 'captcha', 'devtools', 'devtools-ui', 'dict', 'http', 'jwt-auth', 'logger', 'preferences', 'queue', 'ssr', 'storage', 'sync', 'tailwind', 'test-utils', 'transition', 'upload', 'vite-plugin', 'cli', 'payment', 'dsh']
+const packages = packageNames.length > 0 ? packageNames : PUBLISHED_PACKAGES
 
 for (const name of packages) {
   const directory = path.join(root, 'packages', name)
@@ -34,3 +35,17 @@ for (const name of packages) {
   }
   console.log(`[check] ${manifest.name} exports are present`)
 }
+
+/*
+ * package.json 里 pack/publish 三条 `pnpm --filter` 链与可发布清单保持一致。
+ *
+ * 这三条链**故意保留**（重写发布命令的风险大于收益：出错就是真发 npm），
+ * 但重复必须是「被检查的重复」—— 加包时漏改一处，结果就是某个包没被构建或没被发布，
+ * 而且不会有任何提示。这里把它变成显式失败。
+ */
+const rootManifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+const drift = findPackageScriptDrift(rootManifest)
+if (drift.length > 0) {
+  throw new Error(`package.json 的打包/发布脚本与可发布清单不一致：\n  ${drift.join('\n  ')}`)
+}
+console.log(`[check] 打包与发布脚本与 ${PUBLISHED_PACKAGES.length} 个可发布包一致`)

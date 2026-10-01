@@ -1,3 +1,4 @@
+import { PUBLISHED_PACKAGES } from './packages.mjs'
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
@@ -6,7 +7,7 @@ import { build } from 'tsup'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 // Keep this list aligned with the public package release allowlist.
-const corePackages = ['reactivity', 'runtime', 'dom', 'vobs', 'compiler', 'icon-core', 'notification', 'auth', 'i18n', 'layout', 'resource', 'theme', 'ui', 'kit', 'router', 'forms', 'table', 'captcha', 'devtools', 'devtools-ui', 'dict', 'http', 'jwt-auth', 'logger', 'preferences', 'queue', 'ssr', 'storage', 'sync', 'tailwind', 'test-utils', 'transition', 'upload', 'vite-plugin', 'cli', 'payment', 'dsh']
+const corePackages = PUBLISHED_PACKAGES
 const requested = process.argv.slice(2).filter(argument => !argument.startsWith('-'))
 const packageNames = requested.length > 0 ? requested : corePackages
 

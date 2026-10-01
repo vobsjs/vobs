@@ -1,45 +1,8 @@
+import { PUBLISHED_PACKAGES } from './packages.mjs'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-const publishablePackages = [
-  'reactivity',
-  'runtime',
-  'dom',
-  'vobs',
-  'compiler',
-  'icon-core',
-  'notification',
-  'auth',
-  'i18n',
-  'layout',
-  'resource',
-  'theme',
-  'ui',
-  'kit',
-  'router',
-  'forms',
-  'table',
-  'captcha',
-  'devtools',
-  'devtools-ui',
-  'dict',
-  'http',
-  'jwt-auth',
-  'logger',
-  'preferences',
-  'queue',
-  'ssr',
-  'storage',
-  'sync',
-  'tailwind',
-  'test-utils',
-  'transition',
-  'upload',
-  'vite-plugin',
-  'cli',
-  'payment',
-  'dsh',
-]
+const publishablePackages = PUBLISHED_PACKAGES
 
 const tag = process.argv.slice(2).find((argument) => argument !== '--') ?? process.env.GITHUB_REF_NAME ?? ''
 if (!tag.startsWith('v') || tag.length < 2) {
