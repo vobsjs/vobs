@@ -1,4 +1,4 @@
-import { effect } from '@vobs/reactivity'
+import { effect, state } from '@vobs/reactivity'
 import { useAuth, type AuthContext } from '@vobs/auth'
 import { useI18n, type I18nContext } from '@vobs/i18n'
 import { useRouter } from '@vobs/router'
@@ -36,7 +36,21 @@ export function KitResourcePage<Row = Record<string, unknown>>(
     setAttribute(root, 'data-vobs-route', router.currentRoute.value.fullPath)
     setAttribute(root, 'data-vobs-theme', theme.resolvedMode.value)
   })
-  insertDynamic(root, null, () => isAllowed(props, auth)
+  /*
+   * 判定结论用**普通 signal** 承载，只在结论变化时写入。
+   *
+   * 原来工厂直接调 `isAllowed(props, auth)`（它读 `auth.session.value`）—— 于是 token 刷新这种
+   * 权限完全没变的日常操作也会把 KitPage + KitDataTable 整个重建（实测表格从第 2 页弹回第 1 页）。
+   *
+   * 我先试过 `memo` 挡，**实测无效**：探针证明 vobs 的 memo 是"标脏即传播"（memo.ts:93-97），
+   * 重算在取值时惰性发生且**不做值比较**，所以"派生布尔值相等就不通知"在这套语义下不成立。
+   * signal 相反：写入 `Object.is` 相等的值**不通知**（同一探针验证过）。所以用 signal。
+   *
+   * （memo 那条是框架级行为，要改得动它的传播模型 —— 已记入待办，不在本次范围。）
+   */
+  const allowed = state(isAllowed(props, auth))
+  effect(() => { allowed.value = isAllowed(props, auth) })
+  insertDynamic(root, null, () => allowed.value
     ? createAuthorizedPage(props, i18n)
     : resolveSlot(readProp(props, 'unauthorized', undefined)) ?? createText(translate(i18n, 'auth.unauthorized', 'Unauthorized')))
   return root
