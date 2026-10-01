@@ -419,11 +419,36 @@ export function createHTTPClient(options: HTTPClientOptions = {}): HTTPClient {
     }
 
     const adapterConfig: RequestConfig = { ...config, signal: controller.signal }
+    /*
+     * 取消与超时必须是**硬保证**，不能只把 signal 交给适配器就算了。
+     *
+     * `HTTPAdapter` 是公开扩展点，完全可能不读 `config.signal`；原来这里直接
+     * `await requestAdapter(...)`，于是 abort 只是"建议"：已 abort 的请求照样发出并返回 200，
+     * `timeout: 10` 也要等适配器自己收敛才走到超时判定（实测 74ms 才成功）。适配器永不结算时
+     * 更糟：promise 永久 pending（并发闸被占死、去重同 key 永挂）。
+     *
+     * 所以让 abort 与适配器赛跑 —— 请求 promise 必定收敛。
+     */
+    let rejectOnAbort: ((reason: unknown) => void) | undefined
+    const aborted = new Promise<never>((_, reject) => { rejectOnAbort = reject })
+    // 空 catch：没人接时不该变成 unhandledRejection（这个坑前面修过）
+    aborted.catch(() => {})
+    const abortError = (): Error => {
+      const reason = controller.signal.reason
+      if (reason instanceof Error) return reason
+      const error = new Error('Vobs HTTP: 请求已取消')
+      error.name = 'AbortError'
+      return error
+    }
+    const onAbort = (): void => { rejectOnAbort?.(abortError()) }
+    if (controller.signal.aborted) onAbort()
+    else controller.signal.addEventListener('abort', onAbort, { once: true })
+
     let attempt = 0
     try {
       while (true) {
         try {
-          const result = await requestAdapter(adapterConfig)
+          const result = await Promise.race([requestAdapter(adapterConfig), aborted])
           const response = isHTTPResponse(result)
             ? result
             : await parseResponse(result, adapterConfig)
@@ -462,6 +487,7 @@ export function createHTTPClient(options: HTTPClientOptions = {}): HTTPClient {
         }
       }
     } finally {
+      controller.signal.removeEventListener('abort', onAbort)
       if (timeoutId !== undefined) clearTimeout(timeoutId)
       inputSignal?.removeEventListener('abort', abortFromInput)
     }
