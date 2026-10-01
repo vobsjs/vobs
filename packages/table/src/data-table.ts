@@ -240,6 +240,17 @@ function createRow<Row>(
     setAttribute(tableRow, 'data-clickable', 'true')
     // 事件时再取当前行：行节点会被复用，闭包里那份可能是旧的
     addEventListener(tableRow, 'click', () => onRowClick(getRow(), index))
+    /*
+     * 键盘激活。行有 `tabIndex=0`、也带了 `data-clickable`，但原来只绑了 click ——
+     * 键盘用户能 Tab 到行上、按回车/空格却什么都不会发生。
+     */
+    addEventListener(tableRow, 'keydown', event => {
+      const keyboardEvent = event as KeyboardEvent
+      if (keyboardEvent.key !== 'Enter' && keyboardEvent.key !== ' ') return
+      // 空格默认会滚动页面，必须挡掉
+      keyboardEvent.preventDefault?.()
+      onRowClick(getRow(), index)
+    })
   }
   for (const column of columns) {
     const cell = createElement('td')
