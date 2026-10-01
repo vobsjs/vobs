@@ -468,6 +468,21 @@ export function createRouter(options: RouterOptions): Router {
     }
   }
 
+/**
+ * 给公开导航 API 返回的 promise 挂一个**内部**空 catch。
+ *
+ * 为什么需要：被抢占的导航会以 `NavigationCancelledError` 拒绝（这是锁在测试里的契约），
+ * 而最常见的调用写法是 `void router.push(...)`（playground 里到处是）—— 于是每次快速点击
+ * 都会刷出一条 unhandledRejection，而它表达的只是"这次被后一次导航顶掉了"。
+ *
+ * 为什么不是"改成 resolve(false)"：那会改掉公开契约（测试显式断言 rejects），风险更大。
+ * 挂空 catch 只影响"没人接"这个场景：返回的仍是**同一个** promise 的派生链，
+ * `await push()` 依然会抛，调用方行为完全不变。
+ */
+function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
+  pending.catch(() => { /* 调用方不关心"被顶掉"时不该被判 unhandledRejection */ })
+  return pending
+}
   async function navigate(
     to: RouteTarget,
     replaceHistory: boolean,
@@ -475,21 +490,26 @@ export function createRouter(options: RouterOptions): Router {
     historyState?: unknown
   ): Promise<RouteLocation | false> {
     ensureActive()
-    const id = ++navigationId
     const from = currentRoute.value
     let target = resolve(to)
     // popstate 回读的 state 保存在 history 条目上，不在目标描述里，这里回填。
     if (fromHistory && historyState !== undefined) target = { ...target, state: historyState }
+    /*
+     * 同一个地址：直接返回，**不 ++navigationId**。
+     *
+     * 原来这句排在 `++navigationId` 之后，于是 `push(当前地址)` 会白白把 id 推进一格，
+     * 把正在飞的导航当成"被抢占"杀掉（`ensureNavigationIsCurrent` 就是靠 id 比较判断抢占）。
+     * 顺带也不再改 navigationState —— 原来会把它置成 idle，可能覆盖另一个在飞导航的 loading。
+     */
+    if (target.fullPath === from.fullPath && !fromHistory) return from
+
+    const id = ++navigationId
     const source: NavigationTrace['source'] = fromHistory ? 'history' : replaceHistory ? 'replace' : 'push'
     const startedAt = now()
     const initialTarget = target.fullPath
     let terminalRecorded = false
     navigationState = { status: 'loading', from: from.fullPath, to: target.fullPath, traceId: id }
     emitRouter('navigation:start', navigationState)
-    if (target.fullPath === from.fullPath && !fromHistory) {
-      navigationState = { status: 'idle', from: from.fullPath, to: target.fullPath }
-      return from
-    }
 
     try {
       for (let redirectCount = 0; ; redirectCount++) {
@@ -562,6 +582,14 @@ export function createRouter(options: RouterOptions): Router {
       if (reason instanceof NavigationCancelledError) {
         recordNavigation({ id, from: from.fullPath, to: target.fullPath, status: 'cancelled', source, startedAt, endedAt: now(), duration: now() - startedAt })
         terminalRecorded = true
+        /*
+         * 这里继续 `throw reason` —— 被抢占会以 NavigationCancelledError 拒绝，**这是锁在
+         * 测试里的契约**（index.test.ts:258 / :298 显式断言 rejects），不能改成返回 false。
+         *
+         * 但"公开 API 的 promise 没人接就被判 unhandledRejection"是真问题：playground 里
+         * 到处是 `void router.push(...)`。解决方式是**不改契约**，而在公开边界挂一个内部
+         * no-op catch（见 push/replace）—— 调用方 await 仍然拿得到拒绝，不 await 也不再刷屏。
+         */
       } else if (!terminalRecorded) {
         const error = toError(reason)
         reportError('navigation', error, target.fullPath)
@@ -724,11 +752,11 @@ export function createRouter(options: RouterOptions): Router {
     resolve,
 
     push(to: RouteTarget): Promise<RouteLocation | false> {
-      return navigate(to, false, false)
+      return guardUnhandled(navigate(to, false, false))
     },
 
     replace(to: RouteTarget): Promise<RouteLocation | false> {
-      return navigate(to, true, false)
+      return guardUnhandled(navigate(to, true, false))
     },
 
     back(): void {

@@ -779,3 +779,58 @@ describe('守卫生命周期', () => {
     router.destroy()
   })
 })
+/*
+ * 抢占（被后一次导航顶掉）的两个坑。
+ *
+ * 1) 公开 API 的 promise 没人接时不该被判 unhandledRejection —— 最常见的写法就是
+ *    `void router.push(...)`（playground 里到处是），而"被顶掉"根本不是错误。
+ *    契约本身（await 时收到 NavigationCancelledError）保持不变。
+ * 2) `push(当前地址)` 不该误杀正在飞的导航 —— 原来 `++navigationId` 排在同址判断之前，
+ *    于是推进 id 把在飞导航当成"被抢占"杀掉。
+ */
+describe('导航抢占', () => {
+  const routes = [
+    { path: '/', name: 'home', component: () => createText('home') },
+    { path: '/b', name: 'b', component: () => createText('b') },
+    { path: '/c', name: 'c', component: () => createText('c') }
+  ]
+  const tick = (ms = 5) => new Promise(resolve => setTimeout(resolve, ms))
+
+  it('void push 被抢占不产生 unhandledRejection，而 await 仍拿到 NavigationCancelledError', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => { unhandled.push(reason) }
+    process.on('unhandledRejection', onUnhandled)
+
+    let first = true
+    router.beforeEach(async () => { if (first) { first = false; await tick(20) } })
+
+    const superseded = router.push({ name: 'b' })      // 会被抢占
+    await tick(5)
+    await router.push({ name: 'c' }).catch(() => {})    // 抢占者
+    await tick(40)
+
+    // 契约：await 的调用方仍然收到拒绝
+    await expect(superseded).rejects.toThrowError(NavigationCancelledError)
+    expect(unhandled).toEqual([])
+
+    process.off('unhandledRejection', onUnhandled)
+    router.destroy()
+  })
+
+  it('push(当前地址) 不会误杀在飞的导航', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    let first = true
+    router.beforeEach(async () => { if (first) { first = false; await tick(20) } })
+
+    const inFlight = router.push({ name: 'b' })
+    await tick(5)
+    // 同一个地址：应该是彻底的空操作（连 id 都不该推进）
+    await expect(router.push(router.currentRoute.value)).resolves.toBeTruthy()
+    // 在飞的那个必须正常完成
+    await expect(inFlight).resolves.toMatchObject({ fullPath: '/b' })
+    expect(router.currentRoute.value.fullPath).toBe('/b')
+
+    router.destroy()
+  })
+})
