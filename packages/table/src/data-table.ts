@@ -466,7 +466,17 @@ function resolvePage<Row>(props: KitDataTableProps<Row>): { rows: readonly Row[]
   const total = remoteTotal ?? rows.length
   const isRemotePage = source.total !== undefined || readProp(props, 'total', undefined) !== undefined
   if (isRemotePage) return { rows, total }
-  const start = (query.page - 1) * query.pageSize
+  /*
+   * 越界页要收敛到有效范围。
+   *
+   * 原来这里直接用 query.page：作者（或内部状态）给了超出范围的页码时，
+   * pageCount 算出来是 2、slice 却是空的 —— 摘要显示 "5/2"、表格显示 "No data"，
+   * 一个"假空态"。`goToPage` 那边本来就有 clamp，只有"从外面传进来的页"漏了。
+   * 只收敛**渲染**用的页号，emit 出去的 query 仍是作者给的值（不悄悄改对外契约）。
+   */
+  const pageCount = Math.max(1, Math.ceil(total / query.pageSize))
+  const safePage = Math.min(Math.max(1, query.page), pageCount)
+  const start = (safePage - 1) * query.pageSize
   return { rows: rows.slice(start, start + query.pageSize), total }
 }
 
@@ -660,9 +670,11 @@ function shouldShowFooter<Row>(props: KitDataTableProps<Row>): boolean {
 function resolvePaginationState<Row>(props: KitDataTableProps<Row>): DataTablePaginationState {
   const page = resolvePage(props)
   const query = currentQuery(props)
+  const pageCount = Math.max(1, Math.ceil(page.total / query.pageSize))
   return {
-    page: query.page,
-    pageCount: Math.max(1, Math.ceil(page.total / query.pageSize)),
+    // 与 resolvePage 的收敛保持一致：否则摘要与页码按钮会显示越界的页
+    page: Math.min(Math.max(1, query.page), pageCount),
+    pageCount,
     pageSize: query.pageSize,
     total: page.total,
     visibleCount: page.rows.length
