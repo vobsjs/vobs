@@ -571,61 +571,6 @@ function domAttributeName(name) {
   if (SVG_KEBAB_ATTRIBUTES.has(name)) return name.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
   return name;
 }
-const globalTarget = globalThis;
-const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: /* @__PURE__ */ new Map(), states: /* @__PURE__ */ new Map() };
-globalTarget.__VOBS_HMR__ = hmrGlobal;
-function resolveComponent(component, moduleId, exportName) {
-  const module2 = getModule(moduleId);
-  const existing = module2.components.get(exportName);
-  if (existing) return existing;
-  const proxy = ((props) => {
-    const current = proxy.current;
-    return current(props);
-  });
-  proxy.current = component;
-  Object.defineProperties(proxy, {
-    displayName: { configurable: true, value: component.name || exportName },
-    hmrKey: { configurable: false, value: `${moduleId}:${exportName}` }
-  });
-  module2.components.set(exportName, proxy);
-  return proxy;
-}
-function registerHmrInstance(moduleId, instance) {
-  const instances = getModule(moduleId).instances;
-  instances.add(instance);
-  return () => instances.delete(instance);
-}
-function markHmrInstanceMounted(node, parent) {
-  const instance = hmrInstances.get(node);
-  if (instance) instance.parent = parent;
-}
-function getModule(moduleId) {
-  let module2 = hmrGlobal.modules.get(moduleId);
-  if (!module2) {
-    module2 = { components: /* @__PURE__ */ new Map(), state: /* @__PURE__ */ new Map(), instances: /* @__PURE__ */ new Set() };
-    hmrGlobal.modules.set(moduleId, module2);
-  }
-  return module2;
-}
-const hmrInstances = /* @__PURE__ */ new WeakMap();
-function associateHmrInstance(node, instance) {
-  hmrInstances.set(node, instance);
-}
-let currentRenderer = null;
-const nodeOwners = /* @__PURE__ */ new WeakMap();
-const eventBindings = /* @__PURE__ */ new WeakMap();
-function setRenderer(renderer) {
-  currentRenderer = renderer;
-}
-function getRenderer() {
-  if (!currentRenderer) {
-    throw new Error("渲染器未初始化");
-  }
-  return currentRenderer;
-}
-function createText(content) {
-  return getRenderer().createText(content);
-}
 const SVG_TAGS = /* @__PURE__ */ new Set([
   "animate",
   "animateMotion",
@@ -687,8 +632,66 @@ const SVG_TAGS = /* @__PURE__ */ new Set([
   "use",
   "view"
 ]);
+function isSvgTag(tag) {
+  return SVG_TAGS.has(tag);
+}
+const globalTarget = globalThis;
+const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: /* @__PURE__ */ new Map(), states: /* @__PURE__ */ new Map() };
+globalTarget.__VOBS_HMR__ = hmrGlobal;
+function resolveComponent(component, moduleId, exportName) {
+  const module2 = getModule(moduleId);
+  const existing = module2.components.get(exportName);
+  if (existing) return existing;
+  const proxy = ((props) => {
+    const current = proxy.current;
+    return current(props);
+  });
+  proxy.current = component;
+  Object.defineProperties(proxy, {
+    displayName: { configurable: true, value: component.name || exportName },
+    hmrKey: { configurable: false, value: `${moduleId}:${exportName}` }
+  });
+  module2.components.set(exportName, proxy);
+  return proxy;
+}
+function registerHmrInstance(moduleId, instance) {
+  const instances = getModule(moduleId).instances;
+  instances.add(instance);
+  return () => instances.delete(instance);
+}
+function markHmrInstanceMounted(node, parent) {
+  const instance = hmrInstances.get(node);
+  if (instance) instance.parent = parent;
+}
+function getModule(moduleId) {
+  let module2 = hmrGlobal.modules.get(moduleId);
+  if (!module2) {
+    module2 = { components: /* @__PURE__ */ new Map(), state: /* @__PURE__ */ new Map(), instances: /* @__PURE__ */ new Set() };
+    hmrGlobal.modules.set(moduleId, module2);
+  }
+  return module2;
+}
+const hmrInstances = /* @__PURE__ */ new WeakMap();
+function associateHmrInstance(node, instance) {
+  hmrInstances.set(node, instance);
+}
+let currentRenderer = null;
+const nodeOwners = /* @__PURE__ */ new WeakMap();
+const eventBindings = /* @__PURE__ */ new WeakMap();
+function setRenderer(renderer) {
+  currentRenderer = renderer;
+}
+function getRenderer() {
+  if (!currentRenderer) {
+    throw new Error("渲染器未初始化");
+  }
+  return currentRenderer;
+}
+function createText(content) {
+  return getRenderer().createText(content);
+}
 function createElement(tag) {
-  if (SVG_TAGS.has(tag)) {
+  if (isSvgTag(tag)) {
     const renderer = getRenderer();
     if (renderer.createSvgElement) return renderer.createSvgElement(tag);
   }
@@ -2082,21 +2085,94 @@ function createSwitchableSource(initial) {
     }
   };
 }
-const _tpl0 = createTemplate('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"></path></svg>');
-const _tpl1 = createTemplate('<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l14 8-14 8z"></path></svg>');
-const _tpl2 = createTemplate('<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 4v16M15 4v16"></path></svg>');
-const _tpl3 = createTemplate('<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>');
 function ConsoleIcon() {
-  return cloneTemplate(_tpl0);
+  return (() => {
+    const _el0 = createElement("svg");
+    setStaticProps(_el0, {
+      "width": "18",
+      "height": "18",
+      "viewBox": "0 0 24 24",
+      "fill": "none",
+      "stroke": "currentColor",
+      "stroke-width": "1.8",
+      "stroke-linecap": "round"
+    });
+    insertBefore(_el0, (() => {
+      const _el1 = createElement("path");
+      setStaticProps(_el1, {
+        "d": "M4 19V9M10 19V5M16 19v-7M22 19H2"
+      });
+      return _el1;
+    })(), null);
+    return _el0;
+  })();
 }
 function PlayIcon() {
-  return cloneTemplate(_tpl1);
+  return (() => {
+    const _el2 = createElement("svg");
+    setStaticProps(_el2, {
+      "width": "12",
+      "height": "12",
+      "viewBox": "0 0 24 24",
+      "fill": "none",
+      "stroke": "currentColor",
+      "stroke-width": "2.4",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round"
+    });
+    insertBefore(_el2, (() => {
+      const _el3 = createElement("path");
+      setStaticProps(_el3, {
+        "d": "M6 4l14 8-14 8z"
+      });
+      return _el3;
+    })(), null);
+    return _el2;
+  })();
 }
 function PauseIcon() {
-  return cloneTemplate(_tpl2);
+  return (() => {
+    const _el4 = createElement("svg");
+    setStaticProps(_el4, {
+      "width": "12",
+      "height": "12",
+      "viewBox": "0 0 24 24",
+      "fill": "none",
+      "stroke": "currentColor",
+      "stroke-width": "2.4",
+      "stroke-linecap": "round"
+    });
+    insertBefore(_el4, (() => {
+      const _el5 = createElement("path");
+      setStaticProps(_el5, {
+        "d": "M9 4v16M15 4v16"
+      });
+      return _el5;
+    })(), null);
+    return _el4;
+  })();
 }
 function TrashIcon() {
-  return cloneTemplate(_tpl3);
+  return (() => {
+    const _el6 = createElement("svg");
+    setStaticProps(_el6, {
+      "width": "12",
+      "height": "12",
+      "viewBox": "0 0 24 24",
+      "fill": "none",
+      "stroke": "currentColor",
+      "stroke-width": "2",
+      "stroke-linecap": "round"
+    });
+    insertBefore(_el6, (() => {
+      const _el7 = createElement("path");
+      setStaticProps(_el7, {
+        "d": "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"
+      });
+      return _el7;
+    })(), null);
+    return _el6;
+  })();
 }
 const _tpl4 = createTemplate('<span class="vc-badge vc-badge--live">DSH 实时数据</span>');
 const _tpl5 = createTemplate('<span class="vc-badge vc-badge--demo">演示数据</span>');
@@ -2104,17 +2180,17 @@ const _tpl24 = createTemplate('<div class="vc-kpi__label">运行中会话</div>'
 const _tpl27 = createTemplate('<div class="vc-kpi__label">等待审批</div>');
 const _tpl30 = createTemplate('<div class="vc-kpi__label">会话总数</div>');
 const _tpl33 = createTemplate('<div class="vc-kpi__label">工具调用</div>');
-const _tpl37 = createTemplate('<div class="vc-card__head">最近事件 <span class="vc-card__hint">实时 · vobs 只更新变化的行</span></div>');
-const _tpl41 = createTemplate('<div class="vc-card__head">工具 Top 5 <span class="vc-card__hint">按调用次数</span></div>');
+const _tpl37 = createTemplate('<div class="vc-card__head">最近事件<span class="vc-card__hint">实时 · vobs 只更新变化的行</span></div>');
+const _tpl41 = createTemplate('<div class="vc-card__head">工具 Top 5<span class="vc-card__hint">按调用次数</span></div>');
 const _tpl48 = createTemplate('<div class="vc-empty">当前数据源没有工具级事件。</div>');
-const _tpl50 = createTemplate('<div class="vc-card__head">会话运行态 <span class="vc-card__hint">token 与耗时来自当前数据源</span></div>');
+const _tpl50 = createTemplate('<div class="vc-card__head">会话运行态<span class="vc-card__hint">token 与耗时来自当前数据源</span></div>');
 const _tpl69 = createTemplate('<div class="vc-kpi__label">总调用</div>');
 const _tpl72 = createTemplate('<div class="vc-kpi__label">失败 / 取消</div>');
 const _tpl75 = createTemplate('<div class="vc-kpi__label">中位耗时</div>');
 const _tpl78 = createTemplate('<div class="vc-kpi__label">P95 最慢</div>');
 const _tpl82 = createTemplate('<thead><tr><th>工具</th><th class="vc-num">调用</th><th class="vc-num">成功率</th><th class="vc-num">P50</th><th class="vc-num">P95</th><th class="vc-num">总耗时</th><th>趋势</th></tr></thead>');
-const _tpl94 = createTemplate('<div class="vc-card"><div class="vc-card__head">工具分析暂不可用</div><div class="vc-card__body" style="display:grid;gap:8px"><div class="vc-note">当前数据源是<strong>会话级</strong>的：它读的是 DSH 的会话目录（`sessions.list`）与运行状态 （`uiSession.sessionStatus`），里面没有逐条工具调用。 </div><div class="vc-note">工具级事件属于会话内部的历史，要采集就得对每个会话 <code>retain()</code>并跟随它的事件流 —— 而 DSH 自己刻意避免「为了列表去打开冷会话」。这一版不越这条线。 </div><div class="vc-note">接演示数据源时这一页是完整的（用于预览表格与趋势线的行为）。</div></div></div>');
-const _tpl97 = createTemplate('<div class="vc-card__head">交付物时间线 <span class="vc-card__hint">由写入 / 编辑 / 交付类工具事件推导</span></div>');
+const _tpl94 = createTemplate('<div class="vc-card"><div class="vc-card__head">工具分析暂不可用</div><div class="vc-card__body" style="display:grid;gap:8px"><div class="vc-note">当前数据源是<strong>会话级</strong>的：它读的是 DSH 的会话目录（`sessions.list`）与运行状态 （`uiSession.sessionStatus`），里面没有逐条工具调用。</div><div class="vc-note">工具级事件属于会话内部的历史，要采集就得对每个会话 <code>retain()</code> 并跟随它的事件流 —— 而 DSH 自己刻意避免「为了列表去打开冷会话」。这一版不越这条线。</div><div class="vc-note">接演示数据源时这一页是完整的（用于预览表格与趋势线的行为）。</div></div></div>');
+const _tpl97 = createTemplate('<div class="vc-card__head">交付物时间线<span class="vc-card__hint">由写入 / 编辑 / 交付类工具事件推导</span></div>');
 const _tpl103 = createTemplate("<br></br>");
 const _tpl106 = createTemplate('<div class="vc-empty" style="padding:14px">还没有产物事件。</div>');
 const TABS = [
@@ -2145,7 +2221,7 @@ function VobsConsole(props) {
           setStaticProps(_el3, {
             "class": "vc-title"
           });
-          insertBefore(_el3, createText("Vobs Console "), null);
+          insertBefore(_el3, createText("Vobs Console"), null);
           insertDynamic(_el3, null, () => props.live.value ? cloneTemplate(_tpl4) : cloneTemplate(_tpl5));
           return _el3;
         })(), null);
@@ -2202,7 +2278,7 @@ function VobsConsole(props) {
             props.store.clear();
           });
           insertBefore(_el11, createComponent(resolveComponent(TrashIcon, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/console.tsx", "TrashIcon"), {}), null);
-          insertBefore(_el11, createText("清空 "), null);
+          insertBefore(_el11, createText("清空"), null);
           return _el11;
         })(), null);
         return _el7;
@@ -2733,7 +2809,7 @@ function Tools(props) {
               });
               bindAttribute(_el87, "style", () => successStyle(stat));
               insertDynamicValue(_el87, null, () => ((stat.calls - stat.failures) / Math.max(1, stat.calls) * 100).toFixed(1));
-              insertBefore(_el87, createText("% "), null);
+              insertBefore(_el87, createText("%"), null);
               return _el87;
             })(), null);
             insertBefore(_el84, (() => {
@@ -2847,7 +2923,7 @@ function Artifacts(props) {
                 "class": "vc-artifact__meta"
               });
               insertDynamicValue(_el104, null, () => formatClock(event.time));
-              insertBefore(_el104, createText("· "), null);
+              insertBefore(_el104, createText(" · "), null);
               insertDynamicValue(_el104, null, () => event.sessionTitle);
               return _el104;
             })(), null);

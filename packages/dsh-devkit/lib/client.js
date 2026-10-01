@@ -571,61 +571,6 @@ function domAttributeName(name) {
   if (SVG_KEBAB_ATTRIBUTES.has(name)) return name.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
   return name;
 }
-const globalTarget = globalThis;
-const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: /* @__PURE__ */ new Map(), states: /* @__PURE__ */ new Map() };
-globalTarget.__VOBS_HMR__ = hmrGlobal;
-function resolveComponent(component, moduleId, exportName) {
-  const module2 = getModule(moduleId);
-  const existing = module2.components.get(exportName);
-  if (existing) return existing;
-  const proxy = ((props) => {
-    const current = proxy.current;
-    return current(props);
-  });
-  proxy.current = component;
-  Object.defineProperties(proxy, {
-    displayName: { configurable: true, value: component.name || exportName },
-    hmrKey: { configurable: false, value: `${moduleId}:${exportName}` }
-  });
-  module2.components.set(exportName, proxy);
-  return proxy;
-}
-function registerHmrInstance(moduleId, instance) {
-  const instances = getModule(moduleId).instances;
-  instances.add(instance);
-  return () => instances.delete(instance);
-}
-function markHmrInstanceMounted(node, parent) {
-  const instance = hmrInstances.get(node);
-  if (instance) instance.parent = parent;
-}
-function getModule(moduleId) {
-  let module2 = hmrGlobal.modules.get(moduleId);
-  if (!module2) {
-    module2 = { components: /* @__PURE__ */ new Map(), state: /* @__PURE__ */ new Map(), instances: /* @__PURE__ */ new Set() };
-    hmrGlobal.modules.set(moduleId, module2);
-  }
-  return module2;
-}
-const hmrInstances = /* @__PURE__ */ new WeakMap();
-function associateHmrInstance(node, instance) {
-  hmrInstances.set(node, instance);
-}
-let currentRenderer = null;
-const nodeOwners = /* @__PURE__ */ new WeakMap();
-const eventBindings = /* @__PURE__ */ new WeakMap();
-function setRenderer(renderer) {
-  currentRenderer = renderer;
-}
-function getRenderer() {
-  if (!currentRenderer) {
-    throw new Error("渲染器未初始化");
-  }
-  return currentRenderer;
-}
-function createText(content) {
-  return getRenderer().createText(content);
-}
 const SVG_TAGS = /* @__PURE__ */ new Set([
   "animate",
   "animateMotion",
@@ -687,8 +632,66 @@ const SVG_TAGS = /* @__PURE__ */ new Set([
   "use",
   "view"
 ]);
+function isSvgTag(tag) {
+  return SVG_TAGS.has(tag);
+}
+const globalTarget = globalThis;
+const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: /* @__PURE__ */ new Map(), states: /* @__PURE__ */ new Map() };
+globalTarget.__VOBS_HMR__ = hmrGlobal;
+function resolveComponent(component, moduleId, exportName) {
+  const module2 = getModule(moduleId);
+  const existing = module2.components.get(exportName);
+  if (existing) return existing;
+  const proxy = ((props) => {
+    const current = proxy.current;
+    return current(props);
+  });
+  proxy.current = component;
+  Object.defineProperties(proxy, {
+    displayName: { configurable: true, value: component.name || exportName },
+    hmrKey: { configurable: false, value: `${moduleId}:${exportName}` }
+  });
+  module2.components.set(exportName, proxy);
+  return proxy;
+}
+function registerHmrInstance(moduleId, instance) {
+  const instances = getModule(moduleId).instances;
+  instances.add(instance);
+  return () => instances.delete(instance);
+}
+function markHmrInstanceMounted(node, parent) {
+  const instance = hmrInstances.get(node);
+  if (instance) instance.parent = parent;
+}
+function getModule(moduleId) {
+  let module2 = hmrGlobal.modules.get(moduleId);
+  if (!module2) {
+    module2 = { components: /* @__PURE__ */ new Map(), state: /* @__PURE__ */ new Map(), instances: /* @__PURE__ */ new Set() };
+    hmrGlobal.modules.set(moduleId, module2);
+  }
+  return module2;
+}
+const hmrInstances = /* @__PURE__ */ new WeakMap();
+function associateHmrInstance(node, instance) {
+  hmrInstances.set(node, instance);
+}
+let currentRenderer = null;
+const nodeOwners = /* @__PURE__ */ new WeakMap();
+const eventBindings = /* @__PURE__ */ new WeakMap();
+function setRenderer(renderer) {
+  currentRenderer = renderer;
+}
+function getRenderer() {
+  if (!currentRenderer) {
+    throw new Error("渲染器未初始化");
+  }
+  return currentRenderer;
+}
+function createText(content) {
+  return getRenderer().createText(content);
+}
 function createElement(tag) {
-  if (SVG_TAGS.has(tag)) {
+  if (isSvgTag(tag)) {
     const renderer = getRenderer();
     if (renderer.createSvgElement) return renderer.createSvgElement(tag);
   }
@@ -1958,14 +1961,14 @@ function createProjectSource(ctx, options = {}) {
 const _tpl13 = createTemplate('<span class="vk-spacer"></span>');
 const _tpl17 = createTemplate('<div style="margin-top:10px"><div class="vk-label">让 AI（或你自己）跑一次，报告就会出现在这里：</div><pre class="vk-code">vobs check --write</pre></div>');
 const _tpl23 = createTemplate('<div class="vk-card"><div class="vk-card__body"><div class="vk-empty" style="padding:6px 0">检查通过，没有发现问题。</div></div></div>');
-const _tpl25 = createTemplate('<div class="vk-card"><div class="vk-card__head">开发期护栏 <span class="vk-card__hint">只报告、不中断 —— 钩子里的异常会被吞掉，这是刻意的保证：调试工具绝不改变应用行为 </span></div><div class="vk-card__body"><div class="vk-desc">用 <span class="vk-mono">vobsPlugin()</span>的应用在 dev 下会自动装上它，并把违规打到 dev server 终端与浏览器控制台。下面这两条是 vobs 里最容易写错、而且**错的时候没有声音**的写法。 </div></div></div>');
+const _tpl25 = createTemplate('<div class="vk-card"><div class="vk-card__head">开发期护栏<span class="vk-card__hint">只报告、不中断 —— 钩子里的异常会被吞掉，这是刻意的保证：调试工具绝不改变应用行为</span></div><div class="vk-card__body"><div class="vk-desc">用 <span class="vk-mono">vobsPlugin()</span> 的应用在 dev 下会自动装上它，并把违规打到 dev server 终端与浏览器控制台。下面这两条是 vobs 里最容易写错、而且**错的时候没有声音**的写法。</div></div></div>');
 const _tpl32 = createTemplate('<div class="vk-label">会出问题的写法</div>');
 const _tpl35 = createTemplate('<div class="vk-label">护栏建议</div>');
 const _tpl42 = createTemplate('<div class="vk-label" style="margin-top:14px">示例</div>');
-const _tpl52 = createTemplate('<div class="vk-card"><div class="vk-card__head">写法示例 <span class="vk-card__hint">可直接复制 · 刻意是「写法」而不是仓库文件索引，后者会随目录变动失真</span></div></div>');
-const _tpl60 = createTemplate('<div class="vk-card__head">能力状态 <span class="vk-card__hint">这一页刻意如实 —— 面板不该假装自己什么都有</span></div>');
-const _tpl66 = createTemplate('<div class="vk-card"><div class="vk-card__head">这个面板为什么是静态的</div><div class="vk-card__body"><div class="vk-desc">开发台跑在 DSH 里，你的应用跑在它自己的 dev server 里 —— <strong>两者不是同一个页面</strong>。 所以面板看不到你应用的运行时（包括运行时护栏的告警）。要显示活数据，需要把 DSH 的 Host 半侧 接上（读工作区、跑 vobs check），这一步还没做。 </div></div></div>');
-const _tpl68 = createTemplate('<div class="vk-head"><div><div class="vk-title">Vobs 开发台 <span class="vk-tag">vobs 渲染</span></div><div class="vk-sub">给「用 vobs 写代码的人」和「帮人写 vobs 代码的 AI」用的参考面板：护栏规则、API 索引、写法示例， 以及这个工具链目前的能力边界。 </div></div></div>');
+const _tpl52 = createTemplate('<div class="vk-card"><div class="vk-card__head">写法示例<span class="vk-card__hint">可直接复制 · 刻意是「写法」而不是仓库文件索引，后者会随目录变动失真</span></div></div>');
+const _tpl60 = createTemplate('<div class="vk-card__head">能力状态<span class="vk-card__hint">这一页刻意如实 —— 面板不该假装自己什么都有</span></div>');
+const _tpl66 = createTemplate('<div class="vk-card"><div class="vk-card__head">这个面板为什么是静态的</div><div class="vk-card__body"><div class="vk-desc">开发台跑在 DSH 里，你的应用跑在它自己的 dev server 里 —— <strong>两者不是同一个页面</strong>。 所以面板看不到你应用的运行时（包括运行时护栏的告警）。要显示活数据，需要把 DSH 的 Host 半侧 接上（读工作区、跑 vobs check），这一步还没做。</div></div></div>');
+const _tpl68 = createTemplate('<div class="vk-head"><div><div class="vk-title">Vobs 开发台<span class="vk-tag">vobs 渲染</span></div><div class="vk-sub">给「用 vobs 写代码的人」和「帮人写 vobs 代码的 AI」用的参考面板：护栏规则、API 索引、写法示例， 以及这个工具链目前的能力边界。</div></div></div>');
 const TABS = [
   { key: "project", label: "项目" },
   { key: "guardrails", label: "护栏" },
@@ -2080,7 +2083,7 @@ function Project(props) {
         setStaticProps(_el11, {
           "class": "vk-card__head"
         });
-        insertBefore(_el11, createText("项目检查 "), null);
+        insertBefore(_el11, createText("项目检查"), null);
         insertBefore(_el11, (() => {
           const _el12 = createElement("span");
           setStaticProps(_el12, {
@@ -2519,9 +2522,46 @@ function VobsDevKit(props) {
     return _el67;
   })();
 }
-const _tpl0 = createTemplate('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2.5"></rect><path d="M8 7V5.5A2.5 2.5 0 0 1 10.5 3h3A2.5 2.5 0 0 1 16 5.5V7"></path><path d="M3 12h18"></path></svg>');
 function DevKitIcon() {
-  return cloneTemplate(_tpl0);
+  return (() => {
+    const _el0 = createElement("svg");
+    setStaticProps(_el0, {
+      "width": "18",
+      "height": "18",
+      "viewBox": "0 0 24 24",
+      "fill": "none",
+      "stroke": "currentColor",
+      "stroke-width": "1.8",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round"
+    });
+    insertBefore(_el0, (() => {
+      const _el1 = createElement("rect");
+      setStaticProps(_el1, {
+        "x": "3",
+        "y": "7",
+        "width": "18",
+        "height": "13",
+        "rx": "2.5"
+      });
+      return _el1;
+    })(), null);
+    insertBefore(_el0, (() => {
+      const _el2 = createElement("path");
+      setStaticProps(_el2, {
+        "d": "M8 7V5.5A2.5 2.5 0 0 1 10.5 3h3A2.5 2.5 0 0 1 16 5.5V7"
+      });
+      return _el2;
+    })(), null);
+    insertBefore(_el0, (() => {
+      const _el3 = createElement("path");
+      setStaticProps(_el3, {
+        "d": "M3 12h18"
+      });
+      return _el3;
+    })(), null);
+    return _el0;
+  })();
 }
 const DEVKIT_CSS = `
 :host, .vk-root {

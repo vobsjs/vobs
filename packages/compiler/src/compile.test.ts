@@ -747,6 +747,133 @@ export const width = st(50, 'doc.width')
     expect(result.diagnostics.filter(item => item.code === 'VOBS_C102')).toEqual([])
   })
 
+  /*
+   * JSX 文本的空白规范化。
+   *
+   * 原来三处都用 `replace(/\s+/g, ' ').trimStart()`，元素之间那个**合法的空格**被删掉：
+   * <p><b>a</b> <i>b</i></p> 渲染成 "ab"，而 React / Solid 都是 "a b"。
+   * 仓库里恰好没有这种写法，所以任何测试都没覆盖到。
+   */
+  describe('JSX 文本空白', () => {
+    it('元素之间的一个空格保留（提升成模板时也在）', () => {
+      const code = compileWithSourceMap(`const el = <p><b>a</b> <i>b</i></p>`).code
+      expect(code).toContain('<p><b>a</b> <i>b</i></p>')
+    })
+
+    it('本来没有空格就还是没空格', () => {
+      const code = compileWithSourceMap(`const el = <p><b>a</b><i>b</i></p>`).code
+      expect(code).toContain('<p><b>a</b><i>b</i></p>')
+      expect(code).not.toContain('<b>a</b> <i>')
+    })
+
+    it('多个空格原样保留', () => {
+      expect(compileWithSourceMap(`const el = <p><b>a</b>   <i>b</i></p>`).code)
+        .toContain('<b>a</b>   <i>')
+    })
+
+    it('换行与缩进被吃掉（与 React 一致）', () => {
+      const code = compileWithSourceMap(`const el = <p>\n  <b>a</b>\n  <i>b</i>\n</p>`).code
+      expect(code).toContain('<p><b>a</b><i>b</i></p>')
+    })
+
+    it('表达式之间的空格成为真实文本节点', () => {
+      const code = compileWithSourceMap(`const el = <p>{x} {y}</p>`).code
+      expect(code).toContain('createText(" ")')
+    })
+
+    it('文本与表达式相邻的空格只在有换行时被吃掉', () => {
+      expect(compileWithSourceMap(`const el = <p>a {x}</p>`).code).toContain('createText("a ")')
+      expect(compileWithSourceMap(`const el = <p>{x} b</p>`).code).toContain('createText(" b")')
+      expect(compileWithSourceMap(`const el = <p>\n  {x}\n  {y}\n</p>`).code).not.toContain('createText(" ")')
+    })
+  })
+
+  /*
+   * SVG 子树不能提升成模板：模板走 HTML 解析器，`<g>`/`<rect>` 会变成
+   * HTMLUnknownElement —— 命名空间错了，整棵图形不渲染且没有报错。
+   * createElement 那条路径（ops.ts 的 isSvgTag）早就对了，唯独提升这条漏着。
+   */
+  describe('静态 SVG 不提升成模板', () => {
+    it('svg 内的静态子树走 createElement', () => {
+      const code = compileWithSourceMap(`const el = <svg width={w}><g><rect width="4" /></g></svg>`).code
+      expect(code).not.toContain('createTemplate')
+      expect(code).toContain('createElement("g")')
+      expect(code).toContain('createElement("rect")')
+    })
+
+    it('HTML 外层里嵌的 svg 同样不提升', () => {
+      const code = compileWithSourceMap(`const el = <div><svg><circle r="4" /></svg></div>`).code
+      expect(code).not.toContain('createTemplate')
+      expect(code).toContain('createElement("svg")')
+      expect(code).toContain('createElement("circle")')
+    })
+
+    it('纯 HTML 子树仍然提升（性能不受影响）', () => {
+      expect(compileWithSourceMap(`const el = <div><span>hi</span></div>`).code)
+        .toContain('createTemplate("<div><span>hi</span></div>")')
+      expect(compileWithSourceMap(`const el = <p><b>a</b></p>`).code).toContain('createTemplate')
+    })
+  })
+
+  /*
+   * 列表判定。
+   *
+   * 认不出 `.map` 时会静默退化成多态插入：功能仍然正常，但每一项每轮重建、
+   * key 与 keyed 复用全部失效，而且**没有任何提示**。这里放宽能安全支持的写法，
+   * 剩下确实做不到的（Fragment 体、多语句块体）报警告。
+   */
+  describe('列表判定', () => {
+    const listCode = (source: string) => compileWithSourceMap(source, { filename: 'a.tsx' })
+
+    it('回调体上的 as 断言不再让它漏掉列表', () => {
+      const code = listCode(`const el = <ul>{items.map(item => (<li>{item}</li>) as any)}</ul>`).code
+      // 列表本身走 insertList（对比：降级时整份 items 会交给 insertDynamicValue）
+      expect(code).toContain('insertList(')
+      expect(code).not.toMatch(/insertDynamicValue\(_el\w+, null, \(\) => items/)
+    })
+
+    it('块体里恰好一个 return 也算列表', () => {
+      const code = listCode(`const el = <ul>{items.map(item => { return <li>{item}</li> })}</ul>`).code
+      expect(code).toContain('insertList(')
+    })
+
+    it('map 带 thisArg 仍然算列表', () => {
+      const code = listCode(`const el = <ul>{items.map(item => <li>{item}</li>, this)}</ul>`).code
+      expect(code).toContain('insertList(')
+    })
+
+    it('Fragment 体退化成多态插入并报 VOBS_C103 警告', () => {
+      const result = listCode(`const el = <ul>{items.map(item => <><li>{item}</li></>)}</ul>`)
+      const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C103')
+
+      // 降级的判据是「没有 insertList」——insertDynamicValue 在正常列表里也会出现（列表项内部的文本绑定）
+      expect(result.code).not.toContain('insertList(')
+      expect(diagnostic?.severity).toBe('warning')
+      expect(diagnostic?.message).toContain('Fragment')
+      expect(diagnostic?.fix).toContain('Fragment')
+    })
+
+    it('多语句块体报 VOBS_C103 警告', () => {
+      const result = listCode(`const el = <ul>{items.map(item => { const n = item; return <li>{n}</li> })}</ul>`)
+      const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C103')
+
+      expect(diagnostic?.severity).toBe('warning')
+      expect(diagnostic?.message).toContain('多个语句')
+      expect(result.diagnostics.every(item => item.severity === 'warning')).toBe(true)
+    })
+
+    it('返回字符串的 map 不是列表，也不报警告', () => {
+      const result = listCode(`const el = <ul>{items.map(item => item.name)}</ul>`)
+      expect(result.diagnostics.filter(item => item.code === 'VOBS_C103')).toEqual([])
+    })
+
+    it('正常列表没有任何诊断', () => {
+      const result = listCode(`const el = <ul>{items.map(item => <li key={item.id}>{item.name}</li>)}</ul>`)
+      expect(result.code).toContain('insertList(')
+      expect(result.diagnostics).toEqual([])
+    })
+  })
+
   it('小写成员表达式标签同样不被放行', () => {
     const result = compileWithSourceMap(`const el = <foo.bar />`)
     expect(result.diagnostics.find(item => item.code === 'VOBS_C101')).toBeDefined()

@@ -1,6 +1,7 @@
 import ts from 'typescript'
 import { VobsError } from '@vobs/runtime/error'
 import { domAttributeName, isPropertyName } from '@vobs/runtime/dom-props'
+import { isSvgTag } from '@vobs/runtime/svg'
 import { resolveEventName } from './dom-events'
 import type {
   CompilerContext,
@@ -1027,6 +1028,15 @@ function isStaticElement(
   children: readonly ts.JsxChild[]
 ): boolean {
   if (!ts.isIdentifier(tagName) || !/^[a-z]/.test(tagName.text)) return false
+  /*
+   * SVG 子树不能提升成模板。
+   *
+   * 模板走的是 HTML 解析器（<template>.innerHTML），`<g>`、`<rect>` 解析出来是
+   * HTMLUnknownElement —— 命名空间错了，整棵图形都不渲染，而且**没有任何报错**。
+   * createElement 那条路径（ops.ts）已经按标签名走 createElementNS，唯独提升这条漏了。
+   * 任一后代是 SVG 标签就整棵不提升，递归天然覆盖这一点。
+   */
+  if (isSvgTag(tagName.text)) return false
   for (const attribute of attributes.properties) {
     if (ts.isJsxSpreadAttribute(attribute)) return false
     if (!ts.isJsxAttribute(attribute)) return false
@@ -1081,9 +1091,9 @@ function serializeStaticElement(
 
   for (const child of children) {
     if (ts.isJsxText(child)) {
-      // 与 appendChildren 的文本规范化保持一致，保证提升前后 DOM 文本逐字相同。
-      const text = child.text.replace(/\s+/g, ' ').trimStart()
-      if (text.trim()) html += escapeHtmlText(text)
+      // 与 appendChildren 共用同一套规范化（含元素之间那个合法空格），保证提升前后一致。
+      const text = transformJsxText(child.text)
+      if (text !== '') html += escapeHtmlText(text)
       continue
     }
     if (ts.isJsxElement(child)) {
@@ -1212,6 +1222,40 @@ function createStaticProperty(name: string, value: ts.Expression): ts.PropertyAs
 }
 
 
+/**
+ * JSX 文本节点的空白规范化 —— 按 Babel/React 的规则，**不是简单 trim**。
+ *
+ * 原来三处都用 `replace(/\s+/g, ' ').trimStart()`，于是
+ *   <p><b>a</b> <i>b</i></p>
+ * 里那个**合法的空格**被删掉，渲染成 "ab"，而 React / Solid 都渲染 "a b"。
+ * 静态提升路径与动态路径都这么干，所以两边的注释虽然写着「逐字相同」，
+ * 保的是一致的错语义。
+ *
+ * 正确规则：
+ *   - 不含换行的文本**原样保留**（元素之间的一个空格属于这类）
+ *   - 含换行的：逐行 trim、空行丢弃、保留下来的行之间用一个空格连接
+ * 于是缩进换行会被吃掉（与 React 一致），而单行内的空格保住。
+ */
+export function transformJsxText(raw: string): string {
+  if (!raw.includes('\n') && !raw.includes('\r')) return raw
+  const lines = raw.split(/\r\n|\n|\r/u)
+  let lastNonEmpty = 0
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/[^ \t]/u.test(lines[index])) lastNonEmpty = index
+  }
+  let result = ''
+  for (let index = 0; index < lines.length; index += 1) {
+    let line = lines[index].replace(/\t/gu, ' ')
+    if (index !== 0) line = line.replace(/^ +/u, '')
+    if (index !== lines.length - 1) line = line.replace(/ +$/u, '')
+    if (line !== '') {
+      if (index !== lastNonEmpty) line += ' '
+      result += line
+    }
+  }
+  return result
+}
+
 function appendChildren(
   state: CompileState,
   statements: ts.Statement[],
@@ -1221,8 +1265,8 @@ function appendChildren(
 ): void {
   for (const child of children) {
     if (ts.isJsxText(child)) {
-      const text = child.text.replace(/\s+/g, ' ').trimStart()
-      if (text.trim()) {
+      const text = transformJsxText(child.text)
+      if (text !== '') {
         statements.push(callStatement(state, 'insertBefore', [
         element,
         ts.factory.createCallExpression(helperRef(state, 'createText'), undefined, [
@@ -1412,13 +1456,27 @@ function transformListExpression(
   expression: ts.Expression,
   anchor: ts.Expression
 ): ts.Expression[] | null {
-  if (!ts.isCallExpression(expression) || expression.arguments.length !== 1) return null
+  if (!ts.isCallExpression(expression) || expression.arguments.length === 0) return null
   if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'map') return null
 
   const callback = expression.arguments[0]
   if (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) return null
-  const body = unwrapExpression(callback.body)
-  if (!isJsxExpression(body) || ts.isJsxFragment(body)) return null
+
+  // 回调体：单个 JSX 表达式，或块体里恰好一个 return
+  const rawBody = ts.isBlock(callback.body) ? singleReturnExpression(callback.body) : unwrapExpression(callback.body)
+  if (rawBody === null) {
+    const reason = listDegradeReason(callback.body)
+    if (reason !== null) reportListDegrade(state, expression, reason)
+    return null
+  }
+  const body = unwrapExpression(rawBody)
+  if (!isJsxExpression(body)) {
+    return null
+  }
+  if (ts.isJsxFragment(body)) {
+    reportListDegrade(state, expression, 'fragment')
+    return null
+  }
 
   const key = findKeyExpression(body)
   const renderItem = transformListCallback(callback, transformJsxExpression(state, body))
@@ -1485,14 +1543,83 @@ function findKeyExpression(node: ts.JsxElement | ts.JsxSelfClosingElement): ts.E
   return null
 }
 
+/**
+ * 剥掉对运行时取值没有影响的包装：括号、`as` / `satisfies` 断言、非空断言。
+ *
+ * 此前只剥括号，于是 `items.map(item => (<li />) as any)` 里的 `as any`（很常见，
+ * 用来压住类型报错）会让编译器认不出列表，静默退化成多态插入 —— keyed 复用与 key 一起失效。
+ */
 function unwrapExpression(node: ts.Expression | ts.ConciseBody): ts.Expression {
-  return ts.isParenthesizedExpression(node) ? node.expression : node as ts.Expression
+  let current = node as ts.Expression
+  for (;;) {
+    if (ts.isParenthesizedExpression(current)) {
+      current = current.expression
+      continue
+    }
+    if (ts.isAsExpression(current) || ts.isSatisfiesExpression(current) || ts.isNonNullExpression(current)) {
+      current = current.expression
+      continue
+    }
+    return current
+  }
+}
+
+/** 块体里「恰好一个 return」→ 那个表达式；否则 null。 */
+function singleReturnExpression(block: ts.Block): ts.Expression | null {
+  if (block.statements.length !== 1) return null
+  const only = block.statements[0]
+  return ts.isReturnStatement(only) && only.expression !== undefined ? only.expression : null
+}
+
+/**
+ * 列表退化的原因 —— 只在「看起来该是列表、却没被识别」时返回原因，报警告用。
+ * 返回字符串/数值的 map（`items.map(i => i.name)`）本来就不是节点列表，不算退化。
+ */
+function listDegradeReason(body: ts.ConciseBody): 'fragment' | 'statements' | null {
+  if (!ts.isBlock(body)) {
+    const unwrapped = unwrapExpression(body)
+    return ts.isJsxFragment(unwrapped) ? 'fragment' : null
+  }
+  const returns = body.statements.filter(ts.isReturnStatement)
+  const returnsJsx = returns.some(item => item.expression !== undefined
+    && isJsxExpression(unwrapExpression(item.expression)))
+  if (!returnsJsx) return null
+  return ts.isJsxFragment(unwrapExpression(returns[0].expression as ts.Expression)) ? 'fragment' : 'statements'
+}
+
+/**
+ * 列表退化告警。
+ *
+ * 退化成多态插入后**功能仍然正常**，但每一项每轮重建、key 与 keyed 复用全部失效 ——
+ * 长列表性能会差一个量级，而且没有任何提示。这里把沉默去掉（只警告，不阻断编译）。
+ */
+function reportListDegrade(
+  state: CompileState,
+  call: ts.CallExpression,
+  reason: 'fragment' | 'statements'
+): void {
+  const sourceFile = call.getSourceFile() ?? state.sourceFile
+  if (!sourceFile) return
+  const message = reason === 'fragment'
+    ? '列表项是 Fragment：这个 .map 会退化成多态插入（每轮重建每一项），key 与 keyed 复用全部失效。把 Fragment 里的内容并进单个元素即可。'
+    : 'map 回调体里有多个语句：编译器只认「单个 JSX 表达式」或「恰好一个 return」，因此这个列表退化成多态插入，key 与 keyed 复用全部失效。把计算提到 map 之外，或让回调体只返回一个元素。'
+  const { line, column, codeFrame } = buildCodeFrame(sourceFile, call.getStart(sourceFile), call.getWidth(sourceFile))
+  state.diagnostics.push({
+    code: 'VOBS_C103',
+    severity: 'warning',
+    message,
+    location: { file: state.filename, line, column },
+    codeFrame,
+    fix: reason === 'fragment'
+      ? `用一个元素替代 Fragment，例如 <li>…</li> 而不是 <><li>…</li></>。`
+      : `把 map 回调改成单个 JSX 表达式（或恰好一个 return），计算搬到 map 外面。`
+  })
 }
 
 function childToComponentExpression(state: CompileState, child: ts.JsxChild): ts.Expression[] {
   if (ts.isJsxText(child)) {
-    const text = child.text.replace(/\s+/g, ' ').trim()
-    return text ? [ts.factory.createStringLiteral(text)] : []
+    const text = transformJsxText(child.text)
+    return text !== '' ? [ts.factory.createStringLiteral(text)] : []
   }
   if (ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child) || ts.isJsxFragment(child)) {
     return [transformJsxExpression(state, child)]

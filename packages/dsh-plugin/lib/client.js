@@ -571,61 +571,6 @@ function domAttributeName(name) {
   if (SVG_KEBAB_ATTRIBUTES.has(name)) return name.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
   return name;
 }
-const globalTarget = globalThis;
-const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: /* @__PURE__ */ new Map(), states: /* @__PURE__ */ new Map() };
-globalTarget.__VOBS_HMR__ = hmrGlobal;
-function resolveComponent(component, moduleId, exportName) {
-  const module2 = getModule(moduleId);
-  const existing = module2.components.get(exportName);
-  if (existing) return existing;
-  const proxy = ((props) => {
-    const current = proxy.current;
-    return current(props);
-  });
-  proxy.current = component;
-  Object.defineProperties(proxy, {
-    displayName: { configurable: true, value: component.name || exportName },
-    hmrKey: { configurable: false, value: `${moduleId}:${exportName}` }
-  });
-  module2.components.set(exportName, proxy);
-  return proxy;
-}
-function registerHmrInstance(moduleId, instance) {
-  const instances = getModule(moduleId).instances;
-  instances.add(instance);
-  return () => instances.delete(instance);
-}
-function markHmrInstanceMounted(node, parent) {
-  const instance = hmrInstances.get(node);
-  if (instance) instance.parent = parent;
-}
-function getModule(moduleId) {
-  let module2 = hmrGlobal.modules.get(moduleId);
-  if (!module2) {
-    module2 = { components: /* @__PURE__ */ new Map(), state: /* @__PURE__ */ new Map(), instances: /* @__PURE__ */ new Set() };
-    hmrGlobal.modules.set(moduleId, module2);
-  }
-  return module2;
-}
-const hmrInstances = /* @__PURE__ */ new WeakMap();
-function associateHmrInstance(node, instance) {
-  hmrInstances.set(node, instance);
-}
-let currentRenderer = null;
-const nodeOwners = /* @__PURE__ */ new WeakMap();
-const eventBindings = /* @__PURE__ */ new WeakMap();
-function setRenderer(renderer) {
-  currentRenderer = renderer;
-}
-function getRenderer() {
-  if (!currentRenderer) {
-    throw new Error("渲染器未初始化");
-  }
-  return currentRenderer;
-}
-function createText(content) {
-  return getRenderer().createText(content);
-}
 const SVG_TAGS = /* @__PURE__ */ new Set([
   "animate",
   "animateMotion",
@@ -687,8 +632,66 @@ const SVG_TAGS = /* @__PURE__ */ new Set([
   "use",
   "view"
 ]);
+function isSvgTag(tag) {
+  return SVG_TAGS.has(tag);
+}
+const globalTarget = globalThis;
+const hmrGlobal = globalTarget.__VOBS_HMR__ ?? { modules: /* @__PURE__ */ new Map(), states: /* @__PURE__ */ new Map() };
+globalTarget.__VOBS_HMR__ = hmrGlobal;
+function resolveComponent(component, moduleId, exportName) {
+  const module2 = getModule(moduleId);
+  const existing = module2.components.get(exportName);
+  if (existing) return existing;
+  const proxy = ((props) => {
+    const current = proxy.current;
+    return current(props);
+  });
+  proxy.current = component;
+  Object.defineProperties(proxy, {
+    displayName: { configurable: true, value: component.name || exportName },
+    hmrKey: { configurable: false, value: `${moduleId}:${exportName}` }
+  });
+  module2.components.set(exportName, proxy);
+  return proxy;
+}
+function registerHmrInstance(moduleId, instance) {
+  const instances = getModule(moduleId).instances;
+  instances.add(instance);
+  return () => instances.delete(instance);
+}
+function markHmrInstanceMounted(node, parent) {
+  const instance = hmrInstances.get(node);
+  if (instance) instance.parent = parent;
+}
+function getModule(moduleId) {
+  let module2 = hmrGlobal.modules.get(moduleId);
+  if (!module2) {
+    module2 = { components: /* @__PURE__ */ new Map(), state: /* @__PURE__ */ new Map(), instances: /* @__PURE__ */ new Set() };
+    hmrGlobal.modules.set(moduleId, module2);
+  }
+  return module2;
+}
+const hmrInstances = /* @__PURE__ */ new WeakMap();
+function associateHmrInstance(node, instance) {
+  hmrInstances.set(node, instance);
+}
+let currentRenderer = null;
+const nodeOwners = /* @__PURE__ */ new WeakMap();
+const eventBindings = /* @__PURE__ */ new WeakMap();
+function setRenderer(renderer) {
+  currentRenderer = renderer;
+}
+function getRenderer() {
+  if (!currentRenderer) {
+    throw new Error("渲染器未初始化");
+  }
+  return currentRenderer;
+}
+function createText(content) {
+  return getRenderer().createText(content);
+}
 function createElement(tag) {
-  if (SVG_TAGS.has(tag)) {
+  if (isSvgTag(tag)) {
     const renderer = getRenderer();
     if (renderer.createSvgElement) return renderer.createSvgElement(tag);
   }
@@ -1645,7 +1648,7 @@ function VobsPanel() {
           addEventListener(_el7, "click", () => {
             visible.value = false;
           });
-          insertBefore(_el7, createText("× "), null);
+          insertBefore(_el7, createText("×"), null);
           return _el7;
         })(), null);
         return _el2;
@@ -1725,7 +1728,7 @@ function VobsPanel() {
             addEventListener(_el21, "click", () => {
               count.value -= 1;
             });
-            insertBefore(_el21, createText("−1 "), null);
+            insertBefore(_el21, createText("−1"), null);
             return _el21;
           })(), null);
           insertBefore(_el16, (() => {
@@ -1736,7 +1739,7 @@ function VobsPanel() {
             addEventListener(_el22, "click", () => {
               count.value += 1;
             });
-            insertBefore(_el22, createText("+1 "), null);
+            insertBefore(_el22, createText("+1"), null);
             return _el22;
           })(), null);
           return _el16;
@@ -1768,7 +1771,7 @@ function VobsPanel() {
               "class": "vobs-btn"
             });
             addEventListener(_el25, "click", addTag);
-            insertBefore(_el25, createText("添加 "), null);
+            insertBefore(_el25, createText("添加"), null);
             return _el25;
           })(), null);
           return _el23;
@@ -1793,7 +1796,7 @@ function VobsPanel() {
               addEventListener(_el28, "click", () => {
                 removeTag(tag);
               });
-              insertBefore(_el28, createText("× "), null);
+              insertBefore(_el28, createText("×"), null);
               return _el28;
             })(), null);
             return _el27;
@@ -1814,7 +1817,7 @@ function VobsPanel() {
         visible.value = true;
       });
       insertBefore(_el30, cloneTemplate(_tpl31), null);
-      insertBefore(_el30, createText("vobs "), null);
+      insertBefore(_el30, createText("vobs"), null);
       return _el30;
     })());
     return _el0;
