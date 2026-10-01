@@ -14,6 +14,8 @@ interface FakeChunk {
   fileName: string
   code: string
   map?: unknown
+  imports?: readonly string[]
+  dynamicImports?: readonly string[]
 }
 
 interface FakeAsset {
@@ -211,5 +213,43 @@ describe('dshBundle', () => {
     const { context, warnings } = createPluginContext()
     ;(plugin.config as (this: unknown, c: Record<string, unknown>) => void).call(context, config)
     expect(warnings.join('\n')).toContain('outDir')
+  })
+
+  /* -------------------------------------------------- 自包含性（chunk 元数据） */
+
+  it('残留未打包的裸 import 时构建失败', () => {
+    const plugin = dshBundle() as PluginLike
+    const bundle: FakeBundle = {
+      'client.cjs': { ...chunkOf(), imports: ['@vobs/vobs'] }
+    }
+    expect(() => generate(plugin, { format: 'cjs' }, bundle)).toThrow(/不是自包含/u)
+  })
+
+  it('动态 import 残留同样失败', () => {
+    const plugin = dshBundle() as PluginLike
+    const bundle: FakeBundle = {
+      'client.cjs': { ...chunkOf(), dynamicImports: ['@vobs/dsh'] }
+    }
+    expect(() => generate(plugin, { format: 'cjs' }, bundle)).toThrow(/不是自包含/u)
+  })
+
+  it('平台模块（react）保持 external 不算残留', () => {
+    const plugin = dshBundle({ id: 'probe' }) as PluginLike
+    const bundle: FakeBundle = {
+      'client.cjs': { ...chunkOf(), imports: ['react'] }
+    }
+    expect(() => generate(plugin, { format: 'cjs' }, bundle)).not.toThrow()
+  })
+
+  /*
+   * 这条是回归：门禁一度用正则在产物**文本**上找 `from '@vobs/...'`，于是把
+   * 「作为内容展示的示例代码」也算成未打包依赖 —— 开发台面板展示了 vobs 的 import
+   * 写法，构建直接失败。改成读 chunk 元数据后，同样的文本不会再误报。
+   */
+  it('产物文本里出现 @vobs import 示例不误报（只看元数据）', () => {
+    const plugin = dshBundle({ id: 'probe' }) as PluginLike
+    const code = 'exports.default={apply(){}};const doc="import { state } from \'@vobs/vobs\'";'
+    const bundle: FakeBundle = { 'client.cjs': { ...chunkOf(code), imports: [] } }
+    expect(() => generate(plugin, { format: 'cjs' }, bundle)).not.toThrow()
   })
 })

@@ -1,0 +1,38 @@
+{
+  "name": "dsh-plugin-vobs-devkit",
+  "version": "1.7.8",
+  "description": "Vobs 开发台：在 DSH 里查阅 vobs 的 API、示例与护栏规则",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git",
+    "directory": "packages/dsh-devkit"
+  },
+  "homepage": "https://github.com/vobsjs/vobs/tree/main/packages/dsh-devkit",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-dsh-plugins.mjs dsh-devkit",
+    "verify": "node scripts/verify-devkit.mjs"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}

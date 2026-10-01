@@ -14,6 +14,10 @@ interface DshOutputChunk {
   fileName: string
   code: string
   map?: unknown
+  /** rollup 给出的静态导入的模块 id（含 external）。 */
+  imports?: readonly string[]
+  /** 动态 import() 的模块 id。 */
+  dynamicImports?: readonly string[]
 }
 
 interface DshOutputAsset {
@@ -224,6 +228,25 @@ export function dshBundle(options: DshBundleOptions = {}): Plugin {
         this.error(
           `dshBundle: DSH 的 factory 协议需要 CJS 产物，当前格式是 ${outputOptions.format}。` +
             "请设置 build.lib.formats = ['cjs']。"
+        )
+      }
+
+      /*
+       * 产物里不允许残留任何非平台模块的 import。
+       *
+       * 用 chunk 的元数据判定，**不要在产物文本上跑正则** —— `@vobs/*` 会作为示例代码、
+       * 文档字符串出现在内容里（开发台面板就展示了 vobs 的 import 写法），按文本匹配会把
+       * 「作为内容展示的 import」当成「没打包进去的依赖」，构建直接失败。
+       */
+      const platformSet = new Set(platform)
+      const foreignImports = [...new Set(
+        chunks.flatMap(item => [...(item.imports ?? []), ...(item.dynamicImports ?? [])])
+          .filter(id => !platformSet.has(id))
+      )]
+      if (foreignImports.length > 0) {
+        this.error(
+          `dshBundle: 产物不是自包含的，残留了未打包的依赖：${foreignImports.join(', ')}。` +
+            'DSH 的模块加载器解析不了裸导入 —— 检查 rollupOptions.external 是否把这些包外置了。'
         )
       }
 

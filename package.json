@@ -11,6 +11,7 @@
     "build:dsh": "node scripts/build-dsh-plugins.mjs",
     "build:dsh-plugin": "node scripts/build-dsh-plugins.mjs dsh-plugin",
     "build:dsh-console": "node scripts/build-dsh-plugins.mjs dsh-console",
+    "build:dsh-devkit": "node scripts/build-dsh-plugins.mjs dsh-devkit",
     "check:packages": "node scripts/check-packages.mjs",
     "check:release": "node scripts/check-release.mjs",
     "verify:packages": "pnpm run build:packages && pnpm run check:packages && node scripts/verify-packages.mjs",

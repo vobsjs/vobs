@@ -22,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'vite'
 import { workspaceAliases } from './vite-workspace.mjs'
 
-const DEFAULT_PACKAGES = ['dsh-plugin', 'dsh-console']
+const DEFAULT_PACKAGES = ['dsh-plugin', 'dsh-console', 'dsh-devkit']
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const requested = process.argv.slice(2).filter(argument => !argument.startsWith('-'))
@@ -120,13 +120,9 @@ for (const name of packageNames) {
     }
   })
 
-  // 适配层若被误判为需要外置，产物里会残留 bare import；这里兜一道底。
-  const client = await readFile(path.join(libDir, 'client.js'), 'utf8')
-  const leftovers = [...client.matchAll(/(?:from\s*|require\()\s*["'](@vobs\/[^"']+)["']/gu)].map(m => m[1])
-  if (leftovers.length > 0) {
-    await rm(path.join(libDir, 'client.js'), { force: true })
-    throw new Error(`${manifest.name} 的客户端产物不是自包含的，残留了未打包的依赖：${[...new Set(leftovers)].join(', ')}`)
-  }
+  // 自包含性由 dshBundle 的 generateBundle 用 chunk 元数据判定（精确）。这里曾经用
+  // 正则在产物文本上找 `from '@vobs/...'`，但那会把**作为内容展示的示例代码**也算进去 ——
+  // 开发台面板就展示了 vobs 的 import 写法，直接造成误报。
 
   const hostSize = (await stat(path.join(libDir, 'index.js'))).size
   const clientSize = (await stat(path.join(libDir, 'client.js'))).size
