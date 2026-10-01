@@ -324,13 +324,39 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
 
 /* -------------------------------------------------------------- 入口 */
 
+/**
+ * 行内抑制：`// vobs-check-ignore-next-line`。
+ *
+ * 这三条规则都是**启发式**的：它们靠名字与形状判断「这看起来像信号自订阅 / 像写在分支里的列表 /
+ * 像在组件体里读信号」，而有些合法代码恰好长成那样。检查器没有逃生口的话，用户只能关掉整条
+ * 规则（或者被 CI 挡住去做假的改写）—— 那比漏报更糟。
+ *
+ * 只支持「抑制下一行」：作用范围最小、读代码时一眼看得见，也没有整文件豁免那种一刀切。
+ * 实测就撞到过一例：`ListEntry.value` 是普通字段，但写法与信号自订阅完全相同
+ * （后来给它改了名，但用户代码里不会有这种运气）。
+ */
+const IGNORE_NEXT_LINE = /vobs-check-ignore-next-line/u
+
+/** 被行内注释抑制的行号集合（1-based，收集的是「注释的下一行」）。 */
+function suppressedLines(text: string): Set<number> {
+  const suppressed = new Set<number>()
+  const lines = text.split(/\r?\n/u)
+  for (let index = 0; index < lines.length; index++) {
+    if (IGNORE_NEXT_LINE.test(lines[index])) suppressed.add(index + 2)
+  }
+  return suppressed
+}
+
 export function analyzeSource(text: string, file: string): CheckDiagnostic[] {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const suppressed = suppressedLines(text)
   return [
     ...ruleEffectSelfSubscription(source, file),
     ...ruleListInBranch(source, file),
     ...ruleSignalCapturedInBody(source, file)
-  ].sort((a, b) => a.line - b.line || a.column - b.column)
+  ]
+    .filter(item => !suppressed.has(item.line))
+    .sort((a, b) => a.line - b.line || a.column - b.column)
 }
 
 export async function checkCommand(options: CheckOptions = {}): Promise<void> {

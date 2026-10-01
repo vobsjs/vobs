@@ -94,7 +94,7 @@ export function createCLI(): ReturnType<typeof cac> {
     })
 
   cli
-    .command('check [dir]', '静态检查源码：effect 自订阅 / 列表写进分支 / 组件体里读信号')
+    .command('check [dir]', '静态检查源码：effect 自订阅 / 列表写进分支 / 组件体里读信号（行内抑制：上一行写 // vobs-check-ignore-next-line）')
     .option('--json', '以 JSON 输出（给 AI 与工具消费）')
     .option('--write', `把结果写到 ${'.vobs/check.json'}（开发台面板读它）`)
     .option('--include-tests', '把测试文件也纳入检查（默认跳过）')

@@ -198,3 +198,41 @@ effect(() => { count.value++ })
     expect([...lines].sort((a, b) => a - b)).toEqual(lines)
   })
 })
+
+/*
+ * 行内抑制。三条规则都是启发式的（靠名字与形状判断），有些合法代码恰好长成那样 ——
+ * 检查器没有逃生口的话，用户只能关掉整条规则，那比漏报更糟。
+ */
+describe('vobs check · 行内抑制', () => {
+  const 自订阅 = (前一行: string) => `
+import { state, effect } from '@vobs/vobs'
+const count = state(0, 'count')
+effect(() => {
+${前一行}
+  count.value++
+})
+`
+
+  it('上一行的 // vobs-check-ignore-next-line 抑制下一行', () => {
+    expect(codes(analyzeSource(自订阅('  // vobs-check-ignore-next-line'), 'a.ts'))).not.toContain(VOBS_C210)
+  })
+
+  it('没有注释时照常报', () => {
+    expect(codes(analyzeSource(自订阅('  // 只是普通注释'), 'a.ts'))).toContain(VOBS_C210)
+  })
+
+  it('只抑制「下一行」，不会顺带放过别的行', () => {
+    // 第 5 行写了自订阅、第 7 行也写一个：抑制注释放在第 4 行只该影响第 5 行
+    const source = `
+import { state, effect } from '@vobs/vobs'
+const count = state(0, 'count')
+// vobs-check-ignore-next-line
+effect(() => { count.value++ })
+effect(() => { count.value++ })
+`
+    const found = analyzeSource(source, 'a.ts')
+    expect(codes(found)).toContain(VOBS_C210)
+    expect(found.filter(item => item.code === VOBS_C210).length).toBe(1)
+    expect(found.find(item => item.code === VOBS_C210)?.line).toBe(6)
+  })
+})
