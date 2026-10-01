@@ -19,107 +19,110 @@ function invokeDebug(name, ...args) {
 let currentOwner = null;
 let nextOwnerId = 1;
 const ownerNames = /* @__PURE__ */ new WeakMap();
-function createOwner() {
-  const parent = currentOwner;
-  let disposed = parent?.disposed ?? false;
-  const children = [];
-  const cleanups = [];
-  const errorHandlers = /* @__PURE__ */ new Set();
-  const owner = {
-    id: `owner-${nextOwnerId++}`,
-    parent,
-    children,
-    depth: (parent?.depth ?? -1) + 1,
-    get disposed() {
-      return disposed;
-    },
-    run(fn) {
-      if (disposed) throw new Error("Vobs: 已销毁的 Owner 不能继续运行");
-      const previous = currentOwner;
-      currentOwner = owner;
-      try {
-        return fn();
-      } finally {
-        currentOwner = previous;
-      }
-    },
-    addCleanup(cleanup) {
-      if (disposed) {
-        cleanup();
-        return;
-      }
-      cleanups.push(cleanup);
-    },
-    onDispose(cleanup) {
-      owner.addCleanup(cleanup);
-    },
-    onError(handler) {
-      errorHandlers.add(handler);
-      const remove = () => errorHandlers.delete(handler);
-      owner.addCleanup(remove);
-      return remove;
-    },
-    handleError(error) {
-      for (const handler of [...errorHandlers].reverse()) {
-        try {
-          handler(error);
-          return true;
-        } catch (handlerError) {
-          return parent?.handleError(handlerError) ?? false;
-        }
-      }
-      return parent?.handleError(error) ?? false;
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      let firstError;
-      for (const child of [...children]) {
-        try {
-          child.dispose();
-        } catch (error) {
-          firstError ?? (firstError = error);
-        }
-      }
-      children.length = 0;
-      for (let index2 = cleanups.length - 1; index2 >= 0; index2--) {
-        try {
-          cleanups[index2]();
-        } catch (error) {
-          firstError ?? (firstError = error);
-        }
-      }
-      cleanups.length = 0;
-      if (parent) {
-        const index2 = parent.children.indexOf(owner);
-        if (index2 >= 0) parent.children.splice(index2, 1);
-      }
-      if (firstError) throw firstError;
-    },
-    mark() {
-      return { cleanups: cleanups.length, children: children.length };
-    },
-    disposeSince(mark) {
-      if (disposed) return;
-      let firstError;
-      for (const child of children.slice(mark.children)) {
-        try {
-          child.dispose();
-        } catch (error) {
-          firstError ?? (firstError = error);
-        }
-      }
-      for (let index2 = cleanups.length - 1; index2 >= mark.cleanups; index2--) {
-        try {
-          cleanups[index2]();
-        } catch (error) {
-          firstError ?? (firstError = error);
-        }
-      }
-      cleanups.length = Math.min(cleanups.length, mark.cleanups);
-      if (firstError) throw firstError;
+class OwnerImpl {
+  constructor() {
+    this.children = [];
+    this.cleanups = [];
+    this.errorHandlers = /* @__PURE__ */ new Set();
+    const parent = currentOwner;
+    this.parent = parent;
+    this.depth = (parent?.depth ?? -1) + 1;
+    this.id = `owner-${nextOwnerId++}`;
+    this.disposed = parent?.disposed ?? false;
+  }
+  run(fn) {
+    if (this.disposed) throw new Error("Vobs: 已销毁的 Owner 不能继续运行");
+    const previous = currentOwner;
+    currentOwner = this;
+    try {
+      return fn();
+    } finally {
+      currentOwner = previous;
     }
-  };
+  }
+  addCleanup(cleanup) {
+    if (this.disposed) {
+      cleanup();
+      return;
+    }
+    this.cleanups.push(cleanup);
+  }
+  onDispose(cleanup) {
+    this.addCleanup(cleanup);
+  }
+  onError(handler) {
+    this.errorHandlers.add(handler);
+    const remove = () => this.errorHandlers.delete(handler);
+    this.addCleanup(remove);
+    return remove;
+  }
+  handleError(error) {
+    for (const handler of [...this.errorHandlers].reverse()) {
+      try {
+        handler(error);
+        return true;
+      } catch (handlerError) {
+        return this.parent?.handleError(handlerError) ?? false;
+      }
+    }
+    return this.parent?.handleError(error) ?? false;
+  }
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    let firstError;
+    for (const child of [...this.children]) {
+      try {
+        child.dispose();
+      } catch (error) {
+        firstError ?? (firstError = error);
+      }
+    }
+    this.children.length = 0;
+    const cleanups = this.cleanups;
+    for (let index2 = cleanups.length - 1; index2 >= 0; index2--) {
+      try {
+        cleanups[index2]();
+      } catch (error) {
+        firstError ?? (firstError = error);
+      }
+    }
+    cleanups.length = 0;
+    const parent = this.parent;
+    if (parent) {
+      const index2 = parent.children.indexOf(this);
+      if (index2 >= 0) parent.children.splice(index2, 1);
+    }
+    if (firstError) throw firstError;
+  }
+  mark() {
+    return { cleanups: this.cleanups.length, children: this.children.length };
+  }
+  disposeSince(mark) {
+    if (this.disposed) return;
+    let firstError;
+    for (const child of this.children.slice(mark.children)) {
+      try {
+        child.dispose();
+      } catch (error) {
+        firstError ?? (firstError = error);
+      }
+    }
+    const cleanups = this.cleanups;
+    for (let index2 = cleanups.length - 1; index2 >= mark.cleanups; index2--) {
+      try {
+        cleanups[index2]();
+      } catch (error) {
+        firstError ?? (firstError = error);
+      }
+    }
+    cleanups.length = Math.min(cleanups.length, mark.cleanups);
+    if (firstError) throw firstError;
+  }
+}
+function createOwner() {
+  const owner = new OwnerImpl();
+  const parent = owner.parent;
   if (parent && !parent.disposed) parent.children.push(owner);
   return owner;
 }
@@ -150,47 +153,55 @@ function trackDependency(dependency) {
   !currentSubscriber.dependencies.has(dependency);
   currentSubscriber.dependencies.add(dependency);
 }
-function state(initialValue, debugName) {
-  let value = initialValue;
-  let disposed = false;
-  let warnedAfterDispose = false;
-  const subscribers = /* @__PURE__ */ new Set();
-  const signalInstance = {
-    get value() {
-      const subscriber = getCurrentSubscriber();
-      if (subscriber && !subscriber.disposed) {
-        subscribers.add(subscriber);
-        trackDependency(signalInstance);
-      }
-      return value;
-    },
-    set value(nextValue) {
-      if (disposed) {
-        if (!warnedAfterDispose) {
-          warnedAfterDispose = true;
-          const name = getSignalDebugName(signalInstance);
-          console.warn(`[vobs] 写入已 dispose 的 state${name ? ` "${name}"` : ""}，本次写入被忽略`);
-        }
-        return;
-      }
-      if (Object.is(value, nextValue)) return;
-      value = nextValue;
-      for (const subscriber of [...subscribers]) subscriber.notify();
-    },
-    unsubscribe(subscriber) {
-      subscribers.delete(subscriber);
-    },
-    // 与 `.value =` 赋值同一条路径：判等短路、debug hook、notify 全部一致。
-    // 以闭包实现，可安全地作为回调直接传递（无 this 绑定问题）。
-    set(next) {
-      signalInstance.value = next;
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      subscribers.clear();
+class StateSignal {
+  constructor(initialValue) {
+    this.disposed = false;
+    this.warnedAfterDispose = false;
+    this.subscribers = /* @__PURE__ */ new Set();
+    this.notifySnapshot = null;
+    this.current = initialValue;
+    this.set = (next) => {
+      this.value = next;
+    };
+  }
+  get value() {
+    const subscriber = getCurrentSubscriber();
+    if (subscriber && !subscriber.disposed) {
+      this.subscribers.add(subscriber);
+      this.notifySnapshot = null;
+      trackDependency(this);
     }
-  };
+    return this.current;
+  }
+  set value(nextValue) {
+    if (this.disposed) {
+      if (!this.warnedAfterDispose) {
+        this.warnedAfterDispose = true;
+        const name = getSignalDebugName(this);
+        console.warn(`[vobs] 写入已 dispose 的 state${name ? ` "${name}"` : ""}，本次写入被忽略`);
+      }
+      return;
+    }
+    if (Object.is(this.current, nextValue)) return;
+    this.current;
+    this.current = nextValue;
+    if (this.subscribers.size === 0) return;
+    const snapshot = this.notifySnapshot ?? (this.notifySnapshot = [...this.subscribers]);
+    for (const subscriber of snapshot) subscriber.notify();
+  }
+  unsubscribe(subscriber) {
+    this.subscribers.delete(subscriber);
+    this.notifySnapshot = null;
+  }
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.subscribers.clear();
+    this.notifySnapshot = null;
+  }
+}
+function state(initialValue, debugName) {
+  const signalInstance = new StateSignal(initialValue);
   if (debugName?.trim()) setSignalDebugName(signalInstance, debugName.trim());
   return signalInstance;
 }
@@ -406,55 +417,69 @@ function effect(callback) {
   eff.run();
   return eff;
 }
-function memo(compute) {
-  let cached;
-  let dirty = true;
-  let disposed = false;
-  const subscribers = /* @__PURE__ */ new Set();
-  const memoSubscriber = {
-    dependencies: /* @__PURE__ */ new Set(),
-    get disposed() {
-      return disposed;
-    },
-    notify() {
-      if (disposed || dirty) return;
-      dirty = true;
-      for (const subscriber of [...subscribers]) subscriber.notify();
+class MemoSubscriber {
+  constructor(signal) {
+    this.signal = signal;
+    this.dependencies = /* @__PURE__ */ new Set();
+    this.disposed = false;
+  }
+  notify() {
+    if (this.disposed || this.signal.dirty) return;
+    this.signal.invalidate();
+  }
+}
+class MemoSignal {
+  constructor(compute) {
+    this.compute = compute;
+    this.dirty = true;
+    this.disposed = false;
+    this.subscribers = /* @__PURE__ */ new Set();
+    this.subscriber = new MemoSubscriber(this);
+    this.dispose = () => {
+      this.disposeNow();
+    };
+  }
+  get value() {
+    const subscriber = getCurrentSubscriber();
+    if (subscriber && !subscriber.disposed) {
+      this.subscribers.add(subscriber);
+      trackDependency(this);
     }
-  };
-  const memoSignal = {
-    get value() {
-      const subscriber = getCurrentSubscriber();
-      if (subscriber && !subscriber.disposed) {
-        subscribers.add(subscriber);
-        trackDependency(memoSignal);
-      }
-      if (dirty) {
-        cleanupDependencies(memoSubscriber);
-        const previous = getCurrentSubscriber();
-        setCurrentSubscriber(memoSubscriber);
-        try {
-          cached = compute();
-          dirty = false;
-        } finally {
-          setCurrentSubscriber(previous);
-        }
-      }
-      return cached;
-    },
-    set value(_) {
-      throw new Error("memo: 派生值不能直接赋值");
-    },
-    unsubscribe(subscriber) {
-      subscribers.delete(subscriber);
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      subscribers.clear();
+    if (this.dirty) {
+      const memoSubscriber = this.subscriber;
       cleanupDependencies(memoSubscriber);
+      const previous = getCurrentSubscriber();
+      setCurrentSubscriber(memoSubscriber);
+      try {
+        this.cached = this.compute();
+        this.dirty = false;
+      } finally {
+        setCurrentSubscriber(previous);
+      }
     }
-  };
+    return this.cached;
+  }
+  set value(_) {
+    throw new Error("memo: 派生值不能直接赋值");
+  }
+  unsubscribe(subscriber) {
+    this.subscribers.delete(subscriber);
+  }
+  /** 由 MemoSubscriber 调用：标脏并向下传播失效。 */
+  invalidate() {
+    this.dirty = true;
+    for (const subscriber of [...this.subscribers]) subscriber.notify();
+  }
+  disposeNow() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.subscriber.disposed = true;
+    this.subscribers.clear();
+    cleanupDependencies(this.subscriber);
+  }
+}
+function memo(compute) {
+  const memoSignal = new MemoSignal(compute);
   const owner = getCurrentOwner();
   owner?.addCleanup(memoSignal.dispose);
   return memoSignal;
