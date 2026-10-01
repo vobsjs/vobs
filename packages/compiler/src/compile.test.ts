@@ -1003,3 +1003,38 @@ function findSourceLine(segments: MappingSegment[], codeLines: string[], needle:
   expect(mapping).toBeDefined()
   return mapping!.srcLine
 }
+
+  /*
+   * SVG 命名空间继承。
+   *
+   * 只按标签名判定命名空间是行不通的：a / title / style / script 与 HTML 同名，
+   * 在 <svg> 里必须是 SVG 元素。光看名字会建出 HTML 锚点 —— 不渲染、也不报错
+   * （CHANGELOG 里自认的已知问题）。编译器知道祖先链，所以由它显式指定。
+   */
+  describe('SVG 命名空间继承', () => {
+    it('SVG 里的 a / title 显式走 createSvgElement', () => {
+      const a = compileWithSourceMap(`const el = <svg><a href="/x">link</a></svg>`).code
+      expect(a).toContain('createSvgElement("a")')
+      const title = compileWithSourceMap(`const el = <svg><title>t</title></svg>`).code
+      expect(title).toContain('createSvgElement("title")')
+    })
+
+    it('隔一层也继承（<svg><g><a>）', () => {
+      expect(compileWithSourceMap(`const el = <svg><g><a href="/y">n</a></g></svg>`).code)
+        .toContain('createSvgElement("a")')
+    })
+
+    it('foreignObject 把子树切回 HTML', () => {
+      const code = compileWithSourceMap(`const el = <svg><foreignObject><a href="/z">h</a></foreignObject></svg>`).code
+      expect(code).not.toContain('createSvgElement("a")')
+    })
+
+    it('普通 HTML 里的 a 不受影响', () => {
+      expect(compileWithSourceMap(`const el = <div><a href="/w">h</a></div>`).code).not.toContain('createSvgElement')
+    })
+
+    it('SVG 子树一律不做静态提升（模板用的是 HTML 解析器）', () => {
+      // <a> 本身是静态的，若提升成模板就会 clone 出 HTML 锚点
+      expect(compileWithSourceMap(`const el = <svg><a href="/x">link</a></svg>`).code).not.toContain('createTemplate')
+    })
+  })

@@ -46,6 +46,16 @@ interface CompileState {
   hmrModuleId: string | null
   /** 是否把完全静态的 DOM 子树提升为 HTML 模板（createTemplate 依赖 document，SSR/Node 构建必须关闭）。 */
   hoistTemplates: boolean
+  /**
+   * 当前正在编译的 DOM 子树是否位于 SVG 命名空间内（>0 表示是）。
+   *
+   * 标签名只能决定「SVG 专属标签」（svg/g/rect…，运行时按 SVG_TAGS 处理），但
+   * a / title / style / script 与 HTML 同名 —— 在 `<svg>` 里它们必须是 SVG 元素。
+   * 光看名字会把 `<svg><a href="…">` 建成 HTML 锚点（CHANGELOG 自认的已知问题）。
+   * 编译器知道祖先链，所以由它显式告诉运行时用哪个命名空间。
+   * `<foreignObject>` 会把它的子树切回 HTML，所以是「深度」而不是布尔。
+   */
+  svgDepth: number
 }
 
 interface SourcePosition {
@@ -136,7 +146,8 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
     localBindings: collectLocallyDeclaredNames(sourceFile),
     diagnostics: [],
     hmrModuleId: options.hmrModuleId ?? null,
-    hoistTemplates: options.hoistTemplates ?? true
+    hoistTemplates: options.hoistTemplates ?? true,
+    svgDepth: 0
   }
   const cleanFilename = filename.split(/[?#]/u, 1)[0] || filename
   const diagnostics = ts.transpileModule(code, {
@@ -809,7 +820,12 @@ function transformElement(
   // 静态模板提升：完全静态的 DOM 子树（无事件/动态绑定/spread/property 属性）序列化为
   // 模块级模板，运行时一次 cloneNode 替代 createElement + setStaticProps + 逐子插入。
   // hoistTemplates=false（SSR/Node 构建）时跳过：createTemplate 依赖 document。
-  if (state.hoistTemplates && isStaticElement(tagName, attributes, children)) {
+  //
+  // SVG 子树内一律不提升：模板串是**用 HTML 解析器**解析的，`<g>`/`<rect>` 会变成
+  // HTMLUnknownElement、`<a>`/`<title>` 会变成 HTML 元素 —— 都是静默不渲染/渲染错。
+  // （isStaticElement 只会因标签名是 SVG 专属标签而拒绝，而 a/title/style 与 HTML 同名，
+  // 名字这条线索不足以判断，所以在这里按编译器已知的命名空间整体关掉。）
+  if (state.hoistTemplates && state.svgDepth === 0 && isStaticElement(tagName, attributes, children)) {
     return ts.factory.createCallExpression(
       helperRef(state, 'cloneTemplate'),
       undefined,
@@ -819,12 +835,18 @@ function transformElement(
 
   const elementName = tagName.getText()
   const elementId = nextIdentifier(state, '_el')
+  /*
+   * 命名空间由编译器决定（见 CompileState.svgDepth 的说明）：
+   * 在 SVG 子树里、但名字不是 SVG 专属标签的（a / title / style / script），
+   * 必须显式走 SVG 创建，否则会建出 HTML 元素 —— 而且不报错。
+   */
+  const createHelper = state.svgDepth > 0 && !isSvgTag(elementName) ? 'createSvgElement' : 'createElement'
   const statements: ts.Statement[] = [
     createConstStatement(
       state,
       elementId,
       ts.factory.createCallExpression(
-        helperRef(state, 'createElement'),
+        helperRef(state, createHelper),
         undefined,
         [ts.factory.createStringLiteral(elementName)]
       ),
@@ -833,7 +855,13 @@ function transformElement(
   ]
 
   appendAttributes(state, statements, elementId, attributes)
+
+  // <svg> 的子树进入 SVG 命名空间；<foreignObject> 的子树切回 HTML；其余继承。
+  const outerSvgDepth = state.svgDepth
+  if (elementName === 'svg') state.svgDepth = outerSvgDepth + 1
+  else if (elementName === 'foreignObject') state.svgDepth = 0
   appendChildren(state, statements, elementId, children)
+  state.svgDepth = outerSvgDepth
   statements.push(tagStatement(state, ts.factory.createReturnStatement(elementId), node))
 
   return ts.factory.createCallExpression(

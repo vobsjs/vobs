@@ -61,6 +61,21 @@ export function createElement(tag: string): Element {
   return getRenderer().createElement(tag)
 }
 
+/**
+ * 在 SVG 命名空间里建元素，**不看标签名**。
+ *
+ * 给编译器用在 `<svg>` 祖先下那些与 HTML 同名的标签（a / title / style / script）——
+ * 它们不在 SVG_TAGS 里，`createElement` 会按 HTML 建。只按名字判定命名空间是行不通的：
+ * `<svg><a href="…">` 会变成 HTML 锚点，而且不报错。
+ *
+ * 渲染器没实现 createSvgElement 时按 createElement 兜底（自定义渲染器保持原行为）。
+ */
+export function createSvgElement(tag: string): Element {
+  const renderer = getRenderer()
+  if (renderer.createSvgElement) return renderer.createSvgElement(tag)
+  return renderer.createElement(tag)
+}
+
 export function createComment(content: string): Comment {
   return getRenderer().createComment(content)
 }

@@ -30,6 +30,7 @@ export {
   getRenderer,
   createText,
   createElement,
+  createSvgElement,
   createComment,
   insertBefore,
   removeChild,

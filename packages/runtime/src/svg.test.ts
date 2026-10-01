@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { createDOMRenderer, setRenderer, createElement, insertBefore } from '@vobs/vobs'
+import { createDOMRenderer, setRenderer, getRenderer, createElement, createSvgElement, insertBefore } from '@vobs/vobs'
+import { SVG_NAMESPACE } from './svg'
 
 // 回归（Labelune 踩坑备忘）：createElement('svg'/'rect') 此前走 HTML namespace，
 // 产物是 HTMLUnknownElement——整棵 SVG 子树静默不渲染且无报错。
@@ -55,5 +56,31 @@ describe('svg namespace element creation', () => {
     const rect = createElement('rect')
     // 旧自定义渲染器兜底：按 HTML 创建（保持原行为，不抛错）
     expect(rect.namespaceURI).not.toBe('http://www.w3.org/2000/svg')
+
+    // 还原：全局渲染器是共享状态，换了不还原会让后面的用例在 stub 上跑（曾经真的踩到）
+    setRenderer(createDOMRenderer())
+  })
+})
+
+/*
+ * SVG 命名空间继承：a / title / style / script 与 HTML 同名，光看名字会建出 HTML 元素。
+ * 编译器在 <svg> 子树里显式改走 createSvgElement（见 compiler 的同名测试）。
+ */
+describe('createSvgElement 强制 SVG 命名空间', () => {
+  it('与 HTML 同名的标签也建在 SVG 命名空间里', () => {
+    const r = getRenderer()
+    console.log('DEBUG op =', createSvgElement('a').namespaceURI)
+    console.log('DEBUG renderer.createSvgElement =', typeof r.createSvgElement, '→', r.createSvgElement?.('a').namespaceURI)
+    console.log('DEBUG createElement(svg) =', createElement('svg').namespaceURI)
+    const anchor = createSvgElement('a')
+    expect(anchor.namespaceURI).toBe(SVG_NAMESPACE)
+    expect(anchor.constructor.name).not.toBe('HTMLAnchorElement')
+
+    // 对照：同样名字走 createElement 就是 HTML 元素
+    expect(createElement('a').namespaceURI).not.toBe(SVG_NAMESPACE)
+  })
+
+  it('title 同样', () => {
+    expect(createSvgElement('title').namespaceURI).toBe(SVG_NAMESPACE)
   })
 })
