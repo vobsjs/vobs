@@ -265,7 +265,7 @@ export function Switch(props: SwitchProps = {}): VobsNode {
     readProp<'sm' | 'md'>(props, 'size', 'md') === 'sm' ? 'vui-switch--sm' : undefined
   ])
   bindUserStyle(root, props)
-  bindCommonAttributes(root, props, ['role'])
+  bindCommonAttributes(root, props, [])
   bindCommonAttributes(control, props, [
     'checked',
     'disabled',
@@ -275,7 +275,9 @@ export function Switch(props: SwitchProps = {}): VobsNode {
     'onChange'
   ])
   setAttribute(thumb, 'class', 'vui-switch__thumb')
-  setAttribute(root, 'role', 'switch')
+  // 与 Alert 同一个坑：原来把 `role` 放进 skip 再硬编码，作者传的 role 会被静默吞掉。
+  // role 本来就属于 bindCommonAttributes 的通用通道，这里只在作者没给时兜底。
+  if (!hasProp(props, 'role')) setAttribute(root, 'role', 'switch')
   const bind = bindSignalProp<boolean>(props)
 
   effect(() => {

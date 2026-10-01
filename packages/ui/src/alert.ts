@@ -31,9 +31,16 @@ export function Alert(props: AlertProps = {}): VobsNode {
     'vui-alert',
     `vui-alert--${readProp<AlertTone>(props, 'tone', 'info')}`
   ])
-  bindCommonAttributes(root, props, ['tone', 'title', 'description', 'icon', 'role'])
+  bindCommonAttributes(root, props, ['tone', 'title', 'description', 'icon'])
   bindUserStyle(root, props)
-  setAttribute(root, 'role', 'alert')
+  /*
+   * `role` 做兜底，而不是无条件写死。
+   *
+   * 原来 `role` 被放进上面那行的 skip 列表、又在这里硬编码成 'alert' —— 作者写
+   * `<Alert role="status">` 会被**静默吞掉**（实测拿到的是 role="alert"）。
+   * 现在作者给了就用作者的（role 本来就走 bindCommonAttributes 的通用通道），没给才退回 alert。
+   */
+  if (!hasProp(props, 'role')) setAttribute(root, 'role', 'alert')
 
   if (hasProp(props, 'icon')) {
     const icon = createElement('span')
