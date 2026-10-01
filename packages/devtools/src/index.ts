@@ -18,6 +18,7 @@ import {
   setRuntimeDebugHooks,
   type RuntimeDebugHooks,
   type RuntimeDomMutation,
+  type RuntimeDomMutationOperation,
   type RuntimeErrorEvent,
   type RuntimeHydrationMismatch
 } from '@vobs/runtime'
@@ -102,7 +103,11 @@ export interface EffectExecutionInfo {
 }
 
 export interface DomUpdateInfo {
-  readonly operation: 'text' | 'property' | 'attribute' | 'insert' | 'remove'
+  /**
+   * 直接用运行时的联合类型，不再抄一份 —— 抄的那份在 `clear` 加入后立刻漏了
+   * （加一个 DOM 操作就编译不过，是类型重复的典型代价）。
+   */
+  readonly operation: RuntimeDomMutationOperation
   readonly target: string
   readonly parent?: string
   readonly key?: string

@@ -117,9 +117,16 @@ export function removeChild(
   parent: Node,
   child: VobsNode
 ): void {
-  disposeNodeOwner(child)
+  /*
+   * **先摘 DOM，再释放 Owner。**
+   *
+   * 原来是反过来的：`disposeNodeOwner(child)` 抛错（用户 cleanup 里抛）就永远走不到
+   * 摘除那一步 —— DOM 里留着旧节点、它的 effect 却已经没了，屏幕上出现两棵树且没有提示。
+   * 顺序反过来之后，即使清理抛错，DOM 也已一致；错误照旧抛给调用方。
+   */
   if (isVobsFragment(child)) {
     child.unmount(parent)
+    disposeNodeOwner(child)
     return
   }
   getRenderer().removeChild(parent, child)
@@ -130,6 +137,7 @@ export function removeChild(
       parent: describeDebugNode(parent)
     })
   }
+  disposeNodeOwner(child)
 }
 
 export function setTextContent(
@@ -316,8 +324,42 @@ export function removeEventListener(
   eventBindings.get(node)?.delete(event)
 }
 
+/**
+ * 清空容器。
+ *
+ * 原来只调渲染器的 clear（DOM 实现就是 `textContent = ''`）—— **被清掉子树的 Owner
+ * 一个都不释放**：组件里的 effect 继续订阅信号（幽灵更新）、监听不解绑、onDispose 不跑。
+ * 现在先把子树里能找到的 Owner 释放掉，再清 DOM。
+ *
+ * 覆盖范围如实说明：`nodeOwners` 只登记**组件输出节点**（`createComponent` 时
+ * `associateNodeOwner`）。所以在组件边界上清理是完整的（组件 Owner 的销毁会级联它的
+ * effect 与子 Owner）；而在组件外直接 `bindText` 之类建立的 effect 挂在调用方当时的
+ * Owner 上、不在节点表里，这里**清不到** —— 那部分归它的 Owner 管，通常由
+ * `app.destroy()` 负责。要彻底解决需要节点表能反向枚举，代价更大，先不做。
+ *
+ * 清理抛错不影响 DOM 被清空（先释放、后清 DOM 的顺序也保证了这一点）。
+ */
 export function clear(container: Node): void {
+  let firstError: unknown
+  const walk = (node: Node): void => {
+    try {
+      disposeNodeOwner(node as unknown as VobsNode)
+    } catch (error) {
+      firstError ??= error
+    }
+    for (const child of Array.from(node.childNodes)) walk(child)
+  }
+  for (const child of Array.from(container.childNodes)) walk(child)
+
   getRenderer().clear(container)
+  if (getRuntimeDebugHooks()) {
+    invokeRuntimeDebug('domMutation', {
+      operation: 'clear',
+      target: describeDebugNode(container as unknown as VobsNode),
+      parent: describeDebugNode(container as unknown as VobsNode)
+    })
+  }
+  if (firstError) throw firstError
 }
 
 type VobsComponent = (...args: any[]) => VobsNode

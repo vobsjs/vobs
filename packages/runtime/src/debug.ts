@@ -26,7 +26,7 @@ export interface RuntimeHydrationMismatch {
   readonly message: string
 }
 
-export type RuntimeDomMutationOperation = 'text' | 'property' | 'attribute' | 'insert' | 'remove'
+export type RuntimeDomMutationOperation = 'text' | 'property' | 'attribute' | 'insert' | 'remove' | 'clear'
 
 export interface RuntimeDomMutation {
   readonly operation: RuntimeDomMutationOperation

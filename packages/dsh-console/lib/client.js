@@ -911,12 +911,13 @@ function syncSelectValue(parent) {
   }
 }
 function removeChild(parent, child) {
-  disposeNodeOwner(child);
   if (isVobsFragment(child)) {
     child.unmount(parent);
+    disposeNodeOwner(child);
     return;
   }
   getRenderer().removeChild(parent, child);
+  disposeNodeOwner(child);
 }
 function setTextContent(node, content) {
   getRenderer().setTextContent(node, content);
