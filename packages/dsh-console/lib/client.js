@@ -2531,7 +2531,7 @@ function Stream(props) {
   })();
 }
 function Tools(props) {
-  const hasTools = props.store.tools.value.length > 0;
+  const hasTools = memo(() => props.store.tools.value.length > 0);
   return (() => {
     const _el66 = createElement("div");
     setStaticProps(_el66, {
@@ -2553,7 +2553,7 @@ function Tools(props) {
           setStaticProps(_el70, {
             "class": "vc-kpi__value"
           });
-          insertDynamicValue(_el70, null, () => hasTools ? props.store.totals.value.calls : "—");
+          insertDynamicValue(_el70, null, () => hasTools.value ? props.store.totals.value.calls : "—");
           return _el70;
         })(), null);
         return _el68;
@@ -2570,7 +2570,7 @@ function Tools(props) {
             "class": "vc-kpi__value",
             "style": "color:#f7ad31"
           });
-          insertDynamicValue(_el73, null, () => hasTools ? props.store.totals.value.failures : "—");
+          insertDynamicValue(_el73, null, () => hasTools.value ? props.store.totals.value.failures : "—");
           return _el73;
         })(), null);
         return _el71;
@@ -2586,7 +2586,7 @@ function Tools(props) {
           setStaticProps(_el76, {
             "class": "vc-kpi__value"
           });
-          insertDynamicValue(_el76, null, () => hasTools ? formatDuration(props.store.totals.value.p50) : "—");
+          insertDynamicValue(_el76, null, () => hasTools.value ? formatDuration(props.store.totals.value.p50) : "—");
           return _el76;
         })(), null);
         return _el74;
@@ -2602,14 +2602,14 @@ function Tools(props) {
           setStaticProps(_el79, {
             "class": "vc-kpi__value"
           });
-          insertDynamicValue(_el79, null, () => hasTools ? formatDuration(props.store.totals.value.p95) : "—");
+          insertDynamicValue(_el79, null, () => hasTools.value ? formatDuration(props.store.totals.value.p95) : "—");
           return _el79;
         })(), null);
         return _el77;
       })(), null);
       return _el67;
     })(), null);
-    insertDynamic(_el66, null, () => hasTools ? (() => {
+    insertDynamic(_el66, null, () => hasTools.value ? (() => {
       const _el80 = createElement("div");
       setStaticProps(_el80, {
         "class": "vc-card"

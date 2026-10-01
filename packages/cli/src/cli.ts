@@ -5,6 +5,7 @@ import { buildCommand } from './commands/build.js'
 import { generateCommand } from './commands/generate.js'
 import { addCommand } from './commands/add.js'
 import { dshCommand } from './commands/dsh.js'
+import { checkCommand } from './commands/check.js'
 import { showBanner, showLogo, showDevBanner } from './banner.js'
 
 export function createCLI(): ReturnType<typeof cac> {
@@ -89,6 +90,18 @@ export function createCLI(): ReturnType<typeof cac> {
       await addCommand({
         package: pkg,
         dev: options.dev as boolean | undefined
+      })
+    })
+
+  cli
+    .command('check [dir]', '静态检查源码：effect 自订阅 / 列表写进分支 / 组件体里读信号')
+    .option('--json', '以 JSON 输出（给 AI 与工具消费）')
+    .option('--include-tests', '把测试文件也纳入检查（默认跳过）')
+    .action(async (dir: string | undefined, options: Record<string, unknown>) => {
+      await checkCommand({
+        dir,
+        json: options.json === true,
+        includeTests: options.includeTests === true
       })
     })
 

@@ -1,4 +1,4 @@
-import { state, type ReadableSignal } from '@vobs/vobs'
+import { state, memo, type ReadableSignal } from '@vobs/vobs'
 import {
   buildSparkline,
   formatClock,
@@ -277,30 +277,35 @@ function Stream(props: { store: ConsoleStore }) {
 /* -------------------------------------------------------------- 工具分析 */
 
 function Tools(props: { store: ConsoleStore }) {
-  const hasTools = props.store.tools.value.length > 0
+  /*
+   * 必须是 memo 派生，不能直接 `const hasTools = props.store.tools.value.length > 0`：
+   * 组件体只执行一次，那样会把初次挂载时的布尔值冻住 —— 先切到本页、再等工具事件到达时，
+   * KPI 会一直显示「—」（校验脚本之前没抓到，因为它先灌数据再切 tab）。
+   */
+  const hasTools = memo(() => props.store.tools.value.length > 0)
 
   return (
     <div class="vc-body">
       <div class="vc-kpis">
         <div class="vc-kpi">
           <div class="vc-kpi__label">总调用</div>
-          <div class="vc-kpi__value">{hasTools ? props.store.totals.value.calls : '—'}</div>
+          <div class="vc-kpi__value">{hasTools.value ? props.store.totals.value.calls : '—'}</div>
         </div>
         <div class="vc-kpi">
           <div class="vc-kpi__label">失败 / 取消</div>
-          <div class="vc-kpi__value" style="color:#f7ad31">{hasTools ? props.store.totals.value.failures : '—'}</div>
+          <div class="vc-kpi__value" style="color:#f7ad31">{hasTools.value ? props.store.totals.value.failures : '—'}</div>
         </div>
         <div class="vc-kpi">
           <div class="vc-kpi__label">中位耗时</div>
-          <div class="vc-kpi__value">{hasTools ? formatDuration(props.store.totals.value.p50) : '—'}</div>
+          <div class="vc-kpi__value">{hasTools.value ? formatDuration(props.store.totals.value.p50) : '—'}</div>
         </div>
         <div class="vc-kpi">
           <div class="vc-kpi__label">P95 最慢</div>
-          <div class="vc-kpi__value">{hasTools ? formatDuration(props.store.totals.value.p95) : '—'}</div>
+          <div class="vc-kpi__value">{hasTools.value ? formatDuration(props.store.totals.value.p95) : '—'}</div>
         </div>
       </div>
 
-      {hasTools ? (
+      {hasTools.value ? (
         <div class="vc-card">
           <table class="vc-table">
             <thead>
