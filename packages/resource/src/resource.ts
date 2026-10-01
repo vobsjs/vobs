@@ -626,6 +626,25 @@ function serialize(value: unknown, stack: Set<object>): string {
     }
     if (object instanceof Date) return `date:${object.toJSON()}`
     if (object instanceof RegExp) return `regexp:${object.toString()}`
+    /*
+     * 只有**普通对象**能可靠地序列化成缓存键。
+     *
+     * 下面那行按"自有可枚举键"序列化，于是 Map、Set、类实例、以及只有原型的对象
+     * （Object.create({...})）全都退化成同一个 `object:{}` —— 不同的 key 命中同一条缓存，
+     * 第二个 key 的 fetcher 一次都不会调用，却拿到别人的数据。这比崩溃隐蔽得多。
+     *
+     * 这个包本来就走严格路线（函数/symbol/循环引用直接抛），所以这里也抛：把"拿错数据"
+     * 变成一句能照着改的报错，而不是静默串数据。
+     */
+    const prototype = Object.getPrototypeOf(object)
+    if (prototype !== Object.prototype && prototype !== null) {
+      const kind = object instanceof Map ? 'Map'
+        : object instanceof Set ? 'Set'
+          : (object.constructor?.name || '类实例')
+      throw new Error(`resource: key 不能包含 ${kind} —— 只有普通对象、数组、Date、RegExp 能被可靠地`
+        + '序列化为缓存键；' + kind + ' 会退化成同一个键，让不同 key 命中同一条缓存（拿到别的数据）。'
+        + '请改成普通对象或基本类型（例如 { id: 7 }）。')
+    }
     const entries = Object.keys(object).sort().map(key => `${JSON.stringify(key)}:${serialize((object as Record<string, unknown>)[key], stack)}`)
     return `object:{${entries.join(',')}}`
   } finally {
