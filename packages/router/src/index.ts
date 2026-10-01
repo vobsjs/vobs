@@ -429,6 +429,28 @@ export function createRouter(options: RouterOptions): Router {
   const dataRequests: RouterDataRequestTrace[] = []
   const errors: RouteErrorTrace[] = []
   const dataLoaders = new Map<string, { kind: RouterDataRequestKind; route: string; task: () => unknown | PromiseLike<unknown> }>()
+  /**
+   * 每次导航的中止器：导航序号推进时（被抢占、或 destroy）立刻中止更早的导航。
+   *
+   * 解决的是「守卫/loader 永不 resolve 时 `push` 永远不 settle」：
+   * 原来导航在 `await guard(...)` 上无限期挂着 —— 抢占只是把 id 推进一格，
+   * 并不会放弃那次 await，于是那个 promise 永远悬着（navigationState 也跟着卡在 loading）。
+   *
+   * 中止走的是既有契约：以 NavigationCancelledError 拒绝，与守卫取消/被抢占一致。
+   */
+  const navigationAborts = new Map<number, () => void>()
+
+  /** 推进导航序号，并中止所有更早的导航。 */
+  function beginNavigation(): number {
+    const id = ++navigationId
+    for (const [olderId, abort] of [...navigationAborts]) {
+      if (olderId < id) {
+        navigationAborts.delete(olderId)
+        abort()
+      }
+    }
+    return id
+  }
   const dataRequestContexts = new Map<number, RuntimeDebugContext>()
   const routerListeners = new Map<RouterDevToolsEvent, Set<(payload: unknown) => void>>()
   let navigationState: NavigationState = { status: 'idle', from: currentRoute.value.fullPath, to: currentRoute.value.fullPath }
@@ -503,7 +525,16 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
      */
     if (target.fullPath === from.fullPath && !fromHistory) return from
 
-    const id = ++navigationId
+    const id = beginNavigation()
+    /*
+     * 抢占/destroy 时用来打断"正在 await 守卫或 loader"的那次等待。
+     * 挂一个空 catch：它只在被中止时拒绝，而中止一定意味着有更晚的导航在跑，
+     * 不接的话会变成 unhandledRejection（同一个坑第 2 项刚修过）。
+     */
+    let abortNavigation: ((reason: unknown) => void) | undefined
+    const aborted = new Promise<never>((_, reject) => { abortNavigation = reject })
+    aborted.catch(() => {})
+    navigationAborts.set(id, () => { abortNavigation?.(new NavigationCancelledError()) })
     const source: NavigationTrace['source'] = fromHistory ? 'history' : replaceHistory ? 'replace' : 'push'
     const startedAt = now()
     const initialTarget = target.fullPath
@@ -518,7 +549,7 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
         for (const guard of [...guards]) {
           let result: NavigationGuardResult
           try {
-            result = await guard(target, from)
+            result = await Promise.race([guard(target, from), aborted])
           } catch (reason) {
             if (reason instanceof NavigationCancelledError) throw reason
             const error = toError(reason)
@@ -543,12 +574,19 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
           if (!record.loader) continue
           // 上一 loader 期间被新导航抢占时立即取消，跳过剩余 loader。
           ensureNavigationIsCurrent(id)
-          await trackDataRequest(
-            'loader',
-            `${target.fullPath}#${record.path ?? record.name ?? 'route'}`,
-            context => record.loader!({ route: target, navigationId: id, dataRequestId: context.dataRequestId }),
-            { route: target.fullPath, navigationId: id, trigger: 'navigation' }
-          )
+          /*
+           * loader 本身没有 signal，无法真正取消；但导航**不该等它**：
+           * 被抢占时立刻收敛，迟到完成的那次由后面的 ensureNavigationIsCurrent 丢弃。
+           */
+          await Promise.race([
+            trackDataRequest(
+              'loader',
+              `${target.fullPath}#${record.path ?? record.name ?? 'route'}`,
+              context => record.loader!({ route: target, navigationId: id, dataRequestId: context.dataRequestId }),
+              { route: target.fullPath, navigationId: id, trigger: 'navigation' }
+            ),
+            aborted
+          ])
         }
 
         // loader 完成后、提交前必须重新校验：飞行期间被抢占的导航不允许覆盖 currentRoute 与 history。
@@ -597,6 +635,8 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
         terminalRecorded = true
       }
       throw reason
+    } finally {
+      navigationAborts.delete(id)
     }
   }
 
@@ -861,7 +901,9 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
     destroy(): void {
       if (destroyed) return
       destroyed = true
-      navigationId++
+      // 用 beginNavigation：destroy 也要**中止**在飞的导航（守卫/loader 挂着时能收敛），
+      // 原来只 `navigationId++`，于是那次 await 永远悬着、push 永不 settle。
+      beginNavigation()
       stopHistory()
       guards.length = 0
       routerListeners.clear()

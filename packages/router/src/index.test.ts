@@ -870,3 +870,46 @@ describe('revalidate 的作用范围', () => {
     router.destroy()
   })
 })
+/*
+ * 守卫/loader 永不 resolve 时，导航必须收敛 —— 不能永远悬着。
+ *
+ * 原来抢占只是把 navigationId 推进一格，并不会放弃那次 `await guard(...)`，
+ * 于是 push 的 promise 永远 pending（navigationState 也跟着卡在 loading），
+ * 而且 destroy 也不收（destroy 里也只是 `navigationId++`）。
+ *
+ * 现在每次导航有中止器：被抢占或 destroy 时立刻中止，并以既有的
+ * NavigationCancelledError 契约拒绝。这两个用例如果回归，会直接超时失败。
+ */
+describe('导航收敛', () => {
+  const routes = [
+    { path: '/', name: 'home', component: () => createText('home') },
+    { path: '/b', name: 'b', component: () => createText('b') },
+    { path: '/c', name: 'c', component: () => createText('c') }
+  ]
+  const tick = (ms = 10) => new Promise(resolve => setTimeout(resolve, ms))
+
+  it('守卫永不 resolve 时，被抢占会让 push 收敛而不是永远悬着', async () => {
+    const router = createRouter({ history: createMemoryHistory('/'), routes })
+    let hang = true
+    router.beforeEach(async () => { if (hang) { hang = false; await new Promise(() => {}) } })
+
+    const stuck = router.push({ name: 'b' })
+    await tick()
+    await router.push({ name: 'c' }).catch(() => {})
+
+    await expect(stuck).rejects.toThrowError(NavigationCancelledError)
+    expect(router.currentRoute.value.fullPath).toBe('/c')
+    router.destroy()
+  })
+
+  it('守卫永不 resolve 时，destroy 也会让 push 收敛', async () => {
+    const router = createRouter({ history: createMemoryHistory('/'), routes })
+    router.beforeEach(async () => { await new Promise(() => {}) })
+
+    const stuck = router.push({ name: 'b' })
+    await tick()
+    router.destroy()
+
+    await expect(stuck).rejects.toThrowError(NavigationCancelledError)
+  })
+})
