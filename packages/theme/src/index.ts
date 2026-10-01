@@ -66,7 +66,16 @@ export interface ThemeBoundaryProps {
 }
 
 export const defaultLightTheme: ThemeTokens = {
-  colorScheme: 'light',
+  /*
+   * 键就是**变量名**（flattenInto 对 -- 开头的键原样透传）。
+   *
+   * 原来写 colorScheme，展平出来是 --vobs-colorScheme —— 而全仓唯一的消费方
+   * （ui/src/styles/base.css 的 :root { color-scheme: var(--vobs-color-scheme, dark) }）
+   * 读的是连字符拼法。两种拼法从不交汇，那条规则永远走 fallback，
+   * 原生控件 / 滚动条 / body 底色因此不跟主题。改成显式变量名后与 CSS 侧一致
+   * （CSS 默认值见 ui/src/styles/tokens.css 的同名变量）。
+   */
+  '--vobs-color-scheme': 'light',
   brand: {
     primary: '#2563eb',
     secondary: '#0f766e',
@@ -98,7 +107,7 @@ export const defaultLightTheme: ThemeTokens = {
 }
 
 export const defaultDarkTheme: ThemeTokens = {
-  colorScheme: 'dark',
+  '--vobs-color-scheme': 'dark',
   brand: {
     primary: '#60a5fa',
     secondary: '#2dd4bf',
