@@ -57,15 +57,6 @@ export interface ResourceClientOptions {
   retry?: number
   retryDelay?: RetryDelay
   onError?: (error: Error, key: ResourceKey | undefined) => void
-  /**
-   * 缓存条目上限（可选，默认不限）。
-   *
-   * 缓存原来只增不减、`clear()` 是唯一出口（报告实测 4000 个 key 后堆增长约 6.7MB）。
-   * 设了上限后按**插入顺序**淘汰最旧的条目；**在飞请求不会被淘汰**（宁可暂时超限，
-   * 也不破坏活跃请求）。被淘汰条目的信号对已持有它们的消费者仍然有效，但同 key 的新
-   * handle 会拿到一个全新条目。
-   */
-  maxEntries?: number
 }
 
 export interface ResourceClient {
@@ -107,28 +98,6 @@ export function resource<T>(
 export function createResourceClient(options: ResourceClientOptions = {}): ResourceClient {
   let owner = createOwner()
   const cache = new Map<string, ResourceEntry<unknown>>()
-  /** 缓存条目上限（可选）：未设置时不淘汰，保持原行为。 */
-  const maxEntries = validateMaxEntries(options.maxEntries)
-
-  /**
-   * 写入缓存，并在超过上限时淘汰最旧的条目（插入顺序）。
-   * **在飞请求跳过** —— 宁可暂时超限，也不让活跃请求的条目消失。
-   */
-  function rememberEntry(keyId: string, entry: ResourceEntry<unknown>): void {
-    cache.set(keyId, entry)
-    if (maxEntries === undefined) return
-    while (cache.size > maxEntries) {
-      let evicted = false
-      for (const [candidateKey, candidate] of cache) {
-        if (candidate === entry) continue
-        if (candidate.inFlight) continue
-        cache.delete(candidateKey)
-        evicted = true
-        break
-      }
-      if (!evicted) break
-    }
-  }
   const entries = new Set<ResourceEntry<unknown>>()
   const defaultStaleTime = validateStaleTime(options.staleTime ?? 0)
   const defaultRetry = validateRetry(options.retry ?? 0)
@@ -220,7 +189,7 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
     let entry = keyId ? cache.get(keyId) as ResourceEntry<T> | undefined : undefined
     if (!entry) {
       entry = createEntry(staticKey, config.staleTime)
-      if (keyId) rememberEntry(keyId, entry as ResourceEntry<unknown>)
+      if (keyId) cache.set(keyId, entry as ResourceEntry<unknown>)
     }
 
     const request = (force: boolean): Promise<T> => {
@@ -322,7 +291,7 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
         let nextEntry = keyId ? cache.get(keyId) as ResourceEntry<T> | undefined : undefined
         if (!nextEntry) {
           nextEntry = createEntry(nextKey, reactiveConfig.staleTime)
-          if (keyId) rememberEntry(keyId, nextEntry as ResourceEntry<unknown>)
+          if (keyId) cache.set(keyId, nextEntry as ResourceEntry<unknown>)
         }
         if (activeEntry === nextEntry) {
           sync()
@@ -464,7 +433,7 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
         entry.loading.value = false
         entry.updatedAt = restored.updatedAt
         entry.revision++
-        rememberEntry(keyId, entry)
+        cache.set(keyId, entry)
       }
     },
     get<T>(key: ResourceKey): ResourceSnapshot<T> | undefined {
@@ -681,10 +650,4 @@ function serialize(value: unknown, stack: Set<object>): string {
   } finally {
     stack.delete(object)
   }
-}
-
-function validateMaxEntries(value: number | undefined): number | undefined {
-  if (value === undefined) return undefined
-  if (!Number.isInteger(value) || value < 1) throw new Error('resource: maxEntries 必须是大于等于 1 的整数')
-  return value
 }
