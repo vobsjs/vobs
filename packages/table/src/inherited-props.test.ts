@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createDOMRenderer, createVobs, setRenderer } from '@vobs/vobs'
 import { scheduler } from '@vobs/reactivity'
 import { KitDataTable } from './index'
-import type { DataTableColumn } from './types'
+import type { DataTableColumn, KitDataTableProps } from './types'
 
 setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
@@ -24,7 +24,7 @@ interface Row { id: number; name: string }
 const columns: readonly DataTableColumn<Row>[] = [{ id: 'name', label: 'Name', key: 'name' }]
 const ROWS: Row[] = [{ id: 1, name: 'Ada' }]
 
-async function mount(props: object) {
+async function mount(props: KitDataTableProps<Row>) {
   const host = document.createElement('main')
   document.body.appendChild(host)
   const app = createVobs({ renderer: createDOMRenderer(), render: () => KitDataTable(props) })
@@ -48,7 +48,7 @@ describe('KitDataTable 的属性通道', () => {
     props.columns = columns
     props.rows = ROWS
 
-    const { host, cleanup } = await mount(props)
+    const { host, cleanup } = await mount(props as unknown as KitDataTableProps<Row>)
     const table = host.querySelector('[role=grid]')
     expect(table).toBeTruthy()                                   // 原来这里会是 null（被静默丢弃）
     expect(table?.getAttribute('id')).toBe('table-2')
