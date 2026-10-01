@@ -377,12 +377,37 @@ export function createForm<T extends object>(initialValues: T, options: FormOpti
     return finish(fieldResult)
   }
 
+/*
+ * schema 返回了表单里没有的字段名 —— 那基本就是拼错了，而它原来被**静默丢弃**：
+ * `applyAllErrors` 只遍历 `names`（本文件的 `for (const name of names)`），于是
+ * `rules` 里写错一个字段名，那条校验永远不会执行，而 `validateAll()` 返回空对象
+ * → `submit()` 直接 valid:true 并真的执行提交。
+ *
+ * 这里只**警告**、不抛错：schema 作为"超集"（比如共享一份通用校验器）是合法用法，
+ * 抛错会把那些用法一并打死。警告只报一次（拼错是静态错误，报一次就够了）。
+ */
+const reportedUnknownSchemaKeys = new Set<string>()
+
+function reportUnknownSchemaKeys<T extends object>(
+  schemaErrors: FormErrors<T>,
+  names: readonly string[]
+): void {
+  for (const key of Object.keys(schemaErrors)) {
+    if (key === '__form' || names.includes(key)) continue
+    if (reportedUnknownSchemaKeys.has(key)) continue
+    reportedUnknownSchemaKeys.add(key)
+    console.warn(`[vobs] 校验 schema 返回了表单里没有的字段 "${key}"，这条错误会被忽略、`
+      + `也不会挡住提交。表单字段：${names.length > 0 ? names.join('、') : '（无）'}`
+      + ' —— 请检查字段名是否拼错。')
+  }
+}
   function validateField(name: FormFieldName<T>): ValidationOutput {
     return validateFieldInternal(name, true)
   }
 
   function applyAllErrors(fieldErrors: FormErrors<T>, schemaErrors: FormErrors<T>): FormErrors<T> {
     const result: FormErrors<T> = {}
+    reportUnknownSchemaKeys(schemaErrors, names)
     setFormError(schemaErrors.__form ?? null)
     if (schemaErrors.__form) result.__form = schemaErrors.__form
     for (const name of names) {
