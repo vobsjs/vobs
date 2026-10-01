@@ -533,7 +533,21 @@ export function createForm<T extends object>(initialValues: T, options: FormOpti
       }
       if (!fields.has(name)) continue
       setFieldError(name, normalizeMessage(message))
+      /*
+       * 同时标记 touched。
+       *
+       * 服务端错误按定义是针对"用户已经提交过的值" —— 那个字段必然已经交互过。而 Field 的错误渲染
+       * 门槛是 `touched && error`（field.ts:54-55），原来这里只写 error 不置 touched，于是
+       * `setServerErrors()` 这个**专为服务端错误设计的 API** 在官方 Field 上永远显示不出来
+       * （实测：error 有值、touched=false、DOM 里什么都没有；用户一输入还被 set() 清掉）。
+       */
+      markTouchedByName(name)
     }
+  }
+
+  function markTouchedByName(name: string): void {
+    const field = fields.get(name)
+    if (field) field.touched.value = true
   }
 
   function clearErrors(name?: FormErrorName<T>): void {
