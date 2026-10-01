@@ -68,22 +68,62 @@ export function FileTree(props: FileTreeProps = {}): VobsNode {
   bindUserStyle(root, props)
   if (!hasProp(props, 'role')) setAttribute(root, 'role', 'tree')
   if (!hasProp(props, 'aria-label')) setAttribute(root, 'aria-label', 'Files')
-  insertDynamic(root, null, () => createTreeRows(props, internalExpanded))
+  /*
+   * roving tabindex 的落点：键盘焦点所在的行。
+   *
+   * 原来每行 `tabIndex = 0`（除禁用行）→ 键盘用户按 Tab 要**依次穿过整棵树的每一行**
+   * 才能走到后面的内容；而 `role="tree"`/`treeitem` 的标准模型是**整棵树只有一个 Tab 停靠点**，
+   * 内部用方向键移动。
+   *
+   * 用内部状态而不是只看选中项：受控 `value` 不更新的场景下，光看选中会让焦点与 tabindex 分家。
+   */
+  const focusedId = state<string | undefined>(undefined)
+  addEventListener(root, 'keydown', event => {
+    const keyboardEvent = event as KeyboardEvent
+    const key = keyboardEvent.key
+    if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'Home' && key !== 'End') return
+    const rows = [...root.querySelectorAll('[data-file-id]')]
+      .filter(row => row.getAttribute('aria-disabled') !== 'true')
+    if (rows.length === 0) return
+    keyboardEvent.preventDefault?.()
+    const current = rows.indexOf((document.activeElement?.closest?.('[data-file-id]') ?? null) as Element)
+    const nextIndex = key === 'Home'
+      ? 0
+      : key === 'End'
+        ? rows.length - 1
+        : current < 0
+          ? 0
+          : Math.max(0, Math.min(rows.length - 1, current + (key === 'ArrowDown' ? 1 : -1)))
+    const target = rows[nextIndex]
+    const id = target.getAttribute('data-file-id') ?? undefined
+    if (id === undefined) return
+    // 标准树模式：焦点移动即选中（这里只做选中，不切换文件夹展开）
+    if (readProp<string | undefined>(props, 'value', undefined) === undefined) focusedId.value = id
+    const onSelect = readProp<unknown>(props, 'onSelect', undefined)
+    if (typeof onSelect === 'function') (onSelect as FileTreeProps['onSelect'])!(id, keyboardEvent as unknown as MouseEvent)
+    focusRow(root, id)
+  })
+
+  insertDynamic(root, null, () => createTreeRows(props, internalExpanded, focusedId))
   if (hasProp(props, 'children')) mountSlot(root, props, 'children')
   return root
 }
 
 function createTreeRows(
   props: FileTreeProps,
-  internalExpanded: { value: readonly string[] }
+  internalExpanded: { value: readonly string[] },
+  focusedId: { value: string | undefined }
 ): VobsNode {
   const items = readProp<readonly FileTreeItem[]>(props, 'items', [])
   const expanded = new Set(readProp<readonly string[] | undefined>(props, 'expanded', undefined) ?? internalExpanded.value)
   const visible = flattenVisible(items, expanded)
   const selected = activeId(props, items)
+  // 整棵树只有一个 Tab 停靠点：优先焦点行，其次选中项，最后第一个可用行。
+  const enabled = visible.filter(entry => entry.item.disabled !== true)
+  const tabbableId = focusedId.value ?? selected ?? enabled[0]?.item.id
   return createFragment((parent, anchor) => {
     for (const entry of visible) {
-      insertBefore(parent, createTreeRow(entry, props, internalExpanded, selected, expanded), anchor)
+      insertBefore(parent, createTreeRow(entry, props, internalExpanded, selected, expanded, tabbableId), anchor)
     }
   })
 }
@@ -93,7 +133,8 @@ function createTreeRow(
   props: FileTreeProps,
   internalExpanded: { value: readonly string[] },
   selected: string | undefined,
-  expanded: ReadonlySet<string>
+  expanded: ReadonlySet<string>,
+    tabbableId: string | undefined,
 ): VobsNode {
   const { item } = entry
   const isFolder = item.kind === 'folder'
@@ -104,7 +145,7 @@ function createTreeRow(
   setAttribute(row, 'role', 'treeitem')
   setAttribute(row, 'data-depth', String(entry.depth))
   setAttribute(row, 'data-file-id', item.id)
-  setProperty(row, 'tabIndex', item.disabled === true ? -1 : 0)
+  setProperty(row, 'tabIndex', item.disabled !== true && item.id === tabbableId ? 0 : -1)
   if (active) setAttribute(row, 'aria-selected', 'true')
   if (isFolder) setAttribute(row, 'aria-expanded', entry.expanded ? 'true' : 'false')
   if (item.disabled === true) setAttribute(row, 'aria-disabled', 'true')
@@ -148,6 +189,18 @@ function createTreeRow(
     const onSelect = readProp<unknown>(props, 'onSelect', undefined)
     if (typeof onSelect === 'function') (onSelect as FileTreeProps['onSelect'])!(item.id, event as MouseEvent)
   })
+  /*
+   * 焦点落在哪一行，哪一行就成为下一个 Tab 停靠点 —— **只改 DOM 属性，不走状态**。
+   *
+   * 走状态会让 focusedId 变化触发整棵树重建，而重建会立刻把刚刚获得焦点的那个节点换掉，
+   * 焦点掉回 body（实测踩到：方向键因此完全失灵，因为事件根本到不了树根）。
+   */
+  addEventListener(row, 'focus', () => {
+    const container = row.parentElement
+    if (!container) return
+    for (const other of container.querySelectorAll('[data-file-id]')) other.setAttribute('tabindex', '-1')
+    row.setAttribute('tabindex', '0')
+  })
   addEventListener(row, 'keydown', event => {
     const keyboardEvent = event as KeyboardEvent
     if (keyboardEvent.key !== 'Enter' && keyboardEvent.key !== ' ') return
@@ -157,6 +210,14 @@ function createTreeRow(
   return row
 }
 
+/** 把焦点移到目标行：等更新落地后再重新查节点（行会因 tabindex/选中变化而重建）。 */
+function focusRow(container: Element, id: string): void {
+  queueMicrotask(() => {
+    const target = [...container.querySelectorAll('[data-file-id]')]
+      .find(element => element.getAttribute('data-file-id') === id)
+    if (target instanceof HTMLElement) target.focus()
+  })
+}
 function flattenVisible(
   items: readonly FileTreeItem[],
   expanded: ReadonlySet<string>,
