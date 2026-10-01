@@ -4,7 +4,7 @@ import { createDOMRenderer, createVobs, setRenderer, type VobsPlugin } from '@vo
 import { createComponent } from '@vobs/runtime'
 import { scheduler } from '@vobs/reactivity'
 import { createNotification, notificationPlugin } from '@vobs/notification'
-import { Combobox, ToastHost } from './index'
+import { Combobox, Pagination, ToastHost } from './index'
 
 setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
@@ -63,5 +63,18 @@ describe('可翻译的 aria-label', () => {
     })
     expect(host.querySelector('.vui-combobox__toggle')?.getAttribute('aria-label')).toBe('展开选项')
     cleanup()
+  })
+
+  it('Pagination 页码标签默认 Page N，可传入函数本地化', async () => {
+    const byText = (host: HTMLElement, text: string): HTMLElement | undefined =>
+      [...host.querySelectorAll<HTMLElement>('button')].find(button => button.textContent === text)
+
+    const plain = await mount(Pagination, { page: 2, pageCount: 5 })
+    expect(byText(plain.host, '2')?.getAttribute('aria-label')).toBe('Page 2')
+    plain.cleanup()
+
+    const localized = await mount(Pagination, { page: 2, pageCount: 5, pageLabel: (page: number) => `第 ${page} 页` })
+    expect(byText(localized.host, '2')?.getAttribute('aria-label')).toBe('第 2 页')
+    localized.cleanup()
   })
 })

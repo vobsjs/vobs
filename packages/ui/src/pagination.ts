@@ -26,6 +26,8 @@ export interface PaginationProps extends VuiCommonProps {
   readonly siblingCount?: number
   readonly disabled?: boolean
   readonly previousLabel?: string
+  /** 页码按钮的可读标签（会被读屏播报）。默认 Page N，需要本地化时传入。 */
+  readonly pageLabel?: (page: number) => string
   readonly nextLabel?: string
   readonly previousIcon?: VuiChildren
   readonly nextIcon?: VuiChildren
@@ -114,7 +116,9 @@ function createPageButton(
   setAttribute(button, 'class', `vui-pagination__item${active ? ' is-active' : ''}`)
   setAttribute(button, 'type', 'button')
   setProperty(button, 'disabled', disabled)
-  setAttribute(button, 'aria-label', `Page ${page}`)
+  // 页码标签可本地化：默认 Page N（这里原来写死，读屏只会念英文）
+  const pageLabel = readProp<((page: number) => string) | undefined>(props, 'pageLabel', undefined)
+  setAttribute(button, 'aria-label', pageLabel ? pageLabel(page) : `Page ${page}`)
   if (active) setAttribute(button, 'aria-current', 'page')
   if (disabled) setAttribute(button, 'aria-disabled', 'true')
   insertBefore(button, createText(String(page)), null)
