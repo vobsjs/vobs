@@ -1136,7 +1136,18 @@ function normalizeTarget(target: RouteLocationRaw, matchers: readonly RouteMatch
 function fillRouteParams(path: string, params: Record<string, unknown>): string {
   return path.replace(/:([A-Za-z0-9_]+)|\*/g, (token, key: string | undefined) => {
     const value = key ? params[key] : params.pathMatch
-    if (value === undefined || value === null) return token
+    /*
+     * 缺参数**不能再静默降级**。
+     *
+     * 原来这里是 `return token` —— 于是 `push({ name: 'user' })` 会"成功"落到
+     * `/users/:id`：地址栏里是字面量 `:id`、`params.id` 也是 `':id'`。不报错、结果错，
+     * 页面还渲染得出来，只是数据不对 —— 这类静默错比直接抛错难查得多。
+     */
+    if (value === undefined || value === null) {
+      const name = key ? `"${key}"` : '"pathMatch"（通配段）'
+      throw new Error(`Vobs Router: 目标路径 "${path}" 需要参数 ${name}，但没有提供 —— `
+        + `继续下去会得到字面量地址 "${token}"。请在 push/replace 时补上，或改用别的路由。`)
+    }
     return encodeURIComponent(String(value))
   })
 }

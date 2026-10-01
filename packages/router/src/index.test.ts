@@ -726,3 +726,23 @@ describe('@vobs/router', () => {
     router.destroy()
   })
 })
+
+/*
+ * 缺参数不能再静默降级。
+ *
+ * 原来 fillRouteParams 找不到值就原样返回 token —— `push({ name: 'user' })` 会"成功"
+ * 落到 `/users/:id`（地址栏里是字面量 `:id`、params.id 也是 ':id'），不报错、结果错，
+ * 页面还渲染得出来，只是数据不对。这类静默错比直接抛错难查得多。
+ */
+describe('缺参数', () => {
+  it('resolve 缺少路径参数时报错，而不是静默给出字面量地址', () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/users/:id', name: 'user', component: () => createText('user') }]
+    })
+    expect(() => router.resolve({ name: 'user' })).toThrow(/需要参数 "id"/)
+    // 正常路径不受影响
+    expect(router.resolve({ name: 'user', params: { id: '42' } }).path).toBe('/users/42')
+    router.destroy()
+  })
+})
