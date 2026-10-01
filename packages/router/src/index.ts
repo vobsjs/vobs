@@ -1,4 +1,4 @@
-import { state, type Signal } from '@vobs/reactivity'
+import { state, getCurrentOwner, type Signal } from '@vobs/reactivity'
 import {
   createComponent,
   createElement,
@@ -730,10 +730,19 @@ export function createRouter(options: RouterOptions): Router {
     beforeEach(guard: NavigationGuard): () => void {
       ensureActive()
       guards.push(guard)
-      return () => {
+      const off = (): void => {
         const index = guards.indexOf(guard)
         if (index >= 0) guards.splice(index, 1)
       }
+      /*
+       * 绑到当前 Owner：在组件里注册的守卫会随组件卸载自动摘掉。
+       *
+       * 原来只 push 进 guards 数组 —— 于是"组件卸载后守卫照旧执行"（深读实测）：
+       * 守卫里读路由状态、发起请求、做鉴权跳转，都会在一个已经不存在的组件的名义下发生。
+       * 返回的 off() 仍然可用（重复调用是幂等的）。
+       */
+      getCurrentOwner()?.onDispose(off)
+      return off
     },
 
     getViewState(route: RouteLocation): RouterViewState {

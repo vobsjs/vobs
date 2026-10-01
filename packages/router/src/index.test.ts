@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createElement, createText, createVobs, insertBefore, setRenderer, createDOMRenderer, type VobsNode } from '@vobs/vobs'
-import { effect, state } from '@vobs/reactivity'
+import { createOwner, effect, runWithOwner, state } from '@vobs/reactivity'
 import {
   createMemoryHistory,
   createBrowserHistory,
@@ -743,6 +743,39 @@ describe('缺参数', () => {
     expect(() => router.resolve({ name: 'user' })).toThrow(/需要参数 "id"/)
     // 正常路径不受影响
     expect(router.resolve({ name: 'user', params: { id: '42' } }).path).toBe('/users/42')
+    router.destroy()
+  })
+})
+/*
+ * 守卫的生命周期。
+ *
+ * 原来 beforeEach 只把守卫 push 进 guards 数组，不绑 Owner —— 于是"组件卸载后守卫照旧执行"：
+ * 守卫里读路由状态、发请求、做鉴权跳转，全都发生在一个已经不存在的组件的名义下。
+ * 实测确认：Owner 销毁后守卫执行 0 次（原来会照旧执行）。
+ */
+describe('守卫生命周期', () => {
+  it('在 Owner 作用域内注册的守卫，随 Owner 销毁自动摘除', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: () => createText('home') },
+        { path: '/b', name: 'b', component: () => createText('b') }
+      ]
+    })
+
+    let called = 0
+    const owner = createOwner()
+    // 在组件里注册就是这个形态：当前 Owner 是组件
+    runWithOwner(owner, () => { router.beforeEach(() => { called++ }) })
+
+    await router.push({ name: 'b' })
+    expect(called).toBe(1)
+
+    owner.dispose()
+    called = 0
+    await router.push({ name: 'home' })
+    expect(called).toBe(0)
+
     router.destroy()
   })
 })
