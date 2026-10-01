@@ -263,9 +263,18 @@ export class HTTPError extends Error {
 export class TimeoutError extends Error {
   readonly code = 'ETIMEDOUT'
 
-  constructor(timeout: number) {
+  /**
+   * 超时时手上那个错误。
+   *
+   * 整链预算到点会把当前错误换成 TimeoutError —— 原来原错误就此丢掉（报告 P12：真实的
+   * ECONNREFUSED 变成了无 cause 的超时）。挂在这里，排查时还有线索。
+   */
+  readonly cause?: unknown
+
+  constructor(timeout: number, cause?: unknown) {
     super(`HTTP 请求超过 ${timeout}ms 未完成`)
     this.name = 'TimeoutError'
+    if (cause !== undefined) this.cause = cause
   }
 }
 
@@ -430,6 +439,8 @@ export function createHTTPClient(options: HTTPClientOptions = {}): HTTPClient {
      * 所以让 abort 与适配器赛跑 —— 请求 promise 必定收敛。
      */
     let rejectOnAbort: ((reason: unknown) => void) | undefined
+    /** 适配器自己报出来的错误（输了赛跑时也能留下来当 cause）。 */
+    let lastError: unknown
     const aborted = new Promise<never>((_, reject) => { rejectOnAbort = reject })
     // 空 catch：没人接时不该变成 unhandledRejection（这个坑前面修过）
     aborted.catch(() => {})
@@ -448,14 +459,29 @@ export function createHTTPClient(options: HTTPClientOptions = {}): HTTPClient {
     try {
       while (true) {
         try {
-          const result = await Promise.race([requestAdapter(adapterConfig), aborted])
+          /*
+           * 适配器的 promise 单独拿着：输了赛跑（abort 先到）时它稍后仍可能 reject ——
+           * 没人接就会变成 unhandledRejection。这里先挂一个空 catch，同时把它记进 lastError，
+           * 好在超时路径里作为 cause 保留下来（真实失败原因不该被丢掉）。
+           */
+          // 适配器允许同步返回，所以先归一成 promise
+          const adapterPromise = Promise.resolve(requestAdapter(adapterConfig))
+          adapterPromise.catch(reason => { lastError = reason })
+          const result = await Promise.race([adapterPromise, aborted])
           const response = isHTTPResponse(result)
             ? result
             : await parseResponse(result, adapterConfig)
           if (response.status < 200 || response.status >= 300) throw new HTTPError(response)
           return response
         } catch (error) {
-          if (timedOut) throw new TimeoutError(config.timeout!)
+          /*
+           * 只挂**适配器自己报出来**的错误。
+           *
+           * 超时的 abort 通常先到，此刻 lastError 还是空的 —— 那就**不挂 cause**，
+           * 而不是把内部合成的 abort 错误塞进去当线索（那比没有更误导）。
+           * 真实错误若在超时前就已报出，会留在这里。
+           */
+          if (timedOut) throw new TimeoutError(config.timeout!, lastError)
           if (inputSignal?.aborted || isAbortError(error)) throw error
           const nextAttempt = attempt + 1
           if (nextAttempt > (config.retry ?? 0)) throw toError(error)
