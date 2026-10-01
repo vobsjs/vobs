@@ -148,9 +148,22 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
       },
       reason => {
         const error = toError(reason)
+        /*
+         * 取消不是失败 —— 不该把 AbortError 写进**共享缓存**。
+         *
+         * 原来这里在 revision 未变时无条件写 error（下面一行的 onError 倒是用 aborted 挡住了）。
+         * 后果跨页面：一次 refetch 中途被取消/dispose，缓存里就留下 { data, error: AbortError }；
+         * 同 key 的新页面因为 isFresh（staleTime 还没到）**零请求**就拿到这条错误，
+         * 而 boundary 先判 error → 直接渲染错误兜底（实测 fetcher 0 次调用）。
+         *
+         * promise 仍然 reject：调用方要靠它知道自己被取消了（既有测试就是这么断言的）。
+         */
+        const aborted = controller.signal.aborted
         if (entry.revision === revision) {
-          entry.error.value = error
-          if (!controller.signal.aborted) options.onError?.(error, entry.key)
+          if (!aborted) {
+            entry.error.value = error
+            options.onError?.(error, entry.key)
+          }
         }
         throw error
       }
