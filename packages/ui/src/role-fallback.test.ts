@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createDOMRenderer, createVobs, setRenderer } from '@vobs/vobs'
 import { createComponent } from '@vobs/runtime'
 import { scheduler } from '@vobs/reactivity'
-import { Alert, Switch } from './index'
+import { Alert, StatusBar, Switch } from './index'
 
 setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
@@ -50,6 +50,18 @@ describe('role 兜底（不再吞掉作者传入的 role）', () => {
   it('Switch 没给 role 时退回 switch', async () => {
     const { host, cleanup } = await mount(Switch, {})
     expect(host.querySelector('.vui-switch')?.getAttribute('role')).toBe('switch')
+    cleanup()
+  })
+
+  it('StatusBar 尊重作者传入的 role', async () => {
+    const { host, cleanup } = await mount(StatusBar, { role: 'toolbar' })
+    expect(host.querySelector('.vui-statusbar')?.getAttribute('role')).toBe('toolbar')
+    cleanup()
+  })
+
+  it('StatusBar 没给 role 时退回 status', async () => {
+    const { host, cleanup } = await mount(StatusBar, {})
+    expect(host.querySelector('.vui-statusbar')?.getAttribute('role')).toBe('status')
     cleanup()
   })
 })

@@ -38,7 +38,11 @@ export function StatusBar(props: StatusBarProps = {}): VobsNode {
   bindClassList(root, props, () => ['vui-statusbar'])
   bindCommonAttributes(root, props, ['left', 'right', 'onItemClick'])
   bindUserStyle(root, props)
-  setAttribute(root, 'role', 'status')
+  /*
+   * 与 Alert/Switch 同一个坑：`role` 不在上面那行的 skip 列表里，所以通用通道**先**把作者传的
+   * role 写上，这里无条件写死就又把它盖掉了。作者给了就用作者的，没给才兜底。
+   */
+  if (!hasProp(props, 'role')) setAttribute(root, 'role', 'status')
 
   if (hasProp(props, 'left')) insertDynamic(root, null, () => createStatusGroup(props, 'left'))
   if (hasProp(props, 'right') || hasProp(props, 'children')) {
