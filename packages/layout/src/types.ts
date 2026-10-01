@@ -1,4 +1,4 @@
-import type { ReadableSignal, Signal } from '@vobs/reactivity'
+import type { Memo, ReadableSignal, Signal } from '@vobs/reactivity'
 import type { VobsNode } from '@vobs/vobs'
 
 export type LayoutAttributeValue = string | number | boolean | undefined
@@ -147,7 +147,7 @@ export interface KitLayoutContext {
   readonly sidebarCollapsed: KitReadonlySignal<boolean>
   readonly mobileOpen: KitReadonlySignal<boolean>
   readonly isMobile: KitReadonlySignal<boolean>
-  readonly breakpoint: number
+  readonly breakpoint: Memo<number>
   toggleSidebar(): void
   setSidebarCollapsed(value: boolean): void
   setMobileOpen(value: boolean): void

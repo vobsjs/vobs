@@ -3,11 +3,19 @@ import type { KitViewport } from './types'
 
 export const DEFAULT_MOBILE_BREAKPOINT = 768
 
-export function createKitViewport(breakpoint = DEFAULT_MOBILE_BREAKPOINT): KitViewport {
-  const normalizedBreakpoint = normalizeBreakpoint(breakpoint)
+/**
+ * 断点可以是数字，也可以是 getter。
+ *
+ * getter 形式是为了让 `mobileBreakpoint` 这个 prop **响应式**：原来 KitLayout 在组件体里算一次
+ * 就把数字交进来了（layout.ts:51-54），于是事后改它毫无作用 —— 实测把断点从 768 改成 600，
+ * `--mobile` 类不消失（组件体只执行一次，算出来的数是死的）。
+ */
+export function createKitViewport(breakpoint: number | (() => number) = DEFAULT_MOBILE_BREAKPOINT): KitViewport {
+  const readBreakpoint = typeof breakpoint === 'function' ? breakpoint : (): number => breakpoint
   const width = state(readWidth(), 'layout.viewport.width')
   const height = state(readHeight(), 'layout.viewport.height')
-  const isMobile = memo(() => width.value < normalizedBreakpoint)
+  // 断点读在 memo 里 → 它变了 isMobile 跟着变（校验也在这里做，坏值仍然是 VOBS_KIT002）
+  const isMobile = memo(() => width.value < normalizeBreakpoint(readBreakpoint()))
   let disposed = false
 
   const onResize = (): void => {

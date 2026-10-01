@@ -48,10 +48,9 @@ export function KitLayout(props: KitLayoutProps = {}): VobsNode {
   const backdrop = createElement('div')
   const footer = createElement('footer')
 
-  const breakpoint = normalizeBreakpoint(
-    readProp(props, 'mobileBreakpoint', DEFAULT_MOBILE_BREAKPOINT)
-  )
-  const viewport = createKitViewport(breakpoint)
+  // 断点做成 memo 并交给 viewport 的是 getter：这样 mobileBreakpoint 变化才真的生效
+  const breakpoint = memo(() => normalizeBreakpoint(readProp(props, 'mobileBreakpoint', DEFAULT_MOBILE_BREAKPOINT)))
+  const viewport = createKitViewport(() => breakpoint.value)
   const sidebarExpanded = readProp(props, 'sidebarExpanded', false)
   const internalCollapsed = state(
     readProp<boolean | undefined>(props, 'sidebarCollapsed', undefined) ?? !sidebarExpanded
