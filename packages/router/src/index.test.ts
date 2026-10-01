@@ -913,3 +913,32 @@ describe('导航收敛', () => {
     await expect(stuck).rejects.toThrowError(NavigationCancelledError)
   })
 })
+/*
+ * 守卫要求重定向时，**不该先加载被放弃目标的数据**。
+ *
+ * 原来重定向处理排在 loader 循环之后，于是 `push(需要重定向的路由)` 会把原目标的 loader
+ * 也跑一遍 —— 那份数据马上就被丢弃了（实测 loader 跑了 ['a','b']）。现在重定向前移，
+ * 只跑最终目标（['b']）。
+ */
+describe('重定向与 loader', () => {
+  it('守卫重定向时不加载被放弃目标的数据', async () => {
+    const loads: string[] = []
+    const route = (name: string, path: string) => ({
+      path,
+      name,
+      component: () => createText(name),
+      loader: () => { loads.push(name) }
+    })
+    const router = createRouter({
+      history: createMemoryHistory('/'),
+      routes: [route('home', '/'), route('a', '/a'), route('b', '/b')]
+    })
+    router.beforeEach(to => (to.name === 'a' ? { name: 'b' } : undefined))
+
+    await router.push({ name: 'a' })
+
+    expect(loads).toEqual(['b'])                       // 原来会是 ['a', 'b']
+    expect(router.currentRoute.value.fullPath).toBe('/b')
+    router.destroy()
+  })
+})

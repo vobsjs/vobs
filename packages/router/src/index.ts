@@ -570,6 +570,23 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
           }
         }
 
+        /*
+         * 守卫要求重定向 → **先别加载这个目标的数据**：它马上会被放弃，加载是白干活。
+         * 原来这段重定向处理排在 loader 循环之后，实测两个目标的 loader 都会跑一遍。
+         */        if (redirect !== undefined) {
+          if (redirectCount >= 10) {
+            const error = new NavigationRedirectError()
+            recordNavigation({ id, from: from.fullPath, to: target.fullPath, status: 'error', source, startedAt, endedAt: now(), duration: now() - startedAt, error: error.message })
+            terminalRecorded = true
+            throw error
+          }
+          const redirected = resolve(redirect)
+          if (redirected.fullPath === target.fullPath) return false
+          recordNavigation({ id, from: from.fullPath, to: target.fullPath, status: 'redirected', source, startedAt, endedAt: now(), duration: now() - startedAt, redirect: redirected.fullPath })
+          target = redirected
+          continue
+        }
+
         for (const record of target.matched) {
           if (!record.loader) continue
           // 上一 loader 期间被新导航抢占时立即取消，跳过剩余 loader。
@@ -592,19 +609,7 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
         // loader 完成后、提交前必须重新校验：飞行期间被抢占的导航不允许覆盖 currentRoute 与 history。
         ensureNavigationIsCurrent(id)
 
-        if (redirect !== undefined) {
-          if (redirectCount >= 10) {
-            const error = new NavigationRedirectError()
-            recordNavigation({ id, from: from.fullPath, to: target.fullPath, status: 'error', source, startedAt, endedAt: now(), duration: now() - startedAt, error: error.message })
-            terminalRecorded = true
-            throw error
-          }
-          const redirected = resolve(redirect)
-          if (redirected.fullPath === target.fullPath) return false
-          recordNavigation({ id, from: from.fullPath, to: target.fullPath, status: 'redirected', source, startedAt, endedAt: now(), duration: now() - startedAt, redirect: redirected.fullPath })
-          target = redirected
-          continue
-        }
+
 
         if (target.fullPath === from.fullPath) return from
         if (!fromHistory) {
