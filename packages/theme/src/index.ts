@@ -1,4 +1,4 @@
-import { getCurrentOwner, memo, onDispose, renderEffect, state, type ReadableSignal, type Signal } from '@vobs/reactivity'
+import { getCurrentOwner, memo, onDispose, renderEffect, state, type ReadableSignal, type Signal, untrack } from '@vobs/reactivity'
 import {
   createElement,
   createInjectionKey,
@@ -192,24 +192,26 @@ export function createTheme(options: ThemeOptions = {}): ThemeContext {
 
     setBrand(nextBrand: Partial<BrandTokens>): void {
       ensureActive()
-      overrides.value = mergeThemes(overrides.value, {
-        brand: {
-          ...brand.value,
-          ...nextBrand
-        }
-      })
+      /*
+       * 读取放进 untrack。
+       *
+       * 这两个 setter 会被组件 effect 调用（很常见：按路由/用户切品牌）。原来它们在 effect 里
+       * 直接读 overrides / brand，于是 effect 订阅了源；写完又触发自己 —— 实测 101 轮后抛
+       * 「响应式更新超过 100 轮」。setter 不应该订阅它要写的信号。
+       */
+      const merged = untrack(() => ({ ...brand.value, ...nextBrand }))
+      const current = untrack(() => overrides.value)
+      overrides.value = mergeThemes(current, { brand: merged })
     },
 
     registerTheme(nextMode: ResolvedThemeMode, nextTheme: ThemeTokens): () => void {
       ensureActive()
-      const previous = themes.value[nextMode]
-      themes.value = {
-        ...themes.value,
-        [nextMode]: mergeThemes(previous, nextTheme)
-      }
+      // 同上：读取放 untrack，避免在 effect 内注册主题时自订阅
+      const previous = untrack(() => themes.value[nextMode])
+      themes.value = { ...untrack(() => themes.value), [nextMode]: mergeThemes(previous, nextTheme) }
       return () => {
         if (disposed) return
-        themes.value = { ...themes.value, [nextMode]: previous }
+        themes.value = { ...untrack(() => themes.value), [nextMode]: previous }
       }
     },
 
