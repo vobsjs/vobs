@@ -28,7 +28,14 @@ export function KitResourcePage<Row = Record<string, unknown>>(
   bindClassList(root, props, () => ['vobs-kit-resource-page'])
   bindCommonAttributes(root, props, [
     'resource', 'columns', 'title', 'description', 'actions', 'toolbar', 'tableProps', 'table',
-    'requiredPermission', 'requiredRole', 'unauthorized', 'auth', 'router', 'i18n', 'theme'
+    'requiredPermission', 'requiredRole', 'unauthorized', 'auth', 'router', 'i18n', 'theme',
+    /*
+     * 下面这三个是**框架自己的诊断属性**（devtools/测试会读），由本组件那个 effect 写。
+     * 原来没列在这里 → 通用属性通道也会写它们（作者 props 里同名的 data-* 会跟进来），
+     * 于是同一个属性有两个写入者：先被真实值覆盖、等别的 prop 变化时"复活"成作者的值。
+     * 与 ui 的 role 被吞是同一类问题 —— 保留给框架，通道不许碰。
+     */
+    'data-vobs-auth', 'data-vobs-route', 'data-vobs-theme'
   ])
   bindUserStyle(root, props)
   effect(() => {
