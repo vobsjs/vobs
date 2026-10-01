@@ -597,7 +597,30 @@ function getDedupeKey(config: RequestConfig, defaultEnabled: boolean): string | 
   if (config.dedupeKey) return config.dedupeKey
   if (!(config.dedupe ?? defaultEnabled)) return undefined
   if (config.method !== 'GET' && config.method !== 'HEAD') return undefined
-  return `${config.method} ${config.url}`
+  /*
+   * 键里必须带上"是谁在问"的凭据。
+   *
+   * 原来只有 `METHOD url`：两个并发 GET 只要 URL 相同就合并，**哪怕 Authorization 不同** ——
+   * B 的请求根本不会发出，直接拿到 A 的响应（拿错数据，属于安全问题）。
+   * 只纳入凭据类头，其余头不参与，去重的价值不受影响。
+   */
+  return `${config.method} ${config.url} ${credentialFingerprint(config.headers)}`
+}
+
+/** 参与去重键的凭据头（小写）。 */
+const DEDUPE_CREDENTIAL_HEADERS = ['authorization', 'cookie', 'proxy-authorization'] as const
+
+function credentialFingerprint(headers: RequestConfig['headers']): string {
+  if (!headers) return ''
+  const parts: string[] = []
+  // for...in 而不是 Object.keys：headers 可能带原型（table 那轮踩过）
+  for (const key in headers) {
+    const lower = key.toLowerCase()
+    if (!(DEDUPE_CREDENTIAL_HEADERS as readonly string[]).includes(lower)) continue
+    const value = (headers as Record<string, unknown>)[key]
+    parts.push(`${lower}=${typeof value === 'string' ? value : JSON.stringify(value ?? null)}`)
+  }
+  return parts.sort().join('&')
 }
 
 function normalizeRequest(input: RequestOptions, defaults: ReturnType<typeof normalizeClientOptions>): RequestConfig {
