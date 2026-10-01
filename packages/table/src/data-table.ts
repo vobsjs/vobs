@@ -79,6 +79,19 @@ export function KitDataTable<Row = Record<string, unknown>>(props: KitDataTableP
   setAttribute(viewport, 'data-vobs-scrollable', 'true')
   setAttribute(table, 'class', 'vobs-data-table__table')
   setAttribute(footer, 'class', 'vobs-data-table__footer')
+  /*
+   * 语义属性要落在**真正的 <table>** 上。
+   *
+   * 作者传的 role / aria-label 会经通用属性通道落到外层 <section>（bindCommonAttributes 的 skip
+   * 列表里没有它们），而读屏在"表格"这一层用的是 <table> 自己的名字 —— 外层 section 上的名字只会
+   * 把它变成一个 region，表格本身仍然无名。这里把这两项同步给 table（外层保持不变，纯加法）。
+   */
+  effect(() => {
+    const role = readProp<unknown>(props, 'role', undefined)
+    if (typeof role === 'string') setAttribute(table, 'role', role)
+    const label = readProp<unknown>(props, 'aria-label', undefined)
+    if (typeof label === 'string') setAttribute(table, 'aria-label', label)
+  })
 
   if (hasProp(props, 'toolbar')) insertDynamic(toolbar, null, () => resolveSlot(readProp(props, 'toolbar', undefined)))
   effect(() => { setProperty(toolbar, 'hidden', !hasProp(props, 'toolbar')) })
