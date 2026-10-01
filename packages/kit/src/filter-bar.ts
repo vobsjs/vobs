@@ -1,4 +1,4 @@
-import { addEventListener, createElement, insertBefore, setAttribute, type VobsNode } from '@vobs/vobs'
+import { addEventListener, createElement, createText, insertBefore, setAttribute, type VobsNode } from '@vobs/vobs'
 import { Button } from '@vobs/ui'
 import {
   bindClassList,
@@ -33,7 +33,9 @@ export function KitFilterBar(props: KitFilterBarProps = {}): VobsNode {
   bindClassList(root, props, () => ['vobs-kit-filter-bar'])
   bindCommonAttributes(root, props, ['actions', 'searchLabel', 'resetLabel', 'onSearch', 'onReset'])
   bindUserStyle(root, props)
-  setAttribute(root, 'role', 'search')
+  // 与 ui 的 Alert/Switch/StatusBar 同一个坑：role 不在 skip 列表里 → 通用通道先写作者的值，
+  // 这里无条件写死就把它盖掉了（实测传 role="form" 拿到 "search"）。
+  if (!hasProp(props, 'role')) setAttribute(root, 'role', 'search')
 
   setAttribute(fields, 'class', 'vobs-kit-filter-bar__fields')
   if (hasProp(props, 'children')) mountSlot(fields, props, 'children')
@@ -42,13 +44,15 @@ export function KitFilterBar(props: KitFilterBarProps = {}): VobsNode {
   insertBefore(actions, Button({
     type: 'submit',
     variant: 'brand',
-    children: readProp(props, 'searchLabel', 'Search'),
+    // 函数式 children：mountSlot 内部是 insertDynamic，会在 effect 里重跑
+    // —— 原来这里读一次就固定了，信号变了按钮文字不动（实测信号变而按钮仍是 Apply）。
+    children: () => createText(readProp(props, 'searchLabel', 'Search')),
     onClick: () => undefined
   }), null)
   insertBefore(actions, Button({
     type: 'reset',
     variant: 'secondary',
-    children: readProp(props, 'resetLabel', 'Reset'),
+    children: () => createText(readProp(props, 'resetLabel', 'Reset')),
     onClick: () => undefined
   }), null)
   if (hasProp(props, 'actions')) mountSlot(actions, props, 'actions')
