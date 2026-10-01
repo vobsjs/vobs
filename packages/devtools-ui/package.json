@@ -57,6 +57,7 @@
   "dependencies": {
     "@vobs/devtools": "workspace:*",
     "@vobs/http": "workspace:*",
+    "@vobs/reactivity": "workspace:*",
     "@vobs/router": "workspace:*",
     "@vobs/ui": "workspace:*",
     "@vobs/vobs": "workspace:*"

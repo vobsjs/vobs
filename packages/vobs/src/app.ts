@@ -69,6 +69,11 @@ export function createVobs<
   }
 ): VobsApp<NodeType>
 export function createVobs(
+  // 不带 renderer 时走 DOM 默认渲染器，节点类型就是 DOM 的 Node
+  // （原来这里标成 `VobsApp<any>`，于是 app.mount 的参数类型直接塌成 any）
+  config: VobsConfig<Node, Text, Element, Comment> & { renderer?: undefined }
+): VobsApp<Node>
+export function createVobs(
   config: VobsConfig<any, any, any, any>
 ): VobsApp<any> {
   if (!config.render) throw new Error('createVobs: render 不能为空')

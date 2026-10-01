@@ -1,0 +1,43 @@
+name: Release tag check
+
+# `pnpm run check:release` 校验「tag 版本 == 全部可发布包的版本」，但它此前
+# **没有被任何 workflow 调用** —— 于是「打了 tag 却忘了 bump 包版本」这类错位
+# 没有任何东西会拦（历史上真的发生过：v1.7.8 指向的提交里版本没对齐）。
+#
+# 这个仓库的 npm 发布是手动的（见 docs/npm-release.md），所以这里只做校验：
+# tag 推上来时先确认它与包版本一致，发布前就能发现问题。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-tag:
+    name: Tag matches package versions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # GITHUB_REF_NAME 就是 tag 名，脚本会自己取
+      - name: Tag matches publishable package versions
+        run: pnpm run check:release

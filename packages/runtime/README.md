@@ -69,7 +69,7 @@ Implement `VobsRenderer` (node creation, insertion, removal, attribute/property/
 | `insertList(parent, anchor, factory, options?)` | Keyed/indexed list reconciliation with per-row owners. |
 | `createFragment(render)` | Multi-root node container. |
 | `ErrorBoundary` / `insertErrorBoundary` | Catches child render/effect errors with retry. |
-| `insertBoundary` | Low-level boundary primitive (loading/error/empty switching). |
+| `insertBoundary` | Low-level boundary primitive shared by the error/async/resource boundaries (`children` / `fallback` / `onRetry` / `resetKey`). |
 | `AsyncBoundary` / `insertAsyncBoundary` | Async view swapping with fallback. |
 | `Profiler` / `insertProfiler` | Render timing instrumentation. |
 | HMR exports (`createHmrStateStore`, `registerHmrInstance`, `updateHmrModule`, ...) | Hot-reload state preservation. |

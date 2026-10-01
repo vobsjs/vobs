@@ -13,7 +13,7 @@ Pair with [`@vobs/vite-plugin`](../vite-plugin) to compile TSX.
 ## Quick start
 
 ```tsx
-import { createVobs, createInjectionKey, state, inject, provide } from '@vobs/vobs'
+import { createVobs, createInjectionKey, state, inject, injectRequired, provide } from '@vobs/vobs'
 
 const GreetingKey = createInjectionKey<string>('greeting')
 

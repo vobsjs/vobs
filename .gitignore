@@ -10,6 +10,8 @@ coverage/
 .vite/
 *.log
 *.tsbuildinfo
+# 作者本机的样式同步工具（从仓库外的 ../UIStyle 设计源拷贝），不随仓库分发；
+# 因此 package.json 里不再挂着它的 npm script —— 那对新克隆必然失败。
 scripts/sync-uistyle.mjs
 docs/
 !docs/

@@ -48,6 +48,9 @@ importers:
 
   packages/captcha:
     dependencies:
+      '@vobs/reactivity':
+        specifier: workspace:*
+        version: link:../reactivity
       '@vobs/vobs':
         specifier: workspace:*
         version: link:../vobs
@@ -108,6 +111,9 @@ importers:
       '@vobs/http':
         specifier: workspace:*
         version: link:../http
+      '@vobs/reactivity':
+        specifier: workspace:*
+        version: link:../reactivity
       '@vobs/router':
         specifier: workspace:*
         version: link:../router
@@ -146,11 +152,32 @@ importers:
         specifier: ^5.0.0 || ^6.0.0 || ^7.0.0
         version: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)
 
-  packages/dsh-console: {}
+  packages/dsh-console:
+    devDependencies:
+      '@vobs/dsh':
+        specifier: workspace:*
+        version: link:../dsh
+      '@vobs/vobs':
+        specifier: workspace:*
+        version: link:../vobs
 
-  packages/dsh-devkit: {}
+  packages/dsh-devkit:
+    devDependencies:
+      '@vobs/dsh':
+        specifier: workspace:*
+        version: link:../dsh
+      '@vobs/vobs':
+        specifier: workspace:*
+        version: link:../vobs
 
-  packages/dsh-plugin: {}
+  packages/dsh-plugin:
+    devDependencies:
+      '@vobs/dsh':
+        specifier: workspace:*
+        version: link:../dsh
+      '@vobs/vobs':
+        specifier: workspace:*
+        version: link:../vobs
 
   packages/forms:
     dependencies:
@@ -414,6 +441,9 @@ importers:
       '@vobs/dom':
         specifier: workspace:*
         version: link:../dom
+      '@vobs/reactivity':
+        specifier: workspace:*
+        version: link:../reactivity
       '@vobs/runtime':
         specifier: workspace:*
         version: link:../runtime

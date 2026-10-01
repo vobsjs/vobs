@@ -42,6 +42,7 @@
     "./src/styles/*.css"
   ],
   "dependencies": {
+    "@vobs/reactivity": "workspace:*",
     "@vobs/vobs": "workspace:*"
   }
 }

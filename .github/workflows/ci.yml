@@ -54,6 +54,11 @@ jobs:
       - name: Lint vobs source
         run: pnpm run check:source
 
+      # 幻影依赖：A 用了 B 却没在自己的 package.json 里声明。
+      # verify:packages 把 37 个包装进同一个临时工程，所以它结构上发现不了这类问题。
+      - name: Check package dependency declarations
+        run: pnpm run check:imports
+
       - name: Verify published package artifacts
         run: pnpm run verify:packages
 
