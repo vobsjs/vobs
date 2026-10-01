@@ -1,5 +1,6 @@
 /**
- * 开发台面板。四个 tab：
+ * 开发台面板。五个 tab：
+ *   项目 · 读工作区里的 .vobs/check.json（vobs check --write 产出）显示真实问题清单
  *   护栏 · 把静默失效的两类写法讲清楚（内容来自已实现的 @vobs/vobs/dev）
  *   API  · 仓库里真实存在的 API 索引（签名逐个对着源码核过）
  *   示例 · 可直接复制的写法
@@ -18,20 +19,118 @@ import {
   type ApiEntry,
   type Capability
 } from './catalog'
+import { REPORT_PATH, type CheckDiagnostic, type ProjectState } from './project'
 
-export type DevKitTab = 'guardrails' | 'api' | 'patterns' | 'status'
+export type DevKitTab = 'project' | 'guardrails' | 'api' | 'patterns' | 'status'
 
 export interface VobsDevKitProps {
   readonly tab: Signal<DevKitTab>
   readonly apiName: Signal<string>
+  readonly project: Signal<ProjectState>
+  readonly onRefreshProject: () => void
 }
 
-const TABS: readonly { readonly key: DevKitTab; readonly label: string; readonly count?: number }[] = [
-  { key: 'guardrails', label: '护栏', count: GUARDRAIL_RULES.length },
-  { key: 'api', label: 'API', count: API_GROUPS.reduce((total, group) => total + group.entries.length, 0) },
-  { key: 'patterns', label: '示例', count: PATTERNS.length },
+const TABS: readonly { readonly key: DevKitTab; readonly label: string }[] = [
+  { key: 'project', label: '项目' },
+  { key: 'guardrails', label: '护栏' },
+  { key: 'api', label: 'API' },
+  { key: 'patterns', label: '示例' },
   { key: 'status', label: '状态' }
 ]
+
+/** 一条检查结果。 */
+function IssueRow(props: { readonly item: CheckDiagnostic }) {
+  const item = props.item
+  const isError = item.severity === 'error'
+  return (
+    <div class="vk-card">
+      <div class="vk-card__head">
+        <span class={isError ? 'vk-sev vk-sev--err' : 'vk-sev vk-sev--warn'}>
+          {isError ? '错误' : '警告'}
+        </span>
+        <span class="vk-mono" style="font-size:11.5px">{item.code}</span>
+        <span class="vk-card__hint vk-mono">{item.file}:{item.line}:{item.column}</span>
+      </div>
+      <div class="vk-card__body">
+        <div class="vk-desc">{item.message}</div>
+        {item.snippet === undefined || item.snippet === ''
+          ? null
+          : <pre class="vk-code" style="margin-top:8px">{item.snippet}</pre>}
+        <div class="vk-why" style="padding:9px 0 0">→ {item.fix}</div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 项目页：读工作区里的检查报告。
+ *
+ * 报告由 `vobs check --write` 产出（AI 或人跑）。面板**只读** —— DSH 的 workspace-files
+ * Remote 没有写入能力，面板也启动不了进程。文件不存在时说清楚该跑什么，不显示空表。
+ */
+function Project(props: { readonly project: Signal<ProjectState>; readonly onRefresh: () => void }) {
+  const status = memo(() => props.project.value.status)
+  const message = memo(() => props.project.value.message)
+  const issues = memo(() => props.project.value.report?.diagnostics ?? [])
+  const summary = memo(() => {
+    const report = props.project.value.report
+    if (report === undefined) return undefined
+    const errors = report.diagnostics.filter(item => item.severity === 'error').length
+    return {
+      files: report.files,
+      skipped: report.skippedTests,
+      errors,
+      warnings: report.diagnostics.length - errors
+    }
+  })
+
+  return (
+    <div>
+      <div class="vk-card">
+        <div class="vk-card__head">
+          项目检查
+          <span class="vk-card__hint">读工作区里的 {REPORT_PATH}</span>
+          <span class="vk-spacer" />
+          <span class="vk-btn" onClick={props.onRefresh}>重新读取</span>
+        </div>
+        <div class="vk-card__body">
+          <div class="vk-desc">{message.value}</div>
+
+          {status.value === 'missing' ? (
+            <div style="margin-top:10px">
+              <div class="vk-label">让 AI（或你自己）跑一次，报告就会出现在这里：</div>
+              <pre class="vk-code">vobs check --write</pre>
+            </div>
+          ) : null}
+
+          {summary.value === undefined ? null : (
+            <div class="vk-chips">
+              {/* 用模板字符串而不是 `{x} 个文件`：vobs 的 JSX 会吃掉表达式前的空格 */}
+              <span class="vk-chip">{`${summary.value.files} 个文件`}</span>
+              <span class="vk-chip">{`${summary.value.errors} 个错误`}</span>
+              <span class="vk-chip">{`${summary.value.warnings} 个警告`}</span>
+              {summary.value.skipped > 0
+                ? <span class="vk-chip">{`跳过 ${summary.value.skipped} 个测试文件`}</span>
+                : null}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {issues.value.map(item => (
+        <IssueRow item={item} key={`${item.code}:${item.file}:${item.line}:${item.column}`} />
+      ))}
+
+      {status.value === 'ready' && issues.value.length === 0 ? (
+        <div class="vk-card">
+          <div class="vk-card__body">
+            <div class="vk-empty" style="padding:6px 0">检查通过，没有发现问题。</div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
 
 function findEntry(name: string): { entry: ApiEntry; origin: string } | undefined {
   for (const group of API_GROUPS) {
@@ -240,12 +339,12 @@ export function VobsDevKit(props: VobsDevKitProps) {
             onClick={() => { props.tab.value = item.key }}
           >
             {item.label}
-            {item.count === undefined ? null : <span class="vk-tab__count">{item.count}</span>}
           </div>
         ))}
       </div>
 
       <div class="vk-body">
+        {props.tab.value === 'project' ? <Project project={props.project} onRefresh={props.onRefreshProject} /> : null}
         {props.tab.value === 'guardrails' ? <Guardrails /> : null}
         {props.tab.value === 'api' ? <ApiIndex apiName={props.apiName} /> : null}
         {props.tab.value === 'patterns' ? <Patterns /> : null}

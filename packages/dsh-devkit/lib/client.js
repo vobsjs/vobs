@@ -1740,20 +1740,348 @@ const CAPABILITIES = [
   { name: "脚手架预置测试", status: "todo", note: "新项目自带无头渲染断言，让 AI 能自证 —— 未做" },
   { name: "DSH skill 封装", status: "todo", note: "把 AI 上下文包成 skill，任务匹配时自动加载 —— 未做" }
 ];
-const _tpl1 = createTemplate('<div class="vk-card"><div class="vk-card__head">开发期护栏 <span class="vk-card__hint">只报告、不中断 —— 钩子里的异常会被吞掉，这是刻意的保证：调试工具绝不改变应用行为 </span></div><div class="vk-card__body"><div class="vk-desc">用 <span class="vk-mono">vobsPlugin()</span>的应用在 dev 下会自动装上它，并把违规打到 dev server 终端与浏览器控制台。下面这两条是 vobs 里最容易写错、而且**错的时候没有声音**的写法。 </div></div></div>');
-const _tpl8 = createTemplate('<div class="vk-label">会出问题的写法</div>');
-const _tpl11 = createTemplate('<div class="vk-label">护栏建议</div>');
-const _tpl18 = createTemplate('<div class="vk-label" style="margin-top:14px">示例</div>');
-const _tpl28 = createTemplate('<div class="vk-card"><div class="vk-card__head">写法示例 <span class="vk-card__hint">可直接复制 · 刻意是「写法」而不是仓库文件索引，后者会随目录变动失真</span></div></div>');
-const _tpl36 = createTemplate('<div class="vk-card__head">能力状态 <span class="vk-card__hint">这一页刻意如实 —— 面板不该假装自己什么都有</span></div>');
-const _tpl42 = createTemplate('<div class="vk-card"><div class="vk-card__head">这个面板为什么是静态的</div><div class="vk-card__body"><div class="vk-desc">开发台跑在 DSH 里，你的应用跑在它自己的 dev server 里 —— <strong>两者不是同一个页面</strong>。 所以面板看不到你应用的运行时（包括运行时护栏的告警）。要显示活数据，需要把 DSH 的 Host 半侧 接上（读工作区、跑 vobs check），这一步还没做。 </div></div></div>');
-const _tpl44 = createTemplate('<div class="vk-head"><div><div class="vk-title">Vobs 开发台 <span class="vk-tag">vobs 渲染</span></div><div class="vk-sub">给「用 vobs 写代码的人」和「帮人写 vobs 代码的 AI」用的参考面板：护栏规则、API 索引、写法示例， 以及这个工具链目前的能力边界。 </div></div></div>');
+const REPORT_PATH = ".vobs/check.json";
+function pickSession(ctx) {
+  const list = ctx?.get?.("sessions")?.list;
+  if (list === void 0 || typeof list.getSnapshot !== "function") return void 0;
+  let snapshot;
+  try {
+    snapshot = list.getSnapshot();
+  } catch {
+    return void 0;
+  }
+  const rows = Object.values(snapshot.byId ?? {}).filter((row) => row.blank !== true);
+  if (rows.length === 0) return void 0;
+  return rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+}
+function workspaceFilesOf(ctx) {
+  const remote = ctx?.get?.("remote");
+  return remote?.workspaceFiles;
+}
+function asBytes(value) {
+  if (value === null || typeof value !== "object") return void 0;
+  const candidate = value.data ?? value;
+  if (candidate === null || typeof candidate !== "object") return void 0;
+  return typeof candidate.byteLength === "number" ? candidate : void 0;
+}
+async function readWholeFile(api, sessionId, path) {
+  if (typeof api.readBytes === "function") {
+    const bytes = asBytes(await api.readBytes(sessionId, path, {}));
+    if (bytes !== void 0) return new TextDecoder().decode(bytes);
+  }
+  if (typeof api.read !== "function") throw new Error("workspaceFiles 没有可用的读取方法");
+  let text = "";
+  let offset = 1;
+  for (let page = 0; page < 20; page += 1) {
+    const result = await api.read(sessionId, path, { offset });
+    if (result === void 0) break;
+    if (page > 0) text += "\n";
+    text += result.text ?? "";
+    if (result.eof === true) break;
+    const lines = typeof result.lines === "number" && result.lines > 0 ? result.lines : 1;
+    offset += lines;
+  }
+  return text;
+}
+function createProjectSource(ctx, options = {}) {
+  const pollMs = options.pollMs ?? 2500;
+  const projectState = options.sink ?? state({ status: "loading", message: "正在读取检查报告…" });
+  projectState.value = { status: "loading", message: "正在读取检查报告…" };
+  const session = pickSession(ctx);
+  const api = workspaceFilesOf(ctx);
+  if (session === void 0 || api === void 0) {
+    projectState.value = {
+      status: "unavailable",
+      message: session === void 0 ? "读不到会话列表（sessions 服务不可用），因此不知道工作区在哪。" : "读不到 workspace-files 服务（remote.workspaceFiles 不可用），因此读不了工作区文件。"
+    };
+    return { state: projectState, refresh: () => {
+    }, dispose: () => {
+    } };
+  }
+  const sessionId = String(session.sessionId ?? "");
+  const workspace = session.cwd;
+  let lastVersion;
+  let disposed = false;
+  let inFlight = false;
+  const fail = (message) => {
+    projectState.value = { status: "error", sessionId, workspace, message };
+  };
+  const load = async () => {
+    if (disposed || inFlight) return;
+    inFlight = true;
+    try {
+      const text = await readWholeFile(api, sessionId, REPORT_PATH);
+      const report = JSON.parse(text);
+      if (disposed) return;
+      projectState.value = {
+        status: "ready",
+        sessionId,
+        workspace,
+        message: `报告来自 ${workspace ?? "工作区"}`,
+        report
+      };
+    } catch (error) {
+      if (disposed) return;
+      const message = error instanceof Error ? error.message : String(error);
+      if (/not.?found|ENOENT|lookup-not-found/iu.test(message)) {
+        projectState.value = {
+          status: "missing",
+          sessionId,
+          workspace,
+          message: `还没有 ${REPORT_PATH}`
+        };
+      } else {
+        fail(message);
+      }
+    } finally {
+      inFlight = false;
+    }
+  };
+  const tick = async () => {
+    if (disposed) return;
+    try {
+      if (typeof api.stat === "function") {
+        const info = await api.stat(sessionId, REPORT_PATH);
+        const version = info?.version;
+        if (version === void 0 || version === lastVersion) {
+          if (projectState.value.status === "loading") await load();
+          return;
+        }
+        lastVersion = version;
+      }
+      await load();
+    } catch {
+      if (projectState.value.status === "loading") await load();
+    }
+  };
+  void tick();
+  const timer = pollMs > 0 ? setInterval(() => {
+    void tick();
+  }, pollMs) : void 0;
+  return {
+    state: projectState,
+    refresh: () => {
+      void tick();
+    },
+    dispose: () => {
+      disposed = true;
+      if (timer !== void 0) clearInterval(timer);
+    }
+  };
+}
+const _tpl13 = createTemplate('<span class="vk-spacer"></span>');
+const _tpl17 = createTemplate('<div style="margin-top:10px"><div class="vk-label">让 AI（或你自己）跑一次，报告就会出现在这里：</div><pre class="vk-code">vobs check --write</pre></div>');
+const _tpl23 = createTemplate('<div class="vk-card"><div class="vk-card__body"><div class="vk-empty" style="padding:6px 0">检查通过，没有发现问题。</div></div></div>');
+const _tpl25 = createTemplate('<div class="vk-card"><div class="vk-card__head">开发期护栏 <span class="vk-card__hint">只报告、不中断 —— 钩子里的异常会被吞掉，这是刻意的保证：调试工具绝不改变应用行为 </span></div><div class="vk-card__body"><div class="vk-desc">用 <span class="vk-mono">vobsPlugin()</span>的应用在 dev 下会自动装上它，并把违规打到 dev server 终端与浏览器控制台。下面这两条是 vobs 里最容易写错、而且**错的时候没有声音**的写法。 </div></div></div>');
+const _tpl32 = createTemplate('<div class="vk-label">会出问题的写法</div>');
+const _tpl35 = createTemplate('<div class="vk-label">护栏建议</div>');
+const _tpl42 = createTemplate('<div class="vk-label" style="margin-top:14px">示例</div>');
+const _tpl52 = createTemplate('<div class="vk-card"><div class="vk-card__head">写法示例 <span class="vk-card__hint">可直接复制 · 刻意是「写法」而不是仓库文件索引，后者会随目录变动失真</span></div></div>');
+const _tpl60 = createTemplate('<div class="vk-card__head">能力状态 <span class="vk-card__hint">这一页刻意如实 —— 面板不该假装自己什么都有</span></div>');
+const _tpl66 = createTemplate('<div class="vk-card"><div class="vk-card__head">这个面板为什么是静态的</div><div class="vk-card__body"><div class="vk-desc">开发台跑在 DSH 里，你的应用跑在它自己的 dev server 里 —— <strong>两者不是同一个页面</strong>。 所以面板看不到你应用的运行时（包括运行时护栏的告警）。要显示活数据，需要把 DSH 的 Host 半侧 接上（读工作区、跑 vobs check），这一步还没做。 </div></div></div>');
+const _tpl68 = createTemplate('<div class="vk-head"><div><div class="vk-title">Vobs 开发台 <span class="vk-tag">vobs 渲染</span></div><div class="vk-sub">给「用 vobs 写代码的人」和「帮人写 vobs 代码的 AI」用的参考面板：护栏规则、API 索引、写法示例， 以及这个工具链目前的能力边界。 </div></div></div>');
 const TABS = [
-  { key: "guardrails", label: "护栏", count: GUARDRAIL_RULES.length },
-  { key: "api", label: "API", count: API_GROUPS.reduce((total, group) => total + group.entries.length, 0) },
-  { key: "patterns", label: "示例", count: PATTERNS.length },
+  { key: "project", label: "项目" },
+  { key: "guardrails", label: "护栏" },
+  { key: "api", label: "API" },
+  { key: "patterns", label: "示例" },
   { key: "status", label: "状态" }
 ];
+function IssueRow(props) {
+  const item = props.item;
+  const isError = item.severity === "error";
+  return (() => {
+    const _el0 = createElement("div");
+    setStaticProps(_el0, {
+      "class": "vk-card"
+    });
+    insertBefore(_el0, (() => {
+      const _el1 = createElement("div");
+      setStaticProps(_el1, {
+        "class": "vk-card__head"
+      });
+      insertBefore(_el1, (() => {
+        const _el2 = createElement("span");
+        bindAttribute(_el2, "class", () => isError ? "vk-sev vk-sev--err" : "vk-sev vk-sev--warn");
+        insertDynamicValue(_el2, null, () => isError ? "错误" : "警告");
+        return _el2;
+      })(), null);
+      insertBefore(_el1, (() => {
+        const _el3 = createElement("span");
+        setStaticProps(_el3, {
+          "class": "vk-mono",
+          "style": "font-size:11.5px"
+        });
+        insertDynamicValue(_el3, null, () => item.code);
+        return _el3;
+      })(), null);
+      insertBefore(_el1, (() => {
+        const _el4 = createElement("span");
+        setStaticProps(_el4, {
+          "class": "vk-card__hint vk-mono"
+        });
+        insertDynamicValue(_el4, null, () => item.file);
+        insertBefore(_el4, createText(":"), null);
+        insertDynamicValue(_el4, null, () => item.line);
+        insertBefore(_el4, createText(":"), null);
+        insertDynamicValue(_el4, null, () => item.column);
+        return _el4;
+      })(), null);
+      return _el1;
+    })(), null);
+    insertBefore(_el0, (() => {
+      const _el5 = createElement("div");
+      setStaticProps(_el5, {
+        "class": "vk-card__body"
+      });
+      insertBefore(_el5, (() => {
+        const _el6 = createElement("div");
+        setStaticProps(_el6, {
+          "class": "vk-desc"
+        });
+        insertDynamicValue(_el6, null, () => item.message);
+        return _el6;
+      })(), null);
+      insertDynamic(_el5, null, () => item.snippet === void 0 || item.snippet === "" ? null : (() => {
+        const _el7 = createElement("pre");
+        setStaticProps(_el7, {
+          "class": "vk-code",
+          "style": "margin-top:8px"
+        });
+        insertDynamicValue(_el7, null, () => item.snippet);
+        return _el7;
+      })());
+      insertBefore(_el5, (() => {
+        const _el8 = createElement("div");
+        setStaticProps(_el8, {
+          "class": "vk-why",
+          "style": "padding:9px 0 0"
+        });
+        insertBefore(_el8, createText("→ "), null);
+        insertDynamicValue(_el8, null, () => item.fix);
+        return _el8;
+      })(), null);
+      return _el5;
+    })(), null);
+    return _el0;
+  })();
+}
+function Project(props) {
+  const status = memo(() => props.project.value.status);
+  const message = memo(() => props.project.value.message);
+  const issues = memo(() => props.project.value.report?.diagnostics ?? []);
+  const summary = memo(() => {
+    const report = props.project.value.report;
+    if (report === void 0)
+      return void 0;
+    const errors = report.diagnostics.filter((item) => item.severity === "error").length;
+    return {
+      files: report.files,
+      skipped: report.skippedTests,
+      errors,
+      warnings: report.diagnostics.length - errors
+    };
+  });
+  return (() => {
+    const _el9 = createElement("div");
+    insertBefore(_el9, (() => {
+      const _el10 = createElement("div");
+      setStaticProps(_el10, {
+        "class": "vk-card"
+      });
+      insertBefore(_el10, (() => {
+        const _el11 = createElement("div");
+        setStaticProps(_el11, {
+          "class": "vk-card__head"
+        });
+        insertBefore(_el11, createText("项目检查 "), null);
+        insertBefore(_el11, (() => {
+          const _el12 = createElement("span");
+          setStaticProps(_el12, {
+            "class": "vk-card__hint"
+          });
+          insertBefore(_el12, createText("读工作区里的 "), null);
+          insertDynamicValue(_el12, null, () => REPORT_PATH);
+          return _el12;
+        })(), null);
+        insertBefore(_el11, cloneTemplate(_tpl13), null);
+        insertBefore(_el11, (() => {
+          const _el14 = createElement("span");
+          setStaticProps(_el14, {
+            "class": "vk-btn"
+          });
+          addEventListener(_el14, "click", props.onRefresh);
+          insertBefore(_el14, createText("重新读取"), null);
+          return _el14;
+        })(), null);
+        return _el11;
+      })(), null);
+      insertBefore(_el10, (() => {
+        const _el15 = createElement("div");
+        setStaticProps(_el15, {
+          "class": "vk-card__body"
+        });
+        insertBefore(_el15, (() => {
+          const _el16 = createElement("div");
+          setStaticProps(_el16, {
+            "class": "vk-desc"
+          });
+          insertDynamicValue(_el16, null, () => message.value);
+          return _el16;
+        })(), null);
+        insertDynamic(_el15, null, () => status.value === "missing" ? cloneTemplate(_tpl17) : null);
+        insertDynamic(_el15, null, () => summary.value === void 0 ? null : (() => {
+          const _el18 = createElement("div");
+          setStaticProps(_el18, {
+            "class": "vk-chips"
+          });
+          insertBefore(_el18, (() => {
+            const _el19 = createElement("span");
+            setStaticProps(_el19, {
+              "class": "vk-chip"
+            });
+            insertDynamicValue(_el19, null, () => `${summary.value.files} 个文件`);
+            return _el19;
+          })(), null);
+          insertBefore(_el18, (() => {
+            const _el20 = createElement("span");
+            setStaticProps(_el20, {
+              "class": "vk-chip"
+            });
+            insertDynamicValue(_el20, null, () => `${summary.value.errors} 个错误`);
+            return _el20;
+          })(), null);
+          insertBefore(_el18, (() => {
+            const _el21 = createElement("span");
+            setStaticProps(_el21, {
+              "class": "vk-chip"
+            });
+            insertDynamicValue(_el21, null, () => `${summary.value.warnings} 个警告`);
+            return _el21;
+          })(), null);
+          insertDynamic(_el18, null, () => summary.value.skipped > 0 ? (() => {
+            const _el22 = createElement("span");
+            setStaticProps(_el22, {
+              "class": "vk-chip"
+            });
+            insertDynamicValue(_el22, null, () => `跳过 ${summary.value.skipped} 个测试文件`);
+            return _el22;
+          })() : null);
+          return _el18;
+        })());
+        return _el15;
+      })(), null);
+      return _el10;
+    })(), null);
+    insertList(_el9, null, () => issues.value, (item) => createComponent(resolveComponent(IssueRow, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "IssueRow"), {
+      get item() {
+        return item;
+      }
+    }), (item) => `${item.code}:${item.file}:${item.line}:${item.column}`);
+    insertDynamic(_el9, null, () => status.value === "ready" && issues.value.length === 0 ? cloneTemplate(_tpl23) : null);
+    return _el9;
+  })();
+}
 function findEntry(name) {
   for (const group of API_GROUPS) {
     const entry = group.entries.find((candidate) => candidate.name === name);
@@ -1764,80 +2092,80 @@ function findEntry(name) {
 }
 function Guardrails() {
   return (() => {
-    const _el0 = createElement("div");
-    insertBefore(_el0, cloneTemplate(_tpl1), null);
-    insertList(_el0, null, () => GUARDRAIL_RULES, (rule) => (() => {
-      const _el2 = createElement("div");
-      setStaticProps(_el2, {
+    const _el24 = createElement("div");
+    insertBefore(_el24, cloneTemplate(_tpl25), null);
+    insertList(_el24, null, () => GUARDRAIL_RULES, (rule) => (() => {
+      const _el26 = createElement("div");
+      setStaticProps(_el26, {
         "class": "vk-card"
       });
-      insertBefore(_el2, (() => {
-        const _el3 = createElement("div");
-        setStaticProps(_el3, {
+      insertBefore(_el26, (() => {
+        const _el27 = createElement("div");
+        setStaticProps(_el27, {
           "class": "vk-card__head"
         });
-        insertBefore(_el3, (() => {
-          const _el4 = createElement("span");
-          setStaticProps(_el4, {
+        insertBefore(_el27, (() => {
+          const _el28 = createElement("span");
+          setStaticProps(_el28, {
             "class": "vk-sev vk-sev--err"
           });
-          insertDynamicValue(_el4, null, () => rule.code);
-          return _el4;
+          insertDynamicValue(_el28, null, () => rule.code);
+          return _el28;
         })(), null);
-        insertDynamicValue(_el3, null, () => rule.name);
-        return _el3;
+        insertDynamicValue(_el27, null, () => rule.name);
+        return _el27;
       })(), null);
-      insertBefore(_el2, (() => {
-        const _el5 = createElement("div");
-        setStaticProps(_el5, {
+      insertBefore(_el26, (() => {
+        const _el29 = createElement("div");
+        setStaticProps(_el29, {
           "class": "vk-card__body"
         });
-        insertBefore(_el5, (() => {
-          const _el6 = createElement("div");
-          setStaticProps(_el6, {
+        insertBefore(_el29, (() => {
+          const _el30 = createElement("div");
+          setStaticProps(_el30, {
             "class": "vk-pair"
           });
-          insertBefore(_el6, (() => {
-            const _el7 = createElement("div");
-            insertBefore(_el7, cloneTemplate(_tpl8), null);
-            insertBefore(_el7, (() => {
-              const _el9 = createElement("pre");
-              setStaticProps(_el9, {
+          insertBefore(_el30, (() => {
+            const _el31 = createElement("div");
+            insertBefore(_el31, cloneTemplate(_tpl32), null);
+            insertBefore(_el31, (() => {
+              const _el33 = createElement("pre");
+              setStaticProps(_el33, {
                 "class": "vk-code vk-code--bad"
               });
-              insertDynamicValue(_el9, null, () => rule.before);
-              return _el9;
+              insertDynamicValue(_el33, null, () => rule.before);
+              return _el33;
             })(), null);
-            return _el7;
+            return _el31;
           })(), null);
-          insertBefore(_el6, (() => {
-            const _el10 = createElement("div");
-            insertBefore(_el10, cloneTemplate(_tpl11), null);
-            insertBefore(_el10, (() => {
-              const _el12 = createElement("pre");
-              setStaticProps(_el12, {
+          insertBefore(_el30, (() => {
+            const _el34 = createElement("div");
+            insertBefore(_el34, cloneTemplate(_tpl35), null);
+            insertBefore(_el34, (() => {
+              const _el36 = createElement("pre");
+              setStaticProps(_el36, {
                 "class": "vk-code vk-code--good"
               });
-              insertDynamicValue(_el12, null, () => rule.after);
-              return _el12;
+              insertDynamicValue(_el36, null, () => rule.after);
+              return _el36;
             })(), null);
-            return _el10;
+            return _el34;
           })(), null);
-          return _el6;
+          return _el30;
         })(), null);
-        return _el5;
+        return _el29;
       })(), null);
-      insertBefore(_el2, (() => {
-        const _el13 = createElement("div");
-        setStaticProps(_el13, {
+      insertBefore(_el26, (() => {
+        const _el37 = createElement("div");
+        setStaticProps(_el37, {
           "class": "vk-why"
         });
-        insertDynamicValue(_el13, null, () => rule.why);
-        return _el13;
+        insertDynamicValue(_el37, null, () => rule.why);
+        return _el37;
       })(), null);
-      return _el2;
+      return _el26;
     })(), (rule) => rule.code);
-    return _el0;
+    return _el24;
   })();
 }
 function ApiDetail(props) {
@@ -1849,150 +2177,150 @@ function ApiDetail(props) {
     return API_GROUPS.flatMap((group) => group.entries).filter((entry) => entry.name !== found.entry.name).slice(0, 4).map((entry) => entry.name);
   });
   return (() => {
-    const _el14 = createElement("div");
-    setStaticProps(_el14, {
+    const _el38 = createElement("div");
+    setStaticProps(_el38, {
       "class": "vk-api__doc"
     });
-    insertBefore(_el14, (() => {
-      const _el15 = createElement("div");
-      setStaticProps(_el15, {
+    insertBefore(_el38, (() => {
+      const _el39 = createElement("div");
+      setStaticProps(_el39, {
         "class": "vk-api__origin"
       });
-      insertDynamicValue(_el15, null, () => current.value?.origin ?? "");
-      return _el15;
+      insertDynamicValue(_el39, null, () => current.value?.origin ?? "");
+      return _el39;
     })(), null);
-    insertBefore(_el14, (() => {
-      const _el16 = createElement("div");
-      setStaticProps(_el16, {
+    insertBefore(_el38, (() => {
+      const _el40 = createElement("div");
+      setStaticProps(_el40, {
         "class": "vk-sig"
       });
-      insertDynamicValue(_el16, null, () => current.value?.entry.signature ?? "");
-      return _el16;
+      insertDynamicValue(_el40, null, () => current.value?.entry.signature ?? "");
+      return _el40;
     })(), null);
-    insertBefore(_el14, (() => {
-      const _el17 = createElement("div");
-      setStaticProps(_el17, {
+    insertBefore(_el38, (() => {
+      const _el41 = createElement("div");
+      setStaticProps(_el41, {
         "class": "vk-desc"
       });
-      insertDynamicValue(_el17, null, () => current.value?.entry.summary ?? "");
-      return _el17;
+      insertDynamicValue(_el41, null, () => current.value?.entry.summary ?? "");
+      return _el41;
     })(), null);
-    insertBefore(_el14, cloneTemplate(_tpl18), null);
-    insertBefore(_el14, (() => {
-      const _el19 = createElement("pre");
-      setStaticProps(_el19, {
+    insertBefore(_el38, cloneTemplate(_tpl42), null);
+    insertBefore(_el38, (() => {
+      const _el43 = createElement("pre");
+      setStaticProps(_el43, {
         "class": "vk-code"
       });
-      insertDynamicValue(_el19, null, () => current.value?.entry.example ?? "");
-      return _el19;
+      insertDynamicValue(_el43, null, () => current.value?.entry.example ?? "");
+      return _el43;
     })(), null);
-    insertBefore(_el14, (() => {
-      const _el20 = createElement("div");
-      setStaticProps(_el20, {
+    insertBefore(_el38, (() => {
+      const _el44 = createElement("div");
+      setStaticProps(_el44, {
         "class": "vk-chips"
       });
-      insertList(_el20, null, () => related.value, (name) => (() => {
-        const _el21 = createElement("span");
-        setStaticProps(_el21, {
+      insertList(_el44, null, () => related.value, (name) => (() => {
+        const _el45 = createElement("span");
+        setStaticProps(_el45, {
           "class": "vk-chip"
         });
-        addEventListener(_el21, "click", () => {
+        addEventListener(_el45, "click", () => {
           props.name.value = name;
         });
-        insertDynamicValue(_el21, null, () => name);
-        return _el21;
+        insertDynamicValue(_el45, null, () => name);
+        return _el45;
       })(), (name) => name);
-      return _el20;
+      return _el44;
     })(), null);
-    return _el14;
+    return _el38;
   })();
 }
 function ApiIndex(props) {
   return (() => {
-    const _el22 = createElement("div");
-    setStaticProps(_el22, {
+    const _el46 = createElement("div");
+    setStaticProps(_el46, {
       "class": "vk-api"
     });
-    insertBefore(_el22, (() => {
-      const _el23 = createElement("div");
-      setStaticProps(_el23, {
+    insertBefore(_el46, (() => {
+      const _el47 = createElement("div");
+      setStaticProps(_el47, {
         "class": "vk-api__nav"
       });
-      insertList(_el23, null, () => API_GROUPS, (group) => (() => {
-        const _el24 = createElement("div");
-        insertBefore(_el24, (() => {
-          const _el25 = createElement("div");
-          setStaticProps(_el25, {
+      insertList(_el47, null, () => API_GROUPS, (group) => (() => {
+        const _el48 = createElement("div");
+        insertBefore(_el48, (() => {
+          const _el49 = createElement("div");
+          setStaticProps(_el49, {
             "class": "vk-api__group"
           });
-          insertDynamicValue(_el25, null, () => group.group);
-          return _el25;
+          insertDynamicValue(_el49, null, () => group.group);
+          return _el49;
         })(), null);
-        insertList(_el24, null, () => group.entries, (entry) => (() => {
-          const _el26 = createElement("div");
-          bindAttribute(_el26, "class", () => entry.name === props.apiName.value ? "vk-api__item vk-api__item--active" : "vk-api__item");
-          addEventListener(_el26, "click", () => {
+        insertList(_el48, null, () => group.entries, (entry) => (() => {
+          const _el50 = createElement("div");
+          bindAttribute(_el50, "class", () => entry.name === props.apiName.value ? "vk-api__item vk-api__item--active" : "vk-api__item");
+          addEventListener(_el50, "click", () => {
             props.apiName.value = entry.name;
           });
-          insertDynamicValue(_el26, null, () => entry.name);
-          return _el26;
+          insertDynamicValue(_el50, null, () => entry.name);
+          return _el50;
         })(), (entry) => entry.name);
-        return _el24;
+        return _el48;
       })(), (group) => group.group);
-      return _el23;
+      return _el47;
     })(), null);
-    insertBefore(_el22, createComponent(resolveComponent(ApiDetail, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "ApiDetail"), {
+    insertBefore(_el46, createComponent(resolveComponent(ApiDetail, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "ApiDetail"), {
       get name() {
         return props.apiName;
       }
     }), null);
-    return _el22;
+    return _el46;
   })();
 }
 function Patterns() {
   return (() => {
-    const _el27 = createElement("div");
-    insertBefore(_el27, cloneTemplate(_tpl28), null);
-    insertBefore(_el27, (() => {
-      const _el29 = createElement("div");
-      setStaticProps(_el29, {
+    const _el51 = createElement("div");
+    insertBefore(_el51, cloneTemplate(_tpl52), null);
+    insertBefore(_el51, (() => {
+      const _el53 = createElement("div");
+      setStaticProps(_el53, {
         "class": "vk-patterns",
         "style": "margin-top:12px"
       });
-      insertList(_el29, null, () => PATTERNS, (pattern) => (() => {
-        const _el30 = createElement("div");
-        setStaticProps(_el30, {
+      insertList(_el53, null, () => PATTERNS, (pattern) => (() => {
+        const _el54 = createElement("div");
+        setStaticProps(_el54, {
           "class": "vk-pattern"
         });
-        insertBefore(_el30, (() => {
-          const _el31 = createElement("div");
-          setStaticProps(_el31, {
+        insertBefore(_el54, (() => {
+          const _el55 = createElement("div");
+          setStaticProps(_el55, {
             "class": "vk-pattern__title"
           });
-          insertDynamicValue(_el31, null, () => pattern.title);
-          return _el31;
+          insertDynamicValue(_el55, null, () => pattern.title);
+          return _el55;
         })(), null);
-        insertBefore(_el30, (() => {
-          const _el32 = createElement("div");
-          setStaticProps(_el32, {
+        insertBefore(_el54, (() => {
+          const _el56 = createElement("div");
+          setStaticProps(_el56, {
             "class": "vk-pattern__summary"
           });
-          insertDynamicValue(_el32, null, () => pattern.summary);
-          return _el32;
+          insertDynamicValue(_el56, null, () => pattern.summary);
+          return _el56;
         })(), null);
-        insertBefore(_el30, (() => {
-          const _el33 = createElement("pre");
-          setStaticProps(_el33, {
+        insertBefore(_el54, (() => {
+          const _el57 = createElement("pre");
+          setStaticProps(_el57, {
             "class": "vk-code"
           });
-          insertDynamicValue(_el33, null, () => pattern.code);
-          return _el33;
+          insertDynamicValue(_el57, null, () => pattern.code);
+          return _el57;
         })(), null);
-        return _el30;
+        return _el54;
       })(), (pattern) => pattern.title);
-      return _el29;
+      return _el53;
     })(), null);
-    return _el27;
+    return _el51;
   })();
 }
 const STATUS_LABEL = {
@@ -2007,102 +2335,102 @@ const STATUS_CLASS = {
 };
 function Status() {
   return (() => {
-    const _el34 = createElement("div");
-    insertBefore(_el34, (() => {
-      const _el35 = createElement("div");
-      setStaticProps(_el35, {
+    const _el58 = createElement("div");
+    insertBefore(_el58, (() => {
+      const _el59 = createElement("div");
+      setStaticProps(_el59, {
         "class": "vk-card"
       });
-      insertBefore(_el35, cloneTemplate(_tpl36), null);
-      insertBefore(_el35, (() => {
-        const _el37 = createElement("div");
-        setStaticProps(_el37, {
+      insertBefore(_el59, cloneTemplate(_tpl60), null);
+      insertBefore(_el59, (() => {
+        const _el61 = createElement("div");
+        setStaticProps(_el61, {
           "class": "vk-card__body"
         });
-        insertList(_el37, null, () => CAPABILITIES, (capability) => (() => {
-          const _el38 = createElement("div");
-          setStaticProps(_el38, {
+        insertList(_el61, null, () => CAPABILITIES, (capability) => (() => {
+          const _el62 = createElement("div");
+          setStaticProps(_el62, {
             "class": "vk-cap"
           });
-          insertBefore(_el38, (() => {
-            const _el39 = createElement("span");
-            bindAttribute(_el39, "class", () => STATUS_CLASS[capability.status]);
-            insertDynamicValue(_el39, null, () => STATUS_LABEL[capability.status]);
-            return _el39;
+          insertBefore(_el62, (() => {
+            const _el63 = createElement("span");
+            bindAttribute(_el63, "class", () => STATUS_CLASS[capability.status]);
+            insertDynamicValue(_el63, null, () => STATUS_LABEL[capability.status]);
+            return _el63;
           })(), null);
-          insertBefore(_el38, (() => {
-            const _el40 = createElement("span");
-            setStaticProps(_el40, {
+          insertBefore(_el62, (() => {
+            const _el64 = createElement("span");
+            setStaticProps(_el64, {
               "class": "vk-cap__name"
             });
-            insertDynamicValue(_el40, null, () => capability.name);
-            return _el40;
+            insertDynamicValue(_el64, null, () => capability.name);
+            return _el64;
           })(), null);
-          insertBefore(_el38, (() => {
-            const _el41 = createElement("span");
-            setStaticProps(_el41, {
+          insertBefore(_el62, (() => {
+            const _el65 = createElement("span");
+            setStaticProps(_el65, {
               "class": "vk-cap__note"
             });
-            insertDynamicValue(_el41, null, () => capability.note);
-            return _el41;
+            insertDynamicValue(_el65, null, () => capability.note);
+            return _el65;
           })(), null);
-          return _el38;
+          return _el62;
         })(), (capability) => capability.name);
-        return _el37;
+        return _el61;
       })(), null);
-      return _el35;
+      return _el59;
     })(), null);
-    insertBefore(_el34, cloneTemplate(_tpl42), null);
-    return _el34;
+    insertBefore(_el58, cloneTemplate(_tpl66), null);
+    return _el58;
   })();
 }
 function VobsDevKit(props) {
   return (() => {
-    const _el43 = createElement("div");
-    setStaticProps(_el43, {
+    const _el67 = createElement("div");
+    setStaticProps(_el67, {
       "class": "vk-root"
     });
-    insertBefore(_el43, cloneTemplate(_tpl44), null);
-    insertBefore(_el43, (() => {
-      const _el45 = createElement("div");
-      setStaticProps(_el45, {
+    insertBefore(_el67, cloneTemplate(_tpl68), null);
+    insertBefore(_el67, (() => {
+      const _el69 = createElement("div");
+      setStaticProps(_el69, {
         "class": "vk-tabs"
       });
-      insertList(_el45, null, () => TABS, (item) => (() => {
-        const _el46 = createElement("div");
-        bindAttribute(_el46, "class", () => item.key === props.tab.value ? "vk-tab vk-tab--active" : "vk-tab");
-        addEventListener(_el46, "click", () => {
+      insertList(_el69, null, () => TABS, (item) => (() => {
+        const _el70 = createElement("div");
+        bindAttribute(_el70, "class", () => item.key === props.tab.value ? "vk-tab vk-tab--active" : "vk-tab");
+        addEventListener(_el70, "click", () => {
           props.tab.value = item.key;
         });
-        insertDynamicValue(_el46, null, () => item.label);
-        insertDynamic(_el46, null, () => item.count === void 0 ? null : (() => {
-          const _el47 = createElement("span");
-          setStaticProps(_el47, {
-            "class": "vk-tab__count"
-          });
-          insertDynamicValue(_el47, null, () => item.count);
-          return _el47;
-        })());
-        return _el46;
+        insertDynamicValue(_el70, null, () => item.label);
+        return _el70;
       })(), (item) => item.key);
-      return _el45;
+      return _el69;
     })(), null);
-    insertBefore(_el43, (() => {
-      const _el48 = createElement("div");
-      setStaticProps(_el48, {
+    insertBefore(_el67, (() => {
+      const _el71 = createElement("div");
+      setStaticProps(_el71, {
         "class": "vk-body"
       });
-      insertDynamic(_el48, null, () => props.tab.value === "guardrails" ? createComponent(resolveComponent(Guardrails, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Guardrails"), {}) : null);
-      insertDynamic(_el48, null, () => props.tab.value === "api" ? createComponent(resolveComponent(ApiIndex, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "ApiIndex"), {
+      insertDynamic(_el71, null, () => props.tab.value === "project" ? createComponent(resolveComponent(Project, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Project"), {
+        get project() {
+          return props.project;
+        },
+        get onRefresh() {
+          return props.onRefreshProject;
+        }
+      }) : null);
+      insertDynamic(_el71, null, () => props.tab.value === "guardrails" ? createComponent(resolveComponent(Guardrails, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Guardrails"), {}) : null);
+      insertDynamic(_el71, null, () => props.tab.value === "api" ? createComponent(resolveComponent(ApiIndex, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "ApiIndex"), {
         get apiName() {
           return props.apiName;
         }
       }) : null);
-      insertDynamic(_el48, null, () => props.tab.value === "patterns" ? createComponent(resolveComponent(Patterns, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Patterns"), {}) : null);
-      insertDynamic(_el48, null, () => props.tab.value === "status" ? createComponent(resolveComponent(Status, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Status"), {}) : null);
-      return _el48;
+      insertDynamic(_el71, null, () => props.tab.value === "patterns" ? createComponent(resolveComponent(Patterns, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Patterns"), {}) : null);
+      insertDynamic(_el71, null, () => props.tab.value === "status" ? createComponent(resolveComponent(Status, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Status"), {}) : null);
+      return _el71;
     })(), null);
-    return _el43;
+    return _el67;
   })();
 }
 const _tpl0 = createTemplate('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2.5"></rect><path d="M8 7V5.5A2.5 2.5 0 0 1 10.5 3h3A2.5 2.5 0 0 1 16 5.5V7"></path><path d="M3 12h18"></path></svg>');
@@ -2174,6 +2502,12 @@ const DEVKIT_CSS = `
 .vk-code--bad { border-color: rgba(245, 85, 74, .35); }
 .vk-code--good { border-color: rgba(78, 209, 126, .32); }
 .vk-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vk-spacer { flex: 1; }
+.vk-btn {
+  font-size: 11px; padding: 3px 9px; border-radius: 7px; cursor: pointer;
+  background: var(--vk-layer3); border: 1px solid var(--vk-border2); color: var(--vk-text);
+}
+.vk-btn:hover { border-color: var(--vk-accent); }
 .vk-label { font-size: 10.5px; color: var(--vk-dim); margin-bottom: 5px; }
 .vk-why { font-size: 11.5px; color: var(--vk-dim); line-height: 1.7; padding: 0 14px 14px; }
 
@@ -2222,19 +2556,26 @@ const DEVKIT_CSS = `
 .vk-cap__note { font-size: 11.5px; color: var(--vk-dim); line-height: 1.6; }
 .vk-empty { padding: 20px 2px; font-size: 12px; color: var(--vk-dim); line-height: 1.7; }
 `;
-const tab = state("guardrails", "tab");
+const tab = state("project", "tab");
 const apiName = state("state", "apiName");
+const project = state({ status: "loading", message: "正在读取检查报告…" }, "project");
+let refreshProject = () => {
+};
 const index = defineDshPanel({
   key: "vobs-devkit",
   label: "Vobs 开发台",
   styles: DEVKIT_CSS,
+  // 读工作区文件需要这两项：会话列表决定「哪个工作区」，remote 提供 workspaceFiles。
+  injectServices: ["sessions", "remote"],
   sidebarEntry: {
     label: "Vobs 开发台",
     order: 8,
     renderIcon: () => createComponent(resolveComponent(DevKitIcon, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/index.tsx", "DevKitIcon"), {})
   },
-  setup() {
-    return void 0;
+  setup(ctx) {
+    const source = createProjectSource(ctx, { sink: project });
+    refreshProject = source.refresh;
+    return () => source.dispose();
   }
 }, () => createComponent(resolveComponent(VobsDevKit, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/index.tsx", "VobsDevKit"), {
   get tab() {
@@ -2242,6 +2583,14 @@ const index = defineDshPanel({
   },
   get apiName() {
     return apiName;
+  },
+  get project() {
+    return project;
+  },
+  get onRefreshProject() {
+    return () => {
+      refreshProject();
+    };
   }
 }));
 exports.default = index;

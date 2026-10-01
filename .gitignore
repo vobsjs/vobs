@@ -4,6 +4,9 @@ dist/
 **/dist/
 coverage/
 .artifacts/
+# vobs check --write 的产出（开发台面板读它显示「项目」页）
+.vobs/
+**/.vobs/
 .vite/
 *.log
 *.tsbuildinfo

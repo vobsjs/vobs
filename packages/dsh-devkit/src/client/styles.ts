@@ -69,6 +69,12 @@ export const DEVKIT_CSS = `
 .vk-code--bad { border-color: rgba(245, 85, 74, .35); }
 .vk-code--good { border-color: rgba(78, 209, 126, .32); }
 .vk-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vk-spacer { flex: 1; }
+.vk-btn {
+  font-size: 11px; padding: 3px 9px; border-radius: 7px; cursor: pointer;
+  background: var(--vk-layer3); border: 1px solid var(--vk-border2); color: var(--vk-text);
+}
+.vk-btn:hover { border-color: var(--vk-accent); }
 .vk-label { font-size: 10.5px; color: var(--vk-dim); margin-bottom: 5px; }
 .vk-why { font-size: 11.5px; color: var(--vk-dim); line-height: 1.7; padding: 0 14px 14px; }
 

@@ -10,7 +10,7 @@
  *
  * 规则的高精度是刻意的：宁可少报，也不要误报 —— 误报会让 AI 去改本来正确的代码。
  */
-import { readdir, readFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import ts from 'typescript'
 import { logger } from '../utils/logger.js'
@@ -18,9 +18,14 @@ import { logger } from '../utils/logger.js'
 export interface CheckOptions {
   readonly dir?: string
   readonly json?: boolean
+  /** 把结果写到 `<root>/.vobs/check.json`（开发台面板读这个文件显示「项目」页）。 */
+  readonly write?: boolean
   /** 把测试文件也纳入检查（默认跳过：fixture 里常有意为之的写法会淹没真问题）。 */
   readonly includeTests?: boolean
 }
+
+/** 检查报告的固定落点，相对被检查的根目录。 */
+export const REPORT_PATH = '.vobs/check.json'
 
 /** 测试文件默认跳过。 */
 const TEST_FILE = /(?:^|\/)(?:[^/]*\.(?:test|spec)\.tsx?|__tests__\/)/u
@@ -344,9 +349,17 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
   }
 
   const errors = diagnostics.filter(item => item.severity === 'error')
+  const report = { root, files: files.length, skippedTests: skipped, diagnostics }
+
+  if (options.write === true) {
+    const target = path.join(root, REPORT_PATH)
+    await mkdir(path.dirname(target), { recursive: true })
+    await writeFile(target, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
+    logger.info(`报告写入 ${REPORT_PATH}（开发台面板读它显示「项目」页）`)
+  }
 
   if (options.json === true) {
-    console.log(JSON.stringify({ root, files: files.length, skippedTests: skipped, diagnostics }, null, 2))
+    console.log(JSON.stringify(report, null, 2))
     if (errors.length > 0) process.exitCode = 1
     return
   }
