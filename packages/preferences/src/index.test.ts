@@ -11,6 +11,21 @@ import {
   usePreferences
 } from './index'
 
+/**
+ * 轮询等待条件成立。
+ *
+ * 固定 `setTimeout(n)` 在并行全量测试下不可靠（机器有负载时定时器会晚）——
+ * 这类测试偶发失败会让人不再信任门禁，比没有门禁更糟。
+ */
+async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  throw new Error(`waitFor 超时（${timeoutMs}ms）`)
+}
+
 const schema = definePreferences({
   theme: { type: 'string', default: 'light', validate: value => value === 'light' || value === 'dark' },
   locale: { type: 'string', default: 'zh-CN' },
@@ -61,7 +76,16 @@ describe('@vobs/preferences', () => {
     })
     expect(preferences.pageSize.value).toBe(3)
     preferences.set('theme', 'light')
-    await new Promise(resolve => setTimeout(resolve, 20))
+    /*
+     * 不能写 `await setTimeout(20)` 这种固定墙钟等待：saveDebounce 是 10ms，
+     * 并行跑全量测试时机器有负载，定时器可能来不及在 20ms 内跑完 ——
+     * 于是这条测试偶发失败（实测单独跑 3/3 通过、全量下偶发红）。
+     * 轮询到条件成立即返回，上限给足余量。
+     */
+    await waitFor(() => {
+      const saved = storage.get('global') as { values?: { theme?: string } } | undefined
+      return saved?.values?.theme === 'light'
+    }, 1000)
     expect(storage.get('global')).toMatchObject({ version: 2, values: { theme: 'light', pageSize: 3 } })
     preferences.dispose()
     storage.dispose()

@@ -72,17 +72,43 @@ export function createCompiler(options: CompilerOptions = {}): VobsCompiler {
   }
 }
 
+/**
+ * 把「同一次编译里的全部错误」拼进一条消息。
+ *
+ * 原来 compile() / Vite 插件都只取第一条（`find`），于是文件里有 5 处错误时，
+ * 开发者要构建 5 次、每次修一处才知道全貌 —— 诊断一次只给一条是最费时间的形态。
+ * 主错误保留它的 location / codeFrame，其余以清单附在后面。
+ */
+export function describeDiagnostics(diagnostics: readonly CompilerDiagnostic[]): {
+  readonly primary: CompilerDiagnostic
+  readonly message: string
+} | null {
+  const errors = diagnostics.filter(item => item.severity === 'error')
+  if (errors.length === 0) return null
+  const [primary] = errors
+  if (errors.length === 1) return { primary, message: primary.message }
+
+  const rest = errors.slice(1).map(item => {
+    const where = `${item.location.file}:${item.location.line}:${item.location.column}`
+    return `  ${item.code}  ${where}  ${item.message}`
+  })
+  return {
+    primary,
+    message: `${primary.message}\n\n同一文件还有 ${errors.length - 1} 处错误：\n${rest.join('\n')}`
+  }
+}
+
 export function compile(code: string, options: CompileOptions = {}): string {
   const result = compileWithSourceMap(code, options)
-  const firstError = result.diagnostics.find(diagnostic => diagnostic.severity === 'error')
-  if (firstError) {
+  const summary = describeDiagnostics(result.diagnostics)
+  if (summary) {
     throw new VobsError({
-      code: firstError.code,
+      code: summary.primary.code,
       layer: 'compiler',
-      message: firstError.message,
-      location: firstError.location,
-      codeFrame: firstError.codeFrame,
-      fix: firstError.fix
+      message: summary.message,
+      location: summary.primary.location,
+      codeFrame: summary.primary.codeFrame,
+      fix: summary.primary.fix
     })
   }
   return result.code
@@ -180,18 +206,46 @@ function toCompilerDiagnostic(
   }
 }
 
+/** 制表符展开宽度：只为让 codeFrame 里的 ^ 对齐，不改动源码本身。 */
+const CODE_FRAME_TAB_WIDTH = 4
+
+/**
+ * 插入符要按**显示宽度**定位，不是字符数。
+ *
+ * `lineText` 里的 tab 在终端里占多列，而原来按字符数 `' '.repeat(character)` 补位，
+ * 带缩进的代码（用 tab 缩进的仓库很常见）会把 `^` 指到右边好几列之外 —— 诊断里最关键的
+ * 那个定位就废了。展开 tab 并同步计数即可。
+ */
+function displayWidthOf(text: string, end: number): number {
+  let width = 0
+  const limit = Math.min(end, text.length)
+  for (let index = 0; index < limit; index += 1) {
+    width += text[index] === '\t' ? CODE_FRAME_TAB_WIDTH : 1
+  }
+  return width
+}
+
 function buildCodeFrame(
   sourceFile: ts.SourceFile,
   start: number,
   length: number
 ): { line: number; column: number; codeFrame: string } {
   const position = sourceFile.getLineAndCharacterOfPosition(start)
-  const lineText = sourceFile.text.split(/\r?\n/u)[position.line] ?? ''
-  const markerLength = Math.max(1, Math.min(length, Math.max(1, lineText.length - position.character)))
+  const rawLine = sourceFile.text.split(/\r?\n/u)[position.line] ?? ''
+  const lineText = rawLine.replace(/\t/gu, ' '.repeat(CODE_FRAME_TAB_WIDTH))
+  const gutter = String(position.line + 1).length + 3
+  const caretStart = displayWidthOf(rawLine, position.character)
+  const caretLength = Math.max(
+    1,
+    Math.min(
+      displayWidthOf(rawLine, position.character + length) - caretStart,
+      Math.max(1, lineText.length - caretStart)
+    )
+  )
   return {
     line: position.line + 1,
     column: position.character + 1,
-    codeFrame: `${position.line + 1} | ${lineText}\n${' '.repeat(String(position.line + 1).length + 3 + position.character)}${'^'.repeat(markerLength)}`
+    codeFrame: `${position.line + 1} | ${lineText}\n${' '.repeat(gutter + caretStart)}${'^'.repeat(caretLength)}`
   }
 }
 
@@ -822,6 +876,34 @@ function transformFragment(state: CompileState, children: readonly ts.JsxChild[]
   )
 }
 
+/**
+ * 边界组件缺少必需属性。
+ *
+ * 原来直接 `throw new VobsError` —— 于是 `compileWithSourceMap`（非抛出版本的 API）
+ * 会抛异常而不是返回诊断，诊断里既没有位置，也一次只能看到这一个问题。
+ * 改成推一条带位置的诊断并让编译继续，与其它诊断走同一条路径。
+ */
+function reportMissingBoundaryProp(
+  state: CompileState,
+  node: ts.JsxElement | ts.JsxSelfClosingElement,
+  component: string,
+  prop: string,
+  fix: string
+): void {
+  const sourceFile = node.getSourceFile() ?? state.sourceFile
+  if (!sourceFile) return
+  const tagName = ts.isJsxElement(node) ? node.openingElement.tagName : node.tagName
+  const { line, column, codeFrame } = buildCodeFrame(sourceFile, tagName.getStart(sourceFile), tagName.getWidth(sourceFile))
+  state.diagnostics.push({
+    code: 'VOBS_C002',
+    severity: 'error',
+    message: `${component} 必须提供 ${prop} 属性。`,
+    location: { file: state.filename, line, column },
+    codeFrame,
+    fix
+  })
+}
+
 function transformResourceBoundary(
   state: CompileState,
   node: ts.JsxElement | ts.JsxSelfClosingElement,
@@ -829,7 +911,10 @@ function transformResourceBoundary(
   children: readonly ts.JsxChild[]
 ): ts.Expression {
   const resource = getAttributeExpression(attributes, 'resource')
-  if (!resource) throw new VobsError({ code: 'VOBS_C002', layer: 'compiler', message: 'ResourceBoundary 必须提供 resource 属性', fix: '为 ResourceBoundary 添加 resource={resource}。' })
+  if (!resource) {
+    reportMissingBoundaryProp(state, node, 'ResourceBoundary', 'resource', '为 ResourceBoundary 添加 resource={resource}。')
+    return ts.factory.createNull()
+  }
   const options: ts.ObjectLiteralElementLike[] = [
     ts.factory.createPropertyAssignment('resource', transformEmbeddedExpression(state, resource)),
     ts.factory.createPropertyAssignment('children', createBoundaryFactory(state, children))
@@ -847,7 +932,10 @@ function transformErrorBoundary(
   children: readonly ts.JsxChild[]
 ): ts.Expression {
   const fallback = getAttributeExpression(attributes, 'fallback')
-  if (!fallback) throw new VobsError({ code: 'VOBS_C002', layer: 'compiler', message: 'ErrorBoundary 必须提供 fallback 属性', fix: '为 ErrorBoundary 添加 fallback={(error, retry) => ...}。' })
+  if (!fallback) {
+    reportMissingBoundaryProp(state, node, 'ErrorBoundary', 'fallback', '为 ErrorBoundary 添加 fallback={(error, retry) => ...}。')
+    return ts.factory.createNull()
+  }
   return createBoundaryFragment(state, node, 'insertErrorBoundary', [
     ts.factory.createPropertyAssignment('children', createBoundaryFactory(state, children)),
     ts.factory.createPropertyAssignment('fallback', transformEmbeddedExpression(state, fallback))
@@ -861,7 +949,10 @@ function transformAsyncBoundary(
   children: readonly ts.JsxChild[]
 ): ts.Expression {
   const promise = getAttributeExpression(attributes, 'promise')
-  if (!promise) throw new VobsError({ code: 'VOBS_C002', layer: 'compiler', message: 'AsyncBoundary 必须提供 promise 属性', fix: '为 AsyncBoundary 添加 promise={promise}。' })
+  if (!promise) {
+    reportMissingBoundaryProp(state, node, 'AsyncBoundary', 'promise', '为 AsyncBoundary 添加 promise={promise}。')
+    return ts.factory.createNull()
+  }
   const options: ts.ObjectLiteralElementLike[] = [
     ts.factory.createPropertyAssignment('promise', transformEmbeddedExpression(state, promise)),
     ts.factory.createPropertyAssignment('children', createAsyncFactory(state, children))

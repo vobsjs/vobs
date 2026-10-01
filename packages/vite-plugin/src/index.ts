@@ -3,7 +3,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Plugin, ViteDevServer } from 'vite'
-import { compileWithSourceMap, createI18nExtractor, type CompileOptions, type VobsSourceMap } from '@vobs/compiler'
+import { compileWithSourceMap, createI18nExtractor, describeDiagnostics, type CompileOptions, type VobsSourceMap } from '@vobs/compiler'
 import { VobsError, formatVobsError, type VobsErrorLocation, type VobsErrorOptions } from '@vobs/runtime/error'
 import { compileHtmlComponent } from './html-component.ts'
 
@@ -134,15 +134,16 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
           ...(extractor ? [extractor.plugin] : [])
         ]
       })
-      const diagnostic = result.diagnostics.find(item => item.severity === 'error')
-      if (diagnostic) {
+      // 一次报全部：只取第一条的话，文件里有 5 处错误要构建 5 次才知道全貌
+      const summary = describeDiagnostics(result.diagnostics)
+      if (summary) {
         throw new VobsError({
-          code: diagnostic.code,
+          code: summary.primary.code,
           layer: 'compiler',
-          message: diagnostic.message,
-          location: diagnostic.location,
-          codeFrame: diagnostic.codeFrame,
-          fix: diagnostic.fix
+          message: summary.message,
+          location: summary.primary.location,
+          codeFrame: summary.primary.codeFrame,
+          fix: summary.primary.fix
         })
       }
       const hmrCode = hmr ? createHmrCode(cleanId) : ''

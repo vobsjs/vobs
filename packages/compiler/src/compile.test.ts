@@ -874,6 +874,59 @@ export const width = st(50, 'doc.width')
     })
   })
 
+  /*
+   * 诊断质量：一次只报第一条是最费时间的形态 —— 文件里有 5 处错误要构建 5 次
+   * 才能知道全貌。边界组件缺属性原来是直接 throw（连位置都没有），
+   * 于是非抛出版本的 compileWithSourceMap 也变成抛异常。
+   */
+  describe('诊断质量', () => {
+    it('compile() 一次列出同一文件里的全部错误', () => {
+      const source = `const a = <div once={fn}>x</div>\nconst b = <Foo.Bar />`
+      let message = ''
+      try {
+        compile(source, { filename: 'src/Many.tsx' })
+      } catch (error) {
+        message = String((error as Error).message)
+      }
+
+      expect(message).toContain('"ce"')
+      expect(message).toContain('还有 1 处错误')
+      expect(message).toContain('VOBS_C101')
+      expect(message).toContain('src/Many.tsx:2')
+    })
+
+    it('边界组件缺属性返回带位置的诊断，而不是抛异常', () => {
+      const cases: readonly [string, string][] = [
+        ['const a = <ErrorBoundary>hi</ErrorBoundary>', 'fallback'],
+        ['const a = <AsyncBoundary>x</AsyncBoundary>', 'promise'],
+        ['const a = <ResourceBoundary>x</ResourceBoundary>', 'resource']
+      ]
+      for (const [source, prop] of cases) {
+        const result = compileWithSourceMap(source, { filename: 'src/B.tsx' })
+        const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C002')
+
+        expect(diagnostic, source).toBeDefined()
+        expect(diagnostic?.severity).toBe('error')
+        expect(diagnostic?.message).toContain(prop)
+        expect(diagnostic?.location).toMatchObject({ file: 'src/B.tsx', line: 1 })
+        expect(diagnostic?.fix).toContain(prop)
+      }
+    })
+
+    it('codeFrame 的插入符按显示宽度对齐（tab 不再让 ^ 偏掉）', () => {
+      const source = 'const a = <div>\n\t\t<div once={fn}>x</div>\n</div>'
+      const diagnostic = compileWithSourceMap(source, { filename: 'src/Tab.tsx' })
+        .diagnostics.find(item => item.code === 'VOBS_C102')
+
+      const [codeLine, caretLine] = (diagnostic?.codeFrame ?? '').split('\n')
+      expect(codeLine).toBeDefined()
+      // 展开 tab 后 ^ 必须落在 once 的起始列
+      const markerColumn = caretLine.indexOf('^')
+      const onceColumn = codeLine.indexOf('once')
+      expect(markerColumn).toBe(onceColumn)
+    })
+  })
+
   it('小写成员表达式标签同样不被放行', () => {
     const result = compileWithSourceMap(`const el = <foo.bar />`)
     expect(result.diagnostics.find(item => item.code === 'VOBS_C101')).toBeDefined()
