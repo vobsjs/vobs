@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createDOMRenderer, createVobs, state } from '@vobs/vobs'
 import { createComponent } from '@vobs/runtime'
 import { scheduler } from '@vobs/reactivity'
-import { Checkbox, Input, Textarea } from './index'
+import { Checkbox, Input, Radio, Select, Switch, Textarea } from './index'
 
 /*
  * bind 双向绑定。
@@ -76,6 +76,43 @@ describe('bind 写回', () => {
     value.value = 'b'
     flush()
     expect(input.value).toBe('b')
+    app.destroy()
+  })
+
+  it('Switch：切换写回布尔信号', () => {
+    const checked = state(false)
+    const { host, app } = mountControl(Switch, { bind: checked })
+    const el = host.querySelector('input[type=checkbox]') as HTMLInputElement
+    el.checked = true
+    el.dispatchEvent(new window.Event('change', { bubbles: true }))
+    flush()
+    expect(checked.value).toBe(true)
+    app.destroy()
+  })
+
+  it('Select：change 写回选中值', () => {
+    const value = state('')
+    const { host, app } = mountControl(Select, { bind: value })
+    const el = host.querySelector('select') as HTMLSelectElement
+    // 选项本应来自 children 插槽；这里只测事件写回本身，所以直接塞 DOM。
+    // （我上一版探针传了 `options` —— 那是猜的 props 形状，导致 <select> 里没有 option，
+    //   于是测的是"我的假设"而不是被测对象，差点误报成 bug 未修。）
+    el.innerHTML = '<option value="a">A</option><option value="b">B</option>'
+    el.value = 'b'
+    el.dispatchEvent(new window.Event('change', { bubbles: true }))
+    flush()
+    expect(value.value).toBe('b')
+    app.destroy()
+  })
+
+  it('Radio：bind 的契约是 Signal<boolean>，写回布尔而非选项值', () => {
+    const checked = state(false)
+    const { host, app } = mountControl(Radio, { bind: checked, value: 'x' })
+    const el = host.querySelector('input[type=radio]') as HTMLInputElement
+    el.checked = true
+    el.dispatchEvent(new window.Event('change', { bubbles: true }))
+    flush()
+    expect(checked.value).toBe(true)
     app.destroy()
   })
 })
