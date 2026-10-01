@@ -23,6 +23,8 @@ import type { VuiChildren, VuiCommonProps } from './types'
 export interface WorkbenchTitlebarProps extends VuiCommonProps {
   readonly mode?: string
   readonly modeIcon?: VuiChildren
+  /** 三个窗口按钮（关闭/最小化/最大化）的可读标签。默认英文，需要本地化时传入。 */
+  readonly windowControlLabel?: (kind: 'close' | 'min' | 'max') => string
   readonly project?: string
   readonly projectIcon?: VuiChildren
   readonly projectChevron?: VuiChildren
@@ -101,7 +103,11 @@ function createWindowLight(
   const light = createElement('button')
   setAttribute(light, 'class', `vui-wbtitlebar__light vui-wbtitlebar__light--${kind}`)
   setAttribute(light, 'type', 'button')
-  setAttribute(light, 'aria-label', kind === 'close' ? 'Close window' : kind === 'min' ? 'Minimize window' : 'Maximize window')
+  // 标签可本地化（默认英文常量；原来写死）
+  const controlLabel = readProp<((kind: 'close' | 'min' | 'max') => string) | undefined>(props, 'windowControlLabel', undefined)
+  setAttribute(light, 'aria-label', controlLabel
+    ? controlLabel(kind)
+    : kind === 'close' ? 'Close window' : kind === 'min' ? 'Minimize window' : 'Maximize window')
   addEventListener(light, 'click', event => {
     const handler = readProp<unknown>(props, handlerName, undefined)
     if (typeof handler === 'function') (handler as WorkbenchTitlebarProps[typeof handlerName])!(event as MouseEvent)

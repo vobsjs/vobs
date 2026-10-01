@@ -37,6 +37,8 @@ export interface EditorTabsProps extends VuiCommonProps {
   readonly closeIcon?: VuiChildren
   readonly actions?: VuiChildren
   readonly onChange?: (id: string, event: MouseEvent | KeyboardEvent) => void
+  /** 关闭按钮的可读标签（会带上标签页标题）。默认 Close <标题>，需要本地化时传入。 */
+  readonly closeLabel?: (tabLabel: string) => string
   readonly onClose?: (id: string, event: MouseEvent) => void
 }
 
@@ -118,7 +120,9 @@ function createEditorTab(
     const close = createElement('button')
     setAttribute(close, 'class', 'close')
     setAttribute(close, 'type', 'button')
-    setAttribute(close, 'aria-label', `Close ${tab.label}`)
+    // 关闭按钮标签可本地化（默认 Close <标题>；原来写死英文）
+    const closeLabel = readProp<((tabLabel: string) => string) | undefined>(props, 'closeLabel', undefined)
+    setAttribute(close, 'aria-label', closeLabel ? closeLabel(tab.label) : `Close ${tab.label}`)
     const closeIcon = tab.closeIcon ?? readProp<VuiChildren | undefined>(props, 'closeIcon', undefined)
     const icon = closeIcon === undefined ? createText('x') : resolveSlot(closeIcon)
     if (icon) insertBefore(close, icon, null)

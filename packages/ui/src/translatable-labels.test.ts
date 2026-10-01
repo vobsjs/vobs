@@ -4,7 +4,7 @@ import { createDOMRenderer, createVobs, setRenderer, type VobsPlugin } from '@vo
 import { createComponent } from '@vobs/runtime'
 import { scheduler } from '@vobs/reactivity'
 import { createNotification, notificationPlugin } from '@vobs/notification'
-import { Combobox, Pagination, ToastHost } from './index'
+import { Combobox, EditorTabs, Pagination, ToastHost, WorkbenchTitlebar } from './index'
 
 setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
@@ -75,6 +75,40 @@ describe('可翻译的 aria-label', () => {
 
     const localized = await mount(Pagination, { page: 2, pageCount: 5, pageLabel: (page: number) => `第 ${page} 页` })
     expect(byText(localized.host, '2')?.getAttribute('aria-label')).toBe('第 2 页')
+    localized.cleanup()
+  })
+
+  it('EditorTabs 关闭按钮标签默认带标题，可传入函数本地化', async () => {
+    const byLabel = (host: HTMLElement, label: string): HTMLElement | undefined =>
+      [...host.querySelectorAll<HTMLElement>('button')].find(button => button.getAttribute('aria-label') === label)
+
+    const plain = await mount(EditorTabs, { tabs: [{ id: 'a', label: 'A.ts', closeable: true }] })
+    expect(byLabel(plain.host, 'Close A.ts')).toBeTruthy()
+    plain.cleanup()
+
+    const localized = await mount(EditorTabs, {
+      tabs: [{ id: 'a', label: 'A.ts', closeable: true }],
+      closeLabel: (tabLabel: string) => `关闭 ${tabLabel}`
+    })
+    expect(byLabel(localized.host, '关闭 A.ts')).toBeTruthy()
+    localized.cleanup()
+  })
+
+  it('WorkbenchTitlebar 三个窗口按钮的标签可本地化', async () => {
+    const byAriaLabel = (host: HTMLElement, label: string): HTMLElement | undefined =>
+      [...host.querySelectorAll<HTMLElement>('[aria-label]')].find(el => el.getAttribute('aria-label') === label)
+
+    const plain = await mount(WorkbenchTitlebar, {})
+    expect(byAriaLabel(plain.host, 'Close window')).toBeTruthy()
+    expect(byAriaLabel(plain.host, 'Minimize window')).toBeTruthy()
+    expect(byAriaLabel(plain.host, 'Maximize window')).toBeTruthy()
+    plain.cleanup()
+
+    const localized = await mount(WorkbenchTitlebar, {
+      windowControlLabel: (kind: string) => `窗口-${kind}`
+    })
+    expect(byAriaLabel(localized.host, '窗口-close')).toBeTruthy()
+    expect(byAriaLabel(localized.host, '窗口-min')).toBeTruthy()
     localized.cleanup()
   })
 })
