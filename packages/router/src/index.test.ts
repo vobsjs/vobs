@@ -834,3 +834,39 @@ describe('导航抢占', () => {
     router.destroy()
   })
 })
+/*
+ * revalidate() 的作用范围。
+ *
+ * 原来无参时**不过滤路由**，把 dataLoaders 里所有历史 key 全部重放：访问过 5 个路由之后
+ * 调一次 revalidate() 就会给 5 个路由各发一轮请求，其中大多数早已不在屏幕上。
+ * 现在无参 = 当前路由；显式传 route 的行为不变。
+ */
+describe('revalidate 的作用范围', () => {
+  it('无参只重跑当前路由的 loader，显式传 route 仍然有效', async () => {
+    const loads: string[] = []
+    const route = (name: string, path: string) => ({
+      path,
+      name,
+      component: () => createText(name),
+      loader: () => { loads.push(name) }
+    })
+    const router = createRouter({
+      history: createMemoryHistory('/'),
+      routes: [route('home', '/'), route('a', '/a'), route('b', '/b')]
+    })
+
+    await router.push({ name: 'a' })
+    await router.push({ name: 'b' })
+    expect(loads).toEqual(['a', 'b'])
+
+    loads.length = 0
+    await router.devtools.revalidate()
+    expect(loads).toEqual(['b'])          // 原来会是 ['a', 'b']
+
+    loads.length = 0
+    await router.devtools.revalidate('/a')
+    expect(loads).toEqual(['a'])
+
+    router.destroy()
+  })
+})

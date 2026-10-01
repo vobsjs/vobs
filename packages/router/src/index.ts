@@ -834,9 +834,20 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
       runAction: (key, task) => trackDataRequest('action', key, task, { trigger: 'manual' }),
       runFetcher: (key, task) => trackDataRequest('fetcher', key, task, { trigger: 'manual' }),
       reportError,
+      /*
+       * 无参 = **重新校验当前路由**的数据，而不是"把所有历史路由的 loader 全部重放"。
+       *
+       * 原来 `route === undefined` 时没有路由过滤，于是访问过 5 个路由之后再调一次
+       * `revalidate()`，会给 5 个路由各发一轮请求 —— 其中大多数早已不在屏幕上。
+       * 名字与典型用法（数据改完刷新当前页）都指向"当前路由"；显式传 route 时行为不变。
+       *
+       * 代价：「全部重放」这个能力不再可达。全仓库唯一的调用点是测试里的
+       * `router.devtools.revalidate()`（且只有一条路由），没有真实调用方依赖它。
+       */
       revalidate: async (route) => {
+        const target = route ?? currentRoute.value.fullPath
         await Promise.all([...dataLoaders.entries()]
-          .filter(([, loader]) => loader.kind === 'loader' && (route === undefined || loader.route === route))
+          .filter(([, loader]) => loader.kind === 'loader' && loader.route === target)
           .map(([key, loader]) => trackDataRequest(loader.kind, key, loader.task, { route: loader.route, trigger: 'revalidate' })))
       },
       subscribe(event, callback) {
@@ -857,6 +868,8 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
       lazyStates.clear()
       errors.length = 0
       dataRequestContexts.clear()
+      // dataLoaders 装着每个路由的 loader 任务闭包 —— 销毁后没人再用它，留着只是拖住引用。
+      dataLoaders.clear()
       currentRoute.dispose()
       viewRevision.dispose()
     }
