@@ -181,9 +181,12 @@ function isHtmlComponent(id: string, option: VobsVitePluginOptions['html']): boo
 /**
  * 注入到页面里的护栏模块。
  *
- * 用**动态** import 而不是静态 import：app 不一定依赖 `@vobs/vobs`（只用
- * `@vobs/reactivity` 的项目也存在），静态 import 解析失败会直接让页面白屏 ——
- * 开发期护栏绝不该让开发环境变得更糟。
+ * 两个刻意的选择：
+ * 1. 用**动态** import 而不是静态 import：app 不一定依赖 `@vobs/vobs`（只用
+ *    `@vobs/reactivity` 的项目也存在），静态 import 解析失败会直接让页面白屏 ——
+ *    开发期护栏绝不该让开发环境变得更糟。
+ * 2. 用 `.then()` 而不是顶层 await：TLA 需要浏览器与构建 target 都支持，而这里
+ *    完全不需要 —— 护栏晚一个微任务装上没有任何影响。
  */
 function createGuardrailsModule(): string {
   return `
@@ -198,22 +201,21 @@ const report = payload => {
   }).catch(() => {})
 }
 
-const guardrails = await import('@vobs/vobs/dev').catch(error => {
-  console.warn('[vobs] 开发期护栏未启用：页面没有安装 @vobs/vobs。', error?.message ?? error)
-  return {}
-})
-
-guardrails.installDevGuardrails?.({
-  onViolation: ({ error, count }) => report({
-    code: error.code,
-    severity: error.severity,
-    layer: error.layer,
-    message: error.message,
-    fix: error.fix,
-    example: error.example,
-    location: error.location,
-    count
+import('@vobs/vobs/dev').then(guardrails => {
+  guardrails.installDevGuardrails?.({
+    onViolation: ({ error, count }) => report({
+      code: error.code,
+      severity: error.severity,
+      layer: error.layer,
+      message: error.message,
+      fix: error.fix,
+      example: error.example,
+      location: error.location,
+      count
+    })
   })
+}).catch(error => {
+  console.warn('[vobs] 开发期护栏未启用：页面没有安装 @vobs/vobs。', error?.message ?? error)
 })
 `
 }

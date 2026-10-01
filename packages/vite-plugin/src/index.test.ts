@@ -299,8 +299,10 @@ describe('vobsPlugin 开发期护栏', () => {
     if (typeof load !== 'function') throw new Error('缺少 load 钩子')
 
     const code = await load.call({} as ThisParameterType<typeof load>, GUARDRAILS_ID) as string
-    expect(code).toContain("await import('@vobs/vobs/dev')")
+    expect(code).toContain("import('@vobs/vobs/dev')")
     expect(code).not.toMatch(/^import\s/mu)
+    // 不用顶层 await：TLA 需要浏览器与构建 target 都支持，而这里不需要
+    expect(code).not.toMatch(/^\s*await\s/mu)
     expect(code).toContain('/__vobs/violation')
     expect(code).toContain('installDevGuardrails')
     // 上报的是框架统一的诊断字段
