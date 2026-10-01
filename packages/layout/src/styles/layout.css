@@ -249,9 +249,15 @@
   content: '+';
 }
 
-.vobs-kit-sidebar.is-collapsed .vobs-kit-menu__label,
-.vobs-kit-sidebar.is-collapsed .vobs-kit-menu__badge,
-.vobs-kit-sidebar.is-collapsed .vobs-kit-menu__expand {
+/*
+ * 折叠态隐藏文字。但**移动端抽屉打开时除外**：那时侧栏被强制成全宽（见下方
+ * `.vobs-kit-layout--mobile .vobs-kit-layout__sidebar`），若仍套用这条规则，
+ * 画出来的就是一个"没有文字的全宽抽屉"（默认 collapsed=true，一点按钮就是这个状态）。
+ * 用 :not(...) 排除，而不是在移动块里再写一条 display 覆盖 —— 后者得知道原来的 display 值。
+ */
+.vobs-kit-sidebar.is-collapsed:not(.is-mobile-open) .vobs-kit-menu__label,
+.vobs-kit-sidebar.is-collapsed:not(.is-mobile-open) .vobs-kit-menu__badge,
+.vobs-kit-sidebar.is-collapsed:not(.is-mobile-open) .vobs-kit-menu__expand {
   display: none;
 }
 
