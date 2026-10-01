@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { createDOMRenderer, createVobs, setRenderer, type VobsPlugin } from '@vobs/vobs'
 import { createComponent } from '@vobs/runtime'
 import { scheduler } from '@vobs/reactivity'
-import { createNotification, notificationPlugin } from '@vobs/notification'
-import { Combobox, EditorTabs, Pagination, ToastHost, WorkbenchTitlebar } from './index'
+import { createNotification, messagePlugin, notificationPlugin } from '@vobs/notification'
+import { Combobox, EditorTabs, MessageHost, Pagination, ToastHost, WorkbenchTitlebar } from './index'
 
 setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
@@ -110,5 +110,19 @@ describe('可翻译的 aria-label', () => {
     expect(byAriaLabel(localized.host, '窗口-close')).toBeTruthy()
     expect(byAriaLabel(localized.host, '窗口-min')).toBeTruthy()
     localized.cleanup()
+  })
+
+  it('MessageHost 的容器标签与 role 可传入（它直接读 props，没有通用属性通道）', async () => {
+    const fallback = await mount(MessageHost, {}, [messagePlugin({ defaultDuration: 0 })])
+    const root = fallback.host.querySelector('.vui-message-host')
+    expect(root?.getAttribute('aria-label')).toBe('Messages')
+    expect(root?.getAttribute('role')).toBe('region')
+    fallback.cleanup()
+
+    const custom = await mount(MessageHost, { 'aria-label': '消息列表', role: 'log' }, [messagePlugin({ defaultDuration: 0 })])
+    const customRoot = custom.host.querySelector('.vui-message-host')
+    expect(customRoot?.getAttribute('aria-label')).toBe('消息列表')
+    expect(customRoot?.getAttribute('role')).toBe('log')
+    custom.cleanup()
   })
 })

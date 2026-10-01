@@ -40,6 +40,10 @@ export interface MessageHostProps {
    * 单条消息可用 message.open({ icon }) 覆盖（string 指定 / false 强制隐藏）
    */
   readonly icon?: boolean | string
+  /** 容器的可读标签（会被读屏播报）。默认 'Messages'，需要本地化时传入。 */
+  readonly 'aria-label'?: string
+  /** 容器的 role。默认 'region'。 */
+  readonly role?: string
 }
 
 export function MessageHost(props: MessageHostProps = {}): VobsNode {
@@ -47,10 +51,10 @@ export function MessageHost(props: MessageHostProps = {}): VobsNode {
   const root = createElement('ol')
   const position = readPosition(props)
   setAttribute(root, 'class', `vui-message-host vui-message-host--${position}`)
-  // 注：这个组件不走 ./utils 的 props 约定（它直接读 props），所以覆盖路径要单独设计，
-  // 本次先保持原样，免得引入一个读不到 prop 的实现。见 todo。
-  setAttribute(root, 'aria-label', 'Messages')
-  setAttribute(root, 'role', 'region')
+  // 这个组件不走 ./utils 的通用属性通道（它直接读 props），所以覆盖路径就是显式的 props 字段：
+  // 原来这两行写死，作者无路可传 —— 读屏只会念英文 'Messages'，role 也改不了。
+  setAttribute(root, 'aria-label', props['aria-label'] ?? 'Messages')
+  setAttribute(root, 'role', props.role ?? 'region')
 
   insertList(root, null, () => message.notifications.value, entry => (
     createMessageItem(entry, props)
