@@ -41,6 +41,12 @@
     "./jsx": {
       "types": "./dist/jsx.d.ts"
     },
+    "./dev": {
+      "types": "./dist/dev.d.ts",
+      "import": "./dist/dev.js",
+      "require": "./dist/dev.cjs",
+      "default": "./dist/dev.js"
+    },
     "./source": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
