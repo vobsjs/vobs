@@ -73,9 +73,15 @@ function createOwner() {
     dispose() {
       if (disposed) return;
       disposed = true;
-      for (const child of [...children]) child.dispose();
-      children.length = 0;
       let firstError;
+      for (const child of [...children]) {
+        try {
+          child.dispose();
+        } catch (error) {
+          firstError ?? (firstError = error);
+        }
+      }
+      children.length = 0;
       for (let index2 = cleanups.length - 1; index2 >= 0; index2--) {
         try {
           cleanups[index2]();
@@ -96,7 +102,13 @@ function createOwner() {
     disposeSince(mark) {
       if (disposed) return;
       let firstError;
-      for (const child of children.slice(mark.children)) child.dispose();
+      for (const child of children.slice(mark.children)) {
+        try {
+          child.dispose();
+        } catch (error) {
+          firstError ?? (firstError = error);
+        }
+      }
       for (let index2 = cleanups.length - 1; index2 >= mark.cleanups; index2--) {
         try {
           cleanups[index2]();
@@ -217,14 +229,37 @@ class Scheduler {
     this.dirtyEffects.delete(effect2);
     this.lowPriorityEffects.delete(effect2);
   }
+  /**
+   * 批处理：抑制调度，退出时同步 flush。
+   *
+   * 注意**不要**把 flush 放进 `finally` —— 那样 `fn()` 抛错时，flush 自己再抛错
+   * 就会把原始错误顶掉（`finally` 里的 throw 会覆盖 try 里的 throw），
+   * 开发者看到的是一个和自己代码无关的错误。这里改成：原始错误优先，
+   * flush 的错误打出来但不顶替。
+   */
   batch(fn) {
     this.batchDepth++;
+    let result;
+    let thrown;
+    let failed = false;
     try {
-      return fn();
+      result = fn();
+    } catch (error) {
+      thrown = error;
+      failed = true;
     } finally {
       this.batchDepth--;
-      if (this.batchDepth === 0) this.flush();
     }
+    if (this.batchDepth === 0) {
+      try {
+        this.flush();
+      } catch (flushError) {
+        if (!failed) throw flushError;
+        console.error("[Vobs] 批处理刷新时又抛出一个错误（原始错误优先）:", flushError);
+      }
+    }
+    if (failed) throw thrown;
+    return result;
   }
   flush() {
     if (this.flushing || this.batchDepth > 0) return;
@@ -1092,6 +1127,7 @@ function readSource(source2) {
 function bindAttribute(node, key, source2) {
   effect(() => {
     const value = readSource(source2);
+    if (value === null || value === void 0) return;
     setAttribute(node, key, key === "style" && value && typeof value === "object" && !Array.isArray(value) ? Object.entries(value).filter(([, entry]) => entry !== null && entry !== void 0 && entry !== false).map(([name, entry]) => `${name.replace(/[A-Z]/gu, (match) => `-${match.toLowerCase()}`)}:${String(entry)}`).join(";") : String(value));
   });
 }
@@ -1100,7 +1136,9 @@ function bindProperty(node, key, source2) {
     registerSelectValueBinding(node, () => readSource(source2));
   }
   effect(() => {
-    setProperty(node, key, readSource(source2));
+    const value = readSource(source2);
+    if (value === null || value === void 0) return;
+    setProperty(node, key, value);
   });
 }
 function insertDynamic(parent, anchor, factory) {

@@ -40,14 +40,40 @@ export class Scheduler {
     this.lowPriorityEffects.delete(effect)
   }
 
+  /**
+   * 批处理：抑制调度，退出时同步 flush。
+   *
+   * 注意**不要**把 flush 放进 `finally` —— 那样 `fn()` 抛错时，flush 自己再抛错
+   * 就会把原始错误顶掉（`finally` 里的 throw 会覆盖 try 里的 throw），
+   * 开发者看到的是一个和自己代码无关的错误。这里改成：原始错误优先，
+   * flush 的错误打出来但不顶替。
+   */
   batch<T>(fn: () => T): T {
     this.batchDepth++
+    let result!: T
+    let thrown: unknown
+    let failed = false
     try {
-      return fn()
+      result = fn()
+    } catch (error) {
+      thrown = error
+      failed = true
     } finally {
       this.batchDepth--
-      if (this.batchDepth === 0) this.flush()
     }
+
+    if (this.batchDepth === 0) {
+      try {
+        this.flush()
+      } catch (flushError) {
+        if (!failed) throw flushError
+        // fn 自己抛的错优先。flush 的错也不能丢，但只能作为附带信息打出来。
+        console.error('[Vobs] 批处理刷新时又抛出一个错误（原始错误优先）:', flushError)
+      }
+    }
+
+    if (failed) throw thrown
+    return result
   }
 
   flush(): void {

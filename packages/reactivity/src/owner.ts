@@ -89,10 +89,24 @@ export function createOwner(): Owner {
     dispose(): void {
       if (disposed) return
       disposed = true
-      for (const child of [...children]) child.dispose()
+      let firstError: unknown
+      /*
+       * 子 Owner 的清理抛错**不能中断级联销毁**。
+       *
+       * 这里原来是裸调 `child.dispose()`：一个子级 cleanup 抛错就让兄弟 Owner 全不销毁、
+       * 父自身的 cleanup 也不跑（实测复现：父 cleanup 未执行、第二个子 owner 仍存活）。
+       * 那是资源泄漏 —— effect 不解绑、监听不移除。与下面清理循环同样逐个隔离，
+       * 收集首个错误最后重抛。
+       */
+      for (const child of [...children]) {
+        try {
+          child.dispose()
+        } catch (error) {
+          firstError ??= error
+        }
+      }
       children.length = 0
 
-      let firstError: unknown
       for (let index = cleanups.length - 1; index >= 0; index--) {
         try {
           cleanups[index]()
@@ -119,7 +133,14 @@ export function createOwner(): Owner {
       // 先释放 mark 之后创建的子 Owner（dispose 会自行从 children 摘除），
       // 再逆序执行 mark 之后注册的清理，顺序语义与 dispose 一致。
       let firstError: unknown
-      for (const child of children.slice(mark.children)) child.dispose()
+      // 同 dispose：子 Owner 抛错不能打断级联（原来这里也是裸调）
+      for (const child of children.slice(mark.children)) {
+        try {
+          child.dispose()
+        } catch (error) {
+          firstError ??= error
+        }
+      }
 
       for (let index = cleanups.length - 1; index >= mark.cleanups; index--) {
         try {
