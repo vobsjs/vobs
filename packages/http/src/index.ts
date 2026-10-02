@@ -648,8 +648,36 @@ function getDedupeKey(config: RequestConfig, defaultEnabled: boolean): string | 
    * 原来只有 `METHOD url`：两个并发 GET 只要 URL 相同就合并，**哪怕 Authorization 不同** ——
    * B 的请求根本不会发出，直接拿到 A 的响应（拿错数据，属于安全问题）。
    * 只纳入凭据类头，其余头不参与，去重的价值不受影响。
+   *
+   * 还必须带上**改变响应形态**的选项（`responseShapeFingerprint`）：
+   * 同一个 URL 并发要 `responseType:'json'` 与 `'blob'` 时，后者会拿到前者解析好的对象
+   * （类型与内容都不对，且完全无声 —— 去重是"共享同一个响应"，不是"共享同一个请求"）。
    */
-  return `${config.method} ${config.url} ${credentialFingerprint(config.headers)}`
+  return `${config.method} ${config.url} ${credentialFingerprint(config.headers)} ${responseShapeFingerprint(config)}`
+}
+
+/**
+ * 参与去重键的"响应形态"选项。
+ *
+ * 这些选项不改变请求发往哪里，但**改变返回给调用方的东西**，所以声明的形态不同就不能合并：
+ * - `responseType`：json / text / blob / arrayBuffer / response —— 差异最大
+ * - `credentials`：include 与 omit 会拿到不同内容（登录态与未登录态的响应可能完全不同）
+ * - `cache`：default 与 no-store 可能拿到不同的新鲜度
+ *
+ * **刻意不纳入**：`onDownloadProgress` / `onUploadProgress` / `signal` / `timeout` / `debugContext`
+ * / `retry` 等，它们不影响响应内容，只影响"怎么等"。
+ *
+ * ⚠️ 但要知道 `onDownloadProgress` 的这个取舍有代价：两个调用方若声明了**不同的**进度回调
+ * 却共享同一个 key，只有先发出那一个的进度回调会被调用（后者静默收不到进度）。
+ * 这一点写成注释而不是塞进 key —— 把回调塞进 key 会让"每个新回调都产生新请求"，
+ * 去重就彻底失效了。需要独立进度回调的调用方请用 `dedupe: false` 或自定义 `dedupeKey`。
+ */
+function responseShapeFingerprint(config: RequestConfig): string {
+  return [
+    `rt=${config.responseType ?? 'json'}`,
+    `cr=${config.credentials ?? 'same-origin'}`,
+    `ca=${config.cache ?? 'default'}`
+  ].join(' ')
 }
 
 /** 参与去重键的凭据头（小写）。 */
