@@ -134,6 +134,27 @@ function serialize(node: SSRNode | SSRElement): string {
   // 空文本节点序列化为空注释占位：HTML 无法表示空文本节点，客户端水合时认领该
   // 占位并原地替换为真实文本节点（见 hydration.ts createText）。
   if (node.type === 'text') {
+    /*
+     * 落到这里是 `[object Object]` 时，几乎必然是**数据里混进了对象**（组件节点 / 普通对象
+     * 被当成文本插值），而不是作者真想写这串字符。
+     *
+     * 为什么必须在预渲染阶段报错：HTML 里出现 `[object Object]` 是**静默**的 ——
+     * 页面照常出来，只有那一块文字是错的；等到上线肉眼发现，再回头翻是哪一层传错了。
+     * 外部踩坑文档里这条**发生过两次**（官网 2026-09-18 与 2026-10-01）。
+     *
+     * 判据用「内容恰好等于 `[object Object]`」而不是"是不是对象"：走到这里时值早已被
+     * 字符串化，类型信息不在了。这串字符作为**作者本意**出现的概率极低，
+     * 而作为"对象被字符串化"的痕迹是唯一的常见来源 —— 所以宁可报错也不静默。
+     */
+    if (node.content === '[object Object]') {
+      throw new Error(
+        'Vobs SSR: 渲染时把**对象**当成了文本（产物里出现 "[object Object]"）。'
+        + '常见原因：把组件节点 / 元素 / 普通对象放进被当作文本插值的表达式，'
+        + '或把 JSX 存进数据常量后直接渲染。'
+        + '修法：文本位置只放字符串/数字；节点要在 JSX 子节点位置直接使用'
+        + '（不要存进数据里再取出来渲染）。'
+      )
+    }
     return node.content === '' ? '<!---->' : escapeHTML(node.content)
   }
   if (node.type === 'comment') return `<!--${escapeComment(node.content)}-->`
