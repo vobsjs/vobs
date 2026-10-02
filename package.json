@@ -28,7 +28,8 @@
     "test:run": "vitest --environment jsdom --run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify:packages": "pnpm run build:packages && pnpm run check:packages && node scripts/verify-packages.mjs",
-    "check:runtime": "node scripts/check-runtime.mjs --ignore /devtools"
+    "check:runtime": "node scripts/check-runtime.mjs --ignore /devtools",
+    "check:runtime:interact": "node scripts/check-runtime.mjs --interact --ignore /devtools"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

@@ -39,7 +39,10 @@ const flag = (name, fallback) => {
 
 const root = resolve(flag('root', 'playground/basic'))
 const port = Number(flag('port', '5390'))
+// 交互模式要真的点完所有按钮（每个 60ms），预算必须放大
+const interact = args.includes('--interact')
 const waitMs = Number(flag('wait', '2500'))
+const virtualTimeBudget = interact ? '20000' : '8000'
 
 /** 默认从 playground 的路由文件里取路径；取不到就用首页。 */
 function defaultRoutes() {
@@ -80,6 +83,60 @@ const COLLECTOR = `<script>
 })();
 </script>`
 
+
+/*
+ * 交互模式追加的驱动脚本（--interact）。
+ *
+ * 为什么值得单独跑一遍：首屏只验证"渲染出来了"，而本轮的实测经验是
+ * **运行期问题更常出现在交互之后**（临时跑交互冒烟时抓到过 `insertBefore` 拿到 null）。
+ * 这里点**所有**按钮、触发所有输入框，然后看护栏报什么。
+ *
+ * 三处刻意的取舍：
+ * - **跳过 `<a>`**：点是会有导航的，那会把我们带离这条路由，测的就不是它了
+ * - **跳过 `type=file`**：给它赋字符串值会抛（"accepts a filename"），那是探针自己的错，
+ *   不是应用的问题 —— 我先前就因此得到过一批假警报
+ * - **跳过 checkbox/radio**：赋 `value` 对它们没有意义（状态在 `checked` 上）
+ */
+var INTERACT_SOURCE = `
+(function () {
+  var clicks = 0;
+  function mark(stage) {
+    document.documentElement.setAttribute('data-guard-stage', stage);
+    document.documentElement.setAttribute('data-guard-clicks', String(clicks));
+  }
+  function afterClicks() {
+    var inputs = document.querySelectorAll('input, textarea, select');
+    for (var j = 0; j < inputs.length; j++) {
+      var input = inputs[j];
+      try {
+        if (input.tagName === 'SELECT') {
+          if (input.options.length > 1) { input.selectedIndex = 1; input.dispatchEvent(new Event('change', { bubbles: true })); }
+        } else if (input.type !== 'file' && input.type !== 'checkbox' && input.type !== 'radio') {
+          input.value = input.type === 'password' ? 'smoke' : 'smoke';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      } catch (e) { /* 单个输入失败不该中断整轮 */ }
+    }
+    mark('interacted');
+  }
+  function clickAll() {
+    var all = document.querySelectorAll('button, [role=button]');
+    var buttons = [];
+    for (var i = 0; i < all.length; i++) { if (!all[i].disabled) buttons.push(all[i]); }
+    var step = 0;
+    function next() {
+      if (step >= buttons.length) { afterClicks(); return; }
+      var button = buttons[step++];
+      clicks++;
+      try { button.click(); } catch (e) { /* 点不动不该中断整轮 */ }
+      setTimeout(next, 60);
+    }
+    next();
+  }
+  setTimeout(clickAll, 2200);
+})();
+`
+
 function findChrome() {
   const candidates = [
     process.env.CHROME_PATH,
@@ -98,7 +155,7 @@ function openRoute(chrome, url, userDataDir) {
     // 参数拼成单个字符串：数组形式会被拆散（见文件头说明）
     const argLine = [
       '--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
-      `--user-data-dir=${userDataDir}`, '--virtual-time-budget=8000', '--dump-dom', url
+      `--user-data-dir=${userDataDir}`, `--virtual-time-budget=${virtualTimeBudget}`, '--dump-dom', url
     ].join(' ')
     const child = spawn(chrome, argLine.split(' '), { stdio: ['ignore', 'pipe', 'ignore'] })
     let out = ''
@@ -127,7 +184,10 @@ const server = await createServer({
     name: 'vobs-check-runtime-collector',
     transformIndexHtml: {
       order: 'pre',
-      handler: html => html.replace('</head>', COLLECTOR + '</head>')
+      handler(html) {
+        // 收集器始终注入；交互模式再追加驱动脚本（它也把 stage 从 'done' 改成 'interacted'）
+        return html.replace('</head>', COLLECTOR + (interact ? `<script>${INTERACT_SOURCE}</script>` : '') + '</head>')
+      }
     }
   }]
 })
@@ -139,15 +199,31 @@ const ignored = new Set(
   flag('ignore', '').split(',').map(route => route.trim()).filter(Boolean)
 )
 const acknowledged = []
+/** 交互模式下每条路由实际点了几下（用于证明驱动真的跑了）。 */
+const clickCounts = []
 try {
   for (const route of routes) {
     const dom = await openRoute(chrome, `http://localhost:${port}${route}`, userDataDir)
-    const stage = /data-guard-stage="([^"]*)"/u.exec(dom)
+    const stage = /data-guard-stage="([^"]*)"/u.exec(dom)?.[1] ?? null
     const raw = /data-guard-errors="([^"]*)"/u.exec(dom)
-    if (!stage) {
+    const clicks = Number(/data-guard-clicks="(\d+)"/u.exec(dom)?.[1] ?? '-1')
+    if (stage === null) {
       failures.push({ route, errors: ['页面未就绪（收集器没跑起来；检查 dev server 是否正常）'] })
       continue
     }
+    /*
+     * 交互模式必须**证明点击真的发生了**：驱动脚本没注入成功、或在点击前就抛错时，
+     * stage 会停在 'done' —— 那种情况下"零报错"毫无意义（什么都没点）。
+     * 这正是我先前踩过的"测试没有牙齿"：检查绿了，但它验的东西根本没跑。
+     */
+    if (interact && stage !== 'interacted') {
+      failures.push({
+        route,
+        errors: [`交互驱动没有跑完（stage=${stage}，clicks=${clicks}）—— 本次的"零报错"不能采信`]
+      })
+      continue
+    }
+    if (interact) clickCounts.push(clicks)
     const errors = raw ? JSON.parse(decode(raw[1])) : []
     if (errors.length === 0) continue
     if (ignored.has(route)) acknowledged.push({ route, errors })
@@ -159,14 +235,16 @@ try {
 }
 
 if (failures.length === 0) {
+  const mode = interact ? `（交互模式：点按钮 + 触发输入）` : ''
   const suffix = acknowledged.length > 0
     ? `（另有 ${acknowledged.length} 条已记录的已知问题被 --ignore 放行：${acknowledged.map(item => item.route).join(', ')}）`
     : ''
-  console.log(`vobs check --runtime: ${routes.length} 条路由无护栏报错${suffix}`)
+  const clicked = clickCounts.length > 0 ? `，共点击 ${clickCounts.reduce((a, b) => a + b, 0)} 次（最少 ${Math.min(...clickCounts)} 次/路由）` : ''
+  console.log(`vobs check --runtime${mode}: ${routes.length} 条路由无护栏报错${clicked}${suffix}`)
   process.exit(0)
 }
 
-console.error(`vobs check --runtime: ${failures.length}/${routes.length} 条路由有护栏报错\n`)
+console.error(`vobs check --runtime${interact ? '（交互模式）' : ''}: ${failures.length}/${routes.length} 条路由有护栏报错\n`)
 for (const failure of failures) {
   console.error(`  ${failure.route}`)
   for (const error of failure.errors) console.error(`    ${error}`)
