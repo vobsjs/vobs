@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createComponent,
   createDOMRenderer,
@@ -61,6 +61,50 @@ describe('@vobs/i18n', () => {
     app.update()
     expect(container.textContent).toBe('English')
     app.destroy()
+    i18n.dispose()
+  })
+
+  /*
+   * `new Intl.*` 很贵：实测 formatDate 每次新建 ≈94.6µs，复用实例 ≈1.84µs（≈50×）。
+   * 5 处格式化方法原来每次都新建（201/210/217/241/245）。这里用构造次数直接钉住缓存，
+   * 比计时稳定得多。
+   */
+  it('同 locale/options 复用 Intl 实例（构造昂贵，实测约 50×）', () => {
+    const dateSpy = vi.spyOn(Intl, 'DateTimeFormat')
+    const numberSpy = vi.spyOn(Intl, 'NumberFormat')
+    const relativeSpy = vi.spyOn(Intl, 'RelativeTimeFormat')
+    const i18n = createI18n({ defaultLocale: 'en-US', timeZone: 'UTC' })
+
+    const firstDate = i18n.formatDate(new Date('2024-01-15T00:00:00Z'), 'short')
+    const firstNumber = i18n.formatNumber(1234.5)
+    const firstCurrency = i18n.formatCurrency(9.99, 'USD')
+    const firstRelative = i18n.formatRelativeTime(Date.now() - 60 * 60 * 1000)
+    for (let index = 0; index < 40; index++) {
+      expect(i18n.formatDate(new Date('2024-01-15T00:00:00Z'), 'short')).toBe(firstDate)
+      expect(i18n.formatNumber(1234.5)).toBe(firstNumber)
+      expect(i18n.formatCurrency(9.99, 'USD')).toBe(firstCurrency)
+      expect(i18n.formatRelativeTime(Date.now() - 60 * 60 * 1000)).toBe(firstRelative)
+    }
+
+    expect(dateSpy).toHaveBeenCalledTimes(1)
+    expect(relativeSpy).toHaveBeenCalledTimes(1)
+    // 普通数字与货币是两套 options → 两个实例（各自也只建一次）
+    expect(numberSpy).toHaveBeenCalledTimes(2)
+
+    dateSpy.mockRestore()
+    numberSpy.mockRestore()
+    relativeSpy.mockRestore()
+    i18n.dispose()
+  })
+
+  it('切语言后格式化结果跟着变（缓存按 locale 分开）', () => {
+    const i18n = createI18n({ defaultLocale: 'en-US', timeZone: 'UTC' })
+    const english = i18n.formatDate(new Date('2024-01-15T00:00:00Z'), { year: 'numeric', month: 'long' })
+    i18n.setLocale('de-DE')
+    const german = i18n.formatDate(new Date('2024-01-15T00:00:00Z'), { year: 'numeric', month: 'long' })
+    expect(english).toContain('January')
+    expect(german).toContain('Januar')
+    expect(german).not.toBe(english)
     i18n.dispose()
   })
 
