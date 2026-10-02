@@ -32,8 +32,8 @@ const app = hydrate(render, '#app', { state: window.__VOBS_STATE__, resourceClie
 | Signature | Description |
 | --- | --- |
 | `renderToString(render, options?)` | Render synchronously to an HTML string; `options.plugins` accepts `VobsPlugin[]`. |
-| `renderToStringAsync(render, options?)` | Await `resourceClient.prefetchAll()`, then return an `AsyncSSRResult` with `html`, dehydrated `resources`/`dict`, `state`, and an optional server request `debug` snapshot (`debug.captureRequests`). |
-| `hydrate(render, target, options?)` | Reuse the server-rendered DOM, restore dehydrated state, and return the mounted `VobsApp<Node>`. |
+| `renderToStringAsync(render, options?)` | Await `resourceClient.prefetchAll()`, then flush until the HTML stops changing (`options.maxFlushRounds`, default 10), and return an `AsyncSSRResult` with `html`, dehydrated `resources`/`dict`, `state`, `failedResources` (only when some prefetch failed), and an optional server request `debug` snapshot (`debug.captureRequests`). |
+| `hydrate(render, target, options?)` | Reuse the server-rendered DOM, restore dehydrated state, and return the mounted `VobsApp<Node>`. `options.strictHydration` rejects a provisional claim of non-empty server text instead of only emitting a debug event. |
 | `createState(options)` | Build an `SSRState` from resource/dict/i18n/theme contexts. |
 | `serializeState(state)` | JSON-encode an `SSRState` for inline embedding (escapes `<`, `>`, `&`, and line separators). |
 | `parseState(snapshot)` | Validate and parse a string or object snapshot back into an `SSRState`. |
@@ -48,6 +48,26 @@ const app = hydrate(render, '#app', { state: window.__VOBS_STATE__, resourceClie
 ## Types
 
 SSRRenderer, SSRNode, SSRElement, SSRText, SSRComment, HydrationRenderer, AsyncSSRResult, AsyncSSROptions, SSRState, SSRStateOptions, SSRDebugSnapshot, I18nSSRState, I18nSSRContext, ThemeSSRState, ThemeSSRContext, DictSSRContext, HeadTag, PrerenderPage, PrerenderOptions, PrerenderResult, PrerenderTemplateParts
+
+## Hydration strictness
+
+When the server rendered non-empty text while the client wants an empty text node (a bare `createText('')` that a binding effect overwrites later), hydration can only claim that text provisionally. By default it does so and emits a `hydrationProvisionalText` runtime debug event; with `strictHydration: true` it throws a `HydrationMismatchError` instead (`vobsHydration.kind === 'content'`, `actual` carrying the server text). The normal empty case — server text serialized as a `<!---->` placeholder comment — is unaffected.
+
+```ts
+// Client — reject a silently replaced value instead of debugging it later
+hydrate(render, '#app', { state: window.__VOBS_STATE__, strictHydration: true })
+```
+
+## Async SSR flushing and failures
+
+`renderToStringAsync` awaits `prefetchAll()`, then keeps rendering until the HTML stops changing (bounded by `maxFlushRounds`, default 10). Content written one asynchronous hop after the data arrives — a timer or a second request inside a binding effect — therefore still lands in the final HTML. `maxFlushRounds: 1` restores the old single-`update()` behavior.
+
+`prefetchAll()` deliberately never rejects and `dehydrate()` drops failed entries, so a page can be rendered from partial data without any signal. The result surfaces that as `failedResources` — a snapshot of `resourceClient.errors()` (`{ key, error }`) — present only when non-empty, so a healthy render keeps its previous result shape.
+
+```ts
+const result = await renderToStringAsync(render, { resourceClient, maxFlushRounds: 10 })
+if (result.failedResources) console.warn('SSR rendered from partial data', result.failedResources)
+```
 
 ## SSG (static site generation)
 

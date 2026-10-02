@@ -34,6 +34,12 @@ result.cursor // resume point for the next incremental cycle
 
 Pending changes and the cursor persist through `@vobs/storage` (or a `StorageContext` you pass in), so a recreated instance resumes where the previous one stopped. When a remote change targets a key that also has a pending local change, `conflict` picks the winner; a custom resolver may return a merged change. Offline cycles fail with `SYNC_OFFLINE` and restart automatically on the browser `online` event. Cycles run as `@vobs/queue` tasks, one at a time.
 
+A conflict is decided once per local change. Once that change (same `id` and `timestamp`) has won against the remote, its `local` verdict is cached and a custom resolver is not called again on later cycles — even when the server keeps sending the same remote change. Only `local` verdicts are cached, and the cache is per instance (not persisted).
+
+Convergence relies on `acknowledged` in the response: an ID list of what the server accepted, where an omitted field means every sent change is treated as accepted. When `acknowledged` is given explicitly, a local change listed there leaves the pending queue even if it just won the conflict, so it is not re-pushed every cycle. When `acknowledged` is omitted, a change that won the conflict stays pending and is re-sent each cycle (at-least-once).
+
+`pollInterval` is fixed-cadence polling that calls `sync()`, not a backoff or retry policy — `SyncOptions` has no `retry`/`retryDelay`. After a failed cycle the next attempt still waits one full interval (the gap never grows), and without a `pollInterval` there is no automatic retry at all: schedule your own with the `error` event or `onError`.
+
 ## API
 
 | Signature | Description |

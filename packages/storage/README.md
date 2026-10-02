@@ -28,7 +28,7 @@ const unsubscribe = storage.subscribe(change => {
 })
 ```
 
-Every value is written as an envelope carrying its version, so reads of older data run through `migrate` and are persisted back at the new version. Invalid JSON is reported as `CORRUPT_DATA`, removed, and reads return null. If the backend throws, the context degrades to the memory fallback and reports `STORAGE_UNAVAILABLE`. Writes from other tabs arrive through browser `storage` events with `source: 'external'`.
+Every value is written as an envelope carrying its version, so reads of older data run through `migrate` and are persisted back at the new version. Invalid JSON is reported as `CORRUPT_DATA`, removed, and reads return null. If the backend throws, the context degrades to the memory fallback and reports `STORAGE_UNAVAILABLE`; quota/capacity failures are reported as `QUOTA_EXCEEDED` and thrown without degrading. Writes from other tabs arrive through browser `storage` events with `source: 'external'`.
 
 ## API
 
@@ -43,7 +43,7 @@ Every value is written as an envelope carrying its version, so reads of older da
 | `createMemoryStorage() / memoryStorage` | In-memory `StorageLike` for tests and SSR. |
 | `storagePlugin(options?)` | Provide the context as `STORAGE_KEY`; disposes it on uninstall. |
 | `useStorage()` | Inject the context installed by `storagePlugin`. |
-| `StorageError` | Error with `code` (`STORAGE_UNAVAILABLE`, `CORRUPT_DATA`, `SERIALIZATION_FAILED`, `MIGRATION_FAILED`), `key`, and `cause`. |
+| `StorageError` | Error with `code` (`STORAGE_UNAVAILABLE`, `QUOTA_EXCEEDED`, `CORRUPT_DATA`, `SERIALIZATION_FAILED`, `MIGRATION_FAILED`), `key`, and `cause`. |
 
 ## Types
 

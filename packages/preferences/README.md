@@ -39,7 +39,7 @@ preferences.reset('theme')
 | `preferences.[key]: Signal` | Each schema key is exposed as a typed signal on the context. |
 | `preferences.get(key)` / `preferences.set(key, value)` | Reads or writes one preference; `set` validates against the schema. |
 | `preferences.reset(key)` / `preferences.resetAll()` | Restores defaults for one key or the whole schema. |
-| `preferences.restore(): void` | Re-reads storage, validates entries, and reports invalid ones via `onError`. |
+| `preferences.restore(): void` | Re-reads storage, validates entries, and reports invalid ones via `onError`; also cancels any pending debounced save. |
 | `preferences.save(): void` | Persists all values with a `version` envelope; throws `PreferenceError('PERSIST_FAILED')` on failure. |
 | `preferences.subscribe(listener): () => void` | Receives `{ key, value, source }` for `local`, `external`, and `restore` changes. |
 | `preferences.dispose(): void` | Stops effects, timers, and the storage subscription. |
@@ -47,6 +47,8 @@ preferences.reset('theme')
 | `usePreferences<S>(): PreferencesContext<S>` | Injects the preferences context inside components. |
 
 Values are checked against the schema `type` and optional `validate` predicate; `set` with an invalid value throws `PreferenceError('INVALID_VALUE')`, while invalid stored values fall back to defaults and are reported. Auto-save (on by default) persists schema values with optional `saveDebounce`; `version` plus `migrate` upgrades old payloads; `userSpecific` with `getUserId` re-restores when the user changes; external storage changes are picked up through the storage subscription.
+
+`restore()` writes the restored values through `resetAll()`, so its own writes are marked as restore writes and keep the pending auto-save suppressed for that flush. Two consequences are worth knowing at the call site. A real `set()` in the same synchronous task still persists: it clears that suppression, so `restore(); set('pageSize', 99)` ends with `99` on disk instead of silently keeping the stored value. And because a restore makes memory follow storage, a debounced save that was already queued is dropped — otherwise that stale snapshot would be written back after an external `removeItem()` and resurrect a key another tab just deleted.
 
 ## Types
 
