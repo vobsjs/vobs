@@ -431,9 +431,8 @@ function toReactiveItem<T>(item: Signal<T>, initialValue: T): T {
     return initialValue
   }
 
-  // 代理目标使用创建时的原始对象：避免在列表 effect 内读取 item 信号造成自依赖；
-  // 属性读取始终转发到 item.value，在行内绑定 effect 中被正常追踪。
-  return new Proxy(initialValue as object, {
+  // 属性读取转发到 item.value（顶替后的新条目），由 get 陷阱完成追踪；目标见 reactiveProxyTarget。
+  return new Proxy(reactiveProxyTarget(initialValue), {
     get(_target, property, receiver) {
       return Reflect.get(item.value as object, property, receiver)
     },
@@ -443,10 +442,45 @@ function toReactiveItem<T>(item: Signal<T>, initialValue: T): T {
     ownKeys() {
       return Reflect.ownKeys(item.value as object)
     },
-    getOwnPropertyDescriptor(_target, property) {
-      return Object.getOwnPropertyDescriptor(item.value as object, property)
+    getOwnPropertyDescriptor(target, property) {
+      const descriptor = Object.getOwnPropertyDescriptor(item.value as object, property)
+      if (!descriptor) return undefined
+      // 目标上已有的自有属性不能改报"可配置性"（数组的 length 就不可配置），否则违反不变量
+      const own = Object.getOwnPropertyDescriptor(target, property)
+      return { ...descriptor, configurable: own ? own.configurable : true }
     }
   }) as T
+}
+
+/**
+ * 选择代理目标。
+ *
+ * 目标**不能**带"不可配置"的自有属性：代理把属性读取转发到 `item.value`（同 key 顶替后的
+ * 新条目），而 Proxy 不变量要求 get / getOwnPropertyDescriptor / ownKeys 与目标一致。实测
+ * `Object.freeze` 过的条目（@vobs/notification 每条通知都冻结）直接抛：
+ *
+ *   TypeError: 'get' on proxy: property 'content' is a read-only and non-configurable data
+ *   property on the proxy target but the proxy did not return its actual value
+ *
+ * 于是"冻结条目的行原地刷新"这条路径根本不可能成立（首轮渲染恰好同值，把问题掩盖了）。
+ *
+ * 安全的条目（可扩展 + 自有属性全部可配置：普通字面量、DOM 包装器等）照旧用条目自身当目标 ——
+ * jsdom 会把 sameObjectCaches 之类的 Symbol 缓存写在包装器上，写与读必须落在同一个对象上，
+ * 换目标会让 `element.classList` 直接抛 TypeError。冻结/密封/defineProperty 过的条目改用
+ * 同原型的空对象（数组用空数组，保住 Array.isArray）。
+ */
+function reactiveProxyTarget(value: object): object {
+  if (Object.isExtensible(value)) {
+    let allConfigurable = true
+    for (const key of Reflect.ownKeys(value)) {
+      if (Object.getOwnPropertyDescriptor(value, key)?.configurable === false) {
+        allConfigurable = false
+        break
+      }
+    }
+    if (allConfigurable) return value
+  }
+  return Array.isArray(value) ? [] : Object.create(Object.getPrototypeOf(value) as object | null)
 }
 
 function disposeEntry(parent: Node, entry: ListEntry<unknown>): void {

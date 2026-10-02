@@ -1,0 +1,18 @@
+@import './styles/fonts.css';
+@import 'tailwindcss';
+@import './styles/theme.css';
+
+@layer base {
+  body { @apply bg-background text-foreground font-sans antialiased; }
+  button, a, input { @apply focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary; }
+  button { @apply cursor-pointer; }
+  html { scroll-behavior: smooth; }
+}
+@keyframes paper-feed {
+  from { transform: translateY(-35px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .print-paper { animation: none !important; }
+}

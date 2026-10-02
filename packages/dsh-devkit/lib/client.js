@@ -1447,7 +1447,7 @@ function toReactiveItem(item, initialValue) {
   if (typeof initialValue !== "object" || initialValue === null) {
     return initialValue;
   }
-  return new Proxy(initialValue, {
+  return new Proxy(reactiveProxyTarget(initialValue), {
     get(_target, property, receiver) {
       return Reflect.get(item.value, property, receiver);
     },
@@ -1457,10 +1457,26 @@ function toReactiveItem(item, initialValue) {
     ownKeys() {
       return Reflect.ownKeys(item.value);
     },
-    getOwnPropertyDescriptor(_target, property) {
-      return Object.getOwnPropertyDescriptor(item.value, property);
+    getOwnPropertyDescriptor(target, property) {
+      const descriptor = Object.getOwnPropertyDescriptor(item.value, property);
+      if (!descriptor) return void 0;
+      const own = Object.getOwnPropertyDescriptor(target, property);
+      return { ...descriptor, configurable: own ? own.configurable : true };
     }
   });
+}
+function reactiveProxyTarget(value) {
+  if (Object.isExtensible(value)) {
+    let allConfigurable = true;
+    for (const key of Reflect.ownKeys(value)) {
+      if (Object.getOwnPropertyDescriptor(value, key)?.configurable === false) {
+        allConfigurable = false;
+        break;
+      }
+    }
+    if (allConfigurable) return value;
+  }
+  return Array.isArray(value) ? [] : Object.create(Object.getPrototypeOf(value));
 }
 function disposeEntry(parent, entry) {
   removeChild(parent, entry.node);

@@ -1,10 +1,13 @@
 import { MESSAGE_KEY, type MessageData, type Notification, type NotificationContext, type NotificationType } from '@vobs/notification'
 import {
   addEventListener,
+  bindAttribute,
+  bindText,
   createElement,
   createText,
   inject,
   insertBefore,
+  insertDynamic,
   insertList,
   setAttribute,
   type VobsNode
@@ -81,26 +84,39 @@ function createMessageItem(
 ): VobsNode {
   const item = createElement('li')
   const content = createElement('div')
-  setAttribute(item, 'class', `vui-message vui-message--${notification.type}`)
-  setAttribute(item, 'data-notification-id', notification.id)
-  setAttribute(item, 'role', notification.type === 'error' ? 'alert' : 'status')
+  const text = createText('')
   setAttribute(content, 'class', 'vui-message__content')
-  insertBefore(content, createText(notification.content), null)
+  insertBefore(content, text, null)
 
-  const iconName = resolveIcon(notification, props)
-  if (iconName !== null) {
+  /*
+   * 行会被 insertList 按 key 复用：同 key 顶替只写 item 信号、**不重建行**
+   * （runtime/src/dynamic.ts:341-351）。所以这里不能"从条目取一次值就写 DOM" ——
+   * 那样顶替后内容/类型/role/图标/点击闭包会永久停留在旧值。
+   * 条目相关的写入一律放进 effect（bindText / bindAttribute / insertDynamic），
+   * 读 renderItem 拿到的响应式代理。写法对照 table/src/data-table.ts:241-282。
+   */
+  bindText(text, () => notification.content)
+  bindAttribute(item, 'class', () => {
+    const data = notification.data as MessageData | undefined
+    const clickable = typeof data?.onClick === 'function' ? ' vui-message--clickable' : ''
+    return `vui-message vui-message--${notification.type}${clickable}`
+  })
+  bindAttribute(item, 'data-notification-id', () => notification.id)
+  bindAttribute(item, 'role', () => notification.type === 'error' ? 'alert' : 'status')
+  // 事件里再取当前条目：闭包里捕获的那一份在被顶替后是旧的
+  addEventListener(item, 'click', () => {
+    ;(notification.data as MessageData | undefined)?.onClick?.()
+  })
+
+  insertBefore(item, content, null)
+  insertDynamic(item, content, () => {
+    const iconName = resolveIcon(notification, props)
+    if (iconName === null) return null
     const iconWrap = createElement('span')
     setAttribute(iconWrap, 'class', `vui-message__icon vui-message__icon--${notification.type}`)
     insertBefore(iconWrap, Icon({ name: iconName, size: 15, decorative: true }), null)
-    insertBefore(item, iconWrap, null)
-  }
-  insertBefore(item, content, null)
-
-  const data = notification.data as MessageData | undefined
-  if (typeof data?.onClick === 'function') {
-    setAttribute(item, 'class', `vui-message vui-message--${notification.type} vui-message--clickable`)
-    addEventListener(item, 'click', () => data.onClick?.())
-  }
+    return iconWrap
+  })
   return item
 }
 

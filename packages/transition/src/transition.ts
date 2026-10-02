@@ -339,7 +339,9 @@ function invoke(callback: ((element: Element) => void) | undefined, element: Ele
 
 function toReactiveItem<Item>(signal: Signal<Item>, initialValue: Item): Item {
   if (typeof initialValue !== 'object' || initialValue === null) return initialValue
-  return new Proxy(initialValue as object, {
+  // 与 runtime/src/dynamic.ts 的 toReactiveItem 同一处修复（含 reactiveProxyTarget 的理由）：
+  // 目标不能带不可配置的自有属性，否则 Object.freeze 过的条目会让 get 陷阱违反 Proxy 不变量。
+  return new Proxy(reactiveProxyTarget(initialValue), {
     get(_target, property, receiver) {
       return Reflect.get(signal.value as object, property, receiver)
     },
@@ -349,8 +351,26 @@ function toReactiveItem<Item>(signal: Signal<Item>, initialValue: Item): Item {
     ownKeys() {
       return Reflect.ownKeys(signal.value as object)
     },
-    getOwnPropertyDescriptor(_target, property) {
-      return Object.getOwnPropertyDescriptor(signal.value as object, property)
+    getOwnPropertyDescriptor(target, property) {
+      const descriptor = Object.getOwnPropertyDescriptor(signal.value as object, property)
+      if (!descriptor) return undefined
+      const own = Object.getOwnPropertyDescriptor(target, property)
+      return { ...descriptor, configurable: own ? own.configurable : true }
     }
   }) as Item
+}
+
+/** 见 runtime/src/dynamic.ts 的同名函数（这段是它的副本）。 */
+function reactiveProxyTarget(value: object): object {
+  if (Object.isExtensible(value)) {
+    let allConfigurable = true
+    for (const key of Reflect.ownKeys(value)) {
+      if (Object.getOwnPropertyDescriptor(value, key)?.configurable === false) {
+        allConfigurable = false
+        break
+      }
+    }
+    if (allConfigurable) return value
+  }
+  return Array.isArray(value) ? [] : Object.create(Object.getPrototypeOf(value) as object | null)
 }

@@ -75,6 +75,47 @@ describe('@vobs/ui MessageHost', () => {
     unregister()
   })
 
+  /*
+   * 行会被 insertList 按 key 复用：同 key 顶替只写 item 信号、**不重建行**
+   * （runtime/src/dynamic.ts:341-351）。所以行内任何"从条目取一次值再写 DOM"的代码
+   * 在顶替后都会永久停留在旧值 —— 下面这条必须能咬住。
+   * 上面那条用例把两次 notify 放进同一批次，恰好让行只建一次，掩盖了这个问题。
+   */
+  it('同 key 顶替后，已渲染的行必须跟着更新（内容/类型/role/图标/点击闭包）', () => {
+    const message = createNotification({ defaultDuration: 0 })
+    const container = document.createElement('main')
+    const firstClick = vi.fn()
+    const secondClick = vi.fn()
+    const app = createVobs({
+      render: () => createComponent(MessageHost, { message, icon: true })
+    })
+    app.mount(container)
+
+    message.notify({ id: 'save', type: 'success', content: '第一次', data: { onClick: firstClick } })
+    app.update()
+    const first = container.querySelector('.vui-message') as HTMLElement
+    expect(first.textContent).toContain('第一次')
+    expect(first.querySelector('.vui-message__icon--success')).not.toBeNull()
+
+    message.notify({ id: 'save', type: 'error', content: '第二次', data: { onClick: secondClick } })
+    app.update()
+
+    const item = container.querySelector('.vui-message') as HTMLElement
+    expect(container.querySelectorAll('.vui-message').length).toBe(1)
+    expect(item).toBe(first)
+    expect(item.textContent).toContain('第二次')
+    expect(item.className).toContain('vui-message--error')
+    expect(item.getAttribute('role')).toBe('alert')
+    expect(item.querySelector('.vui-message__icon--error')).not.toBeNull()
+    expect(item.querySelector('.vui-message__icon--success')).toBeNull()
+
+    item.click()
+    expect(secondClick).toHaveBeenCalledTimes(1)
+    expect(firstClick).not.toHaveBeenCalled()
+    app.destroy()
+    message.dispose()
+  })
+
   it('经 messagePlugin 注入上下文；同 key 顶替旧消息', () => {
     let captured: NotificationContext | null = null
     const container = document.createElement('main')
