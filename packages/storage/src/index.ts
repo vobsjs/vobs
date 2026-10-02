@@ -50,6 +50,7 @@ export interface StorageContext {
 
 export type StorageErrorCode =
   | 'STORAGE_UNAVAILABLE'
+  | 'QUOTA_EXCEEDED'
   | 'CORRUPT_DATA'
   | 'SERIALIZATION_FAILED'
   | 'MIGRATION_FAILED'
@@ -77,7 +78,8 @@ export interface StoragePluginOptions extends StorageOptions {
 interface Envelope {
   readonly __vobsStorage: true
   readonly version: number
-  readonly value: unknown
+  /** JSON 丢掉 undefined/函数/Symbol 值后这个键会消失，所以是可选的。 */
+  readonly value?: unknown
 }
 
 export function createMemoryStorage(): StorageLike {
@@ -228,7 +230,7 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
     }
 
     const envelope = isEnvelope(parsed) ? parsed : { version: 0, value: parsed }
-    if (envelope.version >= version || !options.migrate) return envelope.value as T | null
+    if (envelope.version >= version || !options.migrate) return (envelope.value ?? null) as T | null
 
     try {
       const migrated = options.migrate(envelope.value, envelope.version, version)
@@ -249,7 +251,7 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
   function decodeExternal(key: string, raw: string): unknown | null {
     try {
       const parsed = JSON.parse(raw)
-      return isEnvelope(parsed) ? parsed.value : parsed
+      return isEnvelope(parsed) ? parsed.value ?? null : parsed
     } catch (error) {
       handleCorrupt(key, error)
       return null
@@ -271,6 +273,24 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
     try {
       return operation()
     } catch (error) {
+      if (isQuotaError(error)) {
+        /*
+         * 配额/容量错误 ≠ 后端不可用：盘还在、读得到、腾出空间后还能写。
+         *
+         * 原来这里和"后端真的挂了"走同一条路（`backend = fallback; kind = 'memory'`），于是
+         * 一次 QuotaExceededError 就造成四个后果：①盘上原有数据 get 变 null；②这次写入静默
+         * 落到内存却照常 emit（订阅者以为已持久化）；③配额恢复后写入永不落盘；④跨标签页
+         * storage 事件因 storageArea 不再匹配而全部失效。现在如实报告并抛出，由调用方决定。
+         */
+        const quotaError = new StorageError(
+          'QUOTA_EXCEEDED',
+          `Vobs Storage: 键 ${key} 写入超出存储配额`,
+          key,
+          error
+        )
+        report(quotaError)
+        throw quotaError
+      }
       if (backend === fallback) {
         const storageError = new StorageError(
           'STORAGE_UNAVAILABLE',
@@ -355,9 +375,27 @@ function resolveStorage(input: StorageLike | StorageType | undefined): {
 } {
   if (input && typeof input !== 'string') return { backend: input, kind: 'custom', browserStorage: false }
   const type = input ?? 'local'
-  if (type === 'memory') return { backend: memoryStorage, kind: 'memory', browserStorage: false }
+  if (type === 'memory') {
+    // 每个上下文各自一份：原来返回的是模块级 memoryStorage 单例，于是两个
+    // createStorage({ storage: 'memory' }) **共享数据** —— SSR 多请求之间互相串数据
+    // （与 resource 默认客户端单例同族）。要显式共享就传导出的 memoryStorage。
+    return { backend: createMemoryStorage(), kind: 'memory', browserStorage: false }
+  }
   const backend = getBrowserStorage(type)
   return { backend, kind: backend ? type : 'memory', browserStorage: Boolean(backend) }
+}
+
+/**
+ * 配额/容量类错误：后端仍然可用，只是这次写不下。绝不能当成"存储不可用"而永久降级到内存。
+ * 识别依据是 Web 标准的 QuotaExceededError（DOMException code 22）与 Firefox 的
+ * NS_ERROR_DOM_QUOTA_REACHED（code 1014），外加一条窄消息兜底。
+ */
+function isQuotaError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { name?: unknown; code?: unknown; message?: unknown }
+  if (candidate.name === 'QuotaExceededError' || candidate.name === 'NS_ERROR_DOM_QUOTA_REACHED') return true
+  if (candidate.code === 22 || candidate.code === 1014) return true
+  return typeof candidate.message === 'string' && /quota|storage full/iu.test(candidate.message)
 }
 
 function getBrowserStorage(type: Exclude<StorageType, 'memory'>): StorageLike | undefined {
@@ -370,12 +408,14 @@ function getBrowserStorage(type: Exclude<StorageType, 'memory'>): StorageLike | 
 }
 
 function isEnvelope(value: unknown): value is Envelope {
+  // 不再要求 `'value' in value`：JSON 会**丢掉** undefined/函数/Symbol 值，于是
+  // `set(key, undefined)` 落盘的信封没有 value 键。原来那种记录会被当成"没有信封的历史值"，
+  // 结果 `get` 把信封对象本身 `{ __vobsStorage: true, version: 1 }` 当数据返回。
   return Boolean(value)
     && typeof value === 'object'
     && value !== null
     && (value as { __vobsStorage?: unknown }).__vobsStorage === true
     && Number.isInteger((value as { version?: unknown }).version)
-    && 'value' in value
 }
 
 function validateKey(key: string): string {

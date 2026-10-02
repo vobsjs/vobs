@@ -5,6 +5,7 @@ import {
   StorageError,
   createMemoryStorage,
   createStorage,
+  memoryStorage,
   storagePlugin,
   useStorage
 } from './index'
@@ -145,6 +146,81 @@ describe('@vobs/storage', () => {
     expect(injected?.get('answer')).toBe(42)
     app.destroy()
     expect(() => injected?.get('answer')).toThrow('已销毁')
+  })
+
+  /*
+   * 配额/容量错误（QuotaExceededError）说明后端**还能用**：读得到、腾出空间后还能写。
+   * 原来 withBackend 对**任何**异常都做 `backend = fallback; kind = 'memory'`，于是：
+   * 盘上原有数据 get 变 null · 写入静默进内存还照常 emit（订阅者以为已持久化）·
+   * 配额恢复后写入永不落盘 · 跨标签页 storage 事件因 storageArea 不匹配而全部失效。
+   */
+  it('配额错误不会永久降级后端：盘上数据仍可读、恢复后真的落盘、不广播假事件', () => {
+    const backing = createMemoryStorage()
+    let quota = false
+    const flaky = {
+      get length(): number { return backing.length },
+      getItem: (key: string) => backing.getItem(key),
+      key: (index: number) => backing.key(index),
+      removeItem: (key: string) => backing.removeItem(key),
+      setItem(key: string, value: string): void {
+        if (quota) {
+          const error = new Error('quota exhausted')
+          error.name = 'QuotaExceededError'
+          throw error
+        }
+        backing.setItem(key, value)
+      }
+    }
+    const changes: string[] = []
+    const onError = vi.fn()
+    const storage = createStorage({ storage: flaky, onError })
+    storage.subscribe(change => changes.push(`${change.key}:${String(change.value)}`))
+
+    storage.set('a', 1)
+    expect(storage.get('a')).toBe(1)
+
+    quota = true
+    expect(() => storage.set('b', 2)).toThrowError(expect.objectContaining({ code: 'QUOTA_EXCEEDED' }))
+    // 没有降级，盘上数据仍然读得到（原来这里变 null）
+    expect(storage.kind).toBe('custom')
+    expect(storage.persistent).toBe(true)
+    expect(storage.get('a')).toBe(1)
+    // 失败的那次不得广播成功
+    expect(changes).toEqual(['a:1'])
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'QUOTA_EXCEEDED' }))
+
+    quota = false
+    storage.set('b', 2)
+    expect(backing.getItem('vobs:b')).not.toBeNull()
+    expect(storage.kind).toBe('custom')
+    storage.dispose()
+  })
+
+  it('storage:"memory" 每个上下文各自独立（不再共用模块级单例）', () => {
+    const first = createStorage({ storage: 'memory' })
+    const second = createStorage({ storage: 'memory' })
+    first.set('k', 1)
+    expect(second.get('k')).toBeNull()
+    expect(first.get('k')).toBe(1)
+    // 想共用仍然可以：显式传入导出的单例
+    const shared = createStorage({ storage: memoryStorage, prefix: 'shared-test:' })
+    const alsoShared = createStorage({ storage: memoryStorage, prefix: 'shared-test:' })
+    shared.set('x', 2)
+    expect(alsoShared.get('x')).toBe(2)
+    shared.remove('x')
+    first.dispose()
+    second.dispose()
+    shared.dispose()
+    alsoShared.dispose()
+  })
+
+  it('JSON 存不进去的值不会让 get 返回信封对象本身', () => {
+    const storage = createStorage({ storage: 'memory' })
+    storage.set('u', undefined)
+    expect(storage.get('u')).toBeNull()
+    storage.set('f', () => 1)
+    expect(storage.get('f')).toBeNull()
+    storage.dispose()
   })
 
   it('未安装插件时 useStorage 给出明确错误', () => {
