@@ -1,4 +1,5 @@
 import { effect, memo, state } from '@vobs/reactivity'
+import { removeAttribute } from '@vobs/runtime'
 import {
   addEventListener,
   createComponent,
@@ -144,7 +145,18 @@ export function KitLayout(props: KitLayoutProps = {}): VobsNode {
   setAttribute(content, 'class', 'vobs-kit-layout__content')
 
   insertDynamic(sidebar, null, () => createSidebarSlot(props, context, sidebarVisible))
-  bindVisibility(sidebar, sidebarVisible)
+  /*
+   * 侧栏"是否对用户可见"必须**同时考虑桌面可见性与移动抽屉开合**。
+   *
+   * 原来只绑 `sidebarVisible`：移动端关掉抽屉时，侧栏靠 CSS 类移到视口外，
+   * 但它仍在 DOM、也没被 `hidden` —— 里面的链接**照样能被 Tab 到**
+   * （键盘用户按 Tab 就跑进看不见的导航）。这正是"关闭的抽屉仍可 Tab"。
+   *
+   * 桌面端 `isMobile` 为 false，表达式退化成原来的 `sidebarVisible`，行为不变。
+   */
+  bindVisibility(sidebar, memo(() => (
+    sidebarVisible.value && (!viewport.isMobile.value || mobileOpen.value)
+  )))
 
   insertDynamic(breadcrumb, null, () => createNamedSlot(props, 'breadcrumb', breadcrumbVisible))
   bindVisibility(breadcrumb, breadcrumbVisible)
@@ -270,10 +282,29 @@ function createBackdropSlot(
   return button
 }
 
+/**
+ * 隐藏时把节点**移出 Tab 序列与无障碍树**。
+ *
+ * 只用 `hidden` + `aria-hidden` 是不够的：侧栏在移动端是**屏幕外的 CSS 定位**
+ * （靠根节点上的 `vobs-kit-layout--mobile-open` 类滑入滑出，见本文件 `:105`），
+ * 关掉抽屉时它仍然在 DOM 里、样式上只是被移出视口 —— 于是里面的链接**照样能被 Tab 到**：
+ * 键盘用户按 Tab 会跑进看不见的导航，`aria-hidden` 也管不住键盘焦点。
+ *
+ * `inert` 正是为这件事设计的：它把整棵子树同时移出**焦点顺序**与**无障碍树**。
+ * 旧浏览器不支持时 `inert=""` 只是个无害的未知属性，而 `hidden`/`aria-hidden` 仍在兜底。
+ */
 function bindVisibility(node: Element, visible: { value: boolean }): void {
   effect(() => {
     setProperty(node, 'hidden', !visible.value)
     setOptionalAttribute(node, 'aria-hidden', visible.value ? undefined : 'true')
+    /*
+     * 布尔属性必须走 `setAttribute` 而不是 `setOptionalAttribute`：
+     * 后者把**空串也当成"移除"**（`value === '' → removeAttribute`），
+     * 而 `inert=""` 恰恰是布尔属性**生效**的写法 —— 用它会把 inert 直接删掉。
+     * 可见时用 `removeAttribute` 移除；`inert="false"` 仍然生效，所以不能靠值表达。
+     */
+    if (visible.value) removeAttribute(node, 'inert')
+    else setAttribute(node, 'inert', '')
   })
 }
 
