@@ -40,6 +40,16 @@ export interface LoggerOptions {
   readonly level?: LogLevel
   readonly context?: LogContext
   readonly transports?: readonly LogTransport[]
+  /**
+   * **追加**到默认脱敏表的额外键名（不是替换默认表）。
+   *
+   * 原实现是替换：传 `redactKeys: ['userId']` 之后 `password` / `token` 反而明文落地 ——
+   * "只想多脱敏一个键"的调用方会静默关掉全部默认保护。README 一直写的是
+   * "extendable via `redactKeys`"，这里按文档语义改成追加。
+   *
+   * 键名比较不区分大小写与分隔符：`userId`、`user_id`、`user-id`、`USER.ID` 命中同一条规则；
+   * 自定义键名同时参与 message / `Error.stack` 的文本扫描。
+   */
   readonly redactKeys?: readonly string[]
   readonly maxDepth?: number
   readonly clock?: () => Date
@@ -84,12 +94,94 @@ const levels: Readonly<Record<LogLevel, number>> = {
   error: 40
 }
 
-const defaultRedactKeys = ['password', 'passwd', 'secret', 'token', 'authorization', 'cookie']
+/**
+ * 默认脱敏键名。
+ *
+ * 原来只有 6 个键、且按 `key.toLowerCase()` 原样比较：实测 `apiKey` / `access_token` /
+ * `refreshToken` / `clientSecret` / `set-cookie` / `sessionId` **全部明文落地** ——
+ * 默认表给的是"看起来脱敏"的假安全。现在键名先归一化（见 `normalizeRedactKey`），
+ * `access_token` / `accessToken` / `access-token` / `ACCESS_TOKEN` 命中同一条规则，
+ * 所以这里按自然写法列举即可。
+ */
+const defaultRedactKeys = [
+  'password',
+  'passwd',
+  'pwd',
+  'secret',
+  'clientSecret',
+  'apiKey',
+  'xApiKey',
+  'accessKey',
+  'accessKeyId',
+  'privateKey',
+  'token',
+  'accessToken',
+  'refreshToken',
+  'idToken',
+  'authToken',
+  'authorization',
+  'proxyAuthorization',
+  'cookie',
+  'setCookie',
+  'session',
+  'sessionId',
+  'credential',
+  'credentials'
+]
+
+interface RedactionPlan {
+  /** 归一化后的敏感键名；键名命中即整值替换为 `[REDACTED]`。 */
+  readonly keys: ReadonlySet<string>
+  /** 自由文本（message / `Error.stack`）里的 `key=value` 扫描器；由同一份键名派生，自定义键同样生效。 */
+  readonly sensitiveText: RegExp
+}
+
+/** `Bearer xxx` / `Basic xxx`：没有键名可依的授权串。 */
+const authorizationSchemePattern = /((?:bearer|basic)[ \t]+)([A-Za-z0-9._~+/=-]+)/gi
+
+/**
+ * 键名归一化：大小写与分隔符不敏感。
+ *
+ * `apiKey`、`api_key`、`X-Api-Key` 归一化后都是 `apikey`，避免为每种写法各补一条规则。
+ */
+function normalizeRedactKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/**
+ * 由键名集合派生文本扫描器。
+ *
+ * 归一化后的键名逐字符插入 `[ _-]?`，所以 `access_token` 这条规则同时认 `access token` /
+ * `accessToken` / `access-token`。单字符键名不进文本扫描：`x=1` 这类匹配会把普通日志打得到处是 `[REDACTED]`。
+ */
+function createRedactionPlan(extraKeys: readonly string[] | undefined): RedactionPlan {
+  const keys = new Set([...defaultRedactKeys, ...(extraKeys ?? [])].map(normalizeRedactKey))
+  const alternation = [...keys]
+    .filter(key => key.length > 1)
+    .sort((a, b) => b.length - a.length)
+    .map(key => key.split('').join('[ _-]?'))
+    .join('|')
+  return {
+    keys,
+    sensitiveText: alternation
+      /*
+       * 只吃"键名 + 分隔符 + 值"这种带标签的写法；值里不含空白/逗号/分号/引号/括号。
+       * 值前面允许跟一个授权方案（`authorization: Bearer xxx`）：否则键名规则只会吃掉 `Bearer` 这个词，
+       * 真正的 token 反而留在后面明文落地。
+       */
+      ? new RegExp(
+          `(^|[^A-Za-z0-9])((?:${alternation})[ \\t]*[=:][ \\t]*)((?:(?:bearer|basic)[ \\t]+)?[^\\s,;)\\]}"']+)`,
+          'gi'
+        )
+      // 没有可用键名时永不匹配
+      : /$^/
+  }
+}
 
 interface LoggerState {
   readonly level: LogLevel
   readonly transports: readonly LogTransport[]
-  readonly redactKeys: ReadonlySet<string>
+  readonly redaction: RedactionPlan
   readonly maxDepth: number
   readonly clock: () => Date
   readonly onTransportError: LoggerOptions['onTransportError']
@@ -114,7 +206,7 @@ export function createLogger(options: LoggerOptions = {}): Logger {
   const state: LoggerState = {
     level,
     transports,
-    redactKeys: new Set((options.redactKeys ?? defaultRedactKeys).map(key => key.toLowerCase())),
+    redaction: createRedactionPlan(options.redactKeys),
     maxDepth,
     clock: options.clock ?? (() => new Date()),
     onTransportError: options.onTransportError,
@@ -185,11 +277,18 @@ function createLoggerScope(state: LoggerState, baseContext: LogContext, ownsTran
    */
   const logEntry = (level: LogLevel, message: string, details: LogContext = {}): void => {
     if (state.disposed || disposed || !isLogLevel(level) || levels[level] < levels[state.level]) return
+    const timestamp = safeTimestamp(state)
+    /*
+     * 顺序有讲究：上下文先净化，顺带收集"这次日志里哪些字面值属于敏感值"，
+     * message / `Error.stack` 才能按同一份值再扫一遍（原来二者一个字都不脱敏）。
+     */
+    const secrets = new Set<string>()
+    const sanitized = sanitizeContext(safeMergeContext(context, details), state.redaction, state.maxDepth, secrets)
     const entry = freezeEntry({
-      timestamp: safeTimestamp(state),
+      timestamp,
       level,
-      message,
-      context: sanitizeContext(safeMergeContext(context, details), state.redactKeys, state.maxDepth)
+      message: typeof message === 'string' ? redactText(message, state.redaction, secrets) : message,
+      context: redactContext(sanitized, state.redaction, secrets)
     })
     for (const transport of state.transports) writeToTransport(state, transport, entry)
   }
@@ -265,9 +364,14 @@ function reportTransportError(
   }
 }
 
-function sanitizeContext(input: LogContext, redactKeys: ReadonlySet<string>, maxDepth: number): LogObject {
+function sanitizeContext(
+  input: LogContext,
+  plan: RedactionPlan,
+  maxDepth: number,
+  secrets: Set<string>
+): LogObject {
   const seen = new WeakSet<object>()
-  return Object.freeze(sanitizeObject(input, redactKeys, maxDepth, seen))
+  return Object.freeze(sanitizeObject(input, plan, maxDepth, seen, secrets))
 }
 
 /**
@@ -302,9 +406,10 @@ function toErrorMessage(error: unknown): string {
 
 function sanitizeObject(
   input: LogContext,
-  redactKeys: ReadonlySet<string>,
+  plan: RedactionPlan,
   depth: number,
-  seen: WeakSet<object>
+  seen: WeakSet<object>,
+  secrets: Set<string>
 ): LogObject {
   const output: Record<string, LogValue> = {}
   let keys: string[]
@@ -316,12 +421,13 @@ function sanitizeObject(
     return Object.freeze({ '[Uninspectable]': toErrorMessage(error) })
   }
   for (const key of keys) {
-    if (redactKeys.has(key.toLowerCase())) {
+    if (plan.keys.has(normalizeRedactKey(key))) {
       output[key] = '[REDACTED]'
+      collectSecret(input, key, secrets)
       continue
     }
     try {
-      output[key] = sanitizeValue(input[key], redactKeys, depth, seen)
+      output[key] = sanitizeValue(input[key], plan, depth, seen, secrets)
     } catch (error) {
       // 抛错的 getter 只顶掉自己这一个键，相邻的好键照常记录
       output[key] = `[Uninspectable: ${toErrorMessage(error)}]`
@@ -330,11 +436,78 @@ function sanitizeObject(
   return Object.freeze(output)
 }
 
+/**
+ * 记下被脱敏键的字面值，供 message / `Error.stack` / 其它自由文本按值再扫一遍。
+ *
+ * 原来脱敏键的值**根本不读**，现在为了拿值要新读一次 getter：抛错只让这个值不参与文本扫描，
+ * 不能让整条日志消失（本模块的基本原则：坏数据只顶掉自己）。
+ */
+function collectSecret(input: LogContext, key: string, secrets: Set<string>): void {
+  try {
+    const value = input[key]
+    if (typeof value === 'string') {
+      if (value.length > 0 && value !== '[REDACTED]') secrets.add(value)
+    } else if (typeof value === 'number' && Number.isFinite(value)) {
+      secrets.add(String(value))
+    } else if (typeof value === 'bigint') {
+      secrets.add(String(value))
+    }
+  } catch {
+    // 抛错的 getter：这个键的值不参与文本扫描
+  }
+}
+
+/**
+ * 自由文本脱敏（message 与 `Error.stack` 原来一个字都不脱敏）。
+ *
+ * 实测两处泄漏：`logger.info('login failed password=hunter2')` 整条明文落地；
+ * `logger.error('threw', { err })` 里 `err.stack` 形如 `at dump (apiKey=STACKSECRET)` 也明文落地。
+ * 这里做两件事：
+ * 1) **按值**替换：上下文里被判为敏感的字面值，在任何文本中再次出现即替换 ——
+ *    message 里回显同一个 token、或堆栈里带出同一个 apiKey，都会被抹掉；
+ * 2) **按键**扫描：`password=...` / `access_token: ...` / `Bearer ...` 这类带标签的写法，
+ *    键名表与键脱敏共用一份（自定义 `redactKeys` 同样生效，两处语义不会漂移）。
+ */
+function redactText(text: string, plan: RedactionPlan, secrets: ReadonlySet<string>): string {
+  let output = text
+  for (const secret of secrets) {
+    // 太短的"敏感值"（比如数字 1、单字符口令）会把正常文本打烂，只替换有辨识度的长度
+    if (secret.length >= 4 && output.includes(secret)) output = output.split(secret).join('[REDACTED]')
+  }
+  // 先按键扫（值里允许带 `Bearer` 前缀，一次吃干净），再兜底没有键名的裸 `Bearer xxx`
+  return output.replace(plan.sensitiveText, '$1$2[REDACTED]').replace(authorizationSchemePattern, '$1[REDACTED]')
+}
+
+/**
+ * 对**已净化**的上下文整棵树重放文本脱敏。
+ *
+ * 放在净化之后是刻意的：那时所有 getter / Proxy 都已经被读成普通数据，这一遍只走自己的冻结对象，
+ * 不可能抛；而且此时 `secrets` 已经收全，`Error.stack` 不会因为"敏感键排在后面"而漏掉。
+ */
+function redactContext(context: LogObject, plan: RedactionPlan, secrets: ReadonlySet<string>): LogObject {
+  // LogObject 的值都是 LogValue，redactDeep 在对象分支原样返回对象；这里只是把联合类型收窄
+  return redactDeep(context, plan, secrets) as LogObject
+}
+
+function redactDeep(value: LogValue, plan: RedactionPlan, secrets: ReadonlySet<string>): LogValue {
+  if (typeof value === 'string') return redactText(value, plan, secrets)
+  if (Array.isArray(value)) return Object.freeze(value.map(item => redactDeep(item, plan, secrets)))
+  if (value !== null && typeof value === 'object') {
+    const output: Record<string, LogValue> = {}
+    for (const key of Object.keys(value)) {
+      output[key] = redactDeep((value as LogObject)[key], plan, secrets)
+    }
+    return Object.freeze(output)
+  }
+  return value
+}
+
 function sanitizeValue(
   value: unknown,
-  redactKeys: ReadonlySet<string>,
+  plan: RedactionPlan,
   depth: number,
-  seen: WeakSet<object>
+  seen: WeakSet<object>,
+  secrets: Set<string>
 ): LogValue {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
   if (typeof value === 'number') return Number.isFinite(value) ? value : String(value)
@@ -352,9 +525,9 @@ function sanitizeValue(
   if (seen.has(value as object)) return '[Circular]'
   seen.add(value as object)
   if (Array.isArray(value)) {
-    return Object.freeze(value.map(item => sanitizeValue(item, redactKeys, depth - 1, seen)))
+    return Object.freeze(value.map(item => sanitizeValue(item, plan, depth - 1, seen, secrets)))
   }
-  return sanitizeObject(value as LogContext, redactKeys, depth - 1, seen)
+  return sanitizeObject(value as LogContext, plan, depth - 1, seen, secrets)
 }
 
 function freezeEntry(entry: LogEntry): LogEntry {
