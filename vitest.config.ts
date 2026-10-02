@@ -25,6 +25,14 @@ export default mergeConfig(
     esbuild: {
       jsx: 'automatic',
       jsxImportSource: '@vobs/vobs'
+    },
+    test: {
+      /*
+       * 只做一件事：把 `@vobs/test-utils` 的 `cleanupMountedApps` 接到 vitest 的 afterEach 上。
+       * mount() 会装进程级渲染器单例，忘记 destroy() 的用例会污染同文件后续用例；而包本身
+       * 不能依赖 vitest（没有 devDependencies），清理必须由调用方接钩子 —— 见该文件注释。
+       */
+      setupFiles: ['./scripts/vitest-setup.ts']
     }
   })
 )
