@@ -399,12 +399,20 @@ export function I18nBoundary(props: I18nBoundaryProps = {}): VobsNode {
    *
    * 用 `following` 而不是"每次都写"：客户端在边界内自己调 `setLocale` 之后要**停止跟随**
    * （那是它的显式决定），否则用户的选择会被父级随时覆盖。
+   *
+   * ⚠️ 对**本地**信号的读取必须 `untrack`：这个 effect 的职责是"把父级的值搬过来"，
+   * 只该依赖 `parent.locale`。若顺手读 `local.locale.value` 来判等，那次读取就建立订阅，
+   * 紧接着的写入又把它重新调度 —— **自订阅**。这是 `vobs check` 抓出来的
+   * （`VOBS_C210`）：我原先以为 `!following` 守卫挡住了它，其实守卫只让**首次**不写，
+   * 读取照样建立了依赖。判等移进 untrack 后语义不变、依赖图干净。
    */
   let following = props.locale === undefined
   effect(() => {
     const parentLocale = parent.locale.value
     if (!following) return
-    if (local.locale.value !== parentLocale) local.locale.value = parentLocale
+    untrack(() => {
+      if (local.locale.value !== parentLocale) local.locale.value = parentLocale
+    })
   })
   // 边界内显式设置语言 = 停止跟随
   const setLocalLocale = local.setLocale
