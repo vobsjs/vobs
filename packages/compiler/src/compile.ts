@@ -237,20 +237,49 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
       : node.kind === ts.SyntaxKind.FalseKeyword ? 'false'
         : 'undefined'
 
+  /**
+   * 这个表达式是不是**渲染节点**（JSX 元素 / 组件 / fragment）。
+   *
+   * ⚠️ 这条判据是 1.8.1 补上的**收窄** —— 1.8.0 的版本不检查返回值是不是节点，
+   * 于是把纯数据函数的 `return cond && value`、`return x ? x : null` 全部当成
+   * "组件顶层条件 return" 报了出来。实战反馈：**18 处命中里约 16 处是纯数据函数**
+   * （`T | null` 是正常的空值建模），而这条是 **error** —— 直接挡构建。
+   *
+   * 立论只在"返回值会被渲染"时成立：组件 run-once 导致那个 return 永不重算；
+   * 纯数据函数每次调用都执行，条件 return 完全正常。
+   *
+   * 判据只认 **JSX 语法**，不认 `createElement(...)` 之类的调用形态：猜一个调用的
+   * 结果是不是节点必然引入新的误报，而"漏报一个 createElement 形态"比"误报一片
+   * 数据函数"代价小得多。静态规则只在**位置类**问题上可靠，这条本质是启发式 ——
+   * 所以它也从 error 降成了 warning（与 C105 同一处理）。
+   */
+  const isRenderNode = (node: ts.Expression | undefined): boolean =>
+    node !== undefined
+    && (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node))
+
   const report = (target: ts.Node, hasEmpty: string | null): void => {
     const { line, column, codeFrame } = buildCodeFrame(sourceFile, target.getStart(sourceFile), target.getWidth(sourceFile))
     state.diagnostics.push({
       code: 'VOBS_C104',
-      severity: 'error',
+      severity: 'warning',
       message: hasEmpty === null
-        ? '组件顶层的条件 return 只在挂载时求值一次：组件是 run-once 的，之后信号变化不会再执行这个 return，界面永远不会切换。'
-        : `组件顶层的条件 return 只在挂载时求值一次，而且这里会返回 ${hasEmpty} —— `
-          + '组件是 run-once 的，之后信号变化不会再执行这个 return，界面永远不会切换。',
+        ? '这个条件 return 返回的是渲染节点，而函数体只执行一次：组件是 run-once 的，'
+          + '之后信号变化不会再执行这个 return，界面永远不会切换。'
+        : `这个条件 return 返回的是渲染节点，而且这里会返回 ${hasEmpty} —— `
+          + '函数体只执行一次：组件是 run-once 的，之后信号变化不会再执行这个 return，界面永远不会切换。',
       location: { file: state.filename, line, column },
       codeFrame,
-      fix: '把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`，编译期会生成响应式条件工厂），'
-        + '或固定渲染 + 类名显隐（`<A class={cond ? \'is-on\' : \'is-off\'} />`）；'
-        + '整块切换也可以用条件工厂 createBlock/insertDynamic。'
+      /*
+       * fix 文案指向 1.8.0 新增的原语，不再推荐手拼工具类。
+       *
+       * 1.8.0 的文案是 `<A class={cond ? 'is-on' : 'is-off'} />` —— 实战反馈：
+       * 那依赖一个**全局** `.is-off` 工具类，而项目里往往只有组合选择器
+       * （`.seq-param-group.is-off`），照着改会得到"类名加上了但样式不生效"。
+       * `Show` 与 `classList` 都不需要预先存在工具类。
+       */
+      fix: '把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`，编译期生成响应式条件工厂）；'
+        + '要保留挂载、只切可见性用 `<Show when={cond}><A/></Show>`；'
+        + '只切类名用 `<A classList={{ \'is-off\': !cond }} />`（只贡献自己那部分，不依赖预先存在的工具类）。'
     })
   }
 
@@ -259,19 +288,22 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
     if (node !== owner && (ts.isFunctionLike(node) || ts.isClassLike(node))) return
     if (ts.isReturnStatement(node) && node.expression) {
       const expression = node.expression
-      // 情况一：`return cond ? A : B`
+      // 情况一：`return cond ? <A/> : null`
       if (ts.isConditionalExpression(expression)) {
         const emptyWhenTrue = isEmptyBranch(expression.whenTrue)
         const emptyWhenFalse = isEmptyBranch(expression.whenFalse)
-        if (emptyWhenTrue || emptyWhenFalse) {
+        // 收窄：至少一个分支是渲染节点，否则是纯数据函数（`T | null` 建模）
+        const rendersANode = isRenderNode(expression.whenTrue) || isRenderNode(expression.whenFalse)
+        if ((emptyWhenTrue || emptyWhenFalse) && rendersANode) {
           report(expression, describeEmpty(emptyWhenTrue ? expression.whenTrue : expression.whenFalse))
         }
         return
       }
-      // 情况二：`return cond && <A/>`（返回 false 或 JSX）
+      // 情况二：`return cond && <A/>` —— **只有当右侧是渲染节点时**才报
+      // （1.8.0 是无条件报，于是纯数据函数的 `return a && b` 全部误报）
       if (ts.isBinaryExpression(expression)
         && expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
-        report(expression, 'false')
+        if (isRenderNode(expression.right)) report(expression, 'false')
       }
     }
     ts.forEachChild(node, child => { scanReturn(child, owner) })

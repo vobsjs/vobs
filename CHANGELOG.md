@@ -4,6 +4,42 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-10-02
+
+### Fixed
+
+- **`VOBS_C104` 的触发面收窄，并从 error 降为 warning —— 1.8.0 用它挡了真实项目的构建。**
+  真实项目升级反馈：该规则 18 处命中里约 **16 处是纯数据函数误报**，而它是 `error`，
+  升级期变成打地鼠。两类误报源确认存在：
+  1. `return cond && value` —— 1.8.0 对**任何** `return &&` 无条件报，完全不看右值是什么
+  2. `return x ? x : null` —— 只看分支是不是空，不看返回值是不是**渲染节点**，
+     于是 `T | null` 这种正常的空值建模全被报成「组件顶层条件 return」
+
+  立论只在「返回值会被渲染」时成立：组件 run-once → 那个 return 永不重算；
+  **纯数据函数每次调用都执行**，条件 return 完全正常。现在只有三分支里**至少一个是
+  JSX 渲染节点**时才报，且只认 JSX 语法（不猜 `createElement(...)` 的调用结果 ——
+  「漏报一个调用形态」比「误报一片数据函数」代价小得多）。
+
+  同时从 `error` 降为 `warning`：这条规则的立论依赖「这个函数是组件」，而静态分析
+  **判不出来**（返回 JSX 的箭头函数既可能是组件、也可能是渲染期调用的辅助函数）。
+  对无法静态判定的谓词不该有挡构建的强度 —— 与 `VOBS_C105` 同一处理。
+  真正会坏的东西由运行时护栏（`pnpm run check:runtime`）精确抓到。
+
+- **`VOBS_C104` 的 fix 文案不再依赖全局工具类。** 1.8.0 推荐
+  `<A class={cond ? 'is-on' : 'is-off'} />`，那要求项目里预先存在一个**全局**
+  `.is-off`；而真实项目往往只有组合选择器（`.seq-param-group.is-off`），
+  照着改会得到「类名加上了但样式不生效」。现在指向 1.8.0 新增的
+  `<Show when={cond}>` 与 `classList` —— 两者都不需要预先存在任何类。
+
+### Notes
+
+- 若你按 1.8.0 的 C104 报错改了代码：那些改动**不会**因此变错（`Show` / `classList` /
+  JSX 子节点三元都是正确写法），只是**很多并不需要改**。
+- `VOBS_C105`（模块顶层 JSX）**是本版本线新增的**：1.8.0 首次发布，1.7.x 里不存在。
+- **批量扫描不需要自己写脚本**：`pnpm run check:source`（= `vobs check`）本来就递归
+  扫描全仓的 `.ts`/`.tsx` 并一次列出全部诊断 —— 它正是「vite build 每次只报第一个
+  含错文件」的解法。发布前自测该把它列进固定流程。
+
 ## [1.8.0] - 2026-10-02
 
 本次发布的主体是**把实战踩坑里"靠人肉纪律"的条目变成框架能力**，外加一批静默缺陷的修复。

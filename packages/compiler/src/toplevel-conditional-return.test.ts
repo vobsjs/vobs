@@ -70,6 +70,15 @@ describe('VOBS_C104 顶层条件 return', () => {
     expect(found).toBeTruthy()
     expect(found!.location.line).toBe(2)
     expect(found!.location.file).toBe('loc.tsx')
-    expect(found!.severity).toBe('error')
+    /*
+     * 1.8.1 起是 **warning** 而不是 error。
+     *
+     * 理由：这条规则的立论依赖"这个函数是组件"—— 而静态分析**判不出来**
+     * （一个返回 JSX 的箭头函数既可能是组件、也可能是渲染期调用的辅助函数）。
+     * 真项目升级反馈：18 处命中里约 16 处是纯数据函数误报，而 error 直接挡构建。
+     * 收窄（只认渲染节点）之后剩下的仍是启发式，所以不该有挡构建的强度 ——
+     * 与 C105 同一处理。真正会坏的东西由运行时护栏（check:runtime）精确抓到。
+     */
+    expect(found!.severity).toBe('warning')
   })
 })
