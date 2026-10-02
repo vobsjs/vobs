@@ -518,6 +518,18 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
   const effectIds = new WeakMap<object, string>()
   const memoSignalIds = new WeakMap<object, string>()
   const edges = new Map<string, DependencyEdge>()
+  /*
+   * `from` → 目标 id 的邻接表。传播遍历原来对**每个被访问节点**全表扫一遍 `edges.values()`
+   * （O(V×E)）：实测 1 signal → 1500 memo + 1500 effect 的广度拓扑，单次写入 62.5 ms，
+   * 而无关 signal 同规模下只 0.21 ms（≈300×）。瓶颈是"传播集合大"，不是边数。
+   */
+  const outgoingEdges = new Map<string, Set<string>>()
+  /*
+   * `to` → 来源 id 的反向邻接表。`effectInfo()` 原来每次调用都全表扫 `edges` 求依赖
+   * （一次 effect 生命周期里会被调用 4 次），`signalInfo()` 也全表扫求 subscribers ——
+   * 1500 effect × 3000 边 × 4 ≈ 1800 万次比较，这才是广度拓扑下写入耗时的大头。
+   */
+  const incomingEdges = new Map<string, Set<string>>()
   const listeners = new Map<string, Set<(...args: any[]) => void>>()
   const updates: UpdateTrace[] = []
   const lifecycleEvents: LifecycleEvent[] = []
@@ -806,6 +818,60 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     return `${from}->${to}`
   }
 
+  /** 加边：`edges` 是真相来源，`outgoingEdges` 是为传播遍历维护的邻接索引，两者必须同步。 */
+  function addEdge(edge: DependencyEdge): void {
+    edges.set(edgeKey(edge.from, edge.to), edge)
+    let targets = outgoingEdges.get(edge.from)
+    if (!targets) {
+      targets = new Set()
+      outgoingEdges.set(edge.from, targets)
+    }
+    targets.add(edge.to)
+    let sources = incomingEdges.get(edge.to)
+    if (!sources) {
+      sources = new Set()
+      incomingEdges.set(edge.to, sources)
+    }
+    sources.add(edge.from)
+  }
+
+  function removeEdge(from: string, to: string): void {
+    edges.delete(edgeKey(from, to))
+    const targets = outgoingEdges.get(from)
+    if (targets) {
+      targets.delete(to)
+      if (targets.size === 0) outgoingEdges.delete(from)
+    }
+    const sources = incomingEdges.get(to)
+    if (sources) {
+      sources.delete(from)
+      if (sources.size === 0) incomingEdges.delete(to)
+    }
+  }
+
+  /** 由邻接索引还原边对象（保持插入序，与 `edges` 的顺序一致）。 */
+  function outgoingEdgeList(from: string): DependencyEdge[] {
+    const targets = outgoingEdges.get(from)
+    if (!targets) return []
+    const list: DependencyEdge[] = []
+    for (const to of targets) {
+      const edge = edges.get(edgeKey(from, to))
+      if (edge) list.push(edge)
+    }
+    return list
+  }
+
+  function incomingEdgeList(to: string): DependencyEdge[] {
+    const sources = incomingEdges.get(to)
+    if (!sources) return []
+    const list: DependencyEdge[] = []
+    for (const from of sources) {
+      const edge = edges.get(edgeKey(from, to))
+      if (edge) list.push(edge)
+    }
+    return list
+  }
+
   function trackDependency(dependency: Dependency, subscriber: Subscriber): void {
     const source = ensureDependencySignal(dependency)
     if (!source) return
@@ -818,26 +884,27 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     const type: DependencyEdgeType = memoId
       ? source.kind === 'memo' ? 'memo-to-memo' : 'state-to-memo'
       : source.kind === 'memo' ? 'memo-to-effect' : 'state-to-effect'
-    edges.set(edgeKey(source.id, targetId), {
+    addEdge({
       from: source.id,
       to: targetId,
       type
     })
   }
-
   function collectEffectIds(signalId: string): Set<string> {
     const effectsForSignal = new Set<string>()
     const visited = new Set<string>()
     const visit = (sourceId: string): void => {
       if (visited.has(sourceId)) return
       visited.add(sourceId)
-      for (const edge of edges.values()) {
-        if (edge.from !== sourceId) continue
-        if (effects.has(edge.to)) {
-          const effect = effects.get(edge.to)
-          if (effect && !isInternalEffect(effect)) effectsForSignal.add(edge.to)
+      // 邻接索引：只遍历真正从这个节点出发的边（原来是每个被访问节点全表扫 edges）
+      const targets = outgoingEdges.get(sourceId)
+      if (!targets) return
+      for (const targetId of targets) {
+        if (effects.has(targetId)) {
+          const effect = effects.get(targetId)
+          if (effect && !isInternalEffect(effect)) effectsForSignal.add(targetId)
         }
-        else visit(edge.to)
+        else visit(targetId)
       }
     }
     visit(signalId)
@@ -851,8 +918,10 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
       if (visited.has(sourceId)) return
       visited.add(sourceId)
       if (signals.has(sourceId)) affected.add(sourceId)
-      for (const edge of edges.values()) {
-        if (edge.from === sourceId && signals.has(edge.to)) visit(edge.to)
+      const targets = outgoingEdges.get(sourceId)
+      if (!targets) return
+      for (const targetId of targets) {
+        if (signals.has(targetId)) visit(targetId)
       }
     }
     visit(signalId)
@@ -863,7 +932,7 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     const source = ensureDependencySignal(dependency)
     if (!source) return
     const targetId = memoSignalIds.get(subscriber as object) ?? effectIds.get(subscriber as object)
-    if (targetId) edges.delete(edgeKey(source.id, targetId))
+    if (targetId) removeEdge(source.id, targetId)
   }
 
   function signalInfo(record: SignalRecord, readValue = true): SignalDebugInfo {
@@ -872,7 +941,7 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
       name: record.name,
       value: readValue ? serializeForDevTools(readSignal(record.signal), new Set<object>(), 0, privacy) : undefined,
       component: record.ownerId ? owners.get(record.ownerId)?.name ?? 'unknown' : 'unknown',
-      subscribers: [...edges.values()].filter(edge => edge.from === record.id).length,
+      subscribers: outgoingEdges.get(record.id)?.size ?? 0,
       createdAt: record.createdAt,
       kind: record.kind
     }
@@ -892,9 +961,7 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
       id: record.id,
       name: `${debugComponentName(component)} effect`,
       component,
-      dependencies: [...edges.values()]
-        .filter(edge => edge.to === record.id)
-        .map(edge => edge.from),
+      dependencies: [...(incomingEdges.get(record.id) ?? [])],
       status: record.status,
       executionCount: record.executionCount,
       lastExecutionTime: record.lastExecutionTime,
@@ -907,8 +974,8 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
   }
 
   function removeEdgesFor(ids: ReadonlySet<string>): void {
-    for (const [key, edge] of edges) {
-      if (ids.has(edge.from) || ids.has(edge.to)) edges.delete(key)
+    for (const edge of [...edges.values()]) {
+      if (ids.has(edge.from) || ids.has(edge.to)) removeEdge(edge.from, edge.to)
     }
   }
 
@@ -1558,11 +1625,11 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     },
 
     getDependencies(signalId: string): readonly DependencyEdge[] {
-      return [...edges.values()].filter(edge => edge.from === signalId)
+      return outgoingEdgeList(signalId)
     },
 
     getDependents(subscriberId: string): readonly DependencyEdge[] {
-      return [...edges.values()].filter(edge => edge.to === subscriberId)
+      return incomingEdgeList(subscriberId)
     },
 
     getEffects(): readonly EffectDebugInfo[] {
