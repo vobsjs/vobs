@@ -518,7 +518,16 @@ export function createHTTPClient(options: HTTPClientOptions = {}): HTTPClient {
             error: { name: toError(error).name, message: toError(error).message },
             context: Object.keys(retryContext).length > 0 ? retryContext : undefined
           })
-          const delay = resolveRetryDelay(config.retryDelay ?? 0, attempt, toError(error))
+          /*
+           * 退避取两者**较大值**：
+           * - 配置的 `retryDelay`（默认 0，即"不额外等"）
+           * - 服务端 `Retry-After`（有就必须认，见 serverRetryDelay 的说明）
+           *
+           * 取较大值而不是"有就用"：调用方显式配了更长退避时不该被服务端缩短。
+           */
+          const serverHint = serverRetryDelay(toError(error))
+          const configured = resolveRetryDelay(config.retryDelay ?? 0, attempt, toError(error))
+          const delay = Math.max(configured, serverHint ?? 0)
           if (delay > 0) await wait(delay)
         }
       }
@@ -909,6 +918,41 @@ function resolveRetryDelay(retryDelay: RetryDelay, attempt: number, error: Error
   const delay = typeof retryDelay === 'function' ? retryDelay(attempt, error) : retryDelay
   if (!Number.isFinite(delay) || delay < 0) throw new Error('HTTP: retryDelay 必须是大于等于 0 的有限数字')
   return delay
+}
+
+/**
+ * 服务端在响应里给的**重试提示**（`Retry-After`），没给就返回 undefined。
+ *
+ * 为什么必须认它：`429`/`503` 上的 `Retry-After` 是服务端在明确说
+ * "**别现在来**"。客户端零退避连环重试等于把它挡的那部分流量原样打回去 —— 是**放大器**，
+ * 而且违反协议。实测（审计探针）：服务端回 `429 + retry-after: 5`，客户端在 4ms 内
+ * 把 3 次请求全打完（间隔 `[2,0]` ms）。全仓此前 grep `retry-after` 零命中。
+ *
+ * 支持两种合法格式（RFC 9110 §10.2.3）：
+ * - 秒数：`Retry-After: 5`
+ * - HTTP 日期：`Retry-After: Wed, 21 Oct 2015 07:28:00 GMT`
+ *
+ * 只接受**非负有限值**；非法值当作没给（不因为服务端写错就阻断重试）。
+ * 上限 60 秒：避免一个荒谬的 `Retry-After` 把调用方挂死。
+ */
+const MAX_SERVER_RETRY_DELAY = 60_000
+
+function serverRetryDelay(error: Error): number | undefined {
+  if (!(error instanceof HTTPError)) return undefined
+  const raw = error.response?.headers?.get('retry-after')
+  if (raw === null || raw === undefined) return undefined
+  const value = raw.trim()
+  if (value === '') return undefined
+
+  let ms: number | undefined
+  if (/^\d+$/u.test(value)) {
+    ms = Number(value) * 1000
+  } else {
+    const when = Date.parse(value)
+    if (!Number.isNaN(when)) ms = when - Date.now()
+  }
+  if (ms === undefined || !Number.isFinite(ms) || ms < 0) return undefined
+  return Math.min(ms, MAX_SERVER_RETRY_DELAY)
 }
 
 function validateRetry(retry: number): number {
