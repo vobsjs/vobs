@@ -273,7 +273,17 @@ export function ThemeBoundary(props: ThemeBoundaryProps = {}): VobsNode {
     props.tokens ?? {},
     props.brand ? { brand: props.brand } : {}
   ))
-  provide(THEME_KEY, local)
+  /*
+   * `override: true` 是**必需**的，不是可选优化。
+   *
+   * `ThemeBoundary` 的语义就是"在这个子树里用一份 scoped 主题"——也就是**遮蔽**父主题。
+   * `themePlugin()` 已经把 `THEME_KEY` 注册给了根上下文，而 `provide` 对重复 key 默认抛错：
+   *   Vobs: 注入项 Symbol(vobs.theme) 已存在；如需覆盖请传入 override: true
+   * 于是**任何在 themePlugin 子树内使用 ThemeBoundary 的应用都会直接崩**
+   * （provider 是挂在**当前 owner** 上的，而 `injectFromOwner` 沿 owner 链向上找，
+   * 所以子级注册天然遮蔽父级 —— 这正是 override 该被允许的场景）。
+   */
+  provide(THEME_KEY, local, { override: true })
 
   const root = createElement('div') as HTMLElement
   renderEffect(() => {
@@ -318,8 +328,20 @@ function createScopedTheme(parent: ThemeContext, initialOverrides: ThemeTokens):
     },
     setBrand(nextBrand): void {
       ensureActive()
-      overrides.value = mergeThemes(overrides.value, {
-        brand: { ...brand.value, ...nextBrand }
+      /*
+       * 读取必须放进 `untrack`，否则在 effect 内调用就是**自订阅**：
+       * `overrides.value` 与 `brand.value` 都参与算出新值，而紧接着又写 `overrides.value`
+       * —— 读过的信号被当场写，框架护栏会报 VOBS_C210，并真的构成循环
+       * （实测：ThemeBoundary 子树里的组件 effect 调 `setBrand` → runs=101 抛
+       * "响应式更新超过 100 轮"）。
+       *
+       * 根主题的实现（本文件 `:202-224` 的 `setBrand` / `registerTheme`）早就这么做了，
+       * **scoped 这一份漏了** —— 同一份逻辑写两遍的典型后果。
+       */
+      const base = untrack(() => overrides.value)
+      const currentBrand = untrack(() => brand.value)
+      overrides.value = mergeThemes(base, {
+        brand: { ...currentBrand, ...nextBrand }
       })
     },
     registerTheme(nextMode, nextTheme): () => void {
