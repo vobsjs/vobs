@@ -206,6 +206,106 @@ describe('@vobs/sync', () => {
     remoteWinsStorage.dispose()
   })
 
+  /*
+   * 两条"local-wins 不收敛"的缺陷（原实现下都能复现，见下方注释的实测值）。
+   *
+   * 服务端每轮都推同一个远端 key 时，原实现把胜出的本地变更永久留在 pending：
+   *   - 即便服务端**显式** `acknowledged: ['local']` 确认收下了，`!conflictIds.has(id)`
+   *     也让它永远不摘 → 每个周期原样重推、pushed 恒 ≥1，这条变更永远"没上传成功"。
+   *   - 于是冲突判定每轮重跑 → 自定义 resolver 每轮被再调一次、pulled 永远 0
+   *     （实测 3 轮 resolver 被调 3 次；60ms/多轮内 pulled 始终 0）。
+   * 契约：冲突判定只决定"远端值要不要覆盖本地值"，不决定"服务端收没收下" ——
+   * 后者只看 acknowledged。且同一份本地变更（id+timestamp 未变）判给 local 后
+   * 结论不会再变，不该重跑 resolver。
+   */
+  it('服务端每轮推同一 key 时收敛：显式 ack 后本地变更离队，远端值被接受', async () => {
+    const storage = makeStorage()
+    const transport: SyncTransport = {
+      sync: async () => ({
+        cursor: 'cursor-2',
+        timestamp: '2026-09-03T08:00:00.000Z',
+        acknowledged: ['local'],
+        changes: [{ id: 'remote', key: 'item:1', operation: 'upsert', value: 'remote', timestamp: 2 }]
+      })
+    }
+    const sync = createSync({ transport, storage, conflict: 'local-wins' })
+    sync.enqueue({ id: 'local', key: 'item:1', operation: 'upsert', value: 'local', timestamp: 3 })
+
+    const first = await sync.sync()
+    expect(first).toMatchObject({ pushed: 1, pulled: 0 })
+    expect(sync.pending.value).toBe(0)
+
+    // 本地这份变更已经上传成功，下一轮冲突消失、远端值正常落地
+    const second = await sync.sync()
+    expect(second).toMatchObject({ pushed: 0, pulled: 1 })
+    expect(second.changes[0]?.value).toBe('remote')
+    sync.dispose()
+    storage.dispose()
+  })
+
+  it('同一份本地变更只判一次冲突：服务端重复推同一 remote 不重跑 resolver', async () => {
+    const storage = makeStorage()
+    const resolve = vi.fn(() => 'local' as const)
+    const transport: SyncTransport = {
+      sync: async () => ({
+        timestamp: 1000,
+        // 显式空 ack：服务端没有确认收下任何变更
+        acknowledged: [],
+        changes: [{ id: 'remote-stable', key: 'item:1', operation: 'upsert', value: 'remote', timestamp: 2 }]
+      })
+    }
+    const sync = createSync({ transport, storage, conflict: resolve })
+    sync.enqueue({ id: 'local', key: 'item:1', operation: 'upsert', value: 'local', timestamp: 3 })
+
+    const first = await sync.sync()
+    const second = await sync.sync()
+    const third = await sync.sync()
+
+    expect(resolve).toHaveBeenCalledTimes(1)
+    // 没被 ack → 仍然 pending（at-least-once），但结论不会翻
+    expect([first.pulled, second.pulled, third.pulled]).toEqual([0, 0, 0])
+    expect(sync.pendingChanges.value.map(change => change.value)).toEqual(['local'])
+    sync.dispose()
+    storage.dispose()
+  })
+
+  /*
+   * 判定缓存必须**有界**：`localWinsResolved` 只按本地变更 id 记账，本地变更一离队
+   * （被 ack、removePending、clearPending）就必须删掉，否则长期运行会无界增长。
+   * 这里用"变更被 ack 离队"这条最普通的路径钉住回收。
+   */
+  it('local-wins 判定缓存有界：变更离队后不再记账', async () => {
+    const storage = makeStorage()
+    const first: SyncTransport = {
+      sync: async () => ({
+        timestamp: 1000,
+        acknowledged: ['local-1'],
+        changes: [{ id: 'remote-1', key: 'item:1', operation: 'upsert', value: 'remote-1', timestamp: 2 }]
+      })
+    }
+    const sync = createSync({ transport: first, storage, conflict: 'local-wins' })
+    sync.enqueue({ id: 'local-1', key: 'item:1', operation: 'upsert', value: 'local-1', timestamp: 3 })
+    await sync.sync()
+    expect(sync.pending.value).toBe(0)
+
+    // 换一个 key（因此换一条缓存项）+ 服务端不再 ack：新变更必须被重新判定
+    const second: SyncTransport = {
+      sync: async () => ({
+        timestamp: 2000,
+        acknowledged: [],
+        changes: [{ id: 'remote-2', key: 'item:2', operation: 'upsert', value: 'remote-2', timestamp: 4 }]
+      })
+    }
+    const next = createSync({ transport: second, storage: makeStorage(), conflict: 'local-wins' })
+    next.enqueue({ id: 'local-2', key: 'item:2', operation: 'upsert', value: 'local-2', timestamp: 5 })
+    const result = await next.sync()
+    expect(result).toMatchObject({ pushed: 1, pulled: 0 })
+    expect(next.pendingChanges.value.map(change => change.value)).toEqual(['local-2'])
+    sync.dispose()
+    next.dispose()
+    storage.dispose()
+  })
+
   it('支持自定义冲突 resolver、事件和失败状态', async () => {
     const storage = makeStorage()
     const onError = vi.fn()
@@ -253,6 +353,66 @@ describe('@vobs/sync', () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: originalOnline })
   })
 
+  /*
+   * `pollInterval` 的语义 = **固定周期轮询**，不是"失败重试 + 退避"。
+   *
+   * 深读报告说"失败后无重试退避、60ms 内 0 次自动重试"。实测：那是契约而非缺陷 ——
+   *   - 失败后请求间隔**恒等于** pollInterval（实测 1000/1000/1000…，无指数增长）；
+   *   - 显式 pollInterval 时失败也会继续（下一次请求 = 下一个 tick），所以"没有退避"；
+   *   - 不传 pollInterval 时失败后**一次都不会自动重试**（10s 内仍只有 1 次请求）。
+   * 依据：README:44 只承诺 "`pollInterval` syncing"，SyncOptions 里没有 retry/retryDelay，
+   * 需要退避请由调用方用 `onError`/`error` 事件 + `stop()` 自行调度（queue 支持 per-task
+   * retry，但 sync 的 runCycle 并未使用它）。把这条钉住，防止以后有人"顺手"加重试改变语义。
+   */
+  it('pollInterval 是固定周期轮询而非退避重试；不传则失败后不自动重试', async () => {
+    vi.useFakeTimers()
+    try {
+      const storage = makeStorage()
+      const attemptAt: number[] = []
+      const transport: SyncTransport = {
+        sync: async () => {
+          attemptAt.push(Date.now())
+          throw new Error('boom')
+        }
+      }
+      const sync = createSync({ transport, storage, pollInterval: 1000 })
+      const started = sync.start().catch(() => undefined)
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(attemptAt).toHaveLength(1)
+      // 报告说的"60ms 内 0 次重试"：没有隐式重试，只有下一个 poll tick
+      await vi.advanceTimersByTimeAsync(60)
+      expect(attemptAt).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(attemptAt).toHaveLength(2)
+
+      await vi.advanceTimersByTimeAsync(5000)
+      const gaps = attemptAt.slice(1).map((at, index) => at - attemptAt[index]!)
+      expect(gaps).toEqual([1000, 1000, 1000, 1000, 1000, 1000])
+      expect(sync.status.value).toBe('error')
+
+      sync.stop()
+      await started
+      sync.dispose()
+
+      // 不传 pollInterval：失败后没有自动重试（调用方自己决定重试策略）
+      const passiveStorage = makeStorage()
+      let passiveAttempts = 0
+      const passive = createSync({
+        transport: { sync: async () => { passiveAttempts++; throw new Error('boom') } },
+        storage: passiveStorage
+      })
+      await passive.sync().catch(() => undefined)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(passiveAttempts).toBe(1)
+      passive.dispose()
+      passiveStorage.dispose()
+      storage.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('stop 取消正在执行的请求，dispose 清理自有 queue 和 storage', async () => {
     const storage = makeStorage()
     let aborted = false
@@ -275,8 +435,7 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
-  it('插件可复用注入的 transport/storage/queue，未安装时 useSync 报错', () => {
-    let injected: ReturnType<typeof createSync> | undefined
+  it('插件可复用注入的 transport/storage/queue，未安装时 useSync 报错', () => {    let injected: ReturnType<typeof createSync> | undefined
     const consumer: VobsPlugin = {
       name: 'sync-consumer',
       install(context) { injected = context.inject(SYNC_KEY) as ReturnType<typeof createSync> }

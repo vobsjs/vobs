@@ -169,6 +169,16 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
     online: new Set(),
     offline: new Set()
   }
+  /*
+   * 已经判给 local 的冲突（键 = 本地变更 id）。
+   *
+   * 服务端只要还在重复推同一个 key，每轮 sync 都会重新走一遍冲突判定：pulled 永远 0、
+   * 自定义 resolver 每轮被再调一次 —— 但本地这份变更一个字都没变，结论不可能变。
+   * 这里只缓存"本地赢"的结论（指纹取 timestamp）：远端赢的结果本就被丢弃、行为等价，
+   * 而缓存它会在"服务端修正了远端值"时错误地跳过重新判定。
+   * 只是缓存，不是水位：不落盘，重启实例后重新判定一次，结论一致。
+   */
+  const localWinsResolved = new Map<string, number>()
   let disposed = false
   let started = false
   let sequence = 0
@@ -363,9 +373,26 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       nextPending.splice(0, nextPending.length, ...withoutLocal)
       accepted.push(selected)
     }
+    /*
+     * 摘掉已 ack 的本地变更。
+     *
+     * `response.acknowledged` **显式**给定时，它是服务端"我收下了哪些 id"的清单：
+     * 只要某个 id 出现在里面，这份变更就该离队 —— 哪怕它刚在冲突里胜出。
+     * 原来的 `&& !conflictIds.has(local.id)` 让这类变更永远留在 pending：
+     * 服务端每轮都确认收下了，客户端却每个周期原样重推（pushed 恒 ≥1）。
+     * 冲突判定只回答"远端值要不要覆盖本地值"，不回答"服务端收没收下"。
+     *
+     * 反过来，`acknowledged` 缺省时整份 sent 都被当作已接受（协议默认），
+     * 那是没有信息量的假设，不能用来丢弃一份刚刚判赢的本地变更：此时保持
+     * pending（= 下轮重推，at-least-once）是既有契约，见 index.test.ts
+     * "保留 local-wins 变更"。
+     */
+    const explicitAcknowledged = response.acknowledged !== undefined
     for (let index = nextPending.length - 1; index >= 0; index--) {
       const local = nextPending[index]
-      if (acknowledged.has(local.id) && !conflictIds.has(local.id)) nextPending.splice(index, 1)
+      if (!acknowledged.has(local.id)) continue
+      if (!explicitAcknowledged && conflictIds.has(local.id)) continue
+      nextPending.splice(index, 1)
     }
     if (signal.aborted) throw abortError()
     const nextCursor = response.cursor ?? (incremental ? cursor.value : null)
@@ -387,9 +414,12 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
   }
 
   async function resolveConflict(local: SyncChange<T>, remote: SyncChange<T>): Promise<SyncConflictChoice<T>> {
+    if (localWinsResolved.get(local.id) === local.timestamp) return 'local'
     const strategy = options.conflict ?? 'remote-wins'
-    if (typeof strategy === 'function') return strategy(local, remote)
-    return strategy === 'local-wins' ? 'local' : 'remote'
+    const choice = typeof strategy === 'function' ? await strategy(local, remote) : strategy === 'local-wins' ? 'local' : 'remote'
+    if (choice === 'local') localWinsResolved.set(local.id, local.timestamp)
+    else localWinsResolved.delete(local.id)
+    return choice
   }
 
   function restore(): void {
