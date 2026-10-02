@@ -1,4 +1,4 @@
-import { getCurrentOwner, onDispose, state, type Signal } from '@vobs/reactivity'
+import { getCurrentOwner, onDispose, state, untrack, type Signal } from '@vobs/reactivity'
 import { createInjectionKey, inject, type InjectionKey, type VobsPlugin } from '@vobs/vobs'
 
 export type TaskPriority = 'low' | 'normal' | 'high' | 'critical'
@@ -112,6 +112,9 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
   let sequence = 0
   let active = 0
   let nextId = 0
+  /** 累计完成/失败数：任务移出 `tasks.value` 之后仍要保留。 */
+  let completedCount = 0
+  let failedCount = 0
   let disposed = false
 
   const context: TaskQueue = {
@@ -132,7 +135,19 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
       if (typeof id !== 'string' || id.trim() === '') {
         throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: task id 必须是非空字符串')
       }
-      if (tasks.value.some(task => task.id === id)) {
+      /*
+       * 判重只针对**尚未结束**的任务。
+       *
+       * 原来只要 `tasks.value` 里有同名就抛，而 `tasks.value` 从不清空 ——
+       * 于是"任务结束之后再复用同一个 id"（显式 id，或 idFactory 按业务键生成）
+       * 会无故抛 `已存在任务 <id>`。
+       *
+       * 实际生效的机制是"已结束任务被移出 `tasks.value`"（见 `finally` 里的移除）：
+       * 移出之后这里就找不到它了，id 自然可复用。
+       * 这里**不额外判断 `settled`** —— 试过加 `!duplicate.settled`，但实测走不到那条分支
+       * （任务在 promise 结算前就已移出），留着就是无法被测试覆盖的死代码。
+       */
+      if (tasks.value.some(candidate => candidate.id === id)) {
         throw new QueueError('INVALID_QUEUE_OPTIONS', `Vobs Queue: 已存在任务 ${id}`)
       }
       const task = createTask(fn, id, taskOptions)
@@ -265,6 +280,21 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
           .then(() => execute(task))
           .finally(() => {
             task.executing = false
+            /*
+             * 任务结束后移出 `tasks.value`。
+             *
+             * 原来只追加、从不移除（只有 clear()/dispose() 会清空）——长会话里无界增长，
+             * 并且正是上面"同名 id 判重"误报的根源。
+             * 读 `tasks.value` 必须 untrack：这里可能在某个 effect 运行期间收尾，
+             * 读取会建立隐藏订阅（与 <select> 那条同族）。
+             */
+            if (task.settled && !disposed) {
+              untrack(() => {
+                tasks.value = Object.freeze(tasks.value.filter(candidate => candidate !== task))
+              })
+              ownedTasks.delete(task)
+              refreshStats()
+            }
             if (task.retryQueued && task.status.value === 'pending' && !disposed) {
               task.retryQueued = false
               queue.push(task)
@@ -410,28 +440,49 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
     if (disposed) return
     let nextPending = 0
     let nextProcessing = 0
-    let nextCompleted = 0
-    let nextFailed = 0
     for (const task of tasks.value) {
       if (task.status.value === 'pending') nextPending++
       else if (task.status.value === 'running' || task.status.value === 'retrying') nextProcessing++
-      else if (task.status.value === 'success') nextCompleted++
-      else if (task.status.value === 'error') nextFailed++
     }
     pending.value = nextPending
     processing.value = nextProcessing
-    completed.value = nextCompleted
-    failed.value = nextFailed
-    total.value = tasks.value.length
+    /*
+     * `completed` / `failed` 是**累计**计数，不能从 `tasks.value` 现算。
+     *
+     * 原因：已结束的任务现在会被移出 `tasks.value`（见下方 `finally` 里的移除），
+     * 现算会让"完成数"在任务被移除后掉回 0 —— 而这两个计数是给用户看"一共完成了多少"的。
+     * `total` 则保持"当前有多少任务"（在飞 + 尚未移出）的语义。
+     */
+    completed.value = completedCount
+    failed.value = failedCount
+    /*
+     * `total` = 状态计数之和（`pending + processing + completed + failed`；
+     * cancelled 任务不计入 completed/failed）。
+     *
+     * 这样它与其余四个计数**自洽**：任何时刻
+     * `total === pending + processing + completed + failed` —— 调用方不用猜
+     * "total 到底包不包含已结束的"。既不用数组长度（移除发生在 promise 结算之后一跳，
+     * 会让 `await task.promise` 之后读到的值偏大），也不等于"在飞数"（那样 total 与
+     * completed 数量级不一致）。
+     */
+    total.value = nextPending + nextProcessing + completedCount + failedCount
   }
 
   function settleTask<T>(task: InternalTask<T>, value?: T, reason?: unknown): void {
     if (task.settled) return
     task.settled = true
+    /*
+     * 累计计数在**结算这一步**推进，而不是等到下面 `finally` 里的移除 ——
+     * 否则 `await task.promise` 之后立刻读 `completed` 会看到旧值（要等额外一跳），
+     * 这对"任务完成后马上刷新界面"的调用方是可见的错。
+     */
+    if (task.status.value === 'success') completedCount++
+    else if (task.status.value === 'error') failedCount++
     if (reason !== undefined) task.reject?.(reason)
     else task.resolve?.(value as T)
     task.resolve = null
     task.reject = null
+    refreshStats()
   }
 
   function report(queueError: QueueError, task: QueueTask): void {

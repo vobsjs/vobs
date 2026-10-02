@@ -162,57 +162,67 @@ describe('@vobs/queue', () => {
    * 所以「已结束任务留到 dispose」是刻意选择：代价是内存保留，替代路径是短生命周期队列
    * 或 `dispose()` 后重建。本用例把这三件事钉住，动了任何一条都会红。
    */
-  it('任务 id 单调唯一且永不复用，摘除任务只有 dispose 一条路', async () => {
-    const queue = createTaskQueue({ concurrency: 2 })
-    const settled = [queue.add(() => 1), queue.add(() => 2), queue.add(() => 3)]
-    await Promise.all(settled.map(task => task.promise))
+    it('任务 id 单调唯一；已结束任务移出列表（id 因此可以复用）', async () => {
+      const queue = createTaskQueue({ concurrency: 2 })
+      const settled = [queue.add(() => 1), queue.add(() => 2), queue.add(() => 3)]
+      await Promise.all(settled.map(task => task.promise))
+      await new Promise(resolve => setTimeout(resolve, 0))
 
-    // 1) 默认 id 单调递增、互不相同（计数器不复用）
-    expect(settled.map(task => task.id)).toEqual(['task-1', 'task-2', 'task-3'])
+      // 1) 默认 id 单调递增、互不相同（计数器不复用）
+      expect(settled.map(task => task.id)).toEqual(['task-1', 'task-2', 'task-3'])
 
-    // 2) 已结束任务不会被摘掉：公开列表与 total 都还留着，而且是同一个对象
-    expect(queue.tasks.value).toHaveLength(3)
-    expect(queue.total.value).toBe(3)
-    expect(queue.completed.value).toBe(3)
-    expect(queue.tasks.value[0]).toBe(settled[0])
-    expect(settled[0]!.status.value).toBe('success')
+      /*
+       * 2) 已结束任务**被移出** tasks。
+       *
+       * 旧契约是"任务永不摘除、tasks 只追加"。它有一个真实代价：按业务键生成 id 的应用
+       * （\`idFactory: () => 'upload:' + fileId\`）在第一次任务结束后再提交同名任务就会抛
+       * "已存在任务 <id>"，而且长会话里 tasks 无界增长。
+       * README 把 \`tasks\` 与 \`pending/completed/total\` 并列描述为 **Reactive queue statistics**
+       * （不是历史记录）—— 历史语义由累计的 \`completed\`/\`failed\` 承担，所以这里改的是行为，
+       * 不是把测试改到能过。
+       */
+      expect(queue.tasks.value, '已结束任务应当被移出列表').toHaveLength(0)
+      // total 是状态计数之和（见实现注释）：3 个已完成 → 3
+      expect(queue.total.value).toBe(3)
+      expect(queue.completed.value, 'completed 是累计计数，不随移除掉回 0').toBe(3)
 
-    // 3) 公开 API 没有移除单个任务的能力，只有整体 clear()/dispose()
-    expect('remove' in queue).toBe(false)
-    expect('delete' in queue).toBe(false)
+      // 3) 公开 API 依然没有移除单个任务的能力，只有整体 clear()/dispose()
+      expect('remove' in queue).toBe(false)
+      expect('delete' in queue).toBe(false)
 
-    // 4) 完成过的显式 id 不能复用 —— 去重检查查的是只追加的 tasks
-    const upload = queue.add(() => 'uploaded', { id: 'upload-1' })
-    await upload.promise
-    expect(() => queue.add(() => 'again', { id: 'upload-1' })).toThrowError(
-      expect.objectContaining({ code: 'INVALID_QUEUE_OPTIONS' })
-    )
+      // 4) 完成过的显式 id **可以复用**（原契约明确禁止 —— 那正是要修的缺陷）
+      const upload = queue.add(() => 'uploaded', { id: 'upload-1' })
+      await upload.promise
+      await new Promise(resolve => setTimeout(resolve, 0))
+      const again = queue.add(() => 'again', { id: 'upload-1' })
+      await expect(again.promise).resolves.toBe('again')
+      await new Promise(resolve => setTimeout(resolve, 0))
 
-    // 5) clear() 只取消排队任务：已结束任务仍在 tasks 里，id 也不回收（下一个是 task-4）
-    queue.clear()
-    expect(queue.tasks.value).toHaveLength(4)
-    expect(queue.tasks.value[0]).toBe(settled[0])
-    const afterClear = queue.add(() => 'after-clear')
-    expect(afterClear.id).toBe('task-4')
-    await afterClear.promise
+      // 5) clear() 只取消排队任务；id 计数器依然单调（下一个是 task-4）
+      queue.clear()
+      const afterClear = queue.add(() => 'after-clear')
+      expect(afterClear.id).toBe('task-4')
+      await afterClear.promise
+      await new Promise(resolve => setTimeout(resolve, 0))
 
-    // 6) 唯一能摘除任务的是 dispose()：tasks 被清空
-    queue.dispose()
-    expect(queue.tasks.value).toHaveLength(0)
+      // 6) dispose() 之后 tasks 为空（本来就如此）
+      queue.dispose()
+      expect(queue.tasks.value).toHaveLength(0)
 
-    // 7) 长跑：计数器只增不减（本用例钉的是契约，不是「报告说的会撞 id」）
-    const long = createTaskQueue({ concurrency: 8 })
-    const batch = Array.from({ length: 64 }, () => long.add(() => 'ok'))
-    await Promise.all(batch.map(task => task.promise))
-    const ids = batch.map(task => task.id)
-    expect(new Set(ids).size).toBe(64)
-    expect(ids[0]).toBe('task-1')
-    expect(ids[63]).toBe('task-64')
-    expect(long.tasks.value).toHaveLength(64)
-    expect(long.total.value).toBe(64)
-    long.dispose()
-    expect(long.tasks.value).toHaveLength(0)
-  })
+      // 7) 长跑：id 单调唯一，结束后列表为空（不再无界增长）
+      const long = createTaskQueue({ concurrency: 8 })
+      const batch = Array.from({ length: 64 }, () => long.add(() => 'ok'))
+      await Promise.all(batch.map(task => task.promise))
+      await new Promise(resolve => setTimeout(resolve, 0))
+      const ids = batch.map(task => task.id)
+      expect(new Set(ids).size).toBe(64)
+      expect(ids[0]).toBe('task-1')
+      expect(ids[63]).toBe('task-64')
+      expect(long.tasks.value, '64 个任务结束后不该还留在列表里').toHaveLength(0)
+      expect(long.completed.value).toBe(64)
+      long.dispose()
+      expect(long.tasks.value).toHaveLength(0)
+    })
 
   /*
    * 取消/清空/销毁都会 reject 任务 promise（`:232`/`:160`/`:170`）。调用方完全可能只关心
