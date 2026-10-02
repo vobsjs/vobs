@@ -10,10 +10,10 @@
  * 语义与 run-once 一致：**挂载同步过程结束后跑一次**，不是每次渲染都跑。
  */
 import { describe, expect, it, vi } from 'vitest'
-import { createOwner } from '@vobs/reactivity'
+import { createOwner, onDispose } from '@vobs/reactivity'
 import { createComponent, createDOMRenderer, createElement, createVobs, setRenderer } from '@vobs/vobs'
 import type { VobsNode } from '@vobs/vobs'
-import { onMount } from './index'
+import { onDestroy, onMount } from './index'
 
 setRenderer(createDOMRenderer())
 
@@ -117,5 +117,94 @@ describe('onMount', () => {
     } finally {
       globalThis.document = originalDocument
     }
+  })
+})
+
+describe('onDestroy —— 与 onMount 配成一套', () => {
+  it('卸载时执行', async () => {
+    const cleaned = vi.fn()
+    const Comp = (): VobsNode => {
+      onDestroy(cleaned)
+      return createElement('div')
+    }
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const app = createVobs({ render: () => createComponent(Comp, {}) })
+    app.mount(host)
+    expect(cleaned).not.toHaveBeenCalled()
+    app.destroy()
+    expect(cleaned, '卸载时 onDestroy 没有执行').toHaveBeenCalledTimes(1)
+    host.remove()
+  })
+
+  it('与 onMount 配对：挂载后起定时器、卸载时清掉（D 条那个 hero 轮播形态）', async () => {
+    const timer = { id: 0 }
+    const setSpy = vi.spyOn(globalThis, 'setInterval')
+    const clearSpy = vi.spyOn(globalThis, 'clearInterval')
+    try {
+      const Comp = (): VobsNode => {
+        onMount(() => { timer.id = setInterval(() => { /* tick */ }, 5000) as unknown as number })
+        onDestroy(() => { clearInterval(timer.id) })
+        return createElement('div')
+      }
+      const host = document.createElement('main')
+      document.body.appendChild(host)
+      const app = createVobs({ render: () => createComponent(Comp, {}) })
+      app.mount(host)
+      // onMount 是微任务：必须等它跑完才能断言定时器已起
+      await flushMicrotasks()
+
+      expect(setSpy, 'onMount 里没有起定时器').toHaveBeenCalled()
+      expect(clearSpy, '挂载阶段就清了（时序不对）').not.toHaveBeenCalled()
+
+      app.destroy()
+      expect(clearSpy, 'onDestroy 没有清掉定时器（会泄漏）').toHaveBeenCalledWith(timer.id)
+      host.remove()
+    } finally {
+      setSpy.mockRestore(); clearSpy.mockRestore()
+    }
+  })
+
+  it('不在 Owner 下调用 → 抛出（不静默丢弃，那会变成最难查的泄漏）', () => {
+    expect(() => onDestroy(() => undefined)).toThrowError(/组件/u)
+  })
+
+  it('传非函数 → 抛出', () => {
+    const owner = createOwner()
+    owner.run(() => {
+      expect(() => onDestroy(undefined as never)).toThrowError(/函数/u)
+    })
+    owner.dispose()
+  })
+
+  it('单个清理抛错不中断其余清理（与 onDispose 同一隔离）', () => {
+    const order: string[] = []
+    const owner = createOwner()
+    owner.run(() => {
+      onDestroy(() => { order.push('first') })
+      onDestroy(() => { order.push('throw'); throw new Error('boom') })
+      onDestroy(() => { order.push('last') })
+    })
+    // owner.dispose 会把第一个错误抛出来（owner.ts 的既有语义），但其余清理都跑过
+    expect(() => owner.dispose()).toThrowError('boom')
+    expect(order, '一个清理抛错把后面的清理弄丢了').toEqual(['last', 'throw', 'first'])
+  })
+
+  it('与 onDispose 行为一致（同一个操作，两个名字）', async () => {
+    const viaDestroy = vi.fn()
+    const viaDispose = vi.fn()
+    const Comp = (): VobsNode => {
+      onDestroy(viaDestroy)
+      onDispose(viaDispose)
+      return createElement('div')
+    }
+    const host = document.createElement('main')
+    document.body.appendChild(host)
+    const app = createVobs({ render: () => createComponent(Comp, {}) })
+    app.mount(host)
+    app.destroy()
+    expect(viaDestroy).toHaveBeenCalledTimes(1)
+    expect(viaDispose).toHaveBeenCalledTimes(1)
+    host.remove()
   })
 })

@@ -90,3 +90,6 @@ export { Show } from './show'
 export type { ShowProps } from './show'
 
 export { applyClassList, parseClassList } from './ops'
+
+export { ClientOnly } from './client-only'
+export type { ClientOnlyProps } from './client-only'

@@ -1,4 +1,55 @@
-import { getCurrentOwner, type Owner } from '@vobs/reactivity'
+import { getCurrentOwner, onDispose, type Owner } from '@vobs/reactivity'
+
+/**
+ * 组件/作用域**卸载前**跑一次清理（与 `onMount` 配成一套）。
+ *
+ * 外部踩坑文档 D 条里反复提到"定时器/监听**没有正式的清理位置**，清理只能靠约定" ——
+ * 那说的其实就是这个 API 的缺失。这里把它补成**标准名字**。
+ *
+ * ## 与 `onDispose` 的关系（重要，别当成两个东西）
+ *
+ * **它们做的是同一件事** —— `onDestroy` 就是当前 Owner 上的清理注册。
+ * `onDispose` 来自 `@vobs/reactivity`（`@vobs/vobs` 重导出了整个反应式层），
+ * 能力一直都在；缺的是这个名字，以及"它该在哪用"的说明。
+ *
+ * 之所以用 `onDestroy` 作为**面向生命周期**的名字：它与 `onMount` 成对，
+ * 而 `onDispose` 更像"Owner 被销毁"的底层原语 —— 两者都能用，行为一致。
+ *
+ * ## 典型用法（D 条那个 hero 轮播）
+ *
+ * ```ts
+ * let timer: ReturnType<typeof setInterval> | undefined
+ * onMount(() => {
+ *   timer = setInterval(() => index.value = (index.value + 1) % total, 5000)
+ * })
+ * onDestroy(() => {
+ *   if (timer !== undefined) clearInterval(timer)
+ * })
+ * ```
+ *
+ * 注意 `onMount` 里创建的定时器**必须在 `onDestroy` 清掉**：`onMount` 的回调
+ * 只在客户端跑（服务端没有 `document`），所以构建进程里不会留下定时器；
+ * 但客户端卸载时不清就会泄漏。
+ *
+ * ## 语义
+ *
+ * - 在**当前 Owner** 上注册；组件卸载 / `app.destroy()` / 作用域释放时执行
+ * - 与 `onDispose` 一样：清理**逆序**执行，且**单个清理抛错不会中断其余清理**
+ *   （`owner.ts` 做了逐个隔离）
+ * - 不在任何 Owner 下调用**抛出**（不静默丢弃 —— 那会让"清理没跑"变成最难查的泄漏）
+ */
+export function onDestroy(callback: () => void): void {
+  if (typeof callback !== 'function') {
+    throw new Error('Vobs: onDestroy 需要一个函数')
+  }
+  if (!getCurrentOwner()) {
+    throw new Error(
+      'Vobs onDestroy: 当前不在任何组件/作用域内，清理不会被执行。'
+      + '请在组件体内或 effect/owner.run 里调用。'
+    )
+  }
+  onDispose(callback)
+}
 
 /**
  * 组件/作用域**挂载之后**跑一次。
