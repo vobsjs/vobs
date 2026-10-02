@@ -135,14 +135,35 @@ describe('alipay refund', () => {
 })
 
 describe('alipay notify validation', () => {
-  it('app_id 与配置一致且无期望值时通过', () => {
+  const expected = { outTradeNo: 'ORDER-1', totalAmount: '299.00' }
+
+  it('app_id、订单号与金额都一致时通过', () => {
     const handler = createNotifyHandler(makeClient())
-    expect(handler.validate(baseNotify as never).valid).toBe(true)
+    expect(handler.validate(baseNotify as never, expected).valid).toBe(true)
+  })
+
+  it('省略 expected 时失败关闭（不再把"只验了 app_id"当成校验通过）', () => {
+    const handler = createNotifyHandler(makeClient())
+    // 类型上 expected 已改为必填，所以这里显式把整个**调用**降级成 never 来走运行期路径
+    // （要验的正是"JS 调用方漏传时怎么办"——类型挡不住 JS 调用方）
+    const omitted = handler.validate as never as (params: unknown, expected?: unknown) => { valid: boolean; errors: string[] }
+    // 修复前这里是 valid: true —— 任何订单号、任何金额都能过关
+    const result = omitted(baseNotify)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(error => error.includes('expected.outTradeNo'))).toBe(true)
+    expect(result.errors.some(error => error.includes('expected.totalAmount'))).toBe(true)
+  })
+
+  it('expected 的金额是空串时失败关闭（此前被 falsy 短路跳过整条比对）', () => {
+    const handler = createNotifyHandler(makeClient())
+    const result = handler.validate(baseNotify as never, { outTradeNo: 'ORDER-1', totalAmount: '' })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(error => error.includes('expected.totalAmount'))).toBe(true)
   })
 
   it('app_id 不匹配时报告错误', () => {
     const handler = createNotifyHandler(makeClient())
-    const result = handler.validate({ ...baseNotify, appId: 'other-app' } as never)
+    const result = handler.validate({ ...baseNotify, appId: 'other-app' } as never, expected)
     expect(result.valid).toBe(false)
     expect(result.errors[0]).toContain('app_id')
   })
@@ -157,15 +178,15 @@ describe('alipay notify validation', () => {
 
   it('金额按数值比较，"299.0" 与 "299.00" 视为一致', () => {
     const handler = createNotifyHandler(makeClient())
-    const result = handler.validate({ ...baseNotify, totalAmount: '299.0' } as never, { totalAmount: '299.00' })
+    const result = handler.validate({ ...baseNotify, totalAmount: '299.0' } as never, { outTradeNo: 'ORDER-1', totalAmount: '299.00' })
     expect(result.valid).toBe(true)
   })
 
   it('非终态 trade_status 报告错误', () => {
     const handler = createNotifyHandler(makeClient())
-    const result = handler.validate({ ...baseNotify, tradeStatus: 'WAIT_BUYER_PAY' } as never)
+    const result = handler.validate({ ...baseNotify, tradeStatus: 'WAIT_BUYER_PAY' } as never, expected)
     expect(result.valid).toBe(false)
-    expect(result.errors[0]).toContain('trade_status')
+    expect(result.errors.some(error => error.includes('trade_status'))).toBe(true)
   })
 
   it('verify 透传 raw 参数，SDK 异常时返回 false', () => {

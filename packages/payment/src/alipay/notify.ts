@@ -31,13 +31,20 @@ export function createNotifyHandler(client: AlipayClient) {
      * 校验异步通知的业务字段
      *
      * 验签只保证通知确实来自支付宝，不保证通知与你系统中的订单一致；
-     * 因此除了 app_id，还应传入商户侧的期望值（outTradeNo / totalAmount）进行比对。
+     * 所以 `expected` 是**必填**的两项：`outTradeNo` 订单号与 `totalAmount` 订单金额（单位元）。
+     *
+     * 为什么是必填而不是可选的"有就比对"：此前两个比对项都写成可选链
+     * （`expected?.outTradeNo`、`expected?.totalAmount`），于是 `validate(params)`
+     * 只校验 app_id 就返回 `valid: true` —— 任何金额、任何订单号都能通过。
+     * 更隐蔽的一条：`expected.totalAmount` 是**空串**时被 falsy 短路，整条金额比对被**跳过**
+     * （实测探针 probe-audit-payment-2 N2：`notify="" expected="" => valid=true`）。
+     * 现在缺任何一项都以 `valid: false` + 明确 errors 收场（失败关闭）。
      * @param params 异步通知参数
      * @param expected 商户侧期望值：outTradeNo 订单号、totalAmount 订单金额（单位元）
      */
     validate(
       params: AlipayNotifyParams,
-      expected?: { outTradeNo?: string; totalAmount?: string }
+      expected: { outTradeNo: string; totalAmount: string }
     ): NotifyValidationResult {
       const errors: string[] = []
 
@@ -47,12 +54,17 @@ export function createNotifyHandler(client: AlipayClient) {
       }
 
       // 校验 out_trade_no 与商户订单一致
-      if (expected?.outTradeNo && params.outTradeNo !== expected.outTradeNo) {
+      if (!expected?.outTradeNo) {
+        errors.push('缺少商户侧期望订单号 expected.outTradeNo —— 未与自有订单比对，拒绝放行')
+      } else if (params.outTradeNo !== expected.outTradeNo) {
         errors.push(`out_trade_no 不匹配: 期望 ${expected.outTradeNo}，收到 ${params.outTradeNo}`)
       }
 
       // 校验 total_amount 与订单金额一致（金额为两位小数的服务端字符串，按数值比较）
-      if (expected?.totalAmount && Number(params.totalAmount) !== Number(expected.totalAmount)) {
+      // 注意用 === undefined/null 判空而不是 truthiness：空串必须报错而不是被短路跳过
+      if (expected?.totalAmount === undefined || expected.totalAmount === null || expected.totalAmount === '') {
+        errors.push('缺少商户侧期望金额 expected.totalAmount —— 未与自有订单比对，拒绝放行')
+      } else if (Number(params.totalAmount) !== Number(expected.totalAmount)) {
         errors.push(`total_amount 不匹配: 期望 ${expected.totalAmount}，收到 ${params.totalAmount}`)
       }
 

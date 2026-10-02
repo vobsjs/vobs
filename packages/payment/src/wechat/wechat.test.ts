@@ -349,9 +349,33 @@ describe('wechat notify', () => {
     } as WechatNotifyTransaction
 
     expect(handler.validate(payload, { outTradeNo: 'ORDER-1', total: 29900 }).valid).toBe(true)
-    expect(handler.validate(payload, { outTradeNo: 'ORDER-2' }).valid).toBe(false)
-    expect(handler.validate({ ...payload, mchid: 'other' } as WechatNotifyTransaction, { total: 29900 }).errors[0]).toContain('mchid')
-    expect(handler.validate(payload, { total: 1 }).errors[0]).toContain('amount.total')
+    expect(handler.validate(payload, { outTradeNo: 'ORDER-2', total: 29900 }).valid).toBe(false)
+    expect(handler.validate({ ...payload, mchid: 'other' } as WechatNotifyTransaction, { outTradeNo: 'ORDER-1', total: 29900 }).errors[0]).toContain('mchid')
+    expect(handler.validate(payload, { outTradeNo: 'ORDER-1', total: 1 }).errors[0]).toContain('amount.total')
+  })
+
+  it('省略 expected 时失败关闭（不再把"只验了 mchid"当成校验通过）', () => {
+    const { client } = makeTestClient()
+    const handler = createNotifyHandler(client)
+    const payload = {
+      mchid: '1900000000',
+      outTradeNo: 'ATTACKER-ORDER',
+      amount: { total: 1 }
+    } as WechatNotifyTransaction
+
+    // 类型上 expected 已改为必填，所以这里显式把整个**调用**降级成 never 来走运行期路径
+    // （要验的正是"JS 调用方漏传时怎么办"——类型挡不住 JS 调用方）
+    const omitted = handler.validate as never as (payload: unknown, expected?: unknown) => { valid: boolean; errors: string[] }
+    // 修复前：validate(payload) => valid: true（订单号与金额一项都没比）
+    const result = omitted(payload)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(error => error.includes('expected.outTradeNo'))).toBe(true)
+    expect(result.errors.some(error => error.includes('expected.total'))).toBe(true)
+
+    // 只给一项也必须失败关闭（此前"只给 total"就能过）
+    const onlyTotal = omitted(payload, { total: 1 })
+    expect(onlyTotal.valid).toBe(false)
+    expect(onlyTotal.errors.some(error => error.includes('expected.outTradeNo'))).toBe(true)
   })
 
   it('应答体符合微信支付约定', () => {

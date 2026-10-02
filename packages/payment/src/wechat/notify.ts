@@ -56,12 +56,20 @@ export function createNotifyHandler(client: WechatClient) {
     /**
      * 校验解密后的通知与商户侧订单是否一致。
      * 验签只保证通知来自微信支付，不保证与你的订单一致。
-     * @param payload 解密后的通知数据
-     * @param expected 商户侧期望值：outTradeNo 订单号、total 订单金额（分）
+     *
+     * `expected` 是**必填**的两项：`outTradeNo` 订单号与 `total` 订单金额（分）。
+     *
+     * 为什么是必填而不是可选的"有就比对"：此前两个比对项都写成可选链
+     * （`expected?.outTradeNo`、`expected?.total`），于是**最省事的调用姿势**
+     * `validate(payload)` 直接返回 `valid: true` —— 把"只验了商户号"包装成"校验通过"，
+     * 攻击者只要把 mchid 对上（那是公开的）就能让任意订单号/任意金额通过。
+     * 同类形态在支付宝侧也一样（.artifacts/reports/payment.md 缺点 2）；README:108-127
+     * 的文字警告拦不住这种"省略即通过"的 API 外形。
+     * 现在缺任何一项都以 `valid: false` + 明确 errors 收场（失败关闭）。
      */
     validate(
       payload: WechatNotifyTransaction | WechatNotifyRefund,
-      expected?: { outTradeNo?: string; total?: number }
+      expected: { outTradeNo: string; total: number }
     ): { valid: boolean; errors: string[] } {
       const errors: string[] = []
 
@@ -69,11 +77,15 @@ export function createNotifyHandler(client: WechatClient) {
         errors.push(`mchid 不匹配: 期望 ${client.config.mchid}，收到 ${payload.mchid}`)
       }
 
-      if (expected?.outTradeNo && payload.outTradeNo !== expected.outTradeNo) {
+      if (!expected?.outTradeNo) {
+        errors.push('缺少商户侧期望订单号 expected.outTradeNo —— 未与自有订单比对，拒绝放行')
+      } else if (payload.outTradeNo !== expected.outTradeNo) {
         errors.push(`out_trade_no 不匹配: 期望 ${expected.outTradeNo}，收到 ${payload.outTradeNo}`)
       }
 
-      if (expected?.total !== undefined && payload.amount?.total !== expected.total) {
+      if (expected?.total === undefined || expected.total === null) {
+        errors.push('缺少商户侧期望金额 expected.total —— 未与自有订单比对，拒绝放行')
+      } else if (payload.amount?.total !== expected.total) {
         errors.push(`amount.total 不匹配: 期望 ${expected.total}，收到 ${payload.amount?.total}`)
       }
 
