@@ -635,20 +635,46 @@ export function createComponent<Component extends VobsComponent>(
   // 重渲染前释放上一轮作用域，旧实例的 effect 不再订阅信号、portal 节点不再
   // 残留在 body 中每轮热更新叠加；组件 Owner 与 HMR 注册保活。
   const renderScope = owner.mark()
-  let node: VobsNode
+  /*
+   * 局部类型放宽到运行时真实值域：组件返回 `null` / `undefined` / `false`
+   * 都是合法 JSX 写法（`cond ? <X/> : null`、`cond && <X/>`），
+   * 只是 `VobsComponent` 的声明把它写窄了。下面统一归一化成空注释节点。
+   */
+  /*
+   * 用**独立变量**承接渲染结果再归一化。
+   * 直接写 `let node: VobsNode | null | undefined | false` 再比较 `node === false` 时，
+   * TS 的控制流分析会依据 `component(props)` 的声明类型把 `node` 收窄回 `VobsNode`，
+   * 于是 `false` 分支被判成"类型不可达"而报错 —— 但运行时它确实会出现。
+   */
+  let rendered: unknown
   try {
     // 组件渲染必须 untrack：组件是 run-once 的，其渲染发生在某次 effect 求值
     // （insertDynamic/insertBoundary 的渲染工厂、路由挂载）内时，若不切断追踪，
     // 组件体内读取的信号会被收集为祖先 effect 的依赖——一次无关编辑就会触发
     // 整棵子树销毁重建（输入框被换掉、焦点丢失、事件监听随旧树一起被清理）。
     // 结构性响应只属于条件工厂与绑定 effect，组件本体渲染一次即止。
-    node = owner.run(() => untrack(() => component(props)))
+    rendered = owner.run(() => untrack(() => component(props)))
   } catch (error) {
     owner.dispose()
     attachSourceLocation(error, source)
     attachComponentContext(error, componentName, owner.id)
     throw error
   }
+  /*
+   * 组件返回 `null` / `undefined` / `false` 时用**注释节点**代替。
+   *
+   * 这是生产事故（Labelune 2026-09-30 发版黑屏）的根因：`createComponent` 把渲染结果
+   * 直接当作 `nodeOwners` 这个 **WeakMap 的 key**，而 `null` / `undefined` 不是合法 key ——
+   * `nodeOwners.set(null, owner)` 抛 `Invalid value used as weak map key`。
+   * 后果特别贵：App 挂载即崩、**没有任何 JS 崩溃日志**、splash 兜底也失效，
+   * 只能靠人肉纪律「组件永远返回真实节点」避免。
+   *
+   * 「组件顶层条件 return null」是合法的 JSX 写法，框架不该崩。
+   * 注释节点是**渲染为空的既有原语**（fragment 与 dynamic 的标记都用它），
+   * 视觉结果与返回 null 完全一致，但满足 `VobsNode` 契约 —— 于是挂载、HMR 刷新、
+   * 节点替换、水合这些下游路径都不需要各自特判一个"空"分支。
+   */
+  const node: VobsNode = isRenderableNode(rendered) ? rendered : createComment('vobs:empty')
   associateNodeOwner(node, owner)
   if (instance) {
     instance.node = node
@@ -736,7 +762,31 @@ export function createBlock(factory: () => VobsNode | null | undefined | false):
   return node
 }
 
+/**
+ * 组件渲染结果是否是**可用的节点值**。
+ *
+ * `VobsNode` 的真实值域是一个对象（`Node` / fragment / 自定义渲染器的宿主对象），
+ * 而合法 JSX 写法可能返回 `null` / `undefined` / `false`（`cond ? <X/> : null`、`cond && <X/>`）。
+ * 用一个守卫而不是直接比较，是因为 `component()` 的声明类型是 `VobsNode`，
+ * TS 的控制流会把 `=== false` 之类的比较判成"类型不可达"。
+ */
+function isRenderableNode(value: unknown): value is VobsNode {
+  return (typeof value === 'object' && value !== null) || typeof value === 'function'
+}
+
 export function associateNodeOwner(node: VobsNode, owner: Owner): void {
+  /*
+   * 防御：`node` 在类型上必然是 `VobsNode`，但运行时可能收到 `null`/`undefined`
+   * （组件返回空、第三方渲染器返回非节点）。直接当 WeakMap key 会抛
+   * `Invalid value used as weak map key` —— 那是**框架内部错误**，信息量为零，
+   * 且会让 App 挂载静默崩溃。这条断言把它变成一条能指认原因的报错。
+   */
+  if (node === null || node === undefined || (typeof node !== 'object' && typeof node !== 'function')) {
+    throw new Error(
+      `Vobs: associateNodeOwner 收到非节点值（${String(node)}）。`
+      + '组件必须返回 VobsNode；返回 null/undefined 由 createComponent 转成空注释节点。'
+    )
+  }
   nodeOwners.set(node, owner)
 }
 
