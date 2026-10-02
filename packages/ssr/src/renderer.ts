@@ -208,7 +208,44 @@ export function isSafeAttributeName(key: string): boolean {
   return key.length > 0 && !/[\s"'<>/=\u0000-\u001f\u007f]/.test(key)
 }
 
+/**
+ * 服务端**总是**反射成同名 HTML 属性的一批 DOM property。
+ *
+ * 为什么需要单独一批：`setProperty(node,'id'|'style'|'title', v)` 是库与生成代码里的常见写法，
+ * 而下面那张表原来只认布尔属性与 `value`/`tabIndex`/`className` —— 于是 **SSR 产物里
+ * `id` / `style` / `title` 直接消失**，客户端水合后才补上（首屏闪一下、CSS 选择器与
+ * `document.getElementById` 在首屏拿不到）。实测对比：
+ *
+ *   setProperty(el,'id','x')      → DOM: `id="x"`              SSR: 丢失
+ *   setProperty(el,'style','color:red') → DOM: `style="color: red;"`  SSR: 丢失
+ *   setProperty(el,'title','T')   → DOM: `title="T"`           SSR: 丢失
+ *
+ * 这三个在**任何**元素上都反射，不像 `value`/`disabled` 那样只在特定元素上反射，
+ * 所以不需要按标签名分派 —— 这也正是它们可以安全地无条件序列化的原因。
+ */
+const UNIVERSAL_REFLECTED_PROPERTIES: ReadonlySet<string> = new Set(['id', 'style', 'title'])
+
 function propertyAttribute(key: string, value: unknown): { key: string; value: string } | null {
+  /*
+   * 总是反射的同名属性：值只要不是 null/undefined 就序列化。
+   * （`style` 由 `setProperty` 归一化成字符串，所以这里直接 String(value) 即可。）
+   */
+  if (UNIVERSAL_REFLECTED_PROPERTIES.has(key)) {
+    if (value === null || value === undefined || value === false) return null
+    const text = String(value)
+    if (key === 'style') {
+      /*
+       * `style` 是唯一一个 DOM 会**归一化**的：`setProperty(el,'style','color:red')`
+       * 之后 `getAttribute('style')` 是 `"color: red;"`（补空格与结尾分号）。
+       * 这里只做最小的等价处理（补结尾分号），不去解析 CSS ——
+       * 两边产出的**声明**完全相同，CSS 语义也就相同；差别只在书写形式。
+       */
+      const trimmed = text.trim()
+      if (trimmed === '') return null
+      return { key, value: trimmed.endsWith(';') ? trimmed : `${trimmed};` }
+    }
+    return { key, value: text }
+  }
   const attribute = key === 'className' ? 'class' : key
   const booleanAttributes = new Set([
     'allowFullScreen', 'async', 'autofocus', 'autoPlay', 'checked', 'controls',
