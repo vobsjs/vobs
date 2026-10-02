@@ -4,6 +4,62 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-10-02
+
+本次发布的主体是**把实战踩坑里"靠人肉纪律"的条目变成框架能力**，外加一批静默缺陷的修复。
+少数版本号规则上算 minor，但内容量按 patch 看待是不对的 —— 有 6 个新 API。
+
+### Added
+
+- **生命周期与客户端守卫三件套**（`@vobs/vobs`）——此前 D 条踩坑靠手写 `typeof window` 绕过：
+  - `onMount(fn)` —— 挂载**之后**跑一次（微任务），此时 DOM 已在文档中，可量尺寸 / `focus` / 读 `matchMedia`。组件在此之前被卸载则**不执行**；服务端没有 `document` 时**不执行**。返回撤销函数。
+  - `onDestroy(fn)` —— 与 `onMount` 成对的清理位置。**与既有的 `onDispose` 是同一操作**（后者是底层原语，前者是面向生命周期的名字）。与 `onDispose` 的差异：不在任何 Owner 下调用时**抛出**（清理注册落空 = 泄漏，而"清理没跑"最难查）。
+  - `ClientOnly({ children, fallback })` —— **渲染输出本身**在服务端算不出来的子树（窗口尺寸 / `localStorage` 回填 / `Date.now` / 随机值）。两阶段：首轮服务端与客户端**都**渲染 `fallback`（水合对得上），挂载后才换入 `children`。用 `createFragment` 拿父节点，**不插包裹层**。
+- **`Show` 与 `classList`**（`@vobs/vobs` / `@vobs/runtime`）—— 把 C 条的对策（「固定渲染 + 响应式 class 显隐」）从人肉纪律变成一行：
+  - `<Show when={…}>` —— **保留挂载**，只切 `hidden` + `inert`（移出焦点顺序与无障碍树）。输入控件的焦点、滚动位置、内部状态不再因条件翻转而丢失。`children` 必须是单个元素（否则**抛出并说明替代写法**，不静默退化成卸载）。
+  - `classList={{ 'is-open': open.value }}` —— 支持对象 / 数组 / 字符串；**只贡献自己那部分**，作者的 `class` 不受影响；按元素记账，反复切换**不叠加**。静态、展开、`bindAttribute` 三条通道都生效。
+- **数字输入解析契约**（`@vobs/forms`）—— `Number('') === 0` 会在用户清空输入框时把值写成 `0`，沿「比例锁定」链路把兄弟维度一并清零。新增 `parseNumber(text, options)`：空串 / 非法 / 超界一律**不提交**（保持最后一次有效值）；刻意不用 `Number()` 的宽松解析（`Number('0x10') === 16`）。`Field` 在 `type="number"`（或给了 `min`/`max`/`step`）时走该通道并提交 **`number` 类型**，失败通过 `onNumberInvalid(reason, text)` 通知。其它类型行为不变。
+- **两条编译期诊断**（`@vobs/compiler`）：
+  - `VOBS_C104` —— 组件顶层**裸条件 `return`**（`return cond ? <X/> : null`、`return cond && <X/>`）。组件 run-once，这个 `return` 只求值一次，界面永远不会切换；而它与 JSX 子节点位置的条件写法极像。
+  - `VOBS_C105` —— **模块顶层 JSX**。模块 import 求值早于渲染器初始化，运行时必炸且堆栈指向 import 它的地方。**刻意为 warning 而非 error**：error 会让 `compile()` 抛错，打断所有"拿代码片段当输入"的工具（实测 46 条编译器测试变红）。
+- **运行时护栏检查**（仓库脚本）—— `pnpm run check:runtime` / `check:runtime:interact`。起一个把收集器注入页面的 dev server，用真实 Chrome 逐路由（交互模式还会点所有按钮、触发所有输入）取回护栏报错，以退出码表达结论。**静态分析抓不到"读或写跨过函数边界"的自订阅**——本仓库真实修过的 4 个自订阅里静态只抓到 1 个。
+- **`@vobs/forms` 的 `parseNumber` / `@vobs/icon-core` 的缺失图标警告** —— 后者让「查表 miss 静默空白」在控制台点名（按名字去重），grep 产物的三步法不再是唯一防线。
+- **发版脚本**：`pnpm run release:version <版本>` 一次统一根 + 全部可发布包（只替换顶层 `version`，diff 恰好一行）。`pnpm run check:release` 不带标签时进入**一致性模式**——校验包之间与**根版本**是否同步（此前它在本地必然失败，且完全不检查根版本，实测漂移：37 个包在 1.7.8、根还在 1.7.7）。
+
+### Fixed
+
+- **`createComponent`：组件返回 `null` / `undefined` / `false` 直接崩溃**（`Invalid value used as weak map key`）。渲染结果被当作 `nodeOwners` 这个 WeakMap 的 key，而空值不是合法 key —— App 挂载即崩、**没有任何 JS 崩溃日志**、splash 兜底失效。这是 Labelune 2026-09-30 发版黑屏的根因。现统一归一化成**空注释节点**（渲染为空的既有原语），视觉与返回 `null` 一致而下游不需要各自特判。
+- **`@vobs/resource`：响应式 key 的 effect 自订阅** —— 同一 effect 内既 `sync()` 读 `entry.data/error/loading`、又 `request()` 写同一信号。护栏在每个用到响应式 key 的页面都报 `VOBS_C210`。现拆成两条 effect（key effect 只追踪 key；entry 的同步走独立作用域，换 entry 时整条重建）。
+- **`@vobs/runtime`**：
+  - `ref` 清理：坏的回调 ref（收到 `null` 时抛错）会**中断整个 dispose 级联**，同一 Owner 后续所有 cleanup 全部不执行。清理路径现已逐个隔离；新增 `Owner.removeCleanup`，同一 ref 重绑不再累积陈旧注册。
+  - `removeEventListener` 忽略传入的 handler，只要 `(node,event)` 有绑定就一律摘除 —— 用另一个 handler 调用会**误摘别人的监听**。现按 handler 身份比对（DOM 语义）。
+  - `<select>` 值重放在插入 option 时同步读信号，把依赖算进外层 effect → 隐藏订阅。现走 `untrack`。
+- **`@vobs/ssr`**：
+  - `id` / `style` / `title` 在产物里**直接消失**（白名单过窄），首屏 CSS 选择器与 `getElementById` 拿不到。现走属性通道。
+  - 把对象当文本时**直接报错**，不再静默产出 `[object Xxx]`。判据覆盖整族并要求类型名首字母大写 —— 只认 `[object Object]` 会漏掉最常踩的形态 `[object HTMLDivElement]`（JSX 节点作 props / 存数据常量）。
+- **`@vobs/theme`**：scoped `setBrand` 漏 `untrack`（effect 内调用即自订阅，runs 撞 100 轮）；`ThemeBoundary` 的 `provide` 缺 `override` —— **在 `themePlugin` 子树内直接使用就崩**。
+- **`@vobs/table`**：带 `rowKey` 时 `column.render(row, index)` / `onRowClick` 收到的 `index` 冻结在创建位置（重排后渲染出 `Lin#1 / Ada#0`）。`data-row-key` 仍用创建时的值（行身份不该跟着位置漂）。
+- **`@vobs/http`**：重试不认 `Retry-After`（服务端 429/503 下 4ms 内打完 3 次请求，是放大器）；去重键不含 `responseType`/`credentials`/`cache`（同 URL 并发要 `json` 与 `blob` 会串台）。
+- **`@vobs/i18n`**：`I18nBoundary` 不传 `locale` 时不跟随父级 `setLocale`（`locale` 只在创建时读一次，而 `messages` 早有同步 effect）。
+- **`@vobs/ui`**：focus trap 把不可见元素算作可聚焦 —— `hidden` / `display:none` / `visibility:hidden` / `tabindex="-1"` / `inert` / 祖先隐藏全部进入列表，于是 `last` 端点算错，Tab 把焦点送进不可见区域。
+- **`@vobs/layout`**：移动抽屉关闭后侧栏链接**仍可 Tab**（只切 CSS 定位，没有 `inert`）；侧栏可见性完全不看 `mobileOpen`。
+- **`@vobs/queue`**：已结束任务**永不移出列表** —— 同一个 id 用完不能再复用（`idFactory` 按业务键生成的应用第一个任务结束就再也提交不了）；长会话无界增长。`completed`/`failed` 改为累计计数，`total` 与其余四个计数自洽。
+- **`@vobs/forms`**：`Field` 吞掉 `type="password"` → 密码框渲染成**明文**。
+- **`@vobs/vite-plugin`**：`resolveId` 返回反斜杠而 `load` 用正斜杠 → **Windows 上 HTML 组件整功能失效**。
+- **`@vobs/cli`**：`vobs check <无效路径>` 报"检查通过"且 exit 0（CI 永久绿灯）；未知命令静默 exit 0；版本号硬编码；`--json --write` 污染 stdout。
+- **`@vobs/payment`**：`notify.validate` 省略 `expected` 即 `valid: true`（失败开放，微信 + 支付宝）；现为必填并失败关闭。
+- **`@vobs/compiler`**：静态 `htmlFor="x"` 落成 `htmlfor`（label 与控件静默断开）；`autoFocus={false}` 反而真的聚焦（布尔属性只看存在与否，且 JSX 名与 IDL 名 `autofocus` 不一致）。
+- **`reactivity`**：`Effect` 改用 class 原型字段（唤醒路径 **−18%**，同进程 A/B 7 轮、区间不重叠）。
+
+### Notes
+
+- **`Retry-After` / 去重键 / `removeEventListener` 身份**这些改动在少数边界上收紧了行为（例如去重不再合并 `responseType` 不同的请求）。若你的代码依赖旧行为，请核对 `@vobs/http` 的 README。
+- **`Field` 的数字通道是新语义**：`type="number"` 时清空输入框**不再**产生 `0`（保持原值）。需要"清空即写 0"的场合请在 `onNumberInvalid` 里显式处理。
+- **`Show` 要求单个元素子节点**（它需要宿主元素挂 `hidden`/`inert`，框架不插包裹层）。需要真正卸载请继续用 JSX 条件表达式。
+- **`onDestroy` 与 `onDispose` 做的是同一件事**，两者都可用。新增的差异只有"无 Owner 时抛出"。
+- `VOBS_C105` 是 **warning**；想强拦可在 CI 里把 warning 当失败。
+- 契约速查里标记为 C 类的 7 条（显隐助手 / 守卫原语 / 白名单警告 / 顶层 JSX / 编译期检测 / 循环警告 / 数字输入）本次已落地 7 条中的 7 条 —— 相应条目可从"手搓契约"降级为"推荐用新 API"。
+
 ## [1.7.7] - 2026-09-30
 
 ### Added
