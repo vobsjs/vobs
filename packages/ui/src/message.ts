@@ -1,10 +1,11 @@
-import { MESSAGE_KEY, type MessageData, type Notification, type NotificationContext, type NotificationType } from '@vobs/notification'
+import { MESSAGE_KEY, type MessageData, type Notification, type NotificationContext, type NotificationOptions, type NotificationDismissReason, type NotificationType } from '@vobs/notification'
 import {
   addEventListener,
   bindAttribute,
   bindText,
   createElement,
   createText,
+  getCurrentOwner,
   inject,
   insertBefore,
   insertDynamic,
@@ -13,6 +14,74 @@ import {
   type VobsNode
 } from '@vobs/vobs'
 import { Icon } from './icon'
+
+/*
+ * 组件外可用的命令式 message API（外部踩坑文档 P 条）。
+ *
+ * 原来只有组件形态的 `MessageHost`，而它通过 `inject` 取上下文 ——
+ * **只能在组件体内取到**。于是业务方被迫自建 `stores/toast.ts` 全局桥
+ * （在 App 挂载时 `bindToast` 一次），这类手搓替代品本身就是后续踩坑温床。
+ *
+ * 这里把**当前挂载着的**上下文桥到模块级，于是 `message.success('已保存')`
+ * 可以在任何地方调用：store、API 层、事件处理器、模块顶层。
+ *
+ * 为什么用"挂载时绑定、卸载时解绑"而不是让调用方自己传上下文：
+ * 上下文有生命周期（`dispose`），绑定-解绑让桥与它同生共死，
+ * 不会在上下文销毁后还留着一个指向死对象的引用。
+ */
+let activeMessageContext: NotificationContext | null = null
+
+function requireMessageContext(): NotificationContext {
+  if (activeMessageContext === null) {
+    throw new Error(
+      'Vobs message: 还没有挂载 MessageHost（或它已卸载）。'
+      + '请在应用里渲染一个 <MessageHost /> 并安装 messagePlugin（@vobs/notification）。'
+    )
+  }
+  return activeMessageContext
+}
+
+/**
+ * 组件外可用的命令式消息 API。
+ *
+ * 用法（任何位置都可以）：
+ * ```ts
+ * import { message } from '@vobs/ui'
+ * message.success('已保存')
+ * const id = message.error('保存失败', { duration: 0 })
+ * message.dismiss(id)
+ * ```
+ *
+ * 注意：它依赖界面上**已挂载**一个 `MessageHost`（那才是真正渲染消息的地方）。
+ * 没挂载就调用会抛出并说明原因 —— 不静默丢弃，因为"消息没出现"最难查。
+ */
+export const message = {
+  notify(input: Parameters<NotificationContext['notify']>[0]): string {
+    return requireMessageContext().notify(input)
+  },
+  info(content: string, options?: NotificationOptions): string {
+    return requireMessageContext().info(content, options)
+  },
+  success(content: string, options?: NotificationOptions): string {
+    return requireMessageContext().success(content, options)
+  },
+  warning(content: string, options?: NotificationOptions): string {
+    return requireMessageContext().warning(content, options)
+  },
+  error(content: string, options?: NotificationOptions): string {
+    return requireMessageContext().error(content, options)
+  },
+  dismiss(id: string, reason?: NotificationDismissReason): boolean {
+    return requireMessageContext().dismiss(id, reason)
+  },
+  clear(reason?: Parameters<NotificationContext['clear']>[0]): void {
+    requireMessageContext().clear(reason)
+  },
+  /** 当前是否已绑定上下文（测试与条件调用用）。 */
+  get bound(): boolean {
+    return activeMessageContext !== null
+  }
+}
 
 export type MessagePosition =
   | 'top-center'
@@ -51,6 +120,14 @@ export interface MessageHostProps {
 
 export function MessageHost(props: MessageHostProps = {}): VobsNode {
   const message = props.message ?? injectMessage()
+  /*
+   * 把这个上下文桥到模块级，让 `message.success(...)` 在组件外也能用。
+   * 卸载时解绑（且只在仍指向自己时解绑 —— 避免后挂载的 Host 被先卸载的覆盖掉）。
+   */
+  activeMessageContext = message
+  getCurrentOwner()?.onDispose(() => {
+    if (activeMessageContext === message) activeMessageContext = null
+  })
   const root = createElement('ol')
   const position = readPosition(props)
   setAttribute(root, 'class', `vui-message-host vui-message-host--${position}`)
