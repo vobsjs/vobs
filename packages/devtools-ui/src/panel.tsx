@@ -14,7 +14,7 @@ import {
 } from '@vobs/devtools'
 import { HTTP_KEY, type HTTPClient, type HTTPMethod } from '@vobs/http'
 import type { Router, RouterDevToolsAPI, RouteDebugNode, RouteRecord, RouterDataRequestTrace, RouteErrorTrace } from '@vobs/router'
-import { effect } from '@vobs/reactivity'
+import { effect, getCurrentOwner, setOwnerDebugName } from '@vobs/reactivity'
 import { createComponent, createElement, createFragment, createText, inject, insertBefore, insertDynamic, onDispose, setAttribute, setProperty, state, type VobsNode } from '@vobs/vobs'
 import { Alert, Button, Card, Icon, Select, Tabs, Tag } from '@vobs/ui'
 
@@ -86,6 +86,19 @@ function readDevToolsSnapshotWithRouter(api: DevToolsAPI | null, router: Router 
 }
 
 export function DevToolsPanel(props: DevToolsPanelProps = {}) {
+  /*
+   * 先给自己的 owner 起一个 `DevTools*` 名字。
+   *
+   * devtools 判定"这是调试台自己"的唯一依据就是祖先 owner 名字以 `DevTools` 开头
+   * （devtools/src/index.ts 的 isInternalOwnerId → debugComponentName(name).startsWith('DevTools')）。
+   * 面板从来没命名过，于是它下面那 19 个局部 `state()` 与副作用全被当成**应用数据**记录，
+   * 再喂回它自己的清单 —— 面板观测自己：空 devtools 上每来一次广播就 updates +1 / effects +1 /
+   * DOM +80（实测 6 轮 93→521 节点，50 条更新时单次刷新 546ms）。
+   * 命名之后它们全部被 devtools 视为内部，既不再显示也不再触发刷新。
+   */
+  const panelOwner = getCurrentOwner()
+  if (panelOwner) setOwnerDebugName(panelOwner, 'DevToolsPanel')
+
   const refreshCount = state(0)
   const activeSection = state<DevToolsSection>('updates')
   const activeAdvancedSection = state<AdvancedSection>('signals')
