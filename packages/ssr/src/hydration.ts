@@ -104,6 +104,30 @@ export function createHydrationRenderer(
     return false
   }
 
+  /**
+   * 认领服务端已渲染的文本节点来承载 `setProperty(node, 'textContent'|'innerText', value)`。
+   *
+   * 只认领满足下面两条的节点，避免"抢错节点"：
+   * 1. 尚未被认领（防止把别的绑定要用的文本节点抢走）；
+   * 2. 服务端文本与客户端值**逐字相同** —— 不同就说明服务端渲染的是别的内容，
+   *    那样应当退回直接赋值、让 `assertAllNodesClaimed` 如实报出差异，而不是掩盖它。
+   *
+   * 返回 true 表示已经用认同的节点处理完，调用方不必再 Reflect.set。
+   */
+  function claimTextContent(node: Element, value: unknown): boolean {
+    if (typeof value !== 'string') return false
+    for (let index = 0; index < node.childNodes.length; index++) {
+      const child = node.childNodes[index]
+      if (child.nodeType !== 3 || isClaimed(child as ChildNode)) continue
+      if (child.nodeValue !== value) continue
+      const seen = claimed.get(node) ?? new Set<ChildNode>()
+      claimed.set(node, seen)
+      seen.add(child as ChildNode)
+      return true
+    }
+    return false
+  }
+
   function assertAllNodesClaimed(parent: Node): void {
     const seen = claimed.get(parent)
     for (const child of parent.childNodes) {
@@ -239,6 +263,17 @@ export function createHydrationRenderer(
     },
 
     setProperty(node: Element, key: string, value: unknown): void {
+      /*
+       * textContent / innerText 是**文本通道**：Reflect.set 会把已有子节点整棵换掉，
+       * 换出来的文本节点不可能在服务端认领表里 → assertAllNodesClaimed 抛 extra-node。
+       * 服务端现在把同一段文本当**子节点**序列化（renderer.ts 的 textContent 分支），
+       * 所以这里反过来做：把服务端已渲染的那个文本节点**认领**下来当自己的节点，
+       * 而不是另造一个。`setTextContent` 只改文本内容、不动节点身份，所以认领后仍可更新。
+       * 找不到可选文本节点（服务端渲染的是空文本、或该位置是注释占位）才退回直接赋值。
+       */
+      if (hydrating && (key === 'textContent' || key === 'innerText')) {
+        if (claimTextContent(node, value)) return
+      }
       Reflect.set(node, key, value)
       // innerHTML 是原始标记逃生口：赋值会**替换**整棵子树，新节点不可能在服务端认领表里。
       // 服务端原样序列化了同一段标记（renderer.ts serialize），所以这里直接把换出来的
