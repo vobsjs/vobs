@@ -28,7 +28,7 @@ function optionFor(value: string): HTMLOptionElement {
 
 describe('<select> value 重放不得建立隐藏订阅', () => {
   it('插入 option 不会让"值信号"之外的 effect 被唤醒', () => {
-    const select = createElement('select')
+    const select = createElement('select') as HTMLSelectElement
     const selectedValue = state('b')
     const unrelated = state(0)
 
@@ -56,7 +56,7 @@ describe('<select> value 重放不得建立隐藏订阅', () => {
   })
 
   it('重放仍然生效：动态插入的 option 能命中已绑定的值', () => {
-    const select = createElement('select')
+    const select = createElement('select') as HTMLSelectElement
     const selectedValue = state('b')
     bindProperty(select, 'value', () => selectedValue.value)
     settle()
@@ -70,7 +70,7 @@ describe('<select> value 重放不得建立隐藏订阅', () => {
   })
 
   it('值信号变化本身仍然驱动 select.value（绑定没被 untrack 弄坏）', () => {
-    const select = createElement('select')
+    const select = createElement('select') as HTMLSelectElement
     const selectedValue = state('a')
     bindProperty(select, 'value', () => selectedValue.value)
     insertBefore(select, optionFor('a'), null)
@@ -84,7 +84,7 @@ describe('<select> value 重放不得建立隐藏订阅', () => {
   })
 
   it('optgroup 内的 option 也会触发重放（既有语义不变）', () => {
-    const select = createElement('select')
+    const select = createElement('select') as HTMLSelectElement
     const selectedValue = state('x')
     bindProperty(select, 'value', () => selectedValue.value)
     const group = createElement('optgroup')
@@ -95,7 +95,7 @@ describe('<select> value 重放不得建立隐藏订阅', () => {
   })
 
   it('没有绑定值的 select 插入 option 是安全的（reader 不存在）', () => {
-    const select = createElement('select')
+    const select = createElement('select') as HTMLSelectElement
     expect(() => {
       insertBefore(select, optionFor('a'), null)
     }).not.toThrow()
