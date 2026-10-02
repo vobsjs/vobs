@@ -52,6 +52,11 @@ export interface SvgIconRenderOptions {
 
 type IconSource = SvgIconDefinition | (() => SvgIconDefinition | undefined)
 
+/**
+ * 已经警告过的缺失图标名（按名字去重，避免 effect 每次重跑都刷屏）。
+ */
+const warnedMissingIcons = new Set<string>()
+
 export function createIcon<const Name extends string>(
   name: Name,
   path: string,
@@ -136,6 +141,31 @@ function updateSvgIconNode(
 
   if (!definition) {
     setProperty(root, 'innerHTML', '')
+    /*
+     * 查表 miss 时**不能完全无声**（外部踩坑文档 H 条：lucide 图标白名单静默空白）。
+     *
+     * 那个坑的机制是「名字 → 图标定义」的查表 miss 返回空、渲染成空 span、不报错，
+     * 于是新增页面用了没登记的图标时，界面上只是"那里没有东西"，得靠人眼发现。
+     * 文档记的是它已经踩过三次变体（keyboard / upload-cloud / triangle-alert，以及
+     * `ICONS` / `FAVORITES` 双清单混淆）。
+     *
+     * 这里能做的**不是**替应用维护白名单（查表在应用侧），而是把「miss」这件事说出来。
+     * 拿得到名字（`options.dataIconName`）就报出名字 —— 那是排查时唯一有用的信息。
+     *
+     * 用 `console.warn` 而不是抛错：库不该因为一个图标缺失就把整棵渲染树打断；
+     * 而且这条路径在 effect 里，抛错会让"少一个图标"升级成"整块渲染失败"。
+     */
+    const label = options.dataIconName
+    const key = label ?? '(未提供名字)'
+    if (!warnedMissingIcons.has(key)) {
+      warnedMissingIcons.add(key)
+      // eslint-disable-next-line no-console -- 这是刻意的可观测出口
+      console.warn(
+        `[Vobs Icon] 图标${label === undefined ? '' : ` “${label}”`}没有定义，渲染为空。`
+        + '常见原因：按名字查白名单时 miss（名字没登记 / 登记到了另一个清单）。'
+        + '若这是有意的空占位，忽略本条即可。'
+      )
+    }
     return
   }
 
