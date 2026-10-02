@@ -1,4 +1,4 @@
-import { createOwner, effect, getCurrentOwner, state, type Signal } from '@vobs/reactivity'
+import { createOwner, effect, getCurrentOwner, state, untrack, type Owner, type Signal } from '@vobs/reactivity'
 
 export type ResourceKey = readonly unknown[]
 export type ResourceKeySource = ResourceKey | Signal<ResourceKey> | (() => ResourceKey)
@@ -322,6 +322,38 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
         loading.value = activeEntry.loading.value
       }
 
+      /*
+       * entry 值的同步必须由**独立的 effect** 负责，不能塞进追踪 key 的那个 effect 里。
+       *
+       * 原因（.artifacts/e2e-smoke 端到端实测）：追踪 key 的 effect 里既 `sync()`
+       * （读 entry 的 data/error/loading）又 `request()`（缓存未命中时写同一批信号），
+       * 读与写发生在同一次运行内 → 框架护栏判定自订阅（VOBS_C210），
+       * **每个使用响应式 key 的页面都会报**。
+       *
+       * 现在拆开：key effect 只追踪 key（并负责换 entry、发请求）；
+       * 这里这个 effect 只追踪**当前 entry** 的三个信号，换 entry 时整条重建
+       * （旧 effect 随 scope owner 一起销毁，所以不会同时订阅两个 entry）。
+       */
+      let entryScope: Owner | null = null
+      const stopEntrySync = (): void => {
+        entryScope?.dispose()
+        entryScope = null
+      }
+      const startEntrySync = (): void => {
+        stopEntrySync()
+        if (!activeEntry) return
+        const entry = activeEntry
+        const scope = createOwner()
+        entryScope = scope
+        scope.run(() => {
+          effect(() => {
+            data.value = entry.data.value
+            error.value = entry.error.value
+            loading.value = entry.loading.value
+          })
+        })
+      }
+
       const switchKey = (nextKey: ResourceKey): void => {
         const keyId = reactiveConfig.cache ? stableSerialize(nextKey) : undefined
         let nextEntry = keyId ? cache.get(keyId) as ResourceEntry<T> | undefined : undefined
@@ -348,14 +380,21 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
         if (disposed) return
         const nextKey = resolveKey(reactiveConfig.key)
         if (!nextKey) throw new Error('resource: 响应式 key 不能是 undefined')
-        switchKey(nextKey)
-        sync()
+        /*
+         * 这个 effect 只追踪 **key**。entry 的缓存值由 startEntrySync() 的独立 effect 同步，
+         * 请求发起也不该建立依赖 —— 否则"读过的信号又被写"会构成自订阅（VOBS_C210）。
+         */
+        untrack(() => {
+          switchKey(nextKey)
+        })
+        startEntrySync()
       })
 
       const dispose = (): void => {
         if (disposed) return
         disposed = true
         stop.dispose()
+        stopEntrySync()
         if (activeEntry) {
           activeEntry.subscribers.delete(handle)
           if (activeEntry.subscribers.size === 0) activeEntry.controller?.abort()
