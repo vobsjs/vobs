@@ -2,8 +2,14 @@
    components.css — Design System Component Definitions
    Auto-extracted from preview/component-*.html
    DO NOT EDIT MANUALLY — regenerate via extract-components-css.mjs
+   ═══════════════════════════════════════════════════════════════
+   整份文件包进 `@layer base`：与 base.css 同一机理（.artifacts/reports/tailwind.md
+   blocker #2 / HANDOFF §18.109-3）——**未分层的普通声明优先于任何分层声明**，
+   本文件若留在层外，就会压过 `@vobs/tailwind` 入口 `layer(utilities)` 里的实用类。
+   层序由 packages/tailwind/src/styles.css 一次性声明；本文件因此不能有 `@import`
+   （CSS 禁止 @import 出现在 @layer 块内）。结构校验见 layer-order.test.ts。
    ═══════════════════════════════════════════════════════════════ */
-
+@layer base {
 /* ── Activity Rail ─────────────────────────────────────────── */
 /* ===== Activity Rail ===== */
     .vui-activityrail {
@@ -1292,3 +1298,4 @@
       color: var(--text-secondary);
       padding-left: var(--spacer-4);
     }
+} /* @layer base */

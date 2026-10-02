@@ -5,7 +5,8 @@
  * （packages/ui/src/styles/base.css 的 `* { box-sizing: border-box; margin: 0; padding: 0; }`）
  * 若不进层，就会压住本入口 `layer(utilities)` 里的 `m-*` / `p-*`。
  * 这里一次性钉死 theme < base < components < utilities；消费方的 reset 必须自己进 `base` 层
- * （ui/src/styles/base.css 已整体包进 `@layer base { … }`）。
+ * （`@vobs/ui` 的 base/components/vui/toast/message 全部已整体包进 `@layer base { … }`，
+ * 见 ./layer-order.test.ts 的逐文件断言）。
  *
  * `./theme.css` **保持未分层，不是遗漏**（实测结论，勿"顺手"加 layer）：
  *  - 它含 `@custom-variant dark (…)`，Tailwind 对嵌套该指令直接报错

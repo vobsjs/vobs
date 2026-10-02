@@ -1,3 +1,6 @@
+/* Toast：瞬时通知。整份文件包进 `@layer base`（未分层声明会压过 layer(utilities) 的实用类，
+ * 见 blocker #2 / HANDOFF §18.109-3）；本文件不能有 `@import`。 */
+@layer base {
 .vui-toast-host {
   position: fixed;
   z-index: 1000;
@@ -55,3 +58,4 @@
 }
 .vui-toast__close:hover { color: var(--icon-default); background: var(--bg-overlay-l2); }
 .vui-toast__close:focus-visible { outline: 2px solid var(--border-brand); outline-offset: 2px; }
+} /* @layer base */

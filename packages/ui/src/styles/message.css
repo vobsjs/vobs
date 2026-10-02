@@ -1,5 +1,10 @@
-/* Message：顶部居中轻提示（纯文字胶囊 / 类型图标可选），与 toast 相互独立 */
-
+/* Message：顶部居中轻提示（纯文字胶囊 / 类型图标可选），与 toast 相互独立
+ *
+ * 整份文件包进 `@layer base`（未分层声明会压过 layer(utilities) 的实用类，
+ * 见 blocker #2 / HANDOFF §18.109-3）；本文件不能有 `@import`。
+ * 文件内的 @keyframes / @media 留在层内是合法的。
+ */
+@layer base {
 .vui-message-host {
   position: fixed;
   z-index: 1010;
@@ -72,3 +77,4 @@
 @media (prefers-reduced-motion: reduce) {
   .vui-message { animation: none; }
 }
+} /* @layer base */

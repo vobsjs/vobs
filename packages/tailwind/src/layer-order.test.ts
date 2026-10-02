@@ -103,16 +103,30 @@ describe('@vobs/tailwind 层序（级联前提，非视觉验证）', () => {
     expect(LAYER_ORDER.indexOf('base')).toBeLessThan(LAYER_ORDER.indexOf('utilities'))
   })
 
-  it('ui/src/styles/base.css 整体位于 @layer base 内，且不含 @import', () => {
-    const baseCss = codeOnly(readFileSync(resolve(process.cwd(), 'packages/ui/src/styles/base.css'), 'utf8'))
-    const open = baseCss.indexOf('@layer base {')
-    expect(open).toBeGreaterThan(-1)
-    // CSS 禁止 @import 出现在 @layer 块内 —— 整份文件进层的前提就是"无 @import"
-    expect(baseCss).not.toContain('@import')
+  it('ui/src/styles 下每一份无 @import 的样式表都整体位于 @layer base 内', () => {
+    /*
+     * blocker #2 只点名了 base.css，但同一机理覆盖 @vobs/ui 的全部样式表：
+     * components/vui/toast/message 同样是**未分层的普通声明**，同样会压过 layer(utilities)。
+     * 这里按文件枚举（而不是只查 base.css），新增/漏包一份就变红。
+     *
+     * `tokens.css` 被排除，理由是**它在层外才是对的**：它只定义自定义属性（`--*`），
+     * 而自定义属性的继承与层无关；且它必须能独立被 `@vobs/ui/tokens.css` 消费。
+     * `styles.css` 是聚合入口（只含 @import），不能也不该进层。
+     */
+    for (const file of ['base.css', 'components.css', 'vui.css', 'toast.css', 'message.css']) {
+      const css = codeOnly(readFileSync(resolve(process.cwd(), 'packages/ui/src/styles', file), 'utf8'))
+      const open = css.indexOf('@layer base {')
+      expect(open, `${file} 必须整体位于 @layer base 内`).toBeGreaterThan(-1)
+      // CSS 禁止 @import 出现在 @layer 块内 —— 整份文件进层的前提就是"无 @import"
+      expect(css, `${file} 不能含 @import`).not.toContain('@import')
+      // 从 `@layer base {` 到文件末尾括号配平 = 整份文件都在层内（不是只包了一段）
+      expect(braceDepth(css.slice(open)), `${file} 的 @layer base 块未覆盖到文件末尾`).toBe(0)
+      // 层内不得再出现第二个层序声明/嵌套分层块，否则层归属不再是单层的
+      expect(css.slice(open).match(/@layer/g)?.length, `${file} 层内不应再有 @layer`).toBe(1)
+    }
     // reset 这条必须在层内：留在层外的 `* { margin: 0 }` 会压住 layer(utilities) 的 m-*/p-*
-    expect(baseCss.slice(open)).toContain('* { box-sizing: border-box; margin: 0; padding: 0; }')
-    // 从 `@layer base {` 到文件末尾括号配平 = 240 行全部在层内（不是只包了一段）
-    expect(braceDepth(baseCss.slice(open))).toBe(0)
+    const baseCss = codeOnly(readFileSync(resolve(process.cwd(), 'packages/ui/src/styles/base.css'), 'utf8'))
+    expect(baseCss.slice(baseCss.indexOf('@layer base {'))).toContain('* { box-sizing: border-box; margin: 0; padding: 0; }')
   })
 
   it('入口编译产物里没有未分层的规则块（theme.css 保持未分层的安全前提）', async () => {
