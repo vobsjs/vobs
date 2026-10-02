@@ -44,7 +44,7 @@ i18n.formatDate(new Date(), 'short')
 | `i18n.formatNumber(value, presetOrOptions?): string` | Presets `decimal` and `percent`, or `Intl.NumberFormatOptions`. |
 | `i18n.formatCurrency(value: number, currency: string, options?): string` | Currency formatting via `Intl`. |
 | `i18n.formatRelativeTime(value, now?): string` | Relative time via `Intl.RelativeTimeFormat`. |
-| `i18n.registerFormatter(name, formatter): () => void` | Registers a custom `{value, name, argument}` placeholder formatter. |
+| `i18n.registerFormatter(name, formatter): () => void` | Registers a custom placeholder formatter for `{value, name, argument}` (there `name` is the formatter name registered here). The callback receives `(value, locale, argument)`. |
 | `i18n.dehydrate()` / `i18n.hydrate(snapshot)` | Serializes and restores locale state for SSR. |
 | `i18n.dispose(): void` | Disposes internal signals. |
 | `i18nPlugin(options?): VobsPlugin` | Provides the context through `I18N_KEY`. |
