@@ -299,6 +299,8 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       if (next.length === pendingChanges.value.length) return false
       persist(next)
       setPending(next)
+      // 变更被调用方移除，它的"判赢结论"同样过期（否则缓存只增不减，且同 id+timestamp 复用时被短路）
+      localWinsResolved.delete(id)
       return true
     },
 
@@ -306,6 +308,8 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       ensureActive()
       persist([])
       setPending([])
+      // 一个待上传变更都不剩了，判定缓存也必须清空（同上：只增不减会无界增长）
+      localWinsResolved.clear()
     },
 
     on(event, listener): () => void {
