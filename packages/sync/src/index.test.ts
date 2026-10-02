@@ -243,6 +243,37 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
+  /*
+   * 判定缓存的**清账**（§18.100/§18.102）。缓存键就是 pending 变更的 id，所以变更离开 pending 时
+   * 必须把结论一起丢掉；否则调用方用**同一 id+timestamp** 重新提交同一份变更时，
+   * `resolveConflict` 会拿旧结论短路成 'local'，**不再调用**自定义 resolver（决策被悄悄复用）。
+   */
+  it('变更离队后再提交同一份（同 id+timestamp）会重新调用 resolver', async () => {
+    const storage = makeStorage()
+    const resolve = vi.fn(() => 'local' as const)
+    const transport: SyncTransport = {
+      sync: async () => ({
+        timestamp: 1000,
+        acknowledged: ['local'],
+        changes: [{ id: 'remote', key: 'item:1', operation: 'upsert', value: 'remote', timestamp: 2 }]
+      })
+    }
+    const sync = createSync({ transport, storage, conflict: resolve })
+    sync.enqueue({ id: 'local', key: 'item:1', operation: 'upsert', value: 'local', timestamp: 3 })
+
+    await sync.sync()
+    expect(resolve).toHaveBeenCalledTimes(1)
+
+    // 调用方（如"重试"按钮）用同一 id+timestamp 再提交一次
+    sync.enqueue({ id: 'local', key: 'item:1', operation: 'upsert', value: 'local', timestamp: 3 })
+    await sync.sync()
+
+    // 没有清账时这里仍是 1（被上一次的结论短路）→ 用例失败
+    expect(resolve).toHaveBeenCalledTimes(2)
+    sync.dispose()
+    storage.dispose()
+  })
+
   it('同一份本地变更只判一次冲突：服务端重复推同一 remote 不重跑 resolver', async () => {
     const storage = makeStorage()
     const resolve = vi.fn(() => 'local' as const)
