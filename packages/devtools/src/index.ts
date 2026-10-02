@@ -143,6 +143,11 @@ export type LifecycleEventType =
   | 'signal-created' | 'signal-named' | 'signal-changed' | 'signal-disposed'
   | 'memo-created' | 'memo-invalidated'
   | 'effect-created' | 'effect-invalidated' | 'effect-run-start' | 'effect-run' | 'effect-disposed'
+  /**
+   * 水合时"临时认领了一个非空文本"（服务端渲染了真实文本、客户端要空文本，等绑定 effect 覆写）。
+   * 这类"值被悄悄换掉"过去完全无声，现在会被记为一条生命周期事件（见 ssr/hydration.ts）。
+   */
+  | 'hydration-provisional-text'
 
 export interface LifecycleEvent {
   readonly id: string
@@ -1314,6 +1319,17 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
   }
 
   const runtimeHooks: RuntimeDebugHooks = {
+    hydrationProvisionalText(event): void {
+      // 只记一条生命周期事件：调用方（面板/工具）据此提示"这个文本的值在水合时被换掉了"
+      recordLifecycle(
+        'hydration-provisional-text',
+        event.actual,
+        `水合临时认领文本 ${event.actual}`,
+        undefined,
+        'success'
+      )
+    },
+
     domMutation(mutation: RuntimeDomMutation): void {
       if (!activeEffectId) return
       const effect = effects.get(activeEffectId)
