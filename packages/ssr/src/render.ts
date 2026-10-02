@@ -3,6 +3,7 @@ import type { DictDehydratedState } from '@vobs/dict'
 import type { ResourceClient, ResourceDehydratedState } from '@vobs/resource'
 import { pushRuntimeDebugContext, setRenderer } from '@vobs/runtime'
 import { subscribeHTTPDebug, type HTTPDebugRequest } from '@vobs/http'
+import type { ResourceFailure } from '@vobs/resource'
 import { createSSRRenderer } from './renderer'
 
 /** Async SSR result: HTML plus dehydrated client state. */
@@ -11,6 +12,14 @@ export interface AsyncSSRResult {
   readonly resources?: ResourceDehydratedState
   readonly dict?: DictDehydratedState
   readonly state?: SSRState
+  /**
+   * 这轮 SSR 里**失败**的资源（`ResourceClient.errors()` 的快照），**仅在非空时出现**。
+   *
+   * 存在的理由：`prefetchAll()` 刻意不抛错（一个请求失败不该让整页 500），而 `dehydrate()` 又会
+   * 剔除失败项 —— 于是服务端会安安静静地返回一份"用残缺数据渲染"的 HTML。有了这个字段，
+   * 服务端至少能把"这次渲染有失败资源"记进日志/监控，而不是等用户看到空列表。
+   */
+  readonly failedResources?: readonly ResourceFailure[]
   readonly debug?: SSRDebugSnapshot
 }
 
@@ -144,7 +153,6 @@ export async function renderToStringAsync(
     let previousHTML = ''
     for (let round = 0; round < maxFlushRounds; round += 1) {
       setRenderer(ssr.renderer)
-      setRenderer(ssr.renderer)
       app.update()
       const html = ssr.toHTML()
       if (html === previousHTML) break
@@ -153,11 +161,14 @@ export async function renderToStringAsync(
       await new Promise(resolve => { setTimeout(resolve, 0) })
     }
     const endedAt = Date.now()
+    // `errors` 是后加的只读视图；用可选调用保持对旧 stub/旧 client 的兼容
+    const failedResources = options.resourceClient?.errors?.() ?? []
     return {
       html: ssr.toHTML(),
       resources: options.resourceClient?.dehydrate(),
       dict: options.dict?.dehydrate(),
       state: createState(options),
+      ...(failedResources.length > 0 ? { failedResources } : {}),
       debug: captureRequests ? {
         version: 1,
         environment: 'server',
