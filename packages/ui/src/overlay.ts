@@ -57,8 +57,48 @@ export function createFocusTrap(
   let disposed = false
   let previouslyFocused: Element | null = null
 
+  /*
+   * 可聚焦元素必须**真的能被聚焦**，不能只按标签名取。
+   *
+   * 原来只过滤 `disabled` 与 `aria-hidden="true"`，于是这些都会进列表：
+   * - `hidden` 属性 / `display:none` / `visibility:hidden`（元素根本不可见）
+   * - `tabindex="-1"`（**明确**声明"可编程聚焦、不参与 Tab"）
+   * - `inert` 子树里的元素（整棵子树不参与交互）
+   * - 祖先上的 `hidden` / `display:none` / `aria-hidden`
+   *
+   * 后果不只是"焦点落在隐藏元素上"。Tab 循环用的是 `first`/`last` 两个端点：
+   * 若**最后一个可见元素之后还有隐藏元素**，`last` 会算成隐藏那个 ——
+   * 于是用户在最后一个可见元素上按 Tab 时，焦点被送进不可见区域（看起来"焦点消失了"），
+   * 反向 Shift+Tab 同理。
+   *
+   * 说明一处**刻意的取舍**：隐藏判定只看内联样式与 `hidden` 属性，不做
+   * `getComputedStyle`。理由是后者在测试环境（jsdom 不加载外部样式表）对 class 驱动的
+   * 在隐藏测不出来、且每次 Tab 都要强制样式计算。**由 class / 外部样式表造成的隐藏
+   * 这里识别不到** —— 那种情况下请让被隐藏的元素带上 `hidden` 或 `aria-hidden="true"`
+   * （这本来也是更好的可访问性写法）。
+   */
+  const isFocusable = (element: HTMLElement): boolean => {
+    if (element.hasAttribute('disabled')) return false
+    // `closest` 会匹配自身，所以这一条同时覆盖"自身带 hidden"与"祖先带 hidden"
+    if (element.closest('[hidden]') !== null) return false
+    if (element.closest('[inert]') !== null) return false
+    if (element.closest('[aria-hidden="true"]') !== null) return false
+    // tabindex="-1" 是"可编程聚焦"，按设计不参与 Tab 序列；非数字同样无效
+    const tabIndex = element.getAttribute('tabindex')
+    if (tabIndex !== null && (Number.isNaN(Number(tabIndex)) || Number(tabIndex) < 0)) return false
+    // 内联样式隐藏：自身或**任意祖先**（`[hidden]` 之外最常见的写法）
+    let current: HTMLElement | null = element
+    while (current !== null && current !== root) {
+      const style = current.style
+      if (style.display === 'none') return false
+      if (style.visibility === 'hidden' || style.visibility === 'collapse') return false
+      current = current.parentElement
+    }
+    return true
+  }
+
   const focusable = (): HTMLElement[] => [...root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)]
-    .filter(element => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true')
+    .filter(isFocusable)
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (!isActive || disposed) return
