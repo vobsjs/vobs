@@ -93,6 +93,12 @@ const EMPTY_ITEMS: DictItems = Object.freeze([])
 interface DictEntry extends DictQuery {
   controller: AbortController | null
   inFlight: Promise<DictItems> | null
+  /**
+   * 最近一次失败的请求。非 null 时普通 `load()` 不再自动重发 —— 否则「读 error/loading
+   * 并在变化时调 load()」这种最常规的反应式消费者会以微任务速度自我重试、饿死事件循环。
+   * 显式重试：`load({ force: true })`，或先 `invalidate()`。
+   */
+  failure: Promise<DictItems> | null
   revision: number
 }
 
@@ -140,14 +146,22 @@ export function createDict(options: DictOptions = {}): DictContext {
     load(name, loadOptions = {}): Promise<DictItems> {
       ensureActive()
       const entry = getEntry(validateName(name))
-      if (!loadOptions.force && isFresh(entry)) return Promise.resolve(entry.items.value)
+      if (loadOptions.force) {
+        entry.failure = null
+      } else {
+        if (isFresh(entry)) return Promise.resolve(entry.items.value)
+        // 失败后不自动重试：普通 load() 复用上一次的失败结果，直到显式 invalidate/force。
+        if (entry.failure) return entry.failure
+      }
       if (entry.inFlight) return entry.inFlight
       if (!options.loader) {
         const loadError = new DictError('DICT_LOADER_MISSING', `Vobs Dict: ${entry.name} 未配置 loader`)
         entry.error.value = loadError
         error.value = loadError
         report(loadError, entry.name)
-        return Promise.reject(loadError)
+        const rejected = Promise.reject(loadError)
+        entry.failure = rejected
+        return rejected
       }
 
       const revision = ++entry.revision
@@ -181,6 +195,7 @@ export function createDict(options: DictOptions = {}): DictContext {
           refreshLoading()
         })
       entry.inFlight = request
+      entry.failure = request
       return request
     },
 
@@ -223,6 +238,7 @@ export function createDict(options: DictOptions = {}): DictContext {
         entry.controller?.abort()
         entry.controller = null
         entry.inFlight = null
+        entry.failure = null
         entry.loading.value = false
         entry.items.value = item.items
         entry.error.value = null
@@ -236,6 +252,7 @@ export function createDict(options: DictOptions = {}): DictContext {
         entry.controller?.abort()
         entry.controller = null
         entry.inFlight = null
+        entry.failure = null
         entry.loading.value = false
         entry.items.value = EMPTY_ITEMS
         entry.error.value = null
@@ -283,6 +300,7 @@ export function createDict(options: DictOptions = {}): DictContext {
       updatedAt: state(updatedAt),
       controller: null,
       inFlight: null,
+      failure: null,
       revision: 0,
       load: (loadOptions?: { readonly force?: boolean }) => context.load(name, loadOptions),
       invalidate: () => context.invalidate(name)
@@ -297,6 +315,7 @@ export function createDict(options: DictOptions = {}): DictContext {
       entry.controller = null
       entry.inFlight = null
     }
+    entry.failure = null
     entry.items.value = items
     entry.error.value = null
     entry.updatedAt.value = updatedAt
@@ -310,6 +329,7 @@ export function createDict(options: DictOptions = {}): DictContext {
     entry.controller?.abort()
     entry.controller = null
     entry.inFlight = null
+    entry.failure = null
     entry.loading.value = false
     entry.updatedAt.value = 0
     refreshLoading()

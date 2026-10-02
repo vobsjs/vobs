@@ -50,6 +50,8 @@ query.items.value // [{ value, label, ... }]
 
 Loads are deduplicated per name, and every load carries a revision: `invalidate()` or `set()` aborts the in-flight request through the `AbortSignal` and a late response from a superseded request can never overwrite newer data. Failed loads keep the previous items and surface a `DictError` on `query().error`.
 
+A failed load is **not retried automatically**: a plain `load()` after a failure returns the same failed promise again instead of issuing a new request. This is deliberate — a reactive consumer that reads `query().error`/`loading` and calls `load()` on change would otherwise re-request on every microtask turn and starve the event loop. Retry explicitly with `load({ force: true })` or `invalidate(name)` first; `set()`, `hydrate()` and any successful load also clear the failure.
+
 ## Types
 
 `DictName`, `DictValue`, `DictItem`, `DictItems`, `DictData`, `DictLoader`, `DictQuery`, `DictOptions`, `DictPluginOptions`, `DictContext`, `DictDehydratedEntry`, `DictDehydratedState`, `DictErrorCode`

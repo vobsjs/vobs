@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { effect } from '@vobs/reactivity'
 import { createText, createVobs } from '@vobs/vobs'
 import {
   DICT_KEY,
@@ -62,6 +63,35 @@ describe('@vobs/dict', () => {
     expect(dict.get('user_status')).toEqual(statusItems)
     expect(dict.query('user_status').error.value).toMatchObject({ code: 'DICT_LOAD_FAILED' })
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'DICT_LOAD_FAILED' }), 'user_status')
+    dict.dispose()
+  })
+
+  it('失败后不自动重发：普通 load() 不会形成微任务重试风暴，显式重试才重发', async () => {
+    const loader = vi.fn(async () => { throw new Error('offline') })
+    const dict = createDict({ loader, staleTime: 0 })
+    const query = dict.query('roles')
+
+    // 最常规的反应式消费者：读 error/loading，并在变化时触发加载。
+    // 计数上限只为"修复前不要把测试进程打死"（实测不限速时会 OOM 崩溃）。
+    let runs = 0
+    effect(() => {
+      void query.error.value
+      void query.loading.value
+      if (++runs > 30) return
+      void query.load().catch(() => {})
+    })
+
+    // 充分运转微任务队列：修复前每轮微任务都会重新发一次请求
+    for (let i = 0; i < 200; i += 1) await Promise.resolve()
+
+    expect(loader).toHaveBeenCalledTimes(1)
+
+    // 显式重试仍然可用：invalidate / force
+    dict.invalidate('roles')
+    await expect(dict.load('roles')).rejects.toMatchObject({ code: 'DICT_LOAD_FAILED' })
+    expect(loader).toHaveBeenCalledTimes(2)
+    await expect(dict.load('roles', { force: true })).rejects.toMatchObject({ code: 'DICT_LOAD_FAILED' })
+    expect(loader).toHaveBeenCalledTimes(3)
     dict.dispose()
   })
 
