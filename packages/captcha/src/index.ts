@@ -6,8 +6,10 @@ import {
   effect,
   insertBefore,
   insertDynamic,
+  removeAttribute,
   setAttribute,
   setProperty,
+  setTextContent,
   type Signal,
   type VobsNode
 } from '@vobs/vobs'
@@ -68,27 +70,27 @@ export interface CaptchaProps<Challenge = unknown> {
 
 export function Captcha<Challenge = unknown>(props: CaptchaProps<Challenge> = {}): VobsNode {
   const root = createElement('section')
-  const challengeHost = createElement('div')
-  const messageHost = createElement('div')
-  const actions = createElement('div')
+  /**
+   * 各槽位必须**按文档序**创建、就地 insertDynamic、再挂进 root。
+   *
+   * 水合认领的游标是「最近一次 createElement/insertBefore 的父节点」，且同标签元素按位置认领：
+   * 若先创建四个 div 再统一插入，四个槽位会按创建序认领到别人的 DOM 节点（class 被写到错节点上），
+   * 且嵌套槽位的 `<!--vobs:dynamic-->` 注释在游标所在的父节点下根本找不到。
+   */
   const header = createElement('div')
-  const headerText = createText('')
-
   setAttribute(header, 'class', 'vobs-captcha__header')
-  setAttribute(challengeHost, 'class', 'vobs-captcha__challenge')
-  setAttribute(messageHost, 'class', 'vobs-captcha__message-host')
-  setAttribute(actions, 'class', 'vobs-captcha__actions')
-  insertBefore(root, header, null)
-  insertBefore(root, challengeHost, null)
-  insertBefore(root, messageHost, null)
-  insertBefore(root, actions, null)
+  let headerText: Text | null = null
 
   insertDynamic(header, null, () => {
     const label = readString(props, 'label')
     if (!label) return null
-    setText(headerText, label)
+    // 文本节点同样要**在动态槽位内**惰性创建：在组件体里提前 createText 会把认领游标留在
+    // 错误的父节点上（服务端产物认领不到，报 missing-node 动态文本节点）。
+    if (!headerText) headerText = createText('')
+    setTextContent(headerText, label)
     return headerText
   })
+  insertBefore(root, header, null)
 
   effect(() => {
     const status = readValue<CaptchaStatus>(props, 'status', 'idle')
@@ -99,13 +101,24 @@ export function Captcha<Challenge = unknown>(props: CaptchaProps<Challenge> = {}
     setOptionalAttribute(root, 'role', readString(props, 'role'))
     setAttribute(root, 'aria-busy', String(status === 'loading' || status === 'verifying'))
     if (readValue(props, 'disabled', false) || status === 'loading' || status === 'verifying') setAttribute(root, 'aria-disabled', 'true')
-    else root.removeAttribute('aria-disabled')
+    else removeAttribute(root, 'aria-disabled')
     bindDataAndAriaAttributes(root, props)
   })
 
+  const challengeHost = createElement('div')
+  setAttribute(challengeHost, 'class', 'vobs-captcha__challenge')
   insertDynamic(challengeHost, null, () => renderChallenge(props))
+  insertBefore(root, challengeHost, null)
+
+  const messageHost = createElement('div')
+  setAttribute(messageHost, 'class', 'vobs-captcha__message-host')
   insertDynamic(messageHost, null, () => renderMessage(props))
+  insertBefore(root, messageHost, null)
+
+  const actions = createElement('div')
+  setAttribute(actions, 'class', 'vobs-captcha__actions')
   insertDynamic(actions, null, () => renderActions(props))
+  insertBefore(root, actions, null)
   return root
 
   function renderChallenge(input: CaptchaProps<Challenge>): VobsNode | null {
@@ -212,10 +225,6 @@ export function Captcha<Challenge = unknown>(props: CaptchaProps<Challenge> = {}
   }
 }
 
-function setText(node: Text, value: string): void {
-  node.data = value
-}
-
 export { SliderCaptcha, analyzeSliderTrail, collectCaptchaDeviceSignals } from './slider'
 export type {
   CaptchaDeviceSignals,
@@ -261,14 +270,14 @@ function readError(props: object): string | undefined {
 
 function setOptionalAttribute(node: Element, name: string, value: string | undefined): void {
   if (value) setAttribute(node, name, value)
-  else node.removeAttribute(name)
+  else removeAttribute(node, name)
 }
 
 function bindDataAndAriaAttributes(node: Element, props: object): void {
   for (const name of Object.keys(props)) {
     if (!name.startsWith('aria-') && !name.startsWith('data-')) continue
     const value = readValue<unknown>(props, name, undefined)
-    if (value === undefined || value === null || value === false) node.removeAttribute(name)
+    if (value === undefined || value === null || value === false) removeAttribute(node, name)
     else setAttribute(node, name, String(value))
   }
 }
