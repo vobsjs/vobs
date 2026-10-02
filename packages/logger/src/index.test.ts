@@ -11,6 +11,45 @@ import {
 } from './index'
 
 describe('@vobs/logger', () => {
+  /*
+   * 记日志**本身**不能崩：调用方数据里的抛错 getter、恶意 Proxy 的陷阱、坏 clock
+   * 原来都能让 `logger.info()` 直接 throw（0 条落地）。对照 devtools 的同位做法（try/catch → 标记）。
+   */
+  it('调用方数据抛错 / 恶意 Proxy / 坏 clock 都不会让日志本身崩', () => {
+    const memory = createMemoryTransport()
+    const logger = createLogger({
+      level: 'debug',
+      transports: [memory],
+      clock: () => new Date(Number.NaN)
+    })
+
+    const throwingGetter = { ok: 1, get boom(): string { throw new Error('getter exploded') } }
+    const hostile = new Proxy({}, {
+      ownKeys(): string[] { throw new Error('ownKeys exploded') },
+      getOwnPropertyDescriptor(): PropertyDescriptor | undefined { throw new Error('descriptor exploded') }
+    })
+
+    expect(() => logger.info('with throwing getter', { throwingGetter })).not.toThrow()
+    expect(() => logger.info('with hostile proxy as details', hostile)).not.toThrow()
+    expect(() => logger.info('with hostile proxy as value', { hostile })).not.toThrow()
+    expect(() => logger.info('with bad clock')).not.toThrow()
+
+    expect(memory.entries).toHaveLength(4)
+    // 坏 clock 不能让整条日志消失
+    expect(memory.entries[3]?.timestamp).toBe('Invalid Date')
+    // 抛错的那个键只顶掉自己，相邻的好键照常记录
+    const nested = memory.entries[0]?.context.throwingGetter as Record<string, unknown>
+    expect(nested.ok).toBe(1)
+    expect(String(nested.boom)).toContain('Uninspectable')
+    // Proxy 当 details 本身：展开就会崩 → 整体降级，但日志仍在
+    expect(String(memory.entries[1]?.context['[Uninspectable]'])).toContain('ownKeys exploded')
+    // Proxy 作为值：坏键只顶掉自己
+    const hostileValue = memory.entries[2]?.context.hostile as Record<string, unknown>
+    expect(String(hostileValue['[Uninspectable]'])).toContain('ownKeys exploded')
+
+    logger.dispose()
+  })
+
   it('按级别过滤，并合并子日志的结构化上下文', () => {
     const memory = createMemoryTransport()
     const logger = createLogger({

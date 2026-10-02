@@ -182,10 +182,10 @@ function createLoggerScope(state: LoggerState, baseContext: LogContext, ownsTran
     log(level, message, details = {}): void {
       if (state.disposed || disposed || !isLogLevel(level) || levels[level] < levels[state.level]) return
       const entry = freezeEntry({
-        timestamp: state.clock().toISOString(),
+        timestamp: safeTimestamp(state),
         level,
         message,
-        context: sanitizeContext({ ...context, ...details }, state.redactKeys, state.maxDepth)
+        context: sanitizeContext(safeMergeContext(context, details), state.redactKeys, state.maxDepth)
       })
       for (const transport of state.transports) writeToTransport(state, transport, entry)
     },
@@ -269,6 +269,36 @@ function sanitizeContext(input: LogContext, redactKeys: ReadonlySet<string>, max
   return Object.freeze(sanitizeObject(input, redactKeys, maxDepth, seen))
 }
 
+/**
+ * 坏 clock（返回无效 Date 或直接抛）不能让"记日志"本身崩。
+ * 实测原来 `state.clock().toISOString()` 抛 `RangeError: Invalid time value`，整条日志 0 条落地。
+ */
+function safeTimestamp(state: LoggerState): string {
+  try {
+    const now = state.clock()
+    return Number.isNaN(now.getTime()) ? 'Invalid Date' : now.toISOString()
+  } catch {
+    return 'Invalid Date'
+  }
+}
+
+/**
+ * `{...details}` 会**读取 getter**：抛错的 getter 会让 `log()` 直接抛。坏数据只顶掉自己那一层，
+ * 不能连累整条日志（`context` 是本模块自己构造的对象，展开它是安全的）。
+ */
+function safeMergeContext(base: LogContext, details: LogContext): LogContext {
+  try {
+    return { ...base, ...details }
+  } catch (error) {
+    return { ...base, '[Uninspectable]': toErrorMessage(error) }
+  }
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return `${error.name}: ${error.message}`
+  return String(error)
+}
+
 function sanitizeObject(
   input: LogContext,
   redactKeys: ReadonlySet<string>,
@@ -276,10 +306,25 @@ function sanitizeObject(
   seen: WeakSet<object>
 ): LogObject {
   const output: Record<string, LogValue> = {}
-  for (const [key, value] of Object.entries(input)) {
-    output[key] = redactKeys.has(key.toLowerCase())
-      ? '[REDACTED]'
-      : sanitizeValue(value, redactKeys, depth, seen)
+  let keys: string[]
+  try {
+    // 不用 Object.entries：它一次性读全部值，任何一个抛错的 getter 会带走整层。
+    keys = Object.keys(input)
+  } catch (error) {
+    // 恶意 Proxy 的 ownKeys / getOwnPropertyDescriptor 陷阱会在这里抛
+    return Object.freeze({ '[Uninspectable]': toErrorMessage(error) })
+  }
+  for (const key of keys) {
+    if (redactKeys.has(key.toLowerCase())) {
+      output[key] = '[REDACTED]'
+      continue
+    }
+    try {
+      output[key] = sanitizeValue(input[key], redactKeys, depth, seen)
+    } catch (error) {
+      // 抛错的 getter 只顶掉自己这一个键，相邻的好键照常记录
+      output[key] = `[Uninspectable: ${toErrorMessage(error)}]`
+    }
   }
   return Object.freeze(output)
 }
