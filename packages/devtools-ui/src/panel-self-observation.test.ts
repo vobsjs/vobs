@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { createDevTools } from '@vobs/devtools'
 import { createDOMRenderer, createVobs, state } from '@vobs/vobs'
-import { DevToolsPanel } from './panel'
+import { DevToolsPanel, DevToolsToolbar } from './panel'
 import { DevToolsWidget } from './widget'
 
 /*
@@ -72,6 +72,32 @@ describe('DevToolsPanel 不自观测', () => {
     const app = createVobs({
       renderer: createDOMRenderer(),
       render: () => DevToolsWidget({ api: devtools })
+    })
+    app.mount(host)
+    await settle()
+
+    expect(devtools.getSignals().length).toBe(before.signals)
+    expect(devtools.getEffects().length).toBe(before.effects)
+
+    app.destroy()
+    devtools.dispose()
+  })
+
+  it('单独挂载 DevToolsToolbar 同样不往被观测数据里添东西', async () => {
+    const devtools = createDevTools({ expose: false })
+    const warmup = mountPanel(devtools)
+    await settle()
+    warmup.app.destroy()
+    await settle()
+
+    const before = {
+      signals: devtools.getSignals().length,
+      effects: devtools.getEffects().length
+    }
+    const host = document.createElement('div')
+    const app = createVobs({
+      renderer: createDOMRenderer(),
+      render: () => DevToolsToolbar({ api: devtools, query: { value: '' } })
     })
     app.mount(host)
     await settle()

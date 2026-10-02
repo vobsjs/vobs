@@ -161,6 +161,11 @@ export function DevToolsPanel(props: DevToolsPanelProps = {}) {
 }
 
 export function DevToolsToolbar(props: { readonly api: DevToolsAPI | null; readonly query: { value: string }; readonly maximized?: boolean; readonly onToggleMaximize?: () => void }): VobsNode {
+  // 同 DevToolsPanel/DevToolsWidget：devtools 只靠"祖先 owner 名字以 DevTools 开头"判定内部，
+  // 所以这个**公开导出**单独挂载时也要命名，否则它自己的 refreshCount 等信号会被当应用数据记录。
+  const toolbarOwner = getCurrentOwner()
+  if (toolbarOwner) setOwnerDebugName(toolbarOwner, 'DevToolsToolbar')
+
   const refreshCount = state(0)
   if (props.api) {
     const stops = ['collection', 'collection-cleared'].map(event => props.api!.subscribe(event, () => { refreshCount.value++ }))
