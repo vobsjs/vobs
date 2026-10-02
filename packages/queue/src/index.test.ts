@@ -189,6 +189,28 @@ describe('@vobs/queue', () => {
     }
   })
 
+  /*
+   * `drain()` 由 `add()` 同步调用 → 原来 `task.fn(...)` 在 `add()` 返回**之前**就跑了，
+   * 紧接着 `cancel()` 根本来不及：副作用已经发生，而状态却报 cancelled、result 为 null
+   * （报告实测 ran=true / status=cancelled）。起步延后一跳后，"add 完立刻 cancel" 能真正阻止执行。
+   */
+  it('add() 之后立刻 cancel() 能让任务根本不执行', async () => {
+    const queue = createTaskQueue({ concurrency: 1 })
+    let ran = false
+    const task = queue.add(() => {
+      ran = true
+      return 'done'
+    })
+
+    task.cancel()
+    await expect(task.promise).rejects.toMatchObject({ code: 'QUEUE_TASK_CANCELLED' })
+    for (let round = 0; round < 3; round += 1) await Promise.resolve()
+
+    expect(ran).toBe(false)
+    expect(task.status.value).toBe('cancelled')
+    queue.dispose()
+  })
+
   it('未安装插件时 useQueue 给出明确错误', () => {
     const app = createVobs({ render: () => {
       useQueue()

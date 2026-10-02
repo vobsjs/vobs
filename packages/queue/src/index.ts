@@ -255,15 +255,23 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
       run(): Promise<void> {
         task.retryQueued = false
         task.executing = true
-        return execute(task).finally(() => {
-          task.executing = false
-          if (task.retryQueued && task.status.value === 'pending' && !disposed) {
-            task.retryQueued = false
-            queue.push(task)
-            sortQueue()
-            drain()
-          }
-        })
+        /*
+         * 用微任务**延后起步**。原来这里是 `execute(task)`：`drain()` 由 `add()` 同步调用，
+         * 于是 `task.fn(...)` 在 `add()` 返回**之前**就已经跑了 —— 紧接着调用 `cancel()` 根本来不及，
+         * 副作用已经发生，而状态却报 cancelled、result 为 null（报告实测 ran=true / status=cancelled）。
+         * 延后一跳之后，"add 完立刻 cancel" 能真正阻止执行（execute 开头的 while 会看到 cancelled）。
+         */
+        return Promise.resolve()
+          .then(() => execute(task))
+          .finally(() => {
+            task.executing = false
+            if (task.retryQueued && task.status.value === 'pending' && !disposed) {
+              task.retryQueued = false
+              queue.push(task)
+              sortQueue()
+              drain()
+            }
+          })
       },
 
       dispose(): void {
