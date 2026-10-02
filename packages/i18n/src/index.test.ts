@@ -81,11 +81,14 @@ describe('@vobs/i18n', () => {
   it('{v,number}/{v,currency} 遇到非数字值不再静默吐空串', () => {
     const i18n = createI18n({
       defaultLocale: 'en-US',
-      messages: { 'en-US': { num: 'n={v,number}', cur: 'c={v,currency}', ok: 'k={v,number}' } }
+      messages: { 'en-US': { num: 'n={v,number}', cur: 'c={v,currency}', ok: 'k={v,number}', bad: 'bad={v,date}', when: 'w={v,date}' } }
     })
     expect(i18n.t('num', { v: 'abc' })).toBe('n=abc')
     expect(i18n.t('cur', { v: 'abc' })).toBe('c=abc')
     expect(i18n.t('ok', { v: 1234.5 })).toContain('1,234.5')
+    // 日期/相对时间同一取向：解析不出日期就把原值显示出来，而不是让整段文案缺一块
+    expect(i18n.t('bad', { v: 'not-a-date' })).toBe('bad=not-a-date')
+    expect(i18n.t('when', { v: '2024-01-15T00:00:00Z' })).toContain('2024')
     i18n.dispose()
   })
 

@@ -466,17 +466,29 @@ function interpolate(
       const value = params[key]
       if (value === undefined || value === null) return match
       if (!formatter) return String(value)
-      if (formatter === 'date') return context.formatDate(toDate(value) ?? Number.NaN, argument as DatePreset | undefined)
+      if (formatter === 'date') {
+        return formatTemporal(value, input =>
+          context.formatDate(input, argument as DatePreset | undefined))
+      }
+      if (formatter === 'relativeTime') {
+        return formatTemporal(value, input => context.formatRelativeTime(input))
+      }
       /*
        * 非数字值原来**静默吐空串**（`Number('abc')` → NaN → formatNumber 返回 ''），整段文案悄悄缺一块。
        * 宁可把原值显示出来让人看见 —— 与"缺 key 时返回 key 本身"同一取向（可见 > 静默丢失）。
        */
       if (formatter === 'number') return formatNumeric(value, numeric => context.formatNumber(numeric))
       if (formatter === 'currency') return formatNumeric(value, numeric => context.formatCurrency(numeric, argument ?? 'USD'))
-      if (formatter === 'relativeTime') return context.formatRelativeTime(toDate(value) ?? Number.NaN)
+
       const custom = formatters.get(formatter)
       return custom ? custom(value, context.locale.value, argument) : String(value)
     })
+}
+
+/** 日期/相对时间类格式化：解析不出日期就原样显示（与 formatNumeric 同一取向）。 */
+function formatTemporal(value: unknown, format: (input: Date | number) => string): string {
+  const date = toDate(value)
+  return date ? format(date) : String(value ?? '')
 }
 
 /** 数字类格式化：能转成有限数字就走 Intl，否则原样显示（见 interpolate 里的理由）。 */
