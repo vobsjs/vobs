@@ -118,6 +118,24 @@ describe('@vobs/i18n', () => {
     i18n.dispose()
   })
 
+  /*
+   * `mergeMessages` 原来在普通对象上 `merged[key] = value`：键名是 `__proto__` 时那不是写键，
+   * 而是**设置合并结果的原型** → 于是 `{"__proto__":{"injected":"PWNED"}}` 这种载荷（locale 文件、
+   * 服务端下发的翻译）能让任意键凭空出现，`t()` 直接读到攻击者指定"译文"。
+   */
+  it('恶意 messages 载荷不能通过 __proto__ 注入翻译', () => {
+    const i18n = createI18n({ defaultLocale: 'en-US', messages: { 'en-US': { hello: 'Hello' } } })
+    i18n.setMessages('en-US', JSON.parse('{"__proto__":{"injected":"PWNED"}}'))
+
+    expect(i18n.t('hello')).toBe('Hello')
+    // 缺 key 时返回 key 本身 —— 修复前这里返回 'PWNED'
+    expect(i18n.t('injected')).toBe('injected')
+    expect((i18n.messages.value['en-US'] as Record<string, unknown>).injected).toBeUndefined()
+    // 也不得污染全局原型
+    expect(({} as Record<string, unknown>).injected).toBeUndefined()
+    i18n.dispose()
+  })
+
   it('支持自定义 formatter 和运行时追加翻译', () => {
     const i18n = createI18n({
       defaultLocale: 'en-US',

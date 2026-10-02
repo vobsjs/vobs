@@ -498,7 +498,13 @@ function validateLocaleMessages(value: LocaleMessages): LocaleMessages {
 }
 
 function mergeMessages(parent: Messages | undefined, next: Messages): Messages {
-  const merged: Record<string, MessageValue> = { ...(parent ?? {}) }
+  /*
+   * 用 **null 原型**累加：`merged['__proto__'] = value` 在普通对象上不是"写键"而是**设置原型**，
+   * 于是 `{"__proto__":{"injected":"PWNED"}}` 这种载荷（locale 文件、服务端下发的翻译）会让合并结果
+   * 凭空多出任意键 —— 实测 `t('injected')` 返回攻击者指定的 'PWNED'（而不是 key 本身）。
+   * null 原型上 `__proto__` 只是一个普通键；`Object.assign` 也不会触发原型 setter。
+   */
+  const merged = Object.assign(Object.create(null) as Record<string, MessageValue>, parent ?? {})
   for (const [key, value] of Object.entries(next)) {
     const previous = merged[key]
     merged[key] = typeof value === 'object' && typeof previous === 'object'
