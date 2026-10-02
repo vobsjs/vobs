@@ -6,6 +6,8 @@
 // every JSX element would fail with "no interface 'JSX.IntrinsicElements'".
 export type { VobsHTMLAttributes, VobsSVGAttributes } from './jsx.js'
 
+export { onMount } from './lifecycle'
+
 export * from '@vobs/reactivity'
 export { createDOMRenderer } from '@vobs/dom'
 export type { VobsRenderer } from '@vobs/runtime'
