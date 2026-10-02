@@ -14,6 +14,17 @@ export interface Owner {
   run<T>(fn: () => T): T
   addCleanup(cleanup: () => void): void
   onDispose(cleanup: () => void): void
+  /**
+   * 撤销一个**已注册**的清理函数（按函数身份匹配）。
+   *
+   * 用途：把"同一个逻辑资源"的清理**替换**掉，而不是每次重建都追加一条。
+   * 典型场景是 `ref` —— 同一个 ref 对象被先后绑到不同节点时，
+   * 旧那条清理会把新值清成 `null`（见 runtime/src/ref.ts）。
+   *
+   * 语义：只删第一条身份相同的项；没找到就什么都不做（幂等）。
+   * 已 dispose 的 Owner 上是 no-op。
+   */
+  removeCleanup(cleanup: () => void): void
   onError(handler: (error: unknown) => void): () => void
   handleError(error: unknown): boolean
   dispose(): void
@@ -86,6 +97,20 @@ class OwnerImpl implements Owner {
 
   onDispose(cleanup: () => void): void {
     this.addCleanup(cleanup)
+  }
+
+  /**
+   * 撤销一条已注册的清理。
+   *
+   * 用 `splice` 而不是"标记失效"：标记法会让数组继续增长（本包已经因为
+   * `Owner.cleanups` 只增不减吃过一次亏 —— runtime 的事件重绑），
+   * 而这个 API 的语义就是"替换掉旧的"，就该真的从数组里去掉。
+   *
+   * 复杂度 O(n)，但调用场景是"同一资源被重新绑定"，不是热路径上的每帧操作。
+   */
+  removeCleanup(cleanup: () => void): void {
+    const index = this.cleanups.indexOf(cleanup)
+    if (index >= 0) this.cleanups.splice(index, 1)
   }
 
   onError(handler: (error: unknown) => void): () => void {

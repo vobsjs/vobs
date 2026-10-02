@@ -72,17 +72,33 @@ describe('回调 ref 在卸载时收到 null 的行为', () => {
     spy.mockRestore()
   })
 
-  it('对象型 ref 在销毁时被清成 null（跨 owner 改指时不覆盖）', () => {
-    // 同一 owner：销毁时按注册逆序清理，旧注册会把 ref 清成 null —— 记录真实行为
+  it('同 owner 内 ref 改指只留一条清理注册（不留陈旧项）', () => {
     const owner = createOwner()
     const a = createElement('div')
+    const b = createElement('div')
     const target = { current: null as unknown }
+
+    const before = owner.mark().cleanups
     owner.run(() => { setRef(a, target) })
+    expect(owner.mark().cleanups - before).toBe(1)
     expect(target.current).toBe(a)
+
+    owner.run(() => { setRef(b, target) })
+    /*
+     * 关键：第二次绑定**替换**掉第一条注册，而不是追加。
+     * 修复前这里会变成 2 条 —— 销毁时逆序跑两条清理，其中一条的守卫
+     * （`target.current !== node`）会因为另一条已经把值清成 null 而"恰好通过"，
+     * 于是同一个 ref 被清两次。现在只留最新那条。
+     */
+    expect(owner.mark().cleanups - before).toBe(1)
+    expect(target.current).toBe(b)
+
+    // 销毁时把 ref 清成 null 是**既定语义**（React 的 unmount ref 回调同样收到 null）
     owner.dispose()
     expect(target.current).toBeNull()
+  })
 
-    // 跨 owner：ref.ts 的守卫生效 —— 后一个 owner 的清理不会抹掉别人已改指的值
+  it('跨 owner 改指时，先销毁的那个不覆盖后绑定的值', () => {
     const first = createOwner()
     const second = createOwner()
     const b = createElement('div')
@@ -94,6 +110,21 @@ describe('回调 ref 在卸载时收到 null 的行为', () => {
     expect(shared.current).toBe(c)   // 已被 second 改指，first 的清理不该动它
     second.dispose()
     expect(shared.current).toBeNull()
+  })
+
+  it('同一个 ref 绑到不同 owner 时各自独立清理（不互相摘除）', () => {
+    const first = createOwner()
+    const second = createOwner()
+    const target = { current: null as unknown }
+    const a = createElement('div')
+    const b = createElement('div')
+    first.run(() => { setRef(a, target) })
+    second.run(() => { setRef(b, target) })
+    second.dispose()
+    expect(target.current).toBeNull()
+    // first 的注册必须还在（属于另一个 owner），销毁时照常清理
+    first.dispose()
+    expect(target.current).toBeNull()
   })
 
   it('ref 指向的节点被移除后，后续插入不该拿到 null 父节点', () => {
