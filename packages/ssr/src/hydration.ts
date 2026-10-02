@@ -79,6 +79,20 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
     }
   }
 
+  /** 把整棵子树记为已认领（innerHTML 换出来的节点无法逐个与服务端产物比对）。 */
+  function markSubtreeClaimed(parent: Node): void {
+    const stack: Node[] = []
+    for (let index = 0; index < parent.childNodes.length; index++) stack.push(parent.childNodes[index])
+    while (stack.length > 0) {
+      const child = stack.pop()!
+      const owner = child.parentNode!
+      const seen = claimed.get(owner) ?? new Set<ChildNode>()
+      claimed.set(owner, seen)
+      seen.add(child as ChildNode)
+      for (let index = 0; index < child.childNodes.length; index++) stack.push(child.childNodes[index])
+    }
+  }
+
   const renderer: VobsRenderer<Node, Text, Element, Comment> = {
     createText(content: string): Text {
       // 水合完成后退化为真实 DOM 创建：后续的动态重渲染（状态切换重建分支等）
@@ -175,10 +189,19 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
 
     setProperty(node: Element, key: string, value: unknown): void {
       Reflect.set(node, key, value)
+      // innerHTML 是原始标记逃生口：赋值会**替换**整棵子树，新节点不可能在服务端认领表里。
+      // 服务端原样序列化了同一段标记（renderer.ts serialize），所以这里直接把换出来的
+      // 子树整体标记为已认领 —— 否则 assertAllNodesClaimed 必然抛 extra-node。
+      if (key === 'innerHTML' && hydrating) markSubtreeClaimed(node)
     },
 
     setAttribute(node: Element, key: string, value: string): void {
       node.setAttribute(key, value)
+    },
+
+    /** 与 DOM 渲染器同语义：不实现就会退化成 setAttribute(key, '')，在客户端留下空属性。 */
+    removeAttribute(node: Element, key: string): void {
+      node.removeAttribute(key)
     },
 
     addEventListener(node: Element, event: string, handler: EventListener): void {

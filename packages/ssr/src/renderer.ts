@@ -78,6 +78,16 @@ export function createSSRRenderer(): SSRRenderer {
       node.attrs[key] = value
     },
 
+    /*
+     * 不实现 removeAttribute 时 `ops.removeAttribute` 会退化成 `setAttribute(key, '')`，
+     * 产物里就留下 `aria-hidden=""` / `color=""` 这类"看起来设了、其实要删"的属性。
+     * SSR 节点是数据形态，直接删键即可（DOM 渲染器与这里语义一致）。
+     */
+    removeAttribute(node: SSRElement, key: string): void {
+      delete node.attrs[key]
+      delete node.props[key]
+    },
+
     addEventListener(): void {},
 
     removeEventListener(): void {},
@@ -132,6 +142,11 @@ function serialize(node: SSRNode | SSRElement): string {
 
   const attributes = serializeAttributes(node)
   if (voidElements.has(node.tag)) return `<${node.tag}${attributes}>`
+  // innerHTML 是原始标记逃生口（icon-core 的 SVG、ui/combobox 的箭头）：它按定义就是
+  // "已经成型的 HTML"，服务端**原样**输出，不做转义 —— 转义会把组件放进去的标签变成文本。
+  // 客户端水合对应地把这棵子树整体标记为已认领（见 hydration.ts setProperty）。
+  const innerHTML = node.props.innerHTML
+  if (typeof innerHTML === 'string') return `<${node.tag}${attributes}>${innerHTML}</${node.tag}>`
   return `<${node.tag}${attributes}>${serializeChildren(node.children)}</${node.tag}>`
 }
 

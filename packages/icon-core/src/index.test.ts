@@ -43,4 +43,33 @@ describe('@vobs/icon-core', () => {
     expect(root.querySelector('title')?.textContent).toBe('Photo')
     app.destroy()
   })
+
+  /*
+   * 作者传的 aria-label 原来被组件自己删掉：`:122` 由 managedAttributes 写入后，
+   * `:129` 又用 `ariaLabel === undefined ? title : undefined` 把它清成 undefined。
+   * 实测 `Camera({'aria-label':'Foo'})` 得到 aria-label=null —— 既不隐藏也没有名字。
+   */
+  it('尊重作者传入的 aria-label（不再被自己删掉）', () => {
+    const Camera = createSvgIcon({ name: 'camera', body: '<path d="M1"/>' })
+    const container = document.createElement('main')
+    const app = createVobs({ render: () => Camera({ 'aria-label': 'Foo' }) })
+    app.mount(container)
+
+    const root = container.firstElementChild as HTMLElement
+    expect(root.getAttribute('aria-label')).toBe('Foo')
+    expect(root.getAttribute('aria-hidden')).toBeNull()
+    app.destroy()
+  })
+
+  it('没给任何名字时才退回 aria-hidden', () => {
+    const Camera = createSvgIcon({ name: 'camera', body: '<path d="M1"/>' })
+    const container = document.createElement('main')
+    const app = createVobs({ render: () => Camera({}) })
+    app.mount(container)
+
+    const root = container.firstElementChild as HTMLElement
+    expect(root.getAttribute('aria-hidden')).toBe('true')
+    expect(root.getAttribute('aria-label')).toBeNull()
+    app.destroy()
+  })
 })

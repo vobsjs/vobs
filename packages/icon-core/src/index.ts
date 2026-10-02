@@ -1,6 +1,7 @@
 import { effect } from '@vobs/reactivity'
 import {
   createElement,
+  removeAttribute,
   setAttribute,
   setProperty,
   type VobsNode
@@ -126,7 +127,10 @@ function updateSvgIconNode(
   const ariaLabel = Reflect.get(props, 'aria-label')
   const decorative = readProp(props, 'decorative', title === undefined && ariaLabel === undefined)
   setOptionalAttribute(root, 'aria-hidden', decorative ? 'true' : undefined)
-  setOptionalAttribute(root, 'aria-label', ariaLabel === undefined ? title : undefined)
+  // 作者传了 aria-label 就必须留下（上面 managedAttributes 已经写好）——原来这里传的是
+  // `ariaLabel === undefined ? title : undefined`，于是**作者自己给的可读名字被当场删掉**：
+  // 实测 Camera({'aria-label':'Foo'}) 得到 aria-label=null，既不隐藏也没有名字。
+  setOptionalAttribute(root, 'aria-label', ariaLabel === undefined ? title : ariaLabel)
   setOptionalAttribute(root, 'data-icon-name', options.dataIconName ?? definition?.name)
   setOptionalAttribute(root, 'color', readProp(props, 'color', undefined))
 
@@ -175,7 +179,9 @@ function normalizeCssLength(value: string | number): string {
 
 function setOptionalAttribute(node: Element, name: string, value: unknown): void {
   if (value === undefined || value === null || value === false || value === '') {
-    node.removeAttribute(name)
+    // 走框架 op：SSR 渲染器**没有**原生 removeAttribute（它是 VobsRenderer 里的可选项），
+    // 服务端数据节点上更不存在这个方法 —— 直接调原生会让 renderToString 整棵树抛 TypeError。
+    removeAttribute(node, name)
     return
   }
   setAttribute(node, name, String(value))
@@ -184,7 +190,7 @@ function setOptionalAttribute(node: Element, name: string, value: unknown): void
 function clearStaleAttributes(node: Element, next: ReadonlyMap<string, string>): void {
   const previous = (node as Element & { __vobsIconAttributes?: Set<string> }).__vobsIconAttributes ?? new Set<string>()
   for (const name of previous) {
-    if (!next.has(name)) node.removeAttribute(name)
+    if (!next.has(name)) removeAttribute(node, name)
   }
   ;(node as Element & { __vobsIconAttributes?: Set<string> }).__vobsIconAttributes = new Set(next.keys())
 }
