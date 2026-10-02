@@ -127,9 +127,22 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
 
     clearCompleted(): void {
       ensureActive()
-      tasks.value = Object.freeze(tasks.value.filter(task => (
+      const retained = tasks.value.filter(task => (
         task.status.value === 'pending' || task.status.value === 'uploading'
-      )))
+      ))
+      tasks.value = Object.freeze(retained)
+      /*
+       * 清掉的行必须**同时**从 createdTasks 里摘掉并销毁信号。
+       *
+       * 原来只缩短公开数组：已完成的任务对象、它的 4 个信号、以及 `File` 引用会一直被
+       * `createdTasks` 强引用到 `dispose()` —— 长期开着的上传面板等于单调泄漏（报告 upload high）。
+       */
+      const retainedSet = new Set<UploadTask<Result>>(retained)
+      for (const task of createdTasks) {
+        if (retainedSet.has(task)) continue
+        createdTasks.delete(task)
+        task.__dispose()
+      }
     },
 
     dispose(): void {

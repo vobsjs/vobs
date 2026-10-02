@@ -92,6 +92,32 @@ describe('@vobs/upload', () => {
     uploader.dispose()
   })
 
+  /*
+   * `clearCompleted()` 原来只缩短公开数组：已完成的任务对象、它的 4 个信号与 `File` 引用
+   * 一直被内部的 createdTasks 强引用到 dispose() —— 长期开着的上传面板等于单调泄漏。
+   * 现在清掉的行会连同信号一起销毁，所以它们的信号写入变成 no-op（读到值不变）。
+   */
+  it('clearCompleted 释放已完成任务（被清掉的句柄信号已销毁）', async () => {
+    const http = createHTTPClient({ adapter: config => response({ ok: true }, config) })
+    const uploader = createUpload({ http, url: '/upload', concurrency: 1 })
+    const task = uploader.upload(createFile('a.pdf', 'application/pdf'))
+    await expect(task.promise).resolves.toEqual({ ok: true })
+    expect(task.status.value).toBe('success')
+
+    uploader.clearCompleted()
+    expect(uploader.tasks.value).toHaveLength(0)
+
+    const before = task.status.value
+    try {
+      task.status.value = 'error'
+    } catch {
+      // 已销毁的信号也可能直接拒绝写入；两种形态都算"释放了"
+    }
+    expect(task.status.value).toBe(before)
+
+    uploader.dispose()
+  })
+
   it('校验 MIME、扩展名和文件大小，并在创建任务前拒绝无效文件', () => {
     const uploader = createUpload({
       http: createHTTPClient(),
