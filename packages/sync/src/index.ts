@@ -268,7 +268,17 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       if (pendingChanges.value.some(item => item.id === normalized.id)) {
         throw new SyncError('INVALID_CHANGE', `Vobs Sync: 已存在变更 ${normalized.id}`)
       }
-      setPending([...pendingChanges.value, normalized])
+      /*
+       * **先落盘再改内存**：这是"离线优先"的全部意义。
+       *
+       * 原来 enqueue/removePending/clearPending 只调 setPending（纯内存信号），而 persist() 只在
+       * restore()/runCycle() 末尾调用 —— 于是"离线编辑 → 关页面"这条最常见的路径会**丢掉全部
+       * 未上传变更**（README 承诺的持久化不成立）。落盘失败抛 SYNC_FAILED，且此时内存仍是旧值，
+       * 不会出现"调用方以为失败了、内存里却有"的半状态。
+       */
+      const next = [...pendingChanges.value, normalized]
+      persist(next)
+      setPending(next)
       if (started && isOnline()) void context.sync().catch(() => undefined)
       return normalized
     },
@@ -277,12 +287,14 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       ensureActive()
       const next = pendingChanges.value.filter(change => change.id !== id)
       if (next.length === pendingChanges.value.length) return false
+      persist(next)
       setPending(next)
       return true
     },
 
     clearPending(): void {
       ensureActive()
+      persist([])
       setPending([])
     },
 
@@ -400,13 +412,14 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
     persist()
   }
 
-  function persist(): void {
+  /** 落盘。默认写当前 pending（runCycle/restore 用），也可显式传入"下一次"的 pending。 */
+  function persist(changes: readonly SyncChange<T>[] = pendingChanges.value): void {
     try {
       storage.set<PersistedState<T>>(storageKey, {
         version: 1,
         cursor: cursor.value,
         lastSyncAt: lastSyncAt.value,
-        pending: pendingChanges.value
+        pending: changes
       })
     } catch (reason) {
       throw new SyncError('SYNC_FAILED', 'Vobs Sync: 无法保存本地同步状态', reason)
@@ -513,7 +526,11 @@ function normalizeChange<T>(change: SyncChangeInput<T>, fallbackId: string, fall
 }
 
 function parseResponse<T>(data: unknown): SyncResponse<T> {
-  if (!data || typeof data !== 'object') throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: 服务端响应必须是对象')
+  // 数组也是 `typeof === 'object'`：原来放行后 `candidate.changes === undefined` 又过关，
+  // 于是服务端返回 `[{...}]` 这种形状会**假成功**（status=done、pulled=0）。
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: 服务端响应必须是对象')
+  }
   const candidate = data as Partial<SyncResponse<T>>
   if (candidate.cursor !== undefined && candidate.cursor !== null && typeof candidate.cursor !== 'string') {
     throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: 响应 cursor 必须是字符串或 null')

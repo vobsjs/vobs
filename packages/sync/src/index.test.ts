@@ -68,6 +68,115 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
+  /*
+   * §"离线优先"的全部意义：入队即落盘。原来 enqueue/removePending/clearPending 只改内存信号
+   * （setPending 不写 storage，persist() 只在 restore()/runCycle() 末尾调用）→ 离线编辑后
+   * 关页面，未上传的变更**永久消失**，而 README:35 承诺了持久化。
+   * 上面那条用例在 enqueue 之后先跑了完整 sync()，恰好绕开了这条路径。
+   */
+  it('enqueue 立刻落盘：不跑 sync 直接重建实例，未上传的变更还在', () => {
+    const storage = makeStorage()
+    const { transport } = fakeTransport([])
+    const sync = createSync({ transport, storage })
+    sync.enqueue({ key: 'draft:1', operation: 'upsert', value: { title: 'A' }, timestamp: 1 })
+    sync.enqueue({ key: 'draft:2', operation: 'upsert', value: { title: 'B' }, timestamp: 2 })
+    expect(sync.pending.value).toBe(2)
+
+    // 模拟"离线编辑后关页面"：不跑 sync、直接重建实例
+    const restored = createSync({ transport, storage })
+    expect(restored.pending.value).toBe(2)
+    expect(restored.pendingChanges.value.map(change => change.key)).toEqual(['draft:1', 'draft:2'])
+    restored.dispose()
+    sync.dispose()
+    storage.dispose()
+  })
+
+  it('removePending / clearPending 也落盘', () => {
+    const storage = makeStorage()
+    const { transport } = fakeTransport([])
+    const sync = createSync({ transport, storage })
+    const first = sync.enqueue({ key: 'a', operation: 'upsert', value: 1, timestamp: 1 })
+    sync.enqueue({ key: 'b', operation: 'upsert', value: 2, timestamp: 2 })
+
+    expect(sync.removePending(first.id)).toBe(true)
+    const afterRemove = createSync({ transport, storage })
+    expect(afterRemove.pending.value).toBe(1)
+    expect(afterRemove.pendingChanges.value[0]?.key).toBe('b')
+
+    sync.clearPending()
+    const afterClear = createSync({ transport, storage })
+    expect(afterClear.pending.value).toBe(0)
+
+    afterRemove.dispose()
+    afterClear.dispose()
+    sync.dispose()
+    storage.dispose()
+  })
+
+  it('落盘失败时 enqueue 抛 SYNC_FAILED，且内存不进入半状态', () => {
+    const storage = makeStorage()
+    const { transport } = fakeTransport([])
+    const sync = createSync({ transport, storage })
+    const setItem = vi.spyOn(storage, 'set').mockImplementation(() => { throw new Error('disk full') })
+
+    expect(() => sync.enqueue({ key: 'x', operation: 'upsert', value: 1, timestamp: 1 }))
+      .toThrowError(expect.objectContaining({ code: 'SYNC_FAILED' }))
+    expect(sync.pending.value).toBe(0)
+
+    setItem.mockRestore()
+    sync.enqueue({ key: 'x', operation: 'upsert', value: 1, timestamp: 1 })
+    expect(sync.pending.value).toBe(1)
+    sync.dispose()
+    storage.dispose()
+  })
+
+  /*
+   * 报告说"onRemote 抛错 → pending 已清空并落盘、本地变更永久消失"。**实测不成立**：
+   * `await onRemote(...)` 排在 setPending/persist **之前**，抛错时整段提交逻辑都没跑 →
+   * pending 保持原样（已 ack 的本地变更下轮重发 = at-least-once）、cursor 不推进
+   * （远端变更下轮重新拉取 = 自愈）。这里把实际行为钉住，防止以后有人"顺手"提前提交。
+   */
+  it('onRemote 抛错时不丢数据：pending 保留、cursor 不推进（下轮重发/重拉）', async () => {
+    const storage = makeStorage()
+    let localId = ''
+    const transport: SyncTransport = {
+      sync: async () => ({
+        cursor: 'cursor-2',
+        timestamp: '2026-09-03T08:00:00.000Z',
+        acknowledged: [localId],
+        changes: [{ id: 'r1', key: 'other', operation: 'upsert', value: 'R', timestamp: 5 }]
+      })
+    }
+    const sync = createSync({ transport, storage, onRemote: () => { throw new Error('boom') } })
+    const local = sync.enqueue({ key: 'k', operation: 'upsert', value: 'L', timestamp: 1 })
+    localId = local.id
+
+    await expect(sync.sync()).rejects.toMatchObject({ code: 'SYNC_FAILED' })
+    expect(sync.pending.value).toBe(1)
+    expect(sync.cursor.value).toBeNull()
+    expect(sync.lastSyncAt.value).toBeNull()
+    // 落盘的也是"还没提交"的那一份
+    const restored = createSync({ transport, storage })
+    expect(restored.pending.value).toBe(1)
+    expect(restored.cursor.value).toBeNull()
+
+    restored.dispose()
+    sync.dispose()
+    storage.dispose()
+  })
+
+  it('数组响应被拒绝（原来 typeof === "object" 放行 → 假成功）', async () => {
+    const storage = makeStorage()
+    const { transport } = fakeTransport([[
+      { id: 'x', key: 'k', operation: 'upsert', value: 1, timestamp: 1 }
+    ]])
+    const sync = createSync({ transport, storage })
+    await expect(sync.sync()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+    expect(sync.status.value).toBe('error')
+    sync.dispose()
+    storage.dispose()
+  })
+
   it('保留 local-wins 变更，remote-wins 则移除冲突本地变更', async () => {
     const localWinsStorage = makeStorage()
     const localWinsTransport = fakeTransport([{
