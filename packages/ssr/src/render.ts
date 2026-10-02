@@ -71,6 +71,11 @@ export interface AsyncSSROptions extends SSRStateOptions {
     /** Capture Vobs HTTP events and return them for an explicit client import. */
     readonly captureRequests?: boolean
   }
+  /**
+   * 异步 SSR 冲刷到"渲染结果不再变化"的最大轮数（默认 10）。
+   * 用于兜住"数据到达后又排了若干跳异步工作"的情况；设 1 即退回旧的单次 update 行为。
+   */
+  readonly maxFlushRounds?: number
 }
 
 export function renderToString(
@@ -125,7 +130,28 @@ export async function renderToStringAsync(
      * 残留局限：两个 async 渲染真正交错时仍是"最后装上的赢"，彻底解决需要按 owner 携带渲染器。
      */
     setRenderer(ssr.renderer)
-    app.update()
+    /*
+     * 冲刷到**稳定**为止，而不是只 update 一次。
+     *
+     * `await prefetchAll()` 只解决第一跳：数据到达后，绑定 effect 里可能还有链式 promise/`await`，
+     * 或者本次写入又触发新的 effect —— 它们要再经过若干轮微任务才就绪。只 `app.update()` 一次，
+     * 这些内容就**静默缺失**（HTML 里留着占位或旧值，既不报错也没有任何线索）。
+     *
+     * 循环判据是"渲染结果不再变化"（不是固定次数），并设上限防死循环；
+     * 每轮都重装自己的渲染器（`setRenderer` 是进程级单例，await 期间可能被别人换掉）。
+     */
+    const maxFlushRounds = Math.max(1, options.maxFlushRounds ?? 10)
+    let previousHTML = ''
+    for (let round = 0; round < maxFlushRounds; round += 1) {
+      setRenderer(ssr.renderer)
+      setRenderer(ssr.renderer)
+      app.update()
+      const html = ssr.toHTML()
+      if (html === previousHTML) break
+      previousHTML = html
+      // 让排队中的异步工作推进一轮（宏任务：把已排队的微任务链全部放行）
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    }
     const endedAt = Date.now()
     return {
       html: ssr.toHTML(),
