@@ -33,6 +33,7 @@ export type AuthStatus = 'anonymous' | 'authenticated'
 export type AuthErrorCode =
   | 'AUTH_CONTEXT_MISSING'
   | 'LOGIN_NOT_CONFIGURED'
+  | 'LOGIN_SUPERSEDED'
   | 'INVALID_SESSION'
   | 'AUTH_REQUIRED'
   | 'PERMISSION_DENIED'
@@ -109,6 +110,11 @@ export function createAuth<C extends Credentials = Credentials>(options: AuthOpt
   const ownedSession = options.session ? undefined : state<Session | null>(null)
   const session = options.session ?? ownedSession!
   const status = memo<AuthStatus>(() => session.value ? 'authenticated' : 'anonymous')
+  /**
+   * 世代计数：登出/销毁会推进它，此后落地的 in-flight 登录结果一律作废。
+   * 照 resource 的 revision 模式（jwt-auth 的 `6736eaf` 是同一处修复）。
+   */
+  let generation = 0
   let disposed = false
 
   const context: AuthContext<C> = {
@@ -130,13 +136,22 @@ export function createAuth<C extends Credentials = Credentials>(options: AuthOpt
       if (!options.loginHandler) {
         throw new AuthError('LOGIN_NOT_CONFIGURED', 'Vobs Auth: 未配置 loginHandler')
       }
+      const issued = generation
       const nextSession = await options.loginHandler(credentials)
       validateSession(nextSession)
+      /*
+       * 原来这里**无条件**写 session：await 期间用户点了登出（或上下文被销毁），
+       * 登录结果一落地就把人重新登入 —— 一次"安全退出"被一个迟到的响应撤销。
+       */
+      if (disposed || generation !== issued) {
+        throw new AuthError('LOGIN_SUPERSEDED', 'Vobs Auth: 登录结果已过期（期间发生了登出或销毁）')
+      }
       session.value = nextSession
     },
 
     logout(): void {
       ensureActive()
+      generation++
       session.value = null
     },
 

@@ -11,7 +11,8 @@ import {
   RequirePermission,
   authPlugin,
   createAuth,
-  useAuth
+  useAuth,
+  type Session
 } from './index'
 
 describe('@vobs/auth', () => {
@@ -36,6 +37,56 @@ describe('@vobs/auth', () => {
     auth.logout()
     expect(auth.status.value).toBe('anonymous')
     expect(auth.hasRole('editor')).toBe(false)
+    auth.dispose()
+  })
+
+  /*
+   * 登出/销毁期间落地的 in-flight 登录原来**无条件**写 session（await 之后没有世代检查）：
+   * `auth.login()` 还没回来时用户点了登出，登录结果一落地就把人重新登入。
+   * 与 jwt-auth 同源（`6736eaf` 的 revision 模式）。
+   */
+  it('登出期间落地的 in-flight 登录不得把人重新登入', async () => {
+    let release: ((session: Session) => void) | undefined
+    const auth = createAuth({
+      loginHandler: () => new Promise<Session>(resolve => { release = resolve })
+    })
+    const session: Session = { user: { id: 'ada', roles: ['admin'], permissions: ['article:read'] } }
+
+    const pending = auth.login({ id: 'ada' })
+    auth.logout()
+    release!(session)
+
+    await expect(pending).rejects.toMatchObject({ code: 'LOGIN_SUPERSEDED' })
+    expect(auth.session.value).toBeNull()
+    expect(auth.status.value).toBe('anonymous')
+    expect(auth.hasPermission('article:read')).toBe(false)
+    auth.dispose()
+  })
+
+  it('销毁期间落地的 in-flight 登录同样作废', async () => {
+    let release: ((session: Session) => void) | undefined
+    const auth = createAuth({
+      loginHandler: () => new Promise<Session>(resolve => { release = resolve })
+    })
+
+    const pending = auth.login({})
+    auth.dispose()
+    release!({ user: { id: 'ada', roles: [], permissions: [] } })
+
+    await expect(pending).rejects.toMatchObject({ code: 'LOGIN_SUPERSEDED' })
+    expect(auth.session.value).toBeNull()
+  })
+
+  it('登出后重新登录仍然生效（世代只作废被中断的那一次）', async () => {
+    const auth = createAuth({
+      loginHandler: async credentials => ({
+        user: { id: String(credentials.id), roles: [], permissions: [] }
+      })
+    })
+    auth.logout()
+    await auth.login({ id: 'second' })
+    expect(auth.session.value?.user.id).toBe('second')
+    expect(auth.status.value).toBe('authenticated')
     auth.dispose()
   })
 
