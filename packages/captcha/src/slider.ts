@@ -21,12 +21,30 @@ export interface SliderCaptchaChallenge {
   readonly expiresAt: number
 }
 
+/**
+ * 拼图挑战的**几何数据**（由服务端下发）。
+ *
+ * ⚠️ 名字容易误解：`payload` **不是滑块数据**，是**拼图区的几何与底图**。
+ * 滑块相关的文案在 `SliderCaptchaProps` 的 `*Label` 上（见 `dragLabel`）。
+ *
+ * 坐标是相对拼图区左上角的像素值（不是百分比）。
+ */
 export interface SliderCaptchaPayload {
+  /**
+   * 底图。会被写进 CSS `background-image: url(…)` ——
+   * **所以必须是 url() 能吃的值**（dataURL 或路径），**不能是节点**。
+   * 官网/示例用的是 SVG dataURL；用位图 dataURL 也可以。
+   */
   readonly image?: string
+  /** 拼图区宽度（px）。 */
   readonly width: number
+  /** 拼图区高度（px）。 */
   readonly height: number
+  /** 滑块手柄的初始 x（px），默认 0。 */
   readonly startX?: number
+  /** 缺口的目标 x（px）—— 判定"拖对了"比的是这个。 */
   readonly targetX: number
+  /** 缺口的目标 y（px）。 */
   readonly targetY: number
   readonly rotation?: number
   readonly decoys?: readonly SliderCaptchaDecoy[]
@@ -78,12 +96,26 @@ export interface CaptchaDeviceSignals {
   readonly webdriver?: boolean
 }
 
+/**
+ * 提交给服务端校验的拖动结果。
+ *
+ * ⚠️ **校验不只看落点**：`trail`（轨迹点）与 `analysis`（轨迹分析）**都是协议的一部分**，
+ * 服务端可用它们做人机判定（匀速直线 = 机器）。所以：
+ * - 不要只把 `x`/`y` 发上去就丢掉其余字段
+ * - 拖动过程中**不要人为插点/平滑**，那会毁掉分析依据
+ */
 export interface SliderCaptchaResult {
+  /** 最终落点 x（与 `targetX` 比对，容差见 `payload.tolerance`）。 */
   readonly x: number
+  /** 最终落点 y。 */
   readonly y: number
+  /** 完整拖动轨迹。 */
   readonly trail: readonly SliderTrailPoint[]
+  /** 从按下到松开的毫秒数。 */
   readonly duration: number
+  /** 轨迹分析结果（服务端判定依据之一）。 */
   readonly analysis: SliderTrailAnalysis
+  /** 采集到的设备信号（`collectDeviceSignals` 为真时才有）。 */
   readonly deviceSignals?: CaptchaDeviceSignals
 }
 
@@ -105,6 +137,13 @@ export interface SliderCaptchaProps {
   readonly error?: SliderCaptchaValue<unknown>
   readonly errorLabel?: SliderCaptchaValue<string>
   readonly label?: SliderCaptchaValue<string>
+  /**
+   * 手柄按钮的**无障碍名字**（`aria-label`），默认是字面量 `'>'`。
+   *
+   * ⚠️ 名字容易误解：它**不是"拖动提示文案"**。视觉提示是硬编码的
+   * 「向右拖动滑块完成拼图」；这个 prop 只影响读屏器念什么。
+   * 默认值 `'>'` 作为可读名字并不好 —— 需要无障碍支持时请显式给一个词。
+   */
   readonly dragLabel?: SliderCaptchaValue<string>
   readonly successDuration?: SliderCaptchaValue<number>
   readonly onSuccessDismiss?: () => void
