@@ -64,12 +64,12 @@ describe('compiler', () => {
     const nestedPlugin: CompilerPlugin = {
       name: 'nested-compile',
       analyze() {
-        compile(`const el = <span>inner</span>`, { filename: 'inner.tsx' })
+        compile(`const el = () => <span>inner</span>`, { filename: 'inner.tsx' })
       }
     }
     const code = `
   const createElement = () => null
-  const el = <div>outer {name.value}</div>
+  const el = () => <div>outer {name.value}</div>
   `
 
     const result = compileWithSourceMap(code, {
@@ -85,8 +85,8 @@ describe('compiler', () => {
   })
 
   it('重入安全：连续多次编译各自独立，计数器与别名不跨编译泄漏', () => {
-    const first = compileWithSourceMap(`const a = <div className="x">{a.value}</div>`, { filename: 'a.tsx' })
-    const second = compileWithSourceMap(`const b = <div className="y">{b.value}</div>`, { filename: 'b.tsx' })
+    const first = compileWithSourceMap(`const a = () => <div className="x">{a.value}</div>`, { filename: 'a.tsx' })
+    const second = compileWithSourceMap(`const b = () => <div className="y">{b.value}</div>`, { filename: 'b.tsx' })
 
     // 临时变量计数器每次编译从 0 开始
     expect(first.code).toContain('_el0')
@@ -869,7 +869,7 @@ export const width = st(50, 'doc.width')
     })
 
     it('正常列表没有任何诊断', () => {
-      const result = listCode(`const el = <ul>{items.map(item => <li key={item.id}>{item.name}</li>)}</ul>`)
+      const result = listCode(`const el = () => <ul>{items.map(item => <li key={item.id}>{item.name}</li>)}</ul>`)
       expect(result.code).toContain('insertList(')
       expect(result.diagnostics).toEqual([])
     })

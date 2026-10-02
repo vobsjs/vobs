@@ -178,6 +178,7 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
   // 顶层条件 return 的诊断必须在**转换前**做：转换后 JSX 已被改写成工厂调用，
   // 三元表达式与 null 分支的原始形态不再可辨。
   reportTopLevelConditionalReturn(state)
+  reportModuleTopLevelJsx(state)
 
   const statements = sourceFile.statements.map(statement =>
     ts.isImportDeclaration(statement) ? rebuildImport(state, statement) : transformStatement(state, statement, true)
@@ -283,6 +284,51 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
     ts.forEachChild(node, visit)
   }
   ts.forEachChild(sourceFile, visit)
+}
+
+/**
+ * `VOBS_C105`：**模块顶层**的 JSX。
+ *
+ * 形态：`const MENU = <KitMenuItem />` 写在模块顶层（不在任何函数体里）。
+ *
+ * 为什么必须报错：模块顶层表达式在 **import 求值**时就执行，那**早于** `createVobs()`
+ * 安装渲染器。于是 JSX 里的 `createElement` 会撞「渲染器未初始化」—— 而报错发生在
+ * **运行时**、在某个看起来无关的模块被 import 的时候，堆栈跟真正的原因
+ * （"这个常量写错位置了"）隔得很远，排查成本很高。
+ * 外部踩坑文档 F 条就是这条（Labelune 的 KitLayout 菜单数组）。
+ */
+function reportModuleTopLevelJsx(state: CompileState): void {
+  const sourceFile = state.sourceFile
+  if (!sourceFile) return
+
+  const report = (node: ts.Node): void => {
+    const { line, column, codeFrame } = buildCodeFrame(sourceFile, node.getStart(sourceFile), node.getWidth(sourceFile))
+    state.diagnostics.push({
+      code: 'VOBS_C105',
+      severity: 'warning',
+      message: '模块顶层的 JSX 会在 import 求值时执行，那早于 createVobs() 安装渲染器，'
+        + '运行时会报「渲染器未初始化」—— 而且堆栈指向 import 它的地方，与真正原因离得很远。',
+      location: { file: state.filename, line, column },
+      codeFrame,
+      fix: '把这段 JSX 移进组件体；需要「数据 + 节点」的常量请改用返回节点的函数'
+        + '（`const menu = () => [<Item/>]`），或在渲染时用 getter 求值。'
+    })
+  }
+
+  /** 在「顶层求值会立即执行」的子树里找 JSX；遇到函数/类就停（那是延迟求值）。 */
+  const scan = (node: ts.Node): void => {
+    if (ts.isFunctionLike(node) || ts.isClassLike(node)) return
+    if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) {
+      report(node)
+      return
+    }
+    ts.forEachChild(node, scan)
+  }
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isImportDeclaration(statement) || ts.isImportEqualsDeclaration(statement)) continue
+    scan(statement)
+  }
 }
 
 function toCompilerDiagnostic(
