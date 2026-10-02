@@ -11,12 +11,25 @@ describe('event binding dedupe', () => {
     const node = createElement('button')
     let first = 0
     let second = 0
-    addEventListener(node, 'click', () => { first++ })
-    addEventListener(node, 'click', () => { second++ })
+    const firstHandler = (): void => { first++ }
+    const secondHandler = (): void => { second++ }
+    addEventListener(node, 'click', firstHandler)
+    addEventListener(node, 'click', secondHandler)
     node.dispatchEvent(new MouseEvent('click'))
     expect(first).toBe(0)
     expect(second).toBe(1)
-    removeEventListener(node, 'click', (() => undefined) as EventListener)
+    /*
+     * 这里必须传**当前绑定的那个** handler。
+     *
+     * 原来传的是一个无关的 `() => undefined`，并期望仍然摘除 —— 那等于把
+     * "忽略 handler 身份"这个行为编成了契约。而 DOM 的 `removeEventListener` 语义是
+     * 只有 `(type, listener, capture)` 全一致才摘；用另一个 listener 调用是 **no-op**。
+     *
+     * 真实调用方（`ops.ts:339`/`:368`）传的正是准确的 `previousHandler`，
+     * 所以按真实用法断言；"传错 handler 不得误摘"由
+     * `remove-listener-identity.test.ts` 专门锁住。
+     */
+    removeEventListener(node, 'click', secondHandler)
     node.dispatchEvent(new MouseEvent('click'))
     expect(second).toBe(1)
   })

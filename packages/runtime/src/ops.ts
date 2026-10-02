@@ -524,9 +524,26 @@ export function removeEventListener(
   handler: EventListener
 ): void {
   const renderer = getRenderer()
-  const binding = eventBindings.get(node)?.get(event)
+  const map = eventBindings.get(node)
+  const binding = map?.get(event)
+  /*
+   * **必须比 handler 身份**（DOM 的 `removeEventListener` 语义就是如此）。
+   *
+   * 原来这里忽略传入的 `handler`：只要 `(node,event)` 上有绑定就一律摘掉，
+   * 并把绑定记录删掉。于是"用另一个 handler 调 remove"会把**别人的**绑定误摘 ——
+   * 调用方以为只是取消自己那次（本来应当是 no-op），实际把当前生效的监听弄没了。
+   *
+   * 现在的行为：
+   * - 有绑定且身份一致 → 摘掉（正常路径）
+   * - 有绑定但身份不同 → **no-op**（不去动别人的绑定）
+   * - 绑定记录里没有（例如由别处直接经 renderer 绑的）→ 按传入的 handler 兜底摘一次，
+   *   保持与渲染器 API 直连时的可用性
+   */
+  if (binding) {
+    if (binding.handler !== handler) return
+    map?.delete(event)
+  }
   renderer.removeEventListener(node, event, binding?.handler ?? handler)
-  eventBindings.get(node)?.delete(event)
 }
 
 /**
