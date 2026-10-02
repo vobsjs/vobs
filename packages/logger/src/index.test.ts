@@ -15,6 +15,39 @@ describe('@vobs/logger', () => {
    * 记日志**本身**不能崩：调用方数据里的抛错 getter、恶意 Proxy 的陷阱、坏 clock
    * 原来都能让 `logger.info()` 直接 throw（0 条落地）。对照 devtools 的同位做法（try/catch → 标记）。
    */
+  /*
+   * 日志对象经常被解构/当回调传出去（`const { info } = logger`）。原来四个便捷方法是
+   * 对象字面量简写 + `this.log(...)` → 解构后 `this` 是 undefined，直接 TypeError。
+   * 本仓 `state.set` 出于同样理由做成箭头函数。
+   */
+  it('方法可以安全解构（不再依赖 this）', () => {
+    const memory = createMemoryTransport()
+    const logger = createLogger({ level: 'debug', transports: [memory] })
+    const { log, debug, info, warn, error } = logger
+
+    expect(() => {
+      log('debug', 'via log')
+      debug('via debug')
+      info('via info')
+      warn('via warn')
+      error('via error')
+    }).not.toThrow()
+
+    expect(memory.entries.map(entry => `${entry.level}:${entry.message}`)).toEqual([
+      'debug:via log',
+      'debug:via debug',
+      'info:via info',
+      'warn:via warn',
+      'error:via error'
+    ])
+    // 也当回调传（map/forEach 这类会把 this 变成 undefined 或别的对象）
+    const levels = ['info', 'warn']
+    const asCallback: (value: string) => void = logger.info
+    levels.forEach(asCallback)
+    expect(memory.entries).toHaveLength(7)
+    logger.dispose()
+  })
+
   it('调用方数据抛错 / 恶意 Proxy / 坏 clock 都不会让日志本身崩', () => {
     const memory = createMemoryTransport()
     const logger = createLogger({

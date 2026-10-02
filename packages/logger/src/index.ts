@@ -176,35 +176,36 @@ export function useLogger(): Logger {
 function createLoggerScope(state: LoggerState, baseContext: LogContext, ownsTransports = false): Logger {
   const context = { ...baseContext }
   let disposed = false
+
+  /*
+   * 四个便捷方法原来是对象字面量简写 + `this.log(...)`：**解构即崩** ——
+   * `const { info } = logger; info('x')` 抛 `TypeError: Cannot read properties of undefined (reading 'log')`。
+   * 日志对象经常被这样传出去（`const log = logger.info` 之类），所以实现放成闭包函数、
+   * 方法全部是箭头属性（本仓 `state.set` 出于同样理由做成箭头函数）。
+   */
+  const logEntry = (level: LogLevel, message: string, details: LogContext = {}): void => {
+    if (state.disposed || disposed || !isLogLevel(level) || levels[level] < levels[state.level]) return
+    const entry = freezeEntry({
+      timestamp: safeTimestamp(state),
+      level,
+      message,
+      context: sanitizeContext(safeMergeContext(context, details), state.redactKeys, state.maxDepth)
+    })
+    for (const transport of state.transports) writeToTransport(state, transport, entry)
+  }
+
   return {
     level: state.level,
 
-    log(level, message, details = {}): void {
-      if (state.disposed || disposed || !isLogLevel(level) || levels[level] < levels[state.level]) return
-      const entry = freezeEntry({
-        timestamp: safeTimestamp(state),
-        level,
-        message,
-        context: sanitizeContext(safeMergeContext(context, details), state.redactKeys, state.maxDepth)
-      })
-      for (const transport of state.transports) writeToTransport(state, transport, entry)
-    },
+    log: logEntry,
 
-    debug(message, details): void {
-      this.log('debug', message, details)
-    },
+    debug: (message, details) => logEntry('debug', message, details),
 
-    info(message, details): void {
-      this.log('info', message, details)
-    },
+    info: (message, details) => logEntry('info', message, details),
 
-    warn(message, details): void {
-      this.log('warn', message, details)
-    },
+    warn: (message, details) => logEntry('warn', message, details),
 
-    error(message, details): void {
-      this.log('error', message, details)
-    },
+    error: (message, details) => logEntry('error', message, details),
 
     child(details): Logger {
       return createLoggerScope(state, { ...context, ...details })
