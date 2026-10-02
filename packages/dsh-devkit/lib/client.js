@@ -866,7 +866,9 @@ let currentRenderer = null;
 const nodeOwners = /* @__PURE__ */ new WeakMap();
 const eventBindings = /* @__PURE__ */ new WeakMap();
 function setRenderer(renderer) {
-  currentRenderer = renderer;
+  const previous = currentRenderer;
+  currentRenderer = renderer ?? null;
+  return previous;
 }
 function getRenderer() {
   if (!currentRenderer) {
@@ -1523,6 +1525,20 @@ function createVobs(config) {
   if (!config.render) throw new Error("createVobs: render 不能为空");
   const renderer = config.renderer ?? createDOMRenderer();
   const rootOwner = createOwner();
+  let previousRenderer;
+  let rendererInstalled = false;
+  function installRenderer() {
+    if (rendererInstalled) return;
+    previousRenderer = setRenderer(renderer);
+    rendererInstalled = true;
+  }
+  function restoreRenderer() {
+    if (!rendererInstalled) return;
+    rendererInstalled = false;
+    const previous = previousRenderer;
+    previousRenderer = void 0;
+    setRenderer(previous);
+  }
   setOwnerDebugName(rootOwner, "App");
   const cleanups = [];
   const errorHandlers = /* @__PURE__ */ new Set();
@@ -1625,6 +1641,7 @@ function createVobs(config) {
         firstError ?? (firstError = error);
       }
     }
+    restoreRenderer();
     return firstError;
   }
   function start(target, hydrating) {
@@ -1635,7 +1652,7 @@ function createVobs(config) {
     if (hydrating && !renderer.beginHydration) {
       throw new Error("Vobs: 当前渲染器不支持 Hydration");
     }
-    setRenderer(renderer);
+    installRenderer();
     try {
       if (hydrating) renderer.beginHydration?.();
       const rootNode = rootOwner.run(config.render);

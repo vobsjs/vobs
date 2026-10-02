@@ -1,7 +1,7 @@
 import { createVobs, type VobsConfig, type VobsPlugin } from '@vobs/vobs'
 import type { DictDehydratedState } from '@vobs/dict'
 import type { ResourceClient, ResourceDehydratedState } from '@vobs/resource'
-import { pushRuntimeDebugContext } from '@vobs/runtime'
+import { pushRuntimeDebugContext, setRenderer } from '@vobs/runtime'
 import { subscribeHTTPDebug, type HTTPDebugRequest } from '@vobs/http'
 import { createSSRRenderer } from './renderer'
 
@@ -118,6 +118,13 @@ export async function renderToStringAsync(
   try {
     app.mount(ssr.container)
     await options.resourceClient?.prefetchAll()
+    /*
+     * `setRenderer` 是进程级单例且没有 async context：上面这个 await 期间，另一个
+     * renderToString / renderToStringAsync 可能已经装上了它自己的渲染器。刷新前把自己这一份
+     * 重新装上 —— 否则这次 update 会用别人的渲染器写自己的树。
+     * 残留局限：两个 async 渲染真正交错时仍是"最后装上的赢"，彻底解决需要按 owner 携带渲染器。
+     */
+    setRenderer(ssr.renderer)
     app.update()
     const endedAt = Date.now()
     return {

@@ -90,6 +90,31 @@ export function createVobs(
 
   const renderer = config.renderer ?? createDOMRenderer()
   const rootOwner: Owner = createOwner()
+  /*
+   * `setRenderer` 是**进程级单例**（runtime/src/ops.ts）：应用挂载时装上自己的渲染器，
+   * 销毁时**必须还原挂载前的那一份**。原来只装不还，于是：
+   * - 一次 `renderToString`（内部 mount → destroy）之后，全局渲染器永久停在 SSR 渲染器上 ——
+   *   同进程后续任何 `createElement` 都返回纯数据对象（没有 tagName），对真实 DOM 节点做
+   *   属性操作也会抛错；
+   * - 水合失败后停在"正在认领 DOM"的那一份上（hydration.ts 只在成功路径把 hydrating 置回
+   *   false），级联抛错。
+   */
+  let previousRenderer: typeof renderer | undefined
+  let rendererInstalled = false
+
+  function installRenderer(): void {
+    if (rendererInstalled) return
+    previousRenderer = setRenderer(renderer)
+    rendererInstalled = true
+  }
+
+  function restoreRenderer(): void {
+    if (!rendererInstalled) return
+    rendererInstalled = false
+    const previous = previousRenderer
+    previousRenderer = undefined
+    setRenderer(previous)
+  }
   setOwnerDebugName(rootOwner, 'App')
   const cleanups: Array<() => void> = []
   const errorHandlers = new Set<(error: unknown) => void>()
@@ -223,6 +248,9 @@ export function createVobs(
         firstError ??= error
       }
     }
+
+    // 挂载失败与 destroy 都走这里：全局渲染器必须回到本应用挂载前的那一份。
+    restoreRenderer()
     return firstError
   }
 
@@ -236,7 +264,7 @@ export function createVobs(
       throw new Error('Vobs: 当前渲染器不支持 Hydration')
     }
 
-    setRenderer(renderer)
+    installRenderer()
     try {
       if (hydrating) renderer.beginHydration?.()
       const rootNode = rootOwner.run(config.render)

@@ -31,9 +31,16 @@ export function setRenderer<
   TextNode extends NodeType,
   ElementNode extends NodeType,
   CommentNode extends NodeType
->(renderer: VobsRenderer<NodeType, TextNode, ElementNode, CommentNode>): void {
+>(
+  renderer: VobsRenderer<NodeType, TextNode, ElementNode, CommentNode> | undefined
+): VobsRenderer<NodeType, TextNode, ElementNode, CommentNode> | undefined {
+  // 返回**上一份**渲染器（没有则是 undefined），调用方据此成对"安装 / 还原"。
+  // 全局单例原来只装不还：一次 renderToString 之后就永久停在 SSR 渲染器上（见 vobs/src/app.ts）。
+  const previous = currentRenderer as unknown as
+    VobsRenderer<NodeType, TextNode, ElementNode, CommentNode> | undefined
   // 编译产物仍使用 DOM 节点声明；实际宿主类型由应用提供的渲染器决定。
-  currentRenderer = renderer as unknown as RuntimeRenderer
+  currentRenderer = (renderer as unknown as RuntimeRenderer) ?? null
+  return previous
 }
 
 export function getRenderer(): RuntimeRenderer {
