@@ -4,6 +4,45 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.3] - 2026-10-02
+
+### Added
+
+- **`on(deps, fn, options?)`** (`@vobs/reactivity`, re-exported from `@vobs/vobs`) — declare an
+  effect's dependencies explicitly. Dependency collection in an effect is automatic, so any
+  signal read inside the callback becomes a dependency; the callback passed to `on` runs inside
+  `untrack`, so signals touched by functions it calls no longer subscribe. The typical failure it
+  removes: `effect(() => { if (session.value) void sync() })` where `sync` reads and writes the
+  same signal before its first `await` — that reads as a self-subscription and loops. Signature
+  follows SolidJS: accepts a signal, an array of signals or a getter, passes `(value, previous)`
+  to the callback, and supports `{ defer: true }`. It is not a replacement for `untrack`:
+  declared dependencies are still tracked.
+- **`VOBS_C106`** (`@vobs/compiler`) — an `async` callback passed to `effect`, `renderEffect`,
+  `memo`, `on` or `onMount`. The code before the first `await` runs synchronously inside the
+  tracking scope, so it subscribes the effect to whatever it reads, and the effect does not await
+  the returned promise. Only direct async callbacks are reported, because they are visible in the
+  syntax tree; the indirect form (`effect(() => { void someAsyncFn() })`) would need a type
+  checker, which the per-file Vite transform cannot use. That form is covered by the runtime
+  guards `VOBS_C210` and `VOBS_C211`. Reported as a warning, surfaced in `vite build` since 1.8.2.
+
+### Changed
+
+- **A component may now return `null`, `undefined` or `false` without a type error.** The runtime
+  has normalised empty results to an empty comment node since 1.8.0, but `VobsComponent` still
+  declared `=> VobsNode`, so `return cond ? <div/> : null` failed to type-check while working at
+  runtime. Every comparable framework allows empties in a component's return type (`ReactNode`,
+  Preact's `ComponentChild`, Solid's `JSX.Element`, Vue's `VNodeChild`). `VobsNode` itself is
+  unchanged: it still means a real node, so passing `null` to `insertBefore` remains an error.
+
+### Fixed
+
+- **HMR refresh crashed when the new version of a component returned an empty value.**
+  `createComponent` normalises empties on the first render but not on the refresh path used by
+  `hmr.ts`, so `nodeOwners.set(null, owner)` threw `Invalid value used as weak map key` — the same
+  error as the 1.8.0 mount crash. `hmr.ts` catches refresh failures, so instead of a visible crash
+  the update silently did not apply and the screen kept the old version, which reads as "my change
+  had no effect". Development-time only.
+
 ## [1.8.2] - 2026-10-02
 
 ### Added

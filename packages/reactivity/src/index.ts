@@ -1,4 +1,6 @@
 export { state, untrack } from './signal'
+export { on } from './on'
+export type { OnDependency, OnOptions } from './on'
 export type { Dependency, ReadableSignal, Signal, Subscriber } from './signal'
 export { effect, renderEffect } from './effect'
 export type { Effect, EffectCallback, EffectCleanup } from './effect'

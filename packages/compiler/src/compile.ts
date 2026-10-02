@@ -179,6 +179,7 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
   // 三元表达式与 null 分支的原始形态不再可辨。
   reportTopLevelConditionalReturn(state)
   reportModuleTopLevelJsx(state)
+  reportAsyncEffectCallback(state)
 
   const statements = sourceFile.statements.map(statement =>
     ts.isImportDeclaration(statement) ? rebuildImport(state, statement) : transformStatement(state, statement, true)
@@ -329,6 +330,78 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
  * （"这个常量写错位置了"）隔得很远，排查成本很高。
  * 外部踩坑文档 F 条就是这条（Labelune 的 KitLayout 菜单数组）。
  */
+/**
+ * `VOBS_C106`：把 **async 函数**交给 effect / 生命周期。
+ *
+ * ## 为什么这是坑（真实项目 2026-10-02 踩坑 3）
+ *
+ * async 函数在**首个 await 之前**的代码是**同步执行**的，所以在 effect 追踪作用域里
+ * 调用它 = effect **亲自**读了那些信号。最典型的命中面是「守卫读 + 状态机写」：
+ *
+ * ```ts
+ * effect(async () => {
+ *   if (!entSync.value.syncing) return     // ← 读，于是 effect 订阅了 ent.sync
+ *   entSync.set({ syncing: true })          // ← 写自己依赖的信号 → 无限重跑
+ * })
+ * ```
+ *
+ * 另一面：`effect` **不等待**返回的 Promise —— 那个 async 函数之后的代码跑在 effect
+ * 追踪作用域**之外**（时机也不确定），于是"清理函数"这类契约也对不上。
+ *
+ * ## 只检测**直接**的 async 回调（这是有意的边界）
+ *
+ * `effect(async () => …)` 这种形态**纯语法**就能看出来（回调节点带 async 修饰符），
+ * 零成本、零误报 —— 与 Svelte 5 对 `$effect` 里 `await` 的处理同一思路。
+ *
+ * **间接形态检测不了**：`effect(() => { void someAsyncFn() })` 里 `someAsyncFn` 的
+ * async-ness 在**另一个模块**，纯 AST 看不出来。要检测它必须引入 `ts.Program` +
+ * `TypeChecker` —— 而 Vite 的 transform 是**逐文件**的，那会破坏现有架构并大幅拖慢构建。
+ * 这种形态交给**运行时护栏**（VOBS_C210 / C211）—— 它们定位准确，是同行少有的能力。
+ *
+ * ## 修法
+ *
+ * - 只想声明依赖 → `effect(on(deps, () => { void fn() }))`（`on` 让回调里的读取不订阅）
+ * - 只想跑一次副作用 → 逻辑放 `onMount` 里，异步取数用 `@vobs/resource`
+ * - 确实要保留这个写法 → `untrack(() => { void fn() })`
+ */
+function reportAsyncEffectCallback(state: CompileState): void {
+  const sourceFile = state.sourceFile
+  if (!sourceFile) return
+
+  /** 这些 API 的第一个参数是"在追踪作用域里同步执行"的回调。 */
+  const TRACKED_CALLBACK_APIS = new Set(['effect', 'renderEffect', 'memo', 'on', 'onMount'])
+
+  const report = (target: ts.Node): void => {
+    const { line, column, codeFrame } = buildCodeFrame(sourceFile, target.getStart(sourceFile), target.getWidth(sourceFile))
+    state.diagnostics.push({
+      code: 'VOBS_C106',
+      severity: 'warning',
+      message: '这个回调是 async 的，但它会在**追踪作用域内同步执行到首个 await** —— '
+        + '那之前的守卫读与状态机写都算作本 effect 的依赖，极易造成自订阅与无限重跑。'
+        + '而且 effect 不会等待返回的 Promise，其后的代码与清理契约都对不上。',
+      location: { file: state.filename, line, column },
+      codeFrame,
+      fix: '只想声明依赖用 effect(on(deps, () => { void fn() }))；'
+        + '只想跑一次副作用放 onMount 里，异步取数用 @vobs/resource；'
+        + '确实要保留就显式包一层 untrack(() => { void fn() })。'
+    })
+  }
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      if (TRACKED_CALLBACK_APIS.has(node.expression.text)) {
+        const first = node.arguments[0]
+        if (first && (ts.isArrowFunction(first) || ts.isFunctionExpression(first))) {
+          // 只认直接写在参数位置的 async 回调；间接调用看不出来（见上面的注释）
+          if (first.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)) report(first)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  ts.forEachChild(sourceFile, visit)
+}
+
 function reportModuleTopLevelJsx(state: CompileState): void {
   const sourceFile = state.sourceFile
   if (!sourceFile) return

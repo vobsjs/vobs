@@ -653,11 +653,34 @@ export function clear(container: Node): void {
   if (firstError) throw firstError
 }
 
-type VobsComponent = (...args: any[]) => VobsNode
+/**
+ * 组件函数。
+ *
+ * 返回类型**必须包含空值**：`null` / `undefined` / `false` 都是合法的 JSX 写法
+ * （`cond ? <X/> : null`、`cond && <X/>`），运行时会把它们统一归一化成空注释节点。
+ *
+ * ⚠️ 这里此前写的是 `=> VobsNode`，比运行时真实值域**窄**（1.8.0 的运行时归一化
+ * 修好了崩溃，但类型声明没跟着改）。后果是实际伤人的：
+ * `return cond ? <div/> : null` 会报 `Type 'null' is not assignable to type 'VobsNode'`，
+ * 于是写的人被劝退去改成早退式 —— 而运行时其实完全支持 `null`。
+ *
+ * `VobsNode` 本身**不**放宽：它表示"真的节点"，`insertBefore` 等位置传 `null`
+ * 仍然是错的。空只在"组件返回值"这个位置合法。
+ */
+type VobsComponent = (...args: any[]) => VobsNode | null | undefined | false
 
+/*
+ * 从组件签名里推出它的 props。
+ *
+ * 返回类型这里写 `unknown` 而不是 `VobsNode`：`VobsComponent` 的返回是可空值域
+ * （`VobsNode | null | undefined | false`），写死成某一个成员会让这个条件类型
+ * 不再匹配任何组件，静默回落到 `Record<string, never>` —— 表现为
+ * `createComponent(Comp, props)` 里 `props` 变成空对象类型，报
+ * 「Record<string, unknown> is not assignable to Record<string, never>」。
+ */
 type ComponentProps<Component extends VobsComponent> = Component extends (
   props: infer Props
-) => VobsNode
+) => unknown
   ? NonNullable<Props> extends object ? NonNullable<Props> : Record<string, never>
   : Record<string, never>
 
@@ -745,7 +768,19 @@ export function createComponent<Component extends VobsComponent>(
     if (owner.disposed) return
     const previous = instance!.node
     owner.disposeSince(renderScope)
-    const next = owner.run(() => untrack(() => component(props)))
+    const rawNext = owner.run(() => untrack(() => component(props)))
+    /*
+     * 重渲染路径**同样**要把空返回值归一化 —— 这是 1.8.0 那次修复漏掉的另一半。
+     *
+     * 首屏路径（上面的 `isRenderableNode(rendered) ? … : createComment('vobs:empty')`）
+     * 处理了空值，但这条更新路径没有：组件在**重渲染**时返回 `null`，
+     * `nodeOwners.set(next as object, owner)` 就会拿到 `null` 当 WeakMap 的 key →
+     * 抛 `Invalid value used as weak map key`，与 9/30 发版黑屏是同一个错误。
+     *
+     * 之所以一直没暴露：触发它需要"组件首次渲染返回节点、之后某次重渲染返回空"，
+     * 而首次就返回空的场景（更常见）走的是上面那条已被修复的路径。
+     */
+    const next: VobsNode = isRenderableNode(rawNext) ? rawNext : createComment('vobs:empty')
     const parent = instance!.parent
     if (parent) {
       // 先插入新树再卸载旧树：替换锚点始终取自仍在文档中的旧树，
