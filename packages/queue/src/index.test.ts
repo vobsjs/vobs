@@ -163,6 +163,32 @@ describe('@vobs/queue', () => {
     }
   })
 
+  /*
+   * dispose 之后，**在途**任务的收尾仍会走到 refreshStats()：原来会往已销毁的
+   * pending/processing/completed/failed/total 写值 → 每条信号刷一条
+   * `[vobs] 写入已 dispose 的 state` 告警（探针实测 5 条，与报告一致）。
+   *
+   * ⚠️ 这条用例必须**等够微任务**：告警发生在 in-flight 任务结算之后的好几跳里，
+   * 只推 2 轮看不到（我第一版就是这样，误判"守卫无效"并把改动回退了）。
+   */
+  it('dispose 后在途任务的收尾不再往已销毁的统计信号写值', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const queue = createTaskQueue({ concurrency: 1 })
+      let release: ((value: string) => void) | undefined
+      const task = queue.add(() => new Promise<string>(resolve => { release = resolve }))
+      await vi.waitFor(() => expect(task.status.value).toBe('running'))
+
+      queue.dispose()
+      release?.('late')
+      for (let round = 0; round < 6; round += 1) await Promise.resolve()
+
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('未安装插件时 useQueue 给出明确错误', () => {
     const app = createVobs({ render: () => {
       useQueue()

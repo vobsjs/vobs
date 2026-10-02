@@ -392,6 +392,14 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
   }
 
   function refreshStats(): void {
+    /*
+     * dispose 之后不再写统计信号。
+     *
+     * dispose 会 cancel + dispose 每个任务的信号，但**在途**任务的收尾仍会走到这里 →
+     * 往已销毁的 pending/processing/completed/failed/total 写值，每条刷一条
+     * `[vobs] 写入已 dispose 的 state` 告警（探针实测 **5 条**，与报告一致）。
+     */
+    if (disposed) return
     let nextPending = 0
     let nextProcessing = 0
     let nextCompleted = 0
