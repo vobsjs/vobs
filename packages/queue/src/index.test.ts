@@ -134,6 +134,35 @@ describe('@vobs/queue', () => {
     expect(() => injected!.add(() => 'later')).toThrowError(expect.objectContaining({ code: 'QUEUE_CONTEXT_DISPOSED' }))
   })
 
+  /*
+   * 取消/清空/销毁都会 reject 任务 promise（`:232`/`:160`/`:170`）。调用方完全可能只关心
+   * `add()` 的返回值、从没碰过 `.promise` —— 那在 Node 里就是**进程级 unhandledRejection**：
+   * 清理阶段把进程带走，而 line 129 那条 `void first.promise.catch(...)` 就是这个约束的证据
+   * （README 从没写过）。
+   */
+  it('clear()/dispose() 取消未完成任务不产生进程级 unhandledRejection', async () => {
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => { unhandled.push(reason) }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const queue = createTaskQueue({ concurrency: 1 })
+      const running = queue.add(() => new Promise(() => undefined))
+      queue.add(() => 'queued')
+      await vi.waitFor(() => expect(running.status.value).toBe('running'))
+
+      queue.clear()   // 取消"排队"的那个：它的 promise 没人接
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(unhandled).toEqual([])
+      expect(running.status.value).toBe('running')
+
+      queue.dispose() // 取消"运行中"的那个：同样没人接
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
   it('未安装插件时 useQueue 给出明确错误', () => {
     const app = createVobs({ render: () => {
       useQueue()

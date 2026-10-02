@@ -278,10 +278,20 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
     return task
 
     function createPromise(): Promise<T> {
-      return new Promise<T>((resolve, reject) => {
+      const next = new Promise<T>((resolve, reject) => {
         task.resolve = resolve
         task.reject = reject
       })
+      /*
+       * 只多挂一个空 handler，把这条 promise 标记为"已处理"。
+       *
+       * 取消（`:232`）、`clear()`（`:160`）、`dispose()`（`:170`）都会 reject 任务 promise，
+       * 而调用方完全可能只关心 `add()` 的返回值、从没碰过 `.promise` —— 在 Node 里那就是
+       * **进程级 unhandledRejection**（实测 clear()/dispose() 各 1 次），在清理阶段把进程带走。
+       * 真正 `await task.promise` 的调用方照常拿到这个 rejection（原 promise 仍然 rejected）。
+       */
+      next.catch(() => undefined)
+      return next
     }
 
     function settleReject(reason: unknown): void {
