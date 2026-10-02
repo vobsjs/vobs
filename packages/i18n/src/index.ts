@@ -390,6 +390,30 @@ export function I18nBoundary(props: I18nBoundaryProps = {}): VobsNode {
   provide(I18N_KEY, local)
 
   /*
+   * `locale` 默认**跟随父级**。
+   *
+   * 原来 `defaultLocale: props.locale ?? parent.locale.value` 只在**创建那一刻读一次**，
+   * 之后父级 `setLocale('zh-CN')` 边界里永远看不到（对比下面的 `messages` 有同步 effect）。
+   * 后果：外层切语言，`I18nBoundary` 子树里的文案仍是旧语言 ——
+   * 而不传 `locale` 的边界恰恰就是想继承父级的那种用法。
+   *
+   * 用 `following` 而不是"每次都写"：客户端在边界内自己调 `setLocale` 之后要**停止跟随**
+   * （那是它的显式决定），否则用户的选择会被父级随时覆盖。
+   */
+  let following = props.locale === undefined
+  effect(() => {
+    const parentLocale = parent.locale.value
+    if (!following) return
+    if (local.locale.value !== parentLocale) local.locale.value = parentLocale
+  })
+  // 边界内显式设置语言 = 停止跟随
+  const setLocalLocale = local.setLocale
+  local.setLocale = (nextLocale: Locale): void => {
+    following = false
+    setLocalLocale(nextLocale)
+  }
+
+  /*
    * messages 原来是创建时的**死快照**：父级 `setMessages`/`loadLocale` 之后边界里永远看不到。
    * 让本地 messages 跟着父走，只增量补齐父级新出现的语言（保留子上下文自己 load 的内容）。
    * 读本地值必须 untrack：否则「读自己 + 写自己」会自订阅成死循环。
