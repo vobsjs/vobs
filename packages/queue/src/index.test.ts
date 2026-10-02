@@ -135,6 +135,86 @@ describe('@vobs/queue', () => {
   })
 
   /*
+   * 报告 §2「任务 id 永久唯一、无淘汰、没有 remove()」判为**契约**，不是缺陷。证据三条：
+   *
+   *  - 默认 id 来自只增不减的计数器（index.ts:114 `let nextId = 0`、index.ts:131 `task-${++nextId}`），
+   *    探针连跑 500 个任务得到 task-1..task-500，一次都没撞 —— 报告说的「长会话必然撞 id」
+   *    只对**调用方自带** `id`/`idFactory` 成立（index.ts:131 的 `taskOptions.id ??` 优先级）。
+   *  - 公开面没有 remove/delete：接口 index.ts:42-55、实现 index.ts:117-183 只有
+   *    add/pause/resume/clear/dispose；`tasks.value` 只追加（index.ts:140），
+   *    `clear()` 只取消排队任务（index.ts:160-165），只有 `dispose()` 清空
+   *    `tasks`/`ownedTasks`（index.ts:172-174）。已结束任务在 dispose 前一直被强引用
+   *    （探针：505 个已 success 的任务全部留在 `tasks.value` 里，堆差 +2.77MB）。
+   *  - 已结束任务的 id 不能复用：去重检查 index.ts:135-137 抛 `INVALID_QUEUE_OPTIONS`，
+   *    而它查的正是只追加的 `tasks.value`。
+   *
+   * 为什么**不**做 id 复用、也**不**加 `remove(id)`（写清楚，免得后人当缺陷顺手补）：
+   *
+   *  1. `tasks` 是订阅者共享的 id 空间。同一 id 前后指向两个不同任务对象时，按 id 做的
+   *     订阅/持久化（「upload-1 的结果」）就串味了：旧任务与新任务同时在 `tasks` 里，
+   *     `tasks.find(t => t.id === 'upload-1')` 谁也说不清指哪一个。
+   *  2. 复用 id 只有两条路：允许重复（= 上面的歧义）或静默顶掉旧任务 —— 后者等于让
+   *     `add()` 悄悄撤销一个调用方还持有引用的任务，破坏 `cancel()/retry()/promise` 的所有权。
+   *  3. 「释放任务」在本模块是**整体**语义：`dispose()` 会 cancel + abort + 销毁统计信号
+   *     （index.ts:167-182），那才是回收路径。补一个只允许移除已终结任务的 `remove(id)`，
+   *     等于新增一个与 `tasks`/`total` 订阅者语义打架的面，doc 与测试都得跟着长。
+   *
+   * 所以「已结束任务留到 dispose」是刻意选择：代价是内存保留，替代路径是短生命周期队列
+   * 或 `dispose()` 后重建。本用例把这三件事钉住，动了任何一条都会红。
+   */
+  it('任务 id 单调唯一且永不复用，摘除任务只有 dispose 一条路', async () => {
+    const queue = createTaskQueue({ concurrency: 2 })
+    const settled = [queue.add(() => 1), queue.add(() => 2), queue.add(() => 3)]
+    await Promise.all(settled.map(task => task.promise))
+
+    // 1) 默认 id 单调递增、互不相同（计数器不复用）
+    expect(settled.map(task => task.id)).toEqual(['task-1', 'task-2', 'task-3'])
+
+    // 2) 已结束任务不会被摘掉：公开列表与 total 都还留着，而且是同一个对象
+    expect(queue.tasks.value).toHaveLength(3)
+    expect(queue.total.value).toBe(3)
+    expect(queue.completed.value).toBe(3)
+    expect(queue.tasks.value[0]).toBe(settled[0])
+    expect(settled[0]!.status.value).toBe('success')
+
+    // 3) 公开 API 没有移除单个任务的能力，只有整体 clear()/dispose()
+    expect('remove' in queue).toBe(false)
+    expect('delete' in queue).toBe(false)
+
+    // 4) 完成过的显式 id 不能复用 —— 去重检查查的是只追加的 tasks
+    const upload = queue.add(() => 'uploaded', { id: 'upload-1' })
+    await upload.promise
+    expect(() => queue.add(() => 'again', { id: 'upload-1' })).toThrowError(
+      expect.objectContaining({ code: 'INVALID_QUEUE_OPTIONS' })
+    )
+
+    // 5) clear() 只取消排队任务：已结束任务仍在 tasks 里，id 也不回收（下一个是 task-4）
+    queue.clear()
+    expect(queue.tasks.value).toHaveLength(4)
+    expect(queue.tasks.value[0]).toBe(settled[0])
+    const afterClear = queue.add(() => 'after-clear')
+    expect(afterClear.id).toBe('task-4')
+    await afterClear.promise
+
+    // 6) 唯一能摘除任务的是 dispose()：tasks 被清空
+    queue.dispose()
+    expect(queue.tasks.value).toHaveLength(0)
+
+    // 7) 长跑：计数器只增不减（本用例钉的是契约，不是「报告说的会撞 id」）
+    const long = createTaskQueue({ concurrency: 8 })
+    const batch = Array.from({ length: 64 }, () => long.add(() => 'ok'))
+    await Promise.all(batch.map(task => task.promise))
+    const ids = batch.map(task => task.id)
+    expect(new Set(ids).size).toBe(64)
+    expect(ids[0]).toBe('task-1')
+    expect(ids[63]).toBe('task-64')
+    expect(long.tasks.value).toHaveLength(64)
+    expect(long.total.value).toBe(64)
+    long.dispose()
+    expect(long.tasks.value).toHaveLength(0)
+  })
+
+  /*
    * 取消/清空/销毁都会 reject 任务 promise（`:232`/`:160`/`:170`）。调用方完全可能只关心
    * `add()` 的返回值、从没碰过 `.promise` —— 那在 Node 里就是**进程级 unhandledRejection**：
    * 清理阶段把进程带走，而 line 129 那条 `void first.promise.catch(...)` 就是这个约束的证据
