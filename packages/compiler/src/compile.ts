@@ -180,6 +180,7 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
   reportTopLevelConditionalReturn(state)
   reportModuleTopLevelJsx(state)
   reportAsyncEffectCallback(state)
+  reportFrozenReactiveReturn(state)
 
   const statements = sourceFile.statements.map(statement =>
     ts.isImportDeclaration(statement) ? rebuildImport(state, statement) : transformStatement(state, statement, true)
@@ -278,9 +279,11 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
        * （`.seq-param-group.is-off`），照着改会得到"类名加上了但样式不生效"。
        * `Show` 与 `classList` 都不需要预先存在工具类。
        */
-      fix: '把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`，编译期生成响应式条件工厂）；'
+      fix: '路由分支用 `<RouterView/>`（声明式处理路由切换）；'
         + '要保留挂载、只切可见性用 `<Show when={cond}><A/></Show>`；'
-        + '只切类名用 `<A classList={{ \'is-off\': !cond }} />`（只贡献自己那部分，不依赖预先存在的工具类）。'
+        + "只切类名用 `<A classList={{ 'is-off': !cond }} />`（只贡献自己那部分，不依赖预先存在的工具类）；"
+        + '其它条件渲染把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`，编译期生成响应式条件工厂）。'
+        + '**把三元提到组件顶层 return 处不管用** —— 那里没有 parent/anchor，两支都是 JSX 也一样冻结。'
     })
   }
 
@@ -364,6 +367,132 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
  * - 只想跑一次副作用 → 逻辑放 `onMount` 里，异步取数用 `@vobs/resource`
  * - 确实要保留这个写法 → `untrack(() => { void fn() })`
  */
+/**
+ * `VOBS_C107`：**组件体里的 `return` 读了信号**（run-once 冻结）。
+ *
+ * ## 为什么需要它（真实项目 2026-10-02 踩坑 4）
+ *
+ * 组件体只执行一次，所以组件体里任何**读了信号的 `return`** 都只在挂载时求值一次，
+ * 之后信号变化**永远不会**重新分支。三种写法**坏得一模一样**（实测编译产物确认）：
+ *
+ * ```ts
+ * // ① 根级三元，两支均 JSX
+ * return cond.value ? <A/> : <B/>        // → cond.value 求值一次，返回具体节点
+ * // ② if 早退式
+ * if (cond.value) return <A/>; return <B/>   // → 同样只求值一次
+ * // ③ 根级三元，一侧 null/false（C104 也报这个）
+ * return cond.value ? <A/> : null
+ * ```
+ *
+ * 三者的编译产物里**都没有** `insertDynamic` / `createBlock` —— 因为**组件顶层 `return`
+ * 处没有 parent/anchor**，而响应式条件渲染需要一个能换内容的位置。返回值**就是**那个节点本身。
+ *
+ * ## 与 C104 的分工
+ *
+ * C104 只认「三元 + 空分支」这个**子集**（它的立论是"返回空值"，判据是空字面量）。
+ * 于是它**默许**了 ① 与 ②，而这两者运行时同样是冻结的 —— 这正是踩坑 4 的形态。
+ * C104 保留（空分支形态有额外的空值语义），本规则覆盖更宽的真隐患类。
+ *
+ * ## 关键：**只报 JSX 之外**的读取
+ *
+ * 这两个长得像、后果完全相反：
+ *
+ * ```ts
+ * return cond.value ? <A/> : <B/>              // ❌ 读在 return 表达式层 → 冻结
+ * return <div>{cond.value ? <A/> : <B/>}</div> // ✅ 读在 JSX 子节点位置 → 响应式
+ * ```
+ *
+ * 子节点位置由编译期生成条件工厂（`insertDynamic`），**是正确写法**。
+ * 所以判据是「在 return 表达式里、**且不在任何 JSX 子树内**读到了 `.value`」——
+ * 走进 JSX 就停，那里的读取安全。
+ *
+ * ## 与 C104 同一取舍
+ *
+ * 仍是 **warning**（静态判不出"这个函数是不是组件"），仍然只认 **JSX 语法**
+ * （`createElement(...)` 之类的调用形态不猜）。真正会坏的东西由运行时护栏兜底。
+ */
+function reportFrozenReactiveReturn(state: CompileState): void {
+  const sourceFile = state.sourceFile
+  if (!sourceFile) return
+
+  const report = (target: ts.Node): void => {
+    const { line, column, codeFrame } = buildCodeFrame(sourceFile, target.getStart(sourceFile), target.getWidth(sourceFile))
+    state.diagnostics.push({
+      code: 'VOBS_C107',
+      severity: 'warning',
+      message: '这里在**组件体**里读了信号并据此 `return` 节点。组件体只执行一次，'
+        + '所以这个分支在挂载时就被固化，之后信号变化不会再切换 —— 编译期合法、运行期冻结。',
+      location: { file: state.filename, line, column },
+      codeFrame,
+      fix: '路由分支用 `<RouterView/>`（它内部用 insertDynamic + resetKey，声明式处理）；'
+        + '其它条件渲染把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`），'
+        + '或用 `<Show when={cond}>` 保留挂载只切可见性。'
+        + '**注意：把三元提到组件顶层 return 处不管用** —— 那里没有 parent/anchor，'
+        + '两支都是 JSX 也一样冻结。'
+    })
+  }
+
+  /** 该子树的 JSX 里是否出现 `.value`（或 `['value']`）读取；**走进 JSX 就停**。 */
+  const readsReactiveValueOutsideJsx = (root: ts.Node): boolean => {
+    let found = false
+    const walk = (node: ts.Node): void => {
+      if (found) return
+      // 走进 JSX 就停：子节点/属性位置的读取由编译期生成条件工厂，是安全的
+      if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) return
+      if (ts.isPropertyAccessExpression(node) && node.name.text === 'value') { found = true; return }
+      if (ts.isElementAccessExpression(node)
+        && node.argumentExpression
+        && ts.isStringLiteral(node.argumentExpression)
+        && node.argumentExpression.text === 'value') { found = true; return }
+      ts.forEachChild(node, walk)
+    }
+    walk(root)
+    return found
+  }
+
+  /** 该表达式里是否**含 JSX**（产出节点的信号，与 C104 同一判据）。 */
+  const containsJsx = (root: ts.Node): boolean => {
+    let found = false
+    const walk = (node: ts.Node): void => {
+      if (found) return
+      if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) { found = true; return }
+      ts.forEachChild(node, walk)
+    }
+    walk(root)
+    return found
+  }
+
+  /** `if` 的某个分支里有没有 `return <JSX/>`（只找直属的，不下钻嵌套函数）。 */
+  const branchReturnsNode = (statement: ts.Node): boolean => {
+    let found = false
+    const walk = (node: ts.Node): void => {
+      if (found) return
+      if (node !== statement && (ts.isFunctionLike(node) || ts.isClassLike(node))) return
+      if (ts.isReturnStatement(node) && node.expression && containsJsx(node.expression)) { found = true; return }
+      ts.forEachChild(node, walk)
+    }
+    walk(statement)
+    return found
+  }
+
+  const visit = (node: ts.Node): void => {
+    // 情况一：`return <读了信号的表达式>`
+    if (ts.isReturnStatement(node) && node.expression) {
+      const expression = node.expression
+      if (containsJsx(expression) && readsReactiveValueOutsideJsx(expression)) report(expression)
+    }
+    // 情况二：`if (<读了信号>) return <JSX/>` —— 读取在 if 的 test 上，不在 return 表达式里
+    if (ts.isIfStatement(node) && readsReactiveValueOutsideJsx(node.expression)) {
+      if (branchReturnsNode(node.thenStatement)
+        || (node.elseStatement !== undefined && branchReturnsNode(node.elseStatement))) {
+        report(node)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  ts.forEachChild(sourceFile, visit)
+}
+
 function reportAsyncEffectCallback(state: CompileState): void {
   const sourceFile = state.sourceFile
   if (!sourceFile) return

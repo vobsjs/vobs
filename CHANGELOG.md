@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.4] - 2026-10-02
+
+### Added
+
+- **`VOBS_C107`**: a reactive read in a `return` inside a component body, which the run-once
+  contract freezes. Component bodies execute once, so a `return` that reads a signal is evaluated
+  at mount and never re-branches. Measured against the compiled output, all three shapes behave
+  identically — `return cond.value ? <A/> : <B/>`, `if (cond.value) return <A/>; return <B/>` and
+  `return cond.value ? <A/> : null` all compile without `insertDynamic` or `createBlock`, because
+  a component's top-level `return` has no parent or anchor to swap content in. `VOBS_C104` only
+  covered the third shape, which implicitly blessed the first two. The rule reports a `.value` read
+  that is **outside any JSX subtree** of the returned expression: `return <div>{cond.value ? …}</div>`
+  is the correct form and is not reported.
+
+### Changed
+
+- **`VOBS_C104` fix text no longer suggests moving the ternary to a component's top-level return.**
+  Measurement shows that does not help: with no parent or anchor there, both-JSX branches freeze
+  exactly like an empty branch. The text now points at `RouterView` for routing and `Show` for
+  visibility, and states explicitly that a top-level return does not work.
+
+### Notes
+
+- Known gap: `if (cond.value) return null; return <B/>` is reported by neither rule (C104 needs a
+  conditional expression, C107 needs a JSX-returning branch). Detecting it would require knowing
+  whether the enclosing function is a component, which widens false positives on data guards.
+- Routing belongs in `<RouterView>`, which handles the branch declaratively with
+  `insertDynamic` plus `resetKey`. `Show` keeps a subtree mounted and toggles `hidden`/`inert`, so it
+  is the wrong tool for swapping route trees.
+
 ## [1.8.3] - 2026-10-02
 
 ### Added
