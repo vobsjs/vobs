@@ -38,6 +38,12 @@
       "require": "./dist/dom-props.cjs",
       "default": "./dist/dom-props.js"
     },
+    "./dom-events": {
+      "types": "./dist/dom-events.d.ts",
+      "import": "./dist/dom-events.js",
+      "require": "./dist/dom-events.cjs",
+      "default": "./dist/dom-events.js"
+    },
     "./svg": {
       "types": "./dist/svg.d.ts",
       "import": "./dist/svg.js",

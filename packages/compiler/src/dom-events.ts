@@ -6,17 +6,16 @@
  *   once={fn}     → "ce"            垃圾事件名，同样静默失效
  *   onclick       → "click"         碰巧能工作
  *
- * 这里把三类分开处理：能修的直接修（别名），明显坏掉的报错，可疑的报警告。
- * 事件名不进运行时产物，这张表只在编译期用，不占用户包体。
+ * ⚠️ **别名表与解析函数的单一来源在 `@vobs/runtime` 的 `dom-events.ts`**，这里只是再导出。
+ * 此前两边各写一份，而运行期的 `{...props}` 展开路径**根本没有别名表** —— 于是
+ * `<div {...props} onDoubleClick={…}>` 挂的是不存在的 `"doubleclick"`，
+ * 而 `<div onDoubleClick={…}>` 挂的是正确的 `dblclick`：同一个属性名，两条路径两种行为。
+ * 收拢到 runtime 是因为它同时被运行期用；编译期只剩诊断需要额外信息（见下）。
  */
 
-/** JSX 驼峰名与 DOM 事件名不一致的少数情况（小写后的驼峰名 → 真实事件名）。 */
-export const EVENT_NAME_ALIASES: Readonly<Record<string, string>> = {
-  // React 风格的 onDoubleClick 对应的 DOM 事件是 dblclick
-  doubleclick: 'dblclick',
-  // 少数人按 addEventListener 的写法写成 onDblClick
-  dblclick: 'dblclick'
-}
+export { EVENT_NAME_ALIASES } from '@vobs/runtime/dom-events'
+
+import { resolveEventName as resolveEventNamePlain } from '@vobs/runtime/dom-events'
 
 /** 常见 DOM 事件名（用于区分「写错了」与「自定义事件」）。 */
 export const DOM_EVENT_NAMES: ReadonlySet<string> = new Set([
@@ -68,15 +67,17 @@ export interface ResolvedEventName {
 }
 
 /**
- * 解析 `on*` 属性名。
+ * 解析 `on*` 属性名（编译期版本，额外给出诊断需要的 `camelCase`/`known`）。
+ *
+ * 事件名本身来自 runtime 的单一来源；这里只补诊断信息。
+ * 与 runtime 的同名导出区分开，避免与本文件的再导出撞名。
  *
  * @returns 属性名不以 `on` 开头或只有 `on` 本身时返回 undefined。
  */
-export function resolveEventName(attributeName: string): ResolvedEventName | undefined {
-  if (!attributeName.startsWith('on') || attributeName.length <= 2) return undefined
+export function resolveEventNameForDiagnostics(attributeName: string): ResolvedEventName | undefined {
+  const eventName = resolveEventNamePlain(attributeName)
+  if (eventName === undefined) return undefined
   const rest = attributeName.slice(2)
-  const lowered = rest.toLowerCase()
-  const eventName = EVENT_NAME_ALIASES[lowered] ?? lowered
   return {
     eventName,
     camelCase: /^[A-Z]/u.test(rest),

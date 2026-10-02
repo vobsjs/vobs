@@ -23,7 +23,15 @@ const PROPERTY_NAMES: ReadonlySet<string> = new Set([
   'value', 'checked', 'selected', 'disabled', 'multiple', 'readOnly', 'required',
   'defaultValue', 'defaultChecked', 'indeterminate',
   // 常见布尔 / 数字 property
-  'autofocus', 'hidden', 'tabIndex', 'colSpan', 'rowSpan', 'open',
+  //
+  // ⚠️ `autoFocus` **不在这里**，尽管 `BOOLEAN_PROPERTIES` 一度想把它收进来：
+  // 实测（jsdom 与真实 DOM 的 IDL）`HTMLInputElement.prototype.autofocus` 并**不反射** ——
+  // `el.autofocus = true` 既不改变属性、也不产生属性，所以走 property 通道是**静默失败**。
+  // 正确做法是把它当 **attribute 别名**（见下 ATTRIBUTE_ALIASES 的 autoFocus → autofocus），
+  // 这样 `autoFocus={false}` 走"attribute 的 false = 不设置"（属性不存在 → 不聚焦），
+  // `autoFocus` 走"属性存在 → 聚焦"。这正是同表里 readOnly 等能工作的原因：
+  // 那些 name 在 DOM 里真的有反射 property，autoFocus 没有。
+  'hidden', 'tabIndex', 'colSpan', 'rowSpan', 'open',
   // 只能走 property 的（attribute 路径会静默无效）
   'innerHTML', 'innerText', 'textContent',
   // 媒体
@@ -35,7 +43,17 @@ const ATTRIBUTE_ALIASES: Readonly<Record<string, string>> = {
   className: 'class',
   htmlFor: 'for',
   autoComplete: 'autocomplete',
-  spellCheck: 'spellcheck'
+  spellCheck: 'spellcheck',
+  /*
+   * `autoFocus` → `autofocus`。
+   *
+   * HTML 属性名不区分大小写，所以理论上不映射也"能工作" —— 但 `autoFocus={false}`
+   * 之前落到 attribute 通道后被 `String(false)` 写成 `autofocus="false"`，
+   * 而**任何**存在 autofocus 属性的元素都会真的自动聚焦（属性存在即生效，值与 "false" 无关）。
+   * 别名本身不修这一条，真正修它的是"attribute 通道的 `false` = 不设置"那条既有规则；
+   * 加上别名是为了让 `domAttributeName('autoFocus')` 在有值时也产出规范的小写属性名。
+   */
+  autoFocus: 'autofocus'
 }
 
 /**

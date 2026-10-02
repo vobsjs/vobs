@@ -2,7 +2,7 @@ import ts from 'typescript'
 import { VobsError } from '@vobs/runtime/error'
 import { domAttributeName, isPropertyName } from '@vobs/runtime/dom-props'
 import { isSvgTag } from '@vobs/runtime/svg'
-import { resolveEventName } from './dom-events'
+import { resolveEventNameForDiagnostics } from './dom-events'
 import type {
   CompilerContext,
   CompilerOptions,
@@ -287,7 +287,7 @@ function reportUnsupportedTag(state: CompileState, tagName: ts.JsxTagNameExpress
  * 目的不是拦人，而是把「绑到不存在的事件上、回调永不触发且毫无声音」这件事说出来。
  */
 function reportEventName(state: CompileState, attribute: ts.JsxAttribute, name: string): void {
-  const resolved = resolveEventName(name)
+  const resolved = resolveEventNameForDiagnostics(name)
   if (resolved === undefined) return
   const sourceFile = attribute.getSourceFile() ?? state.sourceFile
   if (!sourceFile) return
@@ -1294,7 +1294,7 @@ function appendAttributes(
     const initializer = attribute.initializer
 
     if (name.startsWith('on') && initializer && ts.isJsxExpression(initializer) && initializer.expression) {
-      const resolved = resolveEventName(name)
+      const resolved = resolveEventNameForDiagnostics(name)
       if (resolved === undefined) {
         // 只有 "on" 本身：既不是事件属性也不是有意义的名字
         reportEventName(state, attribute, name)

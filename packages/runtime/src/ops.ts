@@ -3,6 +3,7 @@
 import { createOwner, effect, getCurrentOwner, setOwnerDebugName, untrack, type Owner } from '@vobs/reactivity'
 import { isVobsFragment, type VobsNode } from './fragment'
 import { domAttributeName, isPropertyName } from './dom-props'
+import { resolveEventName } from './dom-events'
 import { isSvgTag } from './svg'
 import { formatVobsError } from './error'
 import { describeDebugNode, getRuntimeDebugHooks, invokeRuntimeDebug, readDebugValue } from './debug'
@@ -25,6 +26,27 @@ interface EventBinding {
   readonly original: EventListener
 }
 const eventBindings = new WeakMap<object, Map<string, EventBinding>>()
+
+/*
+ * 事件清理槽。目的：让**每个 (Owner, node, event) 只在 `Owner.cleanups` 里占一个槽**，
+ * 重绑 handler 时只换槽里的间接引用，数组不增长（理由见 addEventListener）。
+ *
+ * 用 WeakMap<Owner, Map<key, handle>> 而不是往 Owner 上挂属性：
+ * Owner 是 class 实例，挂新属性会把它推进字典模式（reactivity/src/owner.ts:30-50 记过这笔账）。
+ * key 由 per-node 数字 id 与事件名拼成，避免每次重绑比较长字符串前缀。
+ */
+const eventCleanupSlots = new WeakMap<Owner, Map<string, EventBinding>>()
+const eventCleanupNodeIds = new WeakMap<object, number>()
+let nextEventCleanupNodeId = 0
+
+function eventCleanupKey(node: object, event: string): string {
+  let id = eventCleanupNodeIds.get(node)
+  if (id === undefined) {
+    id = ++nextEventCleanupNodeId
+    eventCleanupNodeIds.set(node, id)
+  }
+  return `${id}:${event}`
+}
 
 export function setRenderer<
   NodeType,
@@ -272,7 +294,7 @@ export function removeAttribute(node: Element, key: string): void {
 /** 布尔型 property 的「清除」值是 false，其余是空串（与 React 的移除语义一致）。 */
 const BOOLEAN_PROPERTIES = new Set([
   'checked', 'selected', 'disabled', 'multiple', 'readOnly', 'required',
-  'hidden', 'autofocus', 'open', 'indeterminate', 'defaultChecked', 'muted'
+  'hidden', 'open', 'indeterminate', 'defaultChecked', 'muted'
 ])
 
 /**
@@ -292,23 +314,29 @@ function applySpreadProps(
     if (previous !== null && Object.is(previous[key], value)) continue
 
     if (key.startsWith('on')) {
-      // 事件：先摘旧监听（值变了、或新值不再是函数），再挂新的
+      // 事件：先摘旧监听（值变了、或新值不再是函数），再挂新的。
+      // 事件名必须过别名表：`onDoubleClick` 的真实事件名是 `dblclick`，
+      // 直接小写会得到不存在的 `"doubleclick"`（回调永不触发且静默）。
+      const eventName = resolveEventName(key) ?? key.slice(2).toLowerCase()
       const previousHandler = previous?.[key]
       if (typeof previousHandler === 'function') {
-        removeEventListener(node, key.slice(2).toLowerCase(), previousHandler as EventListener)
+        removeEventListener(node, eventName, previousHandler as EventListener)
       }
       if (typeof value === 'function') {
-        addEventListener(node, key.slice(2).toLowerCase(), value as EventListener)
+        addEventListener(node, eventName, value as EventListener)
       }
       continue
     }
-    if (value === null || value === undefined) continue
     if (key === 'ref') {
       setRef(node, value)
       continue
     }
+    // null/undefined 表示"不提供值"，**保持现状**（props.test.ts 把这条钉成了契约）。
+    // 注意它有一个已知后果：键仍在 `next` 里时移除循环够不着（`key in next`），
+    // 所以"值从中变成 null"不会清掉已有属性 —— 要清就得把键从对象里删掉。
+    if (value === null || value === undefined) continue
     // property 键的 false 有语义（如 disabled={false} 必须清除），不能跳过；
-    // attribute 键的 false 表示“不设置”，与 HTML 语义一致。
+    // attribute 键的 false 表示"不设置"，与 HTML 语义一致。
     else if (isPropertyName(key)) setProperty(node, key, value)
     else if (value === false) continue
     else setAttribute(node, domAttributeName(key), key === 'style' && isStyleObject(value) ? formatStyle(value) : String(value))
@@ -318,9 +346,10 @@ function applySpreadProps(
   for (const key of Object.keys(previous)) {
     if (key in next || key === 'key') continue
     if (key.startsWith('on')) {
+      const eventName = resolveEventName(key) ?? key.slice(2).toLowerCase()
       const previousHandler = previous[key]
       if (typeof previousHandler === 'function') {
-        removeEventListener(node, key.slice(2).toLowerCase(), previousHandler as EventListener)
+        removeEventListener(node, eventName, previousHandler as EventListener)
       }
       continue
     }
@@ -335,13 +364,25 @@ function applySpreadProps(
  *
  * 编译器对带展开的 JSX 属性发射这个而不是 `spreadProps` —— 后者只在创建时应用一次，
  * 于是「改了 props 不生效」「删掉的键留在 DOM 上」两个问题都**不报错**。
+ *
+ * ⚠️ `previous` 必须是**值的快照**，不能是 `next` 的引用。
+ * 这里存引用时，下一轮 `applySpreadProps` 里的 `Object.is(previous[key], value)`
+ * 读的是同一份值 → 恒等 → **整个 diff 短路**，移除循环也因 `key in next` 全跳过。
+ * 而编译器为 `<div {...props}>` 发射的正是**身份稳定 + getter**的形状
+ * （`bindSpreadProps(_el0, () => props)`，值经 getter 反应式求值），
+ * 于是真实产物下"改了 props 什么都不更新"。
+ *
+ * 快照用浅拷贝即可，且**必须在应用之前取**：拷贝会把 getter 求值一次、转成数据属性，
+ * 而 `applySpreadProps` 又会把 `next` 的每个键读一遍 —— 两者都在 effect 的追踪窗口内，
+ * 所以信号依赖不会因为多这一遍而丢失。
  */
 export function bindSpreadProps(node: Element, source: () => Record<string, unknown>): void {
   let previous: Record<string, unknown> | null = null
   effect(() => {
     const next = source() ?? {}
+    const snapshot = { ...next }
     applySpreadProps(node, previous, next)
-    previous = next
+    previous = snapshot
   })
 }
 
@@ -380,7 +421,10 @@ export function addEventListener(
   }
   const previous = bindings.get(event)
   if (previous && previous.original === handler && previous.owner === owner) return
-  if (previous) renderer.removeEventListener(node, event, previous.handler)
+  if (previous) {
+    // 旧监听先摘掉；Owner 清理槽由下面的 slots 原地续用，不在清理表里增删
+    renderer.removeEventListener(node, event, previous.handler)
+  }
   const listener = owner ? (reason: Event) => {
     // Owner 已销毁说明节点所属子树已被卸载/替换，事件来自游离 DOM，直接忽略。
     // 否则 owner.run 会抛"已销毁的 Owner"，在事件流里制造无意义的错误噪音。
@@ -407,13 +451,54 @@ export function addEventListener(
       if (!handled) throw error
     }
   } : handler
+  /*
+   * 这个 (node,event) 在 Owner 清理表里只占**一个**槽，替换 handler 时**原地**换掉它做的事。
+   *
+   * 此前是在**每次** addEventListener 里无条件 `owner.onDispose(...)`，而 `Owner.cleanups`
+   * 是只 push 的数组（reactivity/src/owner.ts:57,84）→ 换一次 handler 就多一条永不执行的
+   * 清理项，旧的 handler 闭包也被一并扣住。实测（.artifacts/reports/runtime.supplement.md
+   * 缺点 4 与既有报告缺点 1，两轮独立复现）：500 次替换 → `cleanups.length === 500`；
+   * 一轮 `{...props}` 换 onClick → 202。组件的 effect 每次重跑都会重绑事件，
+   * 所以这是热路径上的**无界增长**（长寿命页面里等价于内存泄漏）。
+   *
+   * `binding` 是 `const`，所以槽里必须包一层可变的 `current` —— 换绑时改的是 `current`，
+   * 数组长度不变、旧闭包被释放。
+   */
   const binding: EventBinding = { handler: listener, owner, original: handler }
   bindings.set(event, binding)
   renderer.addEventListener(node, event, listener)
-  owner?.onDispose(() => {
-    if (bindings?.get(event) !== binding) return
-    bindings.delete(event)
-    renderer.removeEventListener(node, event, listener)
+  if (!owner) return
+  /*
+   * **每个 (node,event) 在 Owner 清理表里只占一个槽。**
+   *
+   * 此前是在**每次** addEventListener 里无条件 `owner.onDispose(...)`，而 `Owner.cleanups`
+   * 是只 push 的数组（reactivity/src/owner.ts:57,84）→ 换一次 handler 就多一条永不执行的
+   * 清理项，旧的 handler 闭包也被一并扣住。实测（.artifacts/reports/runtime.supplement.md
+   * 缺点 4 与既有报告缺点 1，两轮独立复现）：500 次替换 → `cleanups.length === 500`；
+   * 一轮 `{...props}` 换 onClick → 202。组件 effect 每次重跑都会重绑事件，
+   * 所以这是热路径上的**无界增长**（长寿命页面里等价于内存泄漏）。
+   *
+   * 做法：清理槽里存的是**间接引用**（owner → (node,event) → 当前 handle），
+   * 重绑时只换间接引用指向的东西，槽本身不增不减；最后一个引用被清掉时槽自然失效。
+   * 键用 per-owner 的 `eventCleanupKeys` 映射成数字，避免长字符串前缀比较。
+   */
+  const key = eventCleanupKey(node, event)
+  let slots = eventCleanupSlots.get(owner)
+  if (!slots) {
+    slots = new Map()
+    eventCleanupSlots.set(owner, slots)
+  }
+  // 槽存的永远是"当前该清哪一条绑定"，所以重绑/摘除后再绑都只是覆盖它
+  const hasSlot = slots.has(key)
+  slots.set(key, binding)
+  if (hasSlot) return
+  owner.onDispose(() => {
+    const current = eventCleanupSlots.get(owner)?.get(key)
+    if (!current) return
+    eventCleanupSlots.get(owner)?.delete(key)
+    const map = eventBindings.get(node)
+    if (map?.get(event) === current) map.delete(event)
+    renderer.removeEventListener(node, event, current.handler)
   })
 }
 

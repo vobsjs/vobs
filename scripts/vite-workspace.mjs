@@ -47,6 +47,7 @@ export function workspaceAliases() {
     '@vobs/reactivity/state': path.resolve(root, 'packages/reactivity/src/signal.ts'),
     '@vobs/runtime/error': path.resolve(root, 'packages/runtime/src/error.ts'),
     '@vobs/runtime/dom-props': path.resolve(root, 'packages/runtime/src/dom-props.ts'),
+    '@vobs/runtime/dom-events': path.resolve(root, 'packages/runtime/src/dom-events.ts'),
     '@vobs/runtime/svg': path.resolve(root, 'packages/runtime/src/svg.ts'),
     '@vobs/vobs/jsx-runtime': path.resolve(root, 'packages/vobs/src/jsx-runtime.ts'),
     '@vobs/vobs/jsx-dev-runtime': path.resolve(root, 'packages/vobs/src/jsx-dev-runtime.ts'),
