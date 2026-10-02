@@ -218,12 +218,20 @@ function scheduleSelectValueSync(node: Element, value: unknown): void {
   pendingSelectValues.set(node, value)
   if (selectSyncScheduled.has(node)) return
   selectSyncScheduled.add(node)
+  /*
+   * 在这一刻就把渲染器抓下来，**不要**在微任务里再 getRenderer()：
+   * 1) 应用销毁会把全局渲染器还原（没装过就是"没有"），那时微任务里的 getRenderer() 会抛
+   *    "渲染器未初始化" —— 抛在微任务里没人接，直接变成进程级 unhandled error（实测
+   *    `packages/ui/src/bind.test.ts` 就因为这条让 vitest 报 1 个 unhandled error，退出码非 0）；
+   * 2) 语义上也更对：节点是哪个渲染器造的，就用哪个渲染器写回（期间全局可能已经换人）。
+   */
+  const renderer = getRenderer()
   queueMicrotask(() => {
     selectSyncScheduled.delete(node)
     if (!pendingSelectValues.has(node)) return
     const pending = pendingSelectValues.get(node)
     pendingSelectValues.delete(node)
-    getRenderer().setProperty(node, 'value', pending)
+    renderer.setProperty(node, 'value', pending)
   })
 }
 

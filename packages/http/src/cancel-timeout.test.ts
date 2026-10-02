@@ -19,11 +19,21 @@ const slowAdapter = (delay: number) => async () => {
 
 describe('http 取消与超时的硬保证', () => {
   it('timeout 到点即失败，不等适配器自己收敛（原来会等到适配器返回）', async () => {
-    const client = createHTTPClient({ adapter: slowAdapter(120) })
-    const started = Date.now()
+    /*
+     * 不用时间阈值。原来的写法是"适配器 120ms、断言 elapsed < 80ms"，而 timeout 是 15ms ——
+     * 机器一忙（例如并发跑别的任务）15ms 的定时器能飘到 80ms 以上，于是**假红**（实测 83ms）。
+     * 改成断言"请求结算时适配器还没返回"：这才是"硬保证"的真正含义，且与机器速度完全无关。
+     */
+    let adapterSettled = false
+    const client = createHTTPClient({
+      adapter: async () => {
+        await new Promise(resolve => setTimeout(resolve, 200))
+        adapterSettled = true
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+    })
     await expect(client.get('/slow', { timeout: 15 })).rejects.toMatchObject({ name: 'TimeoutError' })
-    const elapsed = Date.now() - started
-    expect(elapsed, `超时应当立刻失败，实际等了 ${elapsed}ms`).toBeLessThan(80)
+    expect(adapterSettled, '请求必须在适配器返回之前就失败').toBe(false)
   })
 
   it('飞行中 abort 会立刻拒绝，而不是拿到 200', async () => {
