@@ -63,7 +63,7 @@ export interface I18nContext {
   isLocaleLoaded(locale: Locale): boolean
   t(key: string, params?: Record<string, unknown>): string
   formatDate(
-    value: Date | number,
+    value: Date | number | string,
     presetOrOptions?: DatePreset | Intl.DateTimeFormatOptions,
     options?: Intl.DateTimeFormatOptions
   ): string
@@ -470,8 +470,16 @@ function interpolate(
     })
 }
 
-function toDate(value: Date | number | unknown): Date | undefined {
-  const date = value instanceof Date ? new Date(value.getTime()) : typeof value === 'number' ? new Date(value) : undefined
+function toDate(value: Date | number | string | unknown): Date | undefined {
+  /*
+   * ISO 字符串是 JSON 载荷里最常见的时间形态（`{"createdAt":"2024-01-15T00:00:00Z"}`），
+   * 原来这里只认 Date/number → `formatDate('2024-01-15T00:00:00Z')` **静默吐空串**
+   * （`if (!date) return ''`），调用方只看到"没有日期"。现在解析合法字符串，非法仍返回 undefined。
+   */
+  let date: Date | undefined
+  if (value instanceof Date) date = new Date(value.getTime())
+  else if (typeof value === 'number') date = new Date(value)
+  else if (typeof value === 'string') date = new Date(value)
   return date && Number.isFinite(date.getTime()) ? date : undefined
 }
 

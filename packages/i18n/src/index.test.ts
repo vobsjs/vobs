@@ -70,6 +70,20 @@ describe('@vobs/i18n', () => {
    * 缺 key 原来**完全静默**（返回 key 本身、零警告）→ 下游只能靠 `value === key` 字符串比较猜，
    * `@vobs/kit` 就是这么写的。这里加一个可观测出口，**不改变** t() 的返回值。
    */
+  /*
+   * ISO 字符串是 JSON 载荷里最常见的时间形态，原来 `formatDate('2024-…Z')` **静默吐空串**
+   * （只认 Date/number），调用方只看到"没有日期"。现在合法字符串会被解析，非法仍为空串。
+   */
+  it('formatDate 接受 ISO 字符串（非法输入仍然是空串）', () => {
+    // 用 fr-FR：Intl 实例缓存是**模块级**的，换 locale 才不会给下面那条"构造次数"用例预热掉
+    const i18n = createI18n({ defaultLocale: 'fr-FR', timeZone: 'UTC' })
+    expect(i18n.formatDate('2024-01-15T00:00:00Z', 'short')).toContain('2024')
+    expect(i18n.formatDate('not a date')).toBe('')
+    expect(i18n.formatDate(new Date(Number.NaN))).toBe('')
+    expect(i18n.formatDate(Number.NaN)).toBe('')
+    i18n.dispose()
+  })
+
   it('onMissingKey 能观测到缺 key，但不改变返回值，且观察者抛错不影响结果', () => {
     const seen: string[] = []
     const i18n = createI18n({
