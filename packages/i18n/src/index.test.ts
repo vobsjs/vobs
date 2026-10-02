@@ -66,6 +66,33 @@ describe('@vobs/i18n', () => {
     i18n.dispose()
   })
 
+  /*
+   * 缺 key 原来**完全静默**（返回 key 本身、零警告）→ 下游只能靠 `value === key` 字符串比较猜，
+   * `@vobs/kit` 就是这么写的。这里加一个可观测出口，**不改变** t() 的返回值。
+   */
+  it('onMissingKey 能观测到缺 key，但不改变返回值，且观察者抛错不影响结果', () => {
+    const seen: string[] = []
+    const i18n = createI18n({
+      defaultLocale: 'en-US',
+      messages: { 'en-US': { hello: 'Hello' } },
+      onMissingKey: (key, locale) => {
+        seen.push(`${key}@${locale}`)
+        if (key === 'boom') throw new Error('observer exploded')
+      }
+    })
+
+    expect(i18n.t('hello')).toBe('Hello')
+    expect(i18n.t('missing.one')).toBe('missing.one')
+    expect(i18n.t('boom')).toBe('boom')
+    expect(seen).toEqual(['missing.one@en-US', 'boom@en-US'])
+
+    // 译文恰好等于 key 时不该被当成缺失（那正是 kit 无法区分的情形）
+    i18n.setMessages('en-US', { 'literal.key': 'literal.key' })
+    expect(i18n.t('literal.key')).toBe('literal.key')
+    expect(seen).toHaveLength(2)
+    i18n.dispose()
+  })
+
   it('locale 变化会驱动使用 t 的节点更新', () => {
     const i18n = createI18n({
       defaultLocale: 'zh-CN',

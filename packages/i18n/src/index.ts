@@ -41,6 +41,13 @@ export interface I18nOptions {
   readonly fallbackLocale?: Locale
   readonly timeZone?: string
   readonly formatters?: Record<string, I18nFormatter>
+  /**
+   * 找不到 key 时的回调。**行为不变**（仍然返回 key 本身），只是给一个可观测出口。
+   *
+   * 原来缺 key 是**完全静默**的：下游没有任何办法区分"缺 key"与"译文恰好等于 key"，
+   * `@vobs/kit` 只能写成 `value === key ? fallback : value`（`kit/src/resource-page.ts`）。
+   */
+  readonly onMissingKey?: (key: string, locale: Locale) => void
 }
 
 export interface I18nContext {
@@ -189,7 +196,15 @@ export function createI18n(options: I18nOptions): I18nContext {
       if (!key) return ''
       const allMessages = messages.value
       const template = findMessage(allMessages, locale.value, fallbackLocale, key)
-      if (template === undefined) return key
+      if (template === undefined) {
+        // 返回 key 本身（行为不变）；这里只提供可观测出口，观察者抛错不影响 t() 的结果
+        try {
+          options.onMissingKey?.(key, locale.value)
+        } catch {
+          // observers cannot break translation lookup
+        }
+        return key
+      }
       return interpolate(template, params, context, formatters)
     },
 
