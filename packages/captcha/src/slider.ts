@@ -395,6 +395,27 @@ function createSliderChallenge(
     setAttribute(wrapper, 'data-dragging', String(dragging.value))
   })
 
+  /*
+   * 拖拽用 pointer capture —— 这是标准实现，但**有一个必须知道的浏览器语义**
+   * （外部踩坑文档 U 条：「拖拽设 pointer capture 后子元素双击编辑失效」）。
+   *
+   * `setPointerCapture(id)` 之后，该 pointer 的**后续事件全部重定向到捕获元素**，
+   * 子元素收不到 —— 这正是我们想要的（拖动时不管指针移到哪，`pointermove` 都回到这里），
+   * 但同一个机制也会吃掉子元素的 click / dblclick。
+   *
+   * 在本组件里没问题：`piece` 与 `handle` 上本来就没有需要独立响应的子控件。
+   * **如果你在自己的拖拽里遇到同类问题**（例如可编辑的表格单元格），
+   * 框架侧没有干预 pointer 语义 —— `addEventListener` 只是 `addEventListener`。
+   * 对策在调用方：
+   *   1. 指针按下时判断 `event.target` 是否落在"需要点击/双击的子元素"上，是则**跳过 capture**
+   *   2. 不捕获时把 `pointermove`/`pointerup` 挂到 `window` 上跟踪（避免移出元素就丢事件）
+   *
+   * 两个容易踩的细节：
+   * - **不需要显式 `releasePointerCapture`**：浏览器在 `pointerup` / `pointercancel` 时
+   *   隐式释放，元素被移出文档时也会释放。多写一次不会错，但漏写**不是**泄漏。
+   * - `setPointerCapture` 在元素**未连接文档**时抛 `NotFoundError`。这里不会碰到
+   *   （`pointerdown` 只可能发生在已挂载的元素上），但自己写时要留意。
+   */
   for (const source of [piece, handle]) {
     addEventListener(source, 'pointerdown', event => {
       if (interactionDisabled) return
