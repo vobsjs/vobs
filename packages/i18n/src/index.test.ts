@@ -38,6 +38,34 @@ describe('@vobs/i18n', () => {
     i18n.dispose()
   })
 
+  /*
+   * 插值原来用 `key in params`（沿原型链找）：空 params 下 `{constructor}` 会渲染出
+   * `function Object() { [native code] }`，`{toString}`/`{__proto__}` 同理；而显式传
+   * `undefined`/`null` 会渲染成字面量 "undefined"/"null"。
+   */
+  it('插值只认自有属性，缺失/空值参数不渲染成字面量', () => {
+    const i18n = createI18n({
+      defaultLocale: 'en-US',
+      messages: {
+        'en-US': {
+          ctor: 'X {constructor}',
+          toStr: 'Y {toString}',
+          proto: 'Z {__proto__}',
+          name: 'V {name}'
+        }
+      }
+    })
+
+    expect(i18n.t('ctor', {})).toBe('X {constructor}')
+    expect(i18n.t('toStr', {})).toBe('Y {toString}')
+    expect(i18n.t('proto', {})).toBe('Z {__proto__}')
+    // 缺参保持占位符原样（与缺 key 的处理一致，不静默变成 'undefined'）
+    expect(i18n.t('name', { name: undefined })).toBe('V {name}')
+    expect(i18n.t('name', { name: null })).toBe('V {name}')
+    expect(i18n.t('name', { name: 'Ada' })).toBe('V Ada')
+    i18n.dispose()
+  })
+
   it('locale 变化会驱动使用 t 的节点更新', () => {
     const i18n = createI18n({
       defaultLocale: 'zh-CN',

@@ -436,8 +436,15 @@ function interpolate(
   if (!params) return template
   return template.replace(/\{([\w.-]+)(?:,\s*([\w-]+)(?:,\s*([^}]+))?)?\}/g,
     (match, key: string, formatter?: string, argument?: string) => {
-      if (!(key in params)) return match
+      /*
+       * 只认**自有属性**：原来用 `key in params`（沿原型链）→ 空 params 下 `{constructor}`
+       * 渲染出 `function Object() { [native code] }`，`{toString}`/`{__proto__}` 同理。
+       * 值本身是 undefined/null 时视同"没给这个参数"，占位符原样留在文案里
+       * （与缺 key 的处理一致，而不是静默渲染成字面量 "undefined"/"null"）。
+       */
+      if (!Object.prototype.hasOwnProperty.call(params, key)) return match
       const value = params[key]
+      if (value === undefined || value === null) return match
       if (!formatter) return String(value)
       if (formatter === 'date') return context.formatDate(toDate(value) ?? Number.NaN, argument as DatePreset | undefined)
       if (formatter === 'number') return context.formatNumber(Number(value))
