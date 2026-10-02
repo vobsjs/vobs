@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createDevTools } from '@vobs/devtools'
 import { createDOMRenderer, createVobs, state } from '@vobs/vobs'
 import { DevToolsPanel } from './panel'
+import { DevToolsWidget } from './widget'
 
 /*
  * 面板**观测自己**：它的 19 个局部 `state()` 与副作用都建在自己的 owner 下，
@@ -53,6 +54,32 @@ describe('DevToolsPanel 不自观测', () => {
     expect(devtools.getUpdates().length).toBe(before.updates + 1)
 
     view.app.destroy()
+    devtools.dispose()
+  })
+
+  it('单独挂载 DevToolsWidget 同样不往被观测数据里添东西', async () => {
+    const devtools = createDevTools({ expose: false })
+    const warmup = mountPanel(devtools)
+    await settle()
+    warmup.app.destroy()
+    await settle()
+
+    const before = {
+      signals: devtools.getSignals().length,
+      effects: devtools.getEffects().length
+    }
+    const host = document.createElement('div')
+    const app = createVobs({
+      renderer: createDOMRenderer(),
+      render: () => DevToolsWidget({ api: devtools })
+    })
+    app.mount(host)
+    await settle()
+
+    expect(devtools.getSignals().length).toBe(before.signals)
+    expect(devtools.getEffects().length).toBe(before.effects)
+
+    app.destroy()
     devtools.dispose()
   })
 })
