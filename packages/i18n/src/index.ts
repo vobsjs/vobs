@@ -251,6 +251,17 @@ export function createI18n(options: I18nOptions): I18nContext {
       const previous = formatters.get(name)
       formatters.set(name, formatter)
       return () => {
+        /*
+         * 只在"自己那次注册**仍然是当前值**"时才回滚。
+         *
+         * 原来无条件恢复注册时捕获的 previous，于是同名注册两次后：
+         * 注销 A 的句柄会把后来者 B **删掉**；再注销 B 的句柄又把 A **塞回来** ——
+         * 一个 `() => void` 能做到"卸不干净 + 复活旧的"。
+         *
+         * 加上身份判断后是干净的栈式语义：被后来者顶掉的那次注册，其句柄变成 no-op
+         * （它确实没生效过）；后来者注销时把前一个恢复回来是正确的；同一句柄重复调用也幂等。
+         */
+        if (formatters.get(name) !== formatter) return
         if (previous) formatters.set(name, previous)
         else formatters.delete(name)
       }
