@@ -1,4 +1,4 @@
-import { getCurrentOwner, onDispose, state, type Signal } from '@vobs/reactivity'
+import { effect, getCurrentOwner, onDispose, state, untrack, type Signal } from '@vobs/reactivity'
 import {
   createFragment,
   createInjectionKey,
@@ -278,6 +278,10 @@ export function createI18n(options: I18nOptions): I18nContext {
   }
 
   if (getCurrentOwner()) onDispose(context.dispose)
+  Object.defineProperty(context, I18N_INTERNALS, {
+    value: { formatters, localeLoaders: options.localeLoaders ?? {} } satisfies I18nInternals,
+    enumerable: false
+  })
   return context
 
   function ensureActive(): void {
@@ -335,18 +339,60 @@ export function useI18n(): I18nContext {
 
 export function I18nBoundary(props: I18nBoundaryProps = {}): VobsNode {
   const parent = useI18n()
+  const internals = readI18nInternals(parent)
   const local = createI18n({
     defaultLocale: props.locale ?? parent.locale.value,
     messages: parent.messages.value,
     fallbackLocale: parent.fallbackLocale,
-    timeZone: parent.timeZone
+    timeZone: parent.timeZone,
+    // 自定义 formatter 与 locale 加载器原来**完全没有继承**：前者让 `{name, shout}` 这类占位符
+    // 静默退化成 `String(value)`。这里在创建时把父上下文当前那一份传下去（之后父级新注册的
+    // formatter 仍不会出现在已挂载的边界里 —— 那是下一步的事）。
+    formatters: Object.fromEntries(internals.formatters),
+    localeLoaders: internals.localeLoaders
   })
   provide(I18N_KEY, local)
+
+  /*
+   * messages 原来是创建时的**死快照**：父级 `setMessages`/`loadLocale` 之后边界里永远看不到。
+   * 让本地 messages 跟着父走，只增量补齐父级新出现的语言（保留子上下文自己 load 的内容）。
+   * 读本地值必须 untrack：否则「读自己 + 写自己」会自订阅成死循环。
+   */
+  effect(() => {
+    const parentMessages = parent.messages.value
+    untrack(() => {
+      const localMessages = local.messages.value
+      let changed = false
+      const merged: Record<Locale, Messages> = { ...localMessages }
+      for (const [name, entries] of Object.entries(parentMessages)) {
+        if (merged[name] === entries) continue
+        merged[name] = mergeMessages(merged[name], entries)
+        changed = true
+      }
+      if (changed) local.messages.value = merged
+    })
+  })
 
   return createFragment((parentNode, anchor) => {
     const child = typeof props.children === 'function' ? props.children() : props.children
     if (child) insertBefore(parentNode, child, anchor)
   })
+}
+
+/**
+ * 边界要继承、但不属于公开 API 的东西（formatters / localeLoaders）。
+ * 用内部符号挂在上下文上，外部上下文（自定义 I18nContext 实现）拿不到就退回空集合。
+ */
+const I18N_INTERNALS = Symbol('vobs.i18n.internals')
+
+interface I18nInternals {
+  readonly formatters: Map<string, I18nFormatter>
+  readonly localeLoaders: Readonly<Record<Locale, I18nLocaleLoader>>
+}
+
+function readI18nInternals(context: I18nContext): I18nInternals {
+  const internals = (context as unknown as Record<symbol, I18nInternals | undefined>)[I18N_INTERNALS]
+  return internals ?? { formatters: new Map(), localeLoaders: {} }
 }
 
 function findMessage(
