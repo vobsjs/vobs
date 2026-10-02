@@ -49,14 +49,38 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
     const node = tryClaim(predicate)
     if (node) return node
 
+    /*
+     * 诊断用的 actual。原来只扫 `querySelectorAll('*')`（**只有元素**），于是
+     * `actual?.nodeType === 3` 永远不成立、`kind: 'content'` 是**不可达分支** ——
+     * "期望文本、DOM 里却是别的文本"这种最典型的水合差异只会报 missing-node 且 actual=<none>。
+     * 这里在找不到未认领元素时继续找未认领的**文本节点**，让 content 分支真正可达。
+     */
     const actual = [...container.querySelectorAll('*')]
       .find(node => !isSeparatorComment(node) && !isClaimed(node))
+      ?? firstUnclaimedText()
     throwHydrationMismatch(
       actual?.nodeType === 3 && expected.startsWith('文本节点') ? 'content' : 'missing-node',
       expected,
       actual ? describeHydrationNode(actual) : '<none>',
       currentParent
     )
+  }
+
+  /** 按文档序找第一个未被认领的文本节点（给上面的诊断用）。 */
+  function firstUnclaimedText(): Text | null {
+    const walk = (parent: Node): Text | null => {
+      for (let index = 0; index < parent.childNodes.length; index++) {
+        const child = parent.childNodes[index]
+        if (child.nodeType === 3) {
+          if (!isClaimed(child)) return child as Text
+          continue
+        }
+        const found = walk(child)
+        if (found) return found
+      }
+      return null
+    }
+    return walk(container)
   }
 
   function isClaimed(node: ChildNode): boolean {
