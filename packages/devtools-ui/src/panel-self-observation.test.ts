@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { createDevTools } from '@vobs/devtools'
-import { createDOMRenderer, createVobs, state } from '@vobs/vobs'
+import { hydrate, renderToString } from '@vobs/ssr'
+import { bindText, createDOMRenderer, createElement, createText, createVobs, insertBefore, state } from '@vobs/vobs'
 import { DevToolsPanel, DevToolsToolbar } from './panel'
 import { DevToolsWidget } from './widget'
 
@@ -107,5 +108,36 @@ describe('DevToolsPanel 不自观测', () => {
 
     app.destroy()
     devtools.dispose()
+  })
+
+  /*
+   * devtools-ui 的"渲染 hydration-provisional-text"这一项**不需要改代码**：
+   * `renderLifecycleTimeline`（panel.tsx:1207-1209）把 `event.type` 当**文本**直接渲染，
+   * 既没有标签表也没有穷尽 switch。这条用例是防它以后被改成"按键名查表"而静默漏掉新类型。
+   */
+  it('生命周期里有 hydration-provisional-text 时面板照常渲染', async () => {
+    const devtools = createDevTools({ expose: false })
+    const view = mountPanel(devtools)
+    await settle()
+
+    const render = () => {
+      const span = createElement('span')
+      const text = createText('')
+      insertBefore(span, text, null)
+      bindText(text, () => 'count: 42')
+      return span
+    }
+    document.body.innerHTML = renderToString(render)
+    const app = hydrate(render, document.body)
+    await settle()
+
+    expect(devtools.getLifecycleEvents().some(event => event.type === 'hydration-provisional-text')).toBe(true)
+    // 面板没被这个新类型搞崩（仍挂着内容）
+    expect(view.host.childNodes.length).toBeGreaterThan(0)
+
+    app.destroy()
+    view.app.destroy()
+    devtools.dispose()
+    document.body.innerHTML = ''
   })
 })
