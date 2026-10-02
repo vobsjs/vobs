@@ -7,6 +7,7 @@ import { addCommand } from './commands/add.js'
 import { dshCommand } from './commands/dsh.js'
 import { checkCommand } from './commands/check.js'
 import { showBanner, showLogo, showDevBanner } from './banner.js'
+import { cliVersion } from './version.js'
 
 export function createCLI(): ReturnType<typeof cac> {
   const cli = cac('vobs')
@@ -145,7 +146,19 @@ export function createCLI(): ReturnType<typeof cac> {
   })
 
   cli.help()
-  cli.version('1.0.0')
+  cli.version(cliVersion())
 
   return cli
 }
+
+/**
+ * 已注册的子命令名（含别名）。
+ *
+ * 存在的理由：cac 对"没有命令匹配"不做任何兜底（既不报错也不输出，直接返回），
+ * 而 `start()` 的 `--version` 短路又用的是 `args.includes('--version')` ——
+ * 于是 `vobs chekc`（拼错）静默成功，`vobs check --version` 则只打 banner、check 根本没跑。
+ * 用这份清单把"跑某个命令"与"顶层用法错误"分开。
+ */
+export const KNOWN_SUBCOMMANDS: readonly string[] = [
+  'init', 'create', 'dev', 'build', 'generate', 'g', 'add', 'check', 'dsh', 'logo'
+]

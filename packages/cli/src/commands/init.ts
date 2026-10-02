@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js'
 import { scaffoldProject } from '../utils/file.js'
 import { installDependencies } from '../utils/pm.js'
 import type { InitOptions } from '../types.js'
+import { cliVersion } from '../version.js'
 
 export async function initCommand(options: Partial<InitOptions>): Promise<void> {
   const projectName = options.name || (await p.text({
@@ -60,7 +61,7 @@ export async function initCommand(options: Partial<InitOptions>): Promise<void> 
     name: projectName,
     packageName: projectName.toLowerCase().replace(/\s+/g, '-'),
     typescript: useTypescript,
-    vobsVersion: '1.0.0'
+    vobsVersion: cliVersion()
   })
 
   logger.success('Project scaffolded')

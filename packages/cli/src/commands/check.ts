@@ -23,7 +23,7 @@
  * 撞上误报时的正规做法是**行内抑制**（`// vobs-check-ignore-next-line`），
  * 而不是关掉整条规则或改写本来正确的代码。
  */
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import ts from 'typescript'
 import { logger } from '../utils/logger.js'
@@ -67,13 +67,38 @@ export const VOBS_C118 = 'VOBS_C118'
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'lib', 'build', '.git', '.vobs', 'coverage'])
 
+/**
+ * 收集目标下的 .ts/.tsx。
+ *
+ * **根目录**读不到时**必须抛错**，不能返回空数组：此前那个 `catch { return }` 把
+ * 不存在的目录、以及"误传一个文件进来"都变成 `0 个文件` + exit 0 ——
+ * `vobs check <不存在的目录>` 会打印 `✔ 检查通过 —— 0 个文件，没有发现问题`。
+ * CI 里把路径写错就是**永久绿灯**，比报错更危险（一个检查工具在最该失败的场景下静默通过）。
+ *
+ * 子目录读不到仍然跳过（权限不足/竞态删除不该让整次检查失败）——那是有意的容错，
+ * 与"根目录不存在"不是一回事。
+ */
 async function collectSources(root: string): Promise<string[]> {
+  let rootStat
+  try {
+    rootStat = await stat(root)
+  } catch {
+    throw new Error(`路径不存在：${root}`)
+  }
+  if (!rootStat.isDirectory()) {
+    throw new Error(`不是目录：${root}（vobs check 接受一个目录）`)
+  }
+
   const found: string[] = []
   const walk = async (dir: string): Promise<void> => {
     let entries
     try {
       entries = await readdir(dir, { withFileTypes: true })
-    } catch {
+    } catch (error) {
+      // 根目录在第一次 stat 之后消失（竞态）也必须暴露，而不是混进"0 个文件"
+      if (dir === root) {
+        throw new Error(`无法读取目录：${root}（${error instanceof Error ? error.message : String(error)}）`)
+      }
       return
     }
     for (const entry of entries) {
@@ -374,7 +399,15 @@ export function analyzeSource(text: string, file: string): CheckDiagnostic[] {
 
 export async function checkCommand(options: CheckOptions = {}): Promise<void> {
   const root = path.resolve(options.dir ?? process.cwd())
-  const all = await collectSources(root)
+  let all: string[]
+  try {
+    all = await collectSources(root)
+  } catch (error) {
+    // 路径无效必须是**失败**，不能是"0 个文件，检查通过"（见 collectSources 注释）
+    logger.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+    return
+  }
   const files = options.includeTests === true
     ? all
     : all.filter(file => !TEST_FILE.test(path.relative(root, file).split(path.sep).join('/')))
@@ -394,6 +427,7 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
     const target = path.join(root, REPORT_PATH)
     await mkdir(path.dirname(target), { recursive: true })
     await writeFile(target, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
+    // --json 时 stdout 必须只剩 JSON，所以这行提示走 logger（stderr）
     logger.info(`报告写入 ${REPORT_PATH}（开发台面板读它显示「项目」页）`)
   }
 
