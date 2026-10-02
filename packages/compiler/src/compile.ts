@@ -175,6 +175,10 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
   }
   for (const plugin of plugins) sourceFile = transformPluginNodes(sourceFile, plugin, context)
 
+  // 顶层条件 return 的诊断必须在**转换前**做：转换后 JSX 已被改写成工厂调用，
+  // 三元表达式与 null 分支的原始形态不再可辨。
+  reportTopLevelConditionalReturn(state)
+
   const statements = sourceFile.statements.map(statement =>
     ts.isImportDeclaration(statement) ? rebuildImport(state, statement) : transformStatement(state, statement, true)
   )
@@ -197,6 +201,88 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
     map: buildSourceMap(state, filename, code, generated, resultFile),
     diagnostics: [...diagnostics, ...state.diagnostics]
   }
+}
+
+/**
+ * `VOBS_C104`：组件顶层**裸条件 `return`**。
+ *
+ * 形态是函数体里直接 `return cond ? <JSX/> : null`（或 `cond && <JSX/>`），
+ * 而不是把条件放在 JSX 子节点位置。
+ *
+ * 为什么必须报错：组件是 **run-once** 的 —— 函数体只执行一次，`cond` 在挂载那一刻
+ * 定死。之后信号变化不会再执行这个 `return`，所以界面**永远不会切换**。
+ * 这与「JSX 里 `{cond ? <A/> : <B/>}`」完全不同（后者由编译期生成条件工厂，是响应式的），
+ * 而两种写法长得很像，靠人眼区分极难。
+ *
+ * 更贵的一次事故（Labelune 2026-09-30 发版黑屏）：`return cond ? <JSX/> : null` 的
+ * `null` 分支曾被当成 `nodeOwners` 这个 WeakMap 的 key，直接抛
+ * `Invalid value used as weak map key`，App 挂载即崩且无崩溃日志。
+ * 运行时已修（返回空值时归一化成空注释节点），但**语义仍然是错的** ——
+ * 组件不会切换，所以这里在编译期就说清楚。
+ */
+function reportTopLevelConditionalReturn(state: CompileState): void {
+  const sourceFile = state.sourceFile
+  if (!sourceFile) return
+
+  const isEmptyBranch = (node: ts.Expression | undefined): boolean =>
+    node !== undefined
+    && (node.kind === ts.SyntaxKind.NullKeyword
+      || (ts.isIdentifier(node) && node.text === 'undefined')
+      || node.kind === ts.SyntaxKind.FalseKeyword)
+
+  /** 该值本身是不是"空"（`null` / `undefined` / `false`）。 */
+  const describeEmpty = (node: ts.Expression): string =>
+    node.kind === ts.SyntaxKind.NullKeyword ? 'null'
+      : node.kind === ts.SyntaxKind.FalseKeyword ? 'false'
+        : 'undefined'
+
+  const report = (target: ts.Node, hasEmpty: string | null): void => {
+    const { line, column, codeFrame } = buildCodeFrame(sourceFile, target.getStart(sourceFile), target.getWidth(sourceFile))
+    state.diagnostics.push({
+      code: 'VOBS_C104',
+      severity: 'error',
+      message: hasEmpty === null
+        ? '组件顶层的条件 return 只在挂载时求值一次：组件是 run-once 的，之后信号变化不会再执行这个 return，界面永远不会切换。'
+        : `组件顶层的条件 return 只在挂载时求值一次，而且这里会返回 ${hasEmpty} —— `
+          + '组件是 run-once 的，之后信号变化不会再执行这个 return，界面永远不会切换。',
+      location: { file: state.filename, line, column },
+      codeFrame,
+      fix: '把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`，编译期会生成响应式条件工厂），'
+        + '或固定渲染 + 类名显隐（`<A class={cond ? \'is-on\' : \'is-off\'} />`）；'
+        + '整块切换也可以用条件工厂 createBlock/insertDynamic。'
+    })
+  }
+
+  /** 在函数体里找**直接属于该函数**的 return（不下钻嵌套函数/箭头函数）。 */
+  const scanReturn = (node: ts.Node, owner: ts.SignatureDeclaration): void => {
+    if (node !== owner && (ts.isFunctionLike(node) || ts.isClassLike(node))) return
+    if (ts.isReturnStatement(node) && node.expression) {
+      const expression = node.expression
+      // 情况一：`return cond ? A : B`
+      if (ts.isConditionalExpression(expression)) {
+        const emptyWhenTrue = isEmptyBranch(expression.whenTrue)
+        const emptyWhenFalse = isEmptyBranch(expression.whenFalse)
+        if (emptyWhenTrue || emptyWhenFalse) {
+          report(expression, describeEmpty(emptyWhenTrue ? expression.whenTrue : expression.whenFalse))
+        }
+        return
+      }
+      // 情况二：`return cond && <A/>`（返回 false 或 JSX）
+      if (ts.isBinaryExpression(expression)
+        && expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+        report(expression, 'false')
+      }
+    }
+    ts.forEachChild(node, child => { scanReturn(child, owner) })
+  }
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node)) {
+      if (node.body) scanReturn(node.body, node)
+    }
+    ts.forEachChild(node, visit)
+  }
+  ts.forEachChild(sourceFile, visit)
 }
 
 function toCompilerDiagnostic(
