@@ -228,7 +228,10 @@ export function RequireAnyPermission(props: RequirePermissionsProps): VobsNode {
 export function RequireAllPermissions(props: RequirePermissionsProps): VobsNode {
   return createAuthBoundary(
     useAuth,
-    auth => props.permissions.every(permission => auth.hasPermission(permission)),
+    // `[].every(...)` **恒真** → 空列表会把受保护内容放给任何人（含匿名）。空列表按"未满足"处理，
+    // 与 RequireAnyPermission([])（`[].some` 恒假）结论一致：Guard 一律 fail closed。
+    auth => props.permissions.length > 0
+      && props.permissions.every(permission => auth.hasPermission(permission)),
     props
   )
 }
