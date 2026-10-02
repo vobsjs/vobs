@@ -14,6 +14,23 @@ const GUARDRAILS_URL = '/@id/__x00__virtual:vobs-dev-guardrails'
 /** 护栏违规上报端点。 */
 const VIOLATION_ENDPOINT = '/__vobs/violation'
 
+/**
+ * Windows 路径分隔符 → POSIX。
+ *
+ * 这不是样式偏好，而是**接口约定**：Vite/Rollup 的模块 id 一律用正斜杠，
+ * 所以 `resolveId` 返回什么形态，`load` 随后收到的就是那个形态的**规范化结果**。
+ * 此前 `resolveId` 返回 `path.resolve(...)` 的原始串（Windows 上是反斜杠），
+ * 而 `load` 拿 `htmlModules.has(id)` 去查正斜杠 id —— `Set` 是精确匹配，永远不命中，
+ * `load` 返回 null，裸 HTML 落到 `vite:import-analysis` 被当 JS 解析并抛
+ * `Failed to parse source for import analysis`。整个 HTML 组件功能在 Windows 上失效。
+ *
+ * 只把反斜杠换成斜杠，不做 `resolve`/`realpath` 之类的规范化，
+ * 以免改变大小写或消解符号链接（那会让 `htmlModules` 与实际 `readFile` 的目标不一致）。
+ */
+function toPosixPath(value: string): string {
+  return value.replace(/\\/gu, '/')
+}
+
 export interface VobsVitePluginOptions {
   include?: RegExp
   compiler?: CompileOptions
@@ -89,14 +106,17 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
       if (!importer || !isHtmlComponent(source, options.html) || !isRelativeModule(source)) return null
       const cleanImporter = importer.split(/[?#]/u, 1)[0]
       const cleanSource = source.split(/[?#]/u, 1)[0]
-      const resolved = path.resolve(path.dirname(cleanImporter), cleanSource)
+      // 必须返回 POSIX 形态：load 收到的是 Vite 规范化后的正斜杠 id，
+      // 反斜杠串在 htmlModules 里永远查不中（Windows 专属的整功能失效）。
+      const resolved = toPosixPath(path.resolve(path.dirname(cleanImporter), cleanSource))
       htmlModules.add(resolved)
       return resolved
     },
 
     async load(id: string) {
       if (id === GUARDRAILS_ID) return guardrailsActive() ? createGuardrailsModule() : null
-      if (!htmlModules.has(id)) return null
+      // 防御性归一：即使某个调用方（或未来版本的 Vite）传回反斜杠形态也仍然命中
+      if (!htmlModules.has(id) && !htmlModules.has(toPosixPath(id))) return null
       return compileHtmlComponent(await readFile(id, 'utf8'), { filename: id })
     },
 
