@@ -335,6 +335,15 @@ export interface DevToolsTarget {
 }
 
 export interface DevToolsOptions {
+  /**
+   * 是否把 API 挂到宿主对象（默认 `target`，浏览器里就是 `window.__VOBS_DEVTOOLS__`）。
+   *
+   * 三态：
+   * - 省略 —— 跟随环境：非生产构建（含 vitest 的 `NODE_ENV=test`）里挂，**生产构建里不挂**，
+   *   因为全局名会把调试 API（以及 `allowMutations` 打开后的写信号能力）交给页面上的任何脚本；
+   * - `true` —— 显式要求，生产里也挂（playground 就走这条路）；
+   * - `false` —— 显式关掉。
+   */
   readonly expose?: boolean
   readonly target?: DevToolsTarget
   readonly maxUpdates?: number
@@ -1470,7 +1479,12 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
   setHTTPDebugHooks(httpHooks)
 
   const target = options.target ?? defaultTarget()
-  const shouldExpose = options.expose ?? Boolean(target)
+  /*
+   * 默认值只表示「跟随环境」：非生产构建里挂，生产构建里不挂。
+   * 这里刻意不看 `options.target` 是不是调用方传进来的 —— 少一个分支就少一种
+   * 「同一份代码在两种宿主上行为不同」的解释成本；需要生产里也挂就写 `expose: true`。
+   */
+  const shouldExpose = options.expose ?? (Boolean(target) && !isProductionBuild())
   const previousGlobal = target?.__VOBS_DEVTOOLS__
   let api!: DevToolsAPI
   const onGlobalError = (event: { readonly error?: unknown; readonly message?: unknown; readonly filename?: unknown; readonly lineno?: unknown; readonly colno?: unknown }): void => {
@@ -1978,6 +1992,31 @@ export function devtoolsPlugin(options: DevToolsPluginOptions = {}): VobsPlugin 
 
 function defaultTarget(): DevToolsTarget | undefined {
   return typeof window === 'undefined' ? undefined : window
+}
+
+/**
+ * 判定「这是一次生产构建」，用来决定 `expose` 的默认值。
+ *
+ * **只认字面量写法 `process.env.NODE_ENV`**：Vite / webpack / Rollup 在构建期会把这个
+ * 表达式替换成字面量 `"production"`，所以浏览器产物里根本不需要存在 `process` 全局；
+ * Node / Electron 里则读到真实值。因此这里**不能**写成
+ * `typeof process !== 'undefined' && process.env.NODE_ENV === 'production'`：
+ * 替换之后它会变成 `typeof process !== 'undefined' && "production" === "production"`，
+ * 而浏览器里 `process` 恒为 undefined —— 守卫会静默失效，正是要修的那个 bug 的翻版。
+ *
+ * 既没有 `process` 又没被替换（裸 `<script type="module">` 直接引产物）时把
+ * ReferenceError 吞掉、按「非生产」处理：那种用法拿不到构建期信息，只能保守地
+ * 保持旧行为（照挂）。这是本守卫已知的覆盖边界。
+ *
+ * 同样故意不读 `import.meta.env.PROD`：`scripts/build-packages.mjs` 已注明 esbuild 会把
+ * CJS 产物里的 `import.meta` 变成空对象，多一条只在 ESM 里有效的分支只会制造假安全感。
+ */
+function isProductionBuild(): boolean {
+  try {
+    return process.env.NODE_ENV === 'production'
+  } catch {
+    return false
+  }
 }
 
 function defaultMessageTarget(): DevToolsMessageTarget | undefined {

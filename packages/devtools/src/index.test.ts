@@ -125,6 +125,47 @@ describe('@vobs/devtools', () => {
     active = undefined
   })
 
+  it('默认 expose 跟随环境：非生产照挂，生产构建不挂（显式 expose: true 仍挂）', () => {
+    const windowTarget = window as unknown as DevToolsTarget
+
+    // 非生产（vitest 里 NODE_ENV === 'test'）：默认照旧挂到默认宿主 window 上
+    active = createDevTools()
+    expect(windowTarget.__VOBS_DEVTOOLS__).toBe(active)
+    active.dispose()
+    expect(windowTarget.__VOBS_DEVTOOLS__).toBeUndefined()
+
+    const previousNodeEnv = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      // 生产构建：默认不给任何宿主对象挂全局（默认 window 与显式 target 都一样）
+      active = createDevTools()
+      expect(windowTarget.__VOBS_DEVTOOLS__).toBeUndefined()
+
+      const implicitTarget: DevToolsTarget = {}
+      active = createDevTools({ target: implicitTarget })
+      expect(implicitTarget.__VOBS_DEVTOOLS__).toBeUndefined()
+
+      // 逃生舱：显式 expose: true 在生产里照挂
+      const optedIn: DevToolsTarget = {}
+      active = createDevTools({ target: optedIn, expose: true })
+      expect(optedIn.__VOBS_DEVTOOLS__).toBe(active)
+
+      // 显式 expose: false 与生产默认一致
+      const optedOut: DevToolsTarget = {}
+      active = createDevTools({ target: optedOut, expose: false })
+      expect(optedOut.__VOBS_DEVTOOLS__).toBeUndefined()
+
+      // 生产里真正装配的入口是插件，它转发同一份 options，默认同样不挂
+      const pluginTarget: DevToolsTarget = {}
+      const cleanup = devtoolsPlugin({ target: pluginTarget })
+        .install?.({ onError: () => () => undefined } as unknown as VobsContext)
+      expect(pluginTarget.__VOBS_DEVTOOLS__).toBeUndefined()
+      cleanup?.()
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv
+    }
+  })
+
   it('通过 postMessage 为浏览器面板提供查询和更新事件', () => {
     active = createDevTools({ expose: false })
     const messages: unknown[] = []
