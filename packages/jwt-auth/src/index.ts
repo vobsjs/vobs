@@ -49,13 +49,24 @@ export function createJWTAuth<C extends Credentials = Credentials>(
   const baseAuth = createAuth<C>({
     session: options.session,
     loginHandler: async credentials => {
+      const issued = generation
       const result = await options.transport.login(credentials)
       validateLoginResult(result)
+      /*
+       * 登出/销毁之后落地的登录**不得写回** —— 否则"已经退出的用户"会被复活（安全级）。
+       * 实测：logout 后放行 in-flight login → session 又变回已登录。
+       */
+      if (generation !== issued || disposed) {
+        throw new Error('Vobs JWT Auth: 登录结果已过期（期间发生了登出或销毁）')
+      }
       accessToken.value = result.accessToken
       return { user: result.user }
     }
   })
   let refreshing: Promise<string> | null = null
+  let refreshingGeneration = -1
+  /** 世代计数：登出/销毁会推进它，之后落地的 in-flight 结果一律作废（照 resource 的 revision 模式）。 */
+  let generation = 0
   let disposed = false
   /*
    * 先抓住**底层 auth 的 dispose**。
@@ -77,26 +88,42 @@ export function createJWTAuth<C extends Credentials = Credentials>(
 
     async refreshToken(): Promise<string> {
       ensureActive()
-      if (!refreshing) {
+      // 世代变了就重新发起：否则登出之后的新调用会复用**登出前**那次的 in-flight promise
+      if (!refreshing || refreshingGeneration !== generation) {
+        const issued = generation
+        refreshingGeneration = issued
         refreshing = (async () => options.transport.refresh())()
           .then(result => {
             validateRefreshResult(result)
+            if (generation !== issued || disposed) {
+              throw new Error('Vobs JWT Auth: 刷新结果已过期（期间发生了登出或销毁）')
+            }
             accessToken.value = result.accessToken
             if (result.user) baseAuth.session.value = { user: result.user }
             return result.accessToken
           })
           .catch(error => {
-            clearSession()
+            // 过期的失败**不能**清掉新一轮的会话
+            if (generation === issued && !disposed) clearSession()
             reportFailure(error)
             throw error
           })
-          .finally(() => { refreshing = null })
+          .finally(() => {
+            if (refreshingGeneration === issued) {
+              refreshing = null
+              refreshingGeneration = -1
+            }
+          })
       }
       return refreshing
     },
 
     async logout(): Promise<void> {
       ensureActive()
+      // 推进世代：此后落地的 login/refresh 结果一律作废（不复活、也不清掉新一轮的会话）
+      generation++
+      refreshing = null
+      refreshingGeneration = -1
       try { await options.transport.logout?.() }
       finally { clearSession() }
     },
