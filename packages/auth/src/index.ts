@@ -89,6 +89,22 @@ export interface RequirePermissionsProps extends AuthBoundaryProps {
   readonly permissions: readonly Permission[]
 }
 
+/**
+ * 从 session 里取一个"字符串数组"字段 —— 形状不对就当**没有**（缺省拒绝）。
+ *
+ * 原来判定直接 `session.value?.user.permissions.includes(...)`，有两个坑：
+ *  1. session 少了字段（水合不完整、`{}` 这种）就抛 TypeError —— 挂载期崩，**更新期被 effect 吞掉**，
+ *     而吞掉之后旧的授权内容会留在页面上：最放行的路径恰恰是最安静的那条；
+ *  2. 字段若是字符串，`.includes` 会退化成**子串匹配**（`roles: 'editor'` 让 `hasRole('e')` 为真）。
+ * 所以只认字符串数组：不是就当空数组 → 一律拒绝。
+ */
+function readSessionList(session: Session | null, field: 'roles' | 'permissions'): readonly string[] {
+  const user: unknown = session?.user
+  if (!user || typeof user !== 'object') return []
+  const value = (user as Record<string, unknown>)[field]
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
+}
 export function createAuth<C extends Credentials = Credentials>(options: AuthOptions<C> = {}): AuthContext<C> {
   const ownedSession = options.session ? undefined : state<Session | null>(null)
   const session = options.session ?? ownedSession!
@@ -101,12 +117,12 @@ export function createAuth<C extends Credentials = Credentials>(options: AuthOpt
 
     hasPermission(permission: Permission): boolean {
       if (disposed || !permission) return false
-      return session.value?.user.permissions.includes(permission) ?? false
+      return readSessionList(session.value, 'permissions').includes(permission)
     },
 
     hasRole(role: string): boolean {
       if (disposed || !role) return false
-      return session.value?.user.roles.includes(role) ?? false
+      return readSessionList(session.value, 'roles').includes(role)
     },
 
     async login(credentials: C): Promise<void> {
