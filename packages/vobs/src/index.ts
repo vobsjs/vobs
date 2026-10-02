@@ -11,6 +11,8 @@ export { onMount } from './lifecycle'
 export * from '@vobs/reactivity'
 export { createDOMRenderer } from '@vobs/dom'
 export type { VobsRenderer } from '@vobs/runtime'
+export { Show } from '@vobs/runtime'
+export type { ShowProps } from '@vobs/runtime'
 export {
   getRuntimeDebugContext,
   getRuntimeDebugHooks,

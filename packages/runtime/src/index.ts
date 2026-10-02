@@ -85,3 +85,8 @@ export { insertAsyncBoundary, AsyncBoundary } from './async-boundary'
 export type { AsyncBoundaryFallback, AsyncBoundaryOptions, AsyncBoundaryProps, AsyncBoundaryView } from './async-boundary'
 export { insertProfiler, Profiler } from './profiler'
 export type { ProfilerOptions, ProfilerProps, ProfilerRenderInfo } from './profiler'
+
+export { Show } from './show'
+export type { ShowProps } from './show'
+
+export { applyClassList, parseClassList } from './ops'

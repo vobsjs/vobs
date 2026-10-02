@@ -14,6 +14,14 @@ export interface VobsHTMLAttributes {
   checked?: boolean
   class?: string
   className?: string
+  /**
+
+   * 对象 / 数组形式的响应式类名（`{ 'is-open': open.value }`）。
+
+   * 只贡献它自己那部分，不影响 `class` 里的类名。见 @vobs/runtime 的 applyClassList。
+
+   */
+  classList?: Record<string, unknown> | readonly unknown[] | string
   cols?: number
   colSpan?: number
   disabled?: boolean

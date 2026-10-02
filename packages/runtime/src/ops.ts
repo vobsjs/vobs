@@ -363,6 +363,7 @@ function applySpreadProps(
     if (value === null || value === undefined) continue
     // property 键的 false 有语义（如 disabled={false} 必须清除），不能跳过；
     // attribute 键的 false 表示"不设置"，与 HTML 语义一致。
+    else if (isClassListKey(key)) applyClassList(node, value)
     else if (isPropertyName(key)) setProperty(node, key, value)
     else if (value === false) continue
     else setAttribute(node, domAttributeName(key), key === 'style' && isStyleObject(value) ? formatStyle(value) : String(value))
@@ -402,6 +403,63 @@ function applySpreadProps(
  * 而 `applySpreadProps` 又会把 `next` 的每个键读一遍 —— 两者都在 effect 的追踪窗口内，
  * 所以信号依赖不会因为多这一遍而丢失。
  */
+/**
+ * `classList` 每次贡献的类名（按元素记账，便于下次替换而不是叠加）。
+ *
+ * 为什么需要记账：`classList` 与 `class` 写的是**同一个** HTML 属性。
+ * 若不记住上次由 `classList` 贡献了哪些，切换时要么越加越多、要么把作者的 `class` 抹掉。
+ */
+const classListContributions = new WeakMap<object, string[]>()
+
+/** `classList` 值 → 类名数组。支持对象 / 数组 / 字符串三种写法。 */
+export function parseClassList(value: unknown): string[] {
+  const names: string[] = []
+  const push = (candidate: unknown): void => {
+    if (typeof candidate === 'string') {
+      for (const name of candidate.split(/\s+/u)) if (name !== '') names.push(name)
+    }
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (entry !== null && typeof entry === 'object') {
+        for (const [name, on] of Object.entries(entry)) if (on) push(name)
+      } else push(entry)
+    }
+  } else if (value !== null && typeof value === 'object') {
+    for (const [name, on] of Object.entries(value)) if (on) push(name)
+  } else push(value)
+  return names
+}
+
+/**
+ * 应用 `classList`：与元素上已有的 `class` **合并**，并可反复切换。
+ *
+ * 存在的理由（外部踩坑文档 C 条）：条件分支里的输入控件会丢焦点 ——
+ * `insertDynamic` 按引用比较（`next === current`），写条件表达式就会重建子树。
+ * 文档给出的对策是「固定渲染 + 响应式 class 显隐」，但此前只能手写字符串模板：
+ *
+ * ```tsx
+ * <div class={open.value ? 'panel is-open' : 'panel'}>   // 易漏、易写错
+ * <div class="panel" classList={{ 'is-open': open.value }}>  // 现在：
+ * ```
+ *
+ * `classList` 只负责它自己贡献的部分，作者写在 `class` 里的类名不受影响。
+ */
+export function applyClassList(node: Element, value: unknown): void {
+  const next = parseClassList(value)
+  const previous = classListContributions.get(node) ?? []
+  classListContributions.set(node, next)
+  const base = (node.getAttribute('class') ?? '')
+    .split(/\s+/u)
+    .filter(name => name !== '' && !previous.includes(name))
+  const merged = [...new Set([...base, ...next])]
+  setAttribute(node, 'class', merged.join(' '))
+}
+
+function isClassListKey(key: string): boolean {
+  return key === 'classList'
+}
+
 export function bindSpreadProps(node: Element, source: () => Record<string, unknown>): void {
   let previous: Record<string, unknown> | null = null
   effect(() => {
@@ -417,7 +475,8 @@ export function setStaticProps(node: Element, props: Record<string, unknown>): v
   for (const [key, value] of Object.entries(props)) {
     if (key === 'key' || key === 'ref' || key.startsWith('on')) continue
     if (value === null || value === undefined) continue
-    if (isPropertyName(key)) setProperty(node, key, value)
+    if (isClassListKey(key)) applyClassList(node, value)
+    else if (isPropertyName(key)) setProperty(node, key, value)
     else if (value === false) continue
     else setAttribute(node, domAttributeName(key), key === 'style' && isStyleObject(value) ? formatStyle(value) : String(value))
   }

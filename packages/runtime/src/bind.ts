@@ -2,7 +2,7 @@
 
 import { effect } from '@vobs/reactivity'
 import type { Signal } from '@vobs/reactivity'
-import { registerSelectValueBinding, setAttribute, setProperty, setTextContent } from './ops'
+import { applyClassList, registerSelectValueBinding, setAttribute, setProperty, setTextContent } from './ops'
 
 export type ValueSource<T> = Signal<T> | (() => T)
 
@@ -42,6 +42,15 @@ export function bindAttribute(
      * 正确做法是让**布尔属性走 property 通道**，见 `dom-props.ts` 的 PROPERTY_NAMES。
      */
     if (value === null || value === undefined) return
+    /*
+     * `classList` 走专用通道：它与 `class` 写的是同一个 HTML 属性，
+     * 需要"记住上次贡献、本次替换"的合并语义（见 ops.ts 的 applyClassList）。
+     * 直接 `setAttribute(node,'classList', …)` 只会写出一个浏览器不认识的 `classlist` 属性。
+     */
+    if (key === 'classList') {
+      applyClassList(node, value)
+      return
+    }
     setAttribute(node, key, key === 'style' && value && typeof value === 'object' && !Array.isArray(value)
       ? Object.entries(value as Record<string, unknown>)
         .filter(([, entry]) => entry !== null && entry !== undefined && entry !== false)
