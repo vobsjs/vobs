@@ -78,6 +78,17 @@ describe('@vobs/i18n', () => {
    * 单位选择原来用 `Math.round`：90 分钟 = 1.5 小时 → 四舍五入成 "2 hours ago"。
    * 正确语义是"取数量至少为 1 的最大单位" → "1 hour ago"。
    */
+  it('{v,number}/{v,currency} 遇到非数字值不再静默吐空串', () => {
+    const i18n = createI18n({
+      defaultLocale: 'en-US',
+      messages: { 'en-US': { num: 'n={v,number}', cur: 'c={v,currency}', ok: 'k={v,number}' } }
+    })
+    expect(i18n.t('num', { v: 'abc' })).toBe('n=abc')
+    expect(i18n.t('cur', { v: 'abc' })).toBe('c=abc')
+    expect(i18n.t('ok', { v: 1234.5 })).toContain('1,234.5')
+    i18n.dispose()
+  })
+
   it('formatRelativeTime 不会把 90 分钟说成 2 小时（单位按截断选）', () => {
     const i18n = createI18n({ defaultLocale: 'en-US' })
     const now = new Date('2026-09-03T12:00:00.000Z')

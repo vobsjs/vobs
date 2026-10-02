@@ -467,16 +467,29 @@ function interpolate(
       if (value === undefined || value === null) return match
       if (!formatter) return String(value)
       if (formatter === 'date') return context.formatDate(toDate(value) ?? Number.NaN, argument as DatePreset | undefined)
-      if (formatter === 'number') return context.formatNumber(Number(value))
-      if (formatter === 'currency') return context.formatCurrency(Number(value), argument ?? 'USD')
+      /*
+       * 非数字值原来**静默吐空串**（`Number('abc')` → NaN → formatNumber 返回 ''），整段文案悄悄缺一块。
+       * 宁可把原值显示出来让人看见 —— 与"缺 key 时返回 key 本身"同一取向（可见 > 静默丢失）。
+       */
+      if (formatter === 'number') return formatNumeric(value, numeric => context.formatNumber(numeric))
+      if (formatter === 'currency') return formatNumeric(value, numeric => context.formatCurrency(numeric, argument ?? 'USD'))
       if (formatter === 'relativeTime') return context.formatRelativeTime(toDate(value) ?? Number.NaN)
       const custom = formatters.get(formatter)
       return custom ? custom(value, context.locale.value, argument) : String(value)
     })
 }
 
-function toDate(value: Date | number | string | unknown): Date | undefined {
-  /*
+/** 数字类格式化：能转成有限数字就走 Intl，否则原样显示（见 interpolate 里的理由）。 */
+function formatNumeric(value: unknown, format: (numeric: number) => string): string {
+  const numeric = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() !== ''
+      ? Number(value)
+      : Number.NaN
+  return Number.isFinite(numeric) ? format(numeric) : String(value ?? '')
+}
+
+function toDate(value: Date | number | string | unknown): Date | undefined {  /*
    * ISO 字符串是 JSON 载荷里最常见的时间形态（`{"createdAt":"2024-01-15T00:00:00Z"}`），
    * 原来这里只认 Date/number → `formatDate('2024-01-15T00:00:00Z')` **静默吐空串**
    * （`if (!date) return ''`），调用方只看到"没有日期"。现在解析合法字符串，非法仍返回 undefined。
