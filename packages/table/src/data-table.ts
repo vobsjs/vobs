@@ -215,8 +215,34 @@ function renderBodyItem<Row>(
 ): VobsNode {
   if (item.kind === 'state') return createStateRow(props, item.state, item.error)
   if (item.kind === 'spacer') return createSpacerRow(visibleColumns(props).length, item.height)
-  // 行数据用 getter 传进去：单元格在 effect 内取值 → 数据一变就重跑（行节点本身被复用）
-  return createRow(props, item.index, visibleColumns(props), () => page.value.rows[item.index] ?? item.row)
+  /*
+   * 行数据与**位置**都用 getter 传进去：
+   * - 数据：单元格在 effect 内取值 → 数据一变就重跑（行节点本身被复用）
+   * - 位置：**带 `rowKey` 时行会被复用并可能被挪到别处**，`item.index` 是创建那一刻的数字。
+   *   这里按 key 在**当前** rows 里反查位置，让 `column.render(row, index)` 与
+   *   `onRowClick(row, index)` 拿到当前顺序里的 index。
+   *
+   * 不带 `rowKey` 时列表用 `pos:${index}` 作 key —— 位置就是身份，行不会被复用/移动，
+   * 所以直接用 `item.index`（也省掉每次查找）。
+   */
+  const rowKey = readProp<KitDataTableProps<Row>['rowKey'] | undefined>(props, 'rowKey', undefined)
+  const indexOfItem = (): number => {
+    if (!rowKey) return item.index
+    const rows = page.value.rows
+    for (let index = 0; index < rows.length; index++) {
+      const candidate = rows[index]
+      if (candidate !== undefined && `row:${String(rowKey(candidate, index))}` === item.key) return index
+    }
+    // 该行已经不在当前页/窗口里（例如被过滤掉）—— 返回创建时的位置，别返回 -1 让调用方拿到负数
+    return item.index
+  }
+  return createRow(
+    props,
+    item.index,
+    visibleColumns(props),
+    () => page.value.rows[indexOfItem()] ?? item.row,
+    indexOfItem
+  )
 }
 
 function createStateRow<Row>(props: KitDataTableProps<Row>, kind: 'loading' | 'empty' | 'error', error?: Error): VobsNode {
@@ -240,19 +266,32 @@ function createStateRow<Row>(props: KitDataTableProps<Row>, kind: 'loading' | 'e
 
 function createRow<Row>(
   props: KitDataTableProps<Row>,
-  index: number,
+  initialIndex: number,
   columns: readonly DataTableColumn<Row>[],
-  getRow: () => Row
+  getRow: () => Row,
+  /**
+   * 当前**位置**（响应式）。
+   *
+   * 行节点会被 keyed 列表复用，而 `initialIndex` 是创建那一刻的数字 —— 排序/过滤之后
+   * 它跟当前顺序不再一致。`column.render(row, index)` 与 `onRowClick(row, index)` 必须拿
+   * **当前位置**，否则渲染出来的 index 与回调收到的 index 都是冻结的旧值。
+   */
+  getIndex: () => number = () => initialIndex
 ): VobsNode {
   const tableRow = createElement('tr')
   const rowKey = readProp<KitDataTableProps<Row>['rowKey'] | undefined>(props, 'rowKey', undefined)
-  if (rowKey) setOptionalAttribute(tableRow, 'data-row-key', rowKey(getRow(), index))
+  /*
+   * `data-row-key` 用**创建时**的 index 求值一次。
+   * `rowKey(row, index)` 的契约是"行的身份"，行移动时身份不该跟着变 —— 所以这里刻意
+   * 不用响应式的 getIndex()。真正需要跟着走的是 render / 事件回调里的 index。
+   */
+  if (rowKey) setOptionalAttribute(tableRow, 'data-row-key', rowKey(getRow(), initialIndex))
   const onRowClick = readProp<KitDataTableProps<Row>['onRowClick'] | undefined>(props, 'onRowClick', undefined)
   if (onRowClick) {
     setProperty(tableRow, 'tabIndex', 0)
     setAttribute(tableRow, 'data-clickable', 'true')
-    // 事件时再取当前行：行节点会被复用，闭包里那份可能是旧的
-    addEventListener(tableRow, 'click', () => onRowClick(getRow(), index))
+    // 事件时再取当前行与当前位置：行节点会被复用，闭包里那两份都可能是旧的
+    addEventListener(tableRow, 'click', () => onRowClick(getRow(), getIndex()))
     /*
      * 键盘激活。行有 `tabIndex=0`、也带了 `data-clickable`，但原来只绑了 click ——
      * 键盘用户能 Tab 到行上、按回车/空格却什么都不会发生。
@@ -262,7 +301,7 @@ function createRow<Row>(
       if (keyboardEvent.key !== 'Enter' && keyboardEvent.key !== ' ') return
       // 空格默认会滚动页面，必须挡掉
       keyboardEvent.preventDefault?.()
-      onRowClick(getRow(), index)
+      onRowClick(getRow(), getIndex())
     })
   }
   for (const column of columns) {
@@ -270,10 +309,10 @@ function createRow<Row>(
     setAttribute(cell, 'data-column-id', column.id)
     applyColumnStyle(cell, column, readProp<DataTableColumnSettings | undefined>(props, 'columnSettings', undefined))
     insertDynamic(cell, null, () => {
-      // 在 effect 内取行：数据变化会被追踪到
+      // 在 effect 内取行与位置：两者变化都会被追踪到
       const row = getRow()
       return resolveSlot(column.render
-        ? column.render(row, index)
+        ? column.render(row, getIndex())
         : column.key === undefined ? undefined : readRowValue(row, column.key))
     })
     insertBefore(tableRow, cell, null)
