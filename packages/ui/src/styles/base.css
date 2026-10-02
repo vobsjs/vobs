@@ -2,7 +2,15 @@
  * scaffold.css - Layout, reset, typography utilities, shared atoms
  * Provides the page chrome consumed by preview/component-*.html and
  * ui_kits/*.html. Component-specific styles live in components.css.
+ *
+ * 整份文件放在 `base` 层里：CSS 规范中**未分层的普通声明优先于任何分层声明**
+ * （优先于特异性），未分层的 `* { margin: 0; padding: 0 }` 会压住
+ * `@vobs/tailwind` 入口里 `layer(utilities)` 的 `m-*` / `p-*`。
+ * 层序由 `packages/tailwind/src/styles.css` 的 `@layer theme, base, components, utilities;`
+ * 一次性声明；本文件因此不能有 `@import`（CSS 禁止 @import 出现在 @layer 块内）。
+ * 结构校验见 packages/tailwind/src/layer-order.test.ts。
  */
+@layer base {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* Keep browser-rendered form controls aligned with the active Vobs palette. */
@@ -238,3 +246,4 @@ code, kbd, samp, pre {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
 }
+} /* @layer base */

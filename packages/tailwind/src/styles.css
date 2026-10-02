@@ -1,4 +1,25 @@
-/* Vobs owns the reset; this entry intentionally exposes utilities only. */
+/* Vobs owns the reset; this entry intentionally exposes utilities only.
+ *
+ * 显式层序（.artifacts/reports/tailwind.md blocker #2）：CSS 规范里**未分层的普通声明
+ * 优先于任何分层声明**（与特异性无关），所以 UI 侧的 reset
+ * （packages/ui/src/styles/base.css 的 `* { box-sizing: border-box; margin: 0; padding: 0; }`）
+ * 若不进层，就会压住本入口 `layer(utilities)` 里的 `m-*` / `p-*`。
+ * 这里一次性钉死 theme < base < components < utilities；消费方的 reset 必须自己进 `base` 层
+ * （ui/src/styles/base.css 已整体包进 `@layer base { … }`）。
+ *
+ * `./theme.css` **保持未分层，不是遗漏**（实测结论，勿"顺手"加 layer）：
+ *  - 它含 `@custom-variant dark (…)`，Tailwind 对嵌套该指令直接报错
+ *    "`@custom-variant` cannot be nested" —— 写成 `@import "./theme.css" layer(base);`
+ *    会让整个入口**编译失败**（`compile()` 抛错）；
+ *  - 它含 `@theme inline`，编译产物中**不产生任何声明**（值被内联进实用类）；实测即使换成
+ *    非 inline 的 `@theme`，产出的变量也会被 Tailwind 放进 `@layer theme`，同样不会留在层外。
+ *    实测入口产物里不存在任何未分层的规则块 —— 这正是 blocker #2 需要的前提。
+ * 该性质由 ./layer-order.test.ts 用编译产物断言把守：入口产物里一旦出现未分层的规则块
+ * （例如往 theme.css / styles.css 里直接补一条 `* { margin: 0 }`），用例立刻变红。
+ * 注意 jsdom 与编译器都不做级联计算，视觉结果需真实浏览器。
+ */
+@layer theme, base, components, utilities;
+
 @import "tailwindcss/theme.css" layer(theme);
 @import "./theme.css";
 @import "tailwindcss/utilities.css" layer(utilities);
