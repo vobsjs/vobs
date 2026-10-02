@@ -59,11 +59,31 @@ export interface ResourceClientOptions {
   onError?: (error: Error, key: ResourceKey | undefined) => void
 }
 
+/**
+ * 一条缓存条目的失败快照。只读：改动它不影响缓存与条目信号。
+ */
+export interface ResourceFailure {
+  readonly key: ResourceKey
+  readonly error: Error
+}
+
 export interface ResourceClient {
   resource<T>(fetcher: ResourceFetcher<T>): Resource<T>
   resource<T>(options: ResourceOptions<T>): Resource<T>
   invalidate(key: ResourceKey): void
   prefetchAll(): Promise<void>
+  /**
+   * `prefetchAll()` 之后"这一轮有哪些失败"的聚合只读快照。
+   *
+   * 语义边界（刻意收窄，避免被当成全局错误总线）：
+   * - 只读**当前缓存**（即带 key 且 cache 未关的条目）里 `error` 非空的条目 —— 与 `dehydrate()`
+   *   读的是同一批条目，只是 `dehydrate()` 剔除失败项、`errors()` 只取失败项；
+   * - 无 key / `cache: false` 的条目不在缓存里，因此**不出现**在清单中（它们的失败由各自的
+   *   `resource.error` 暴露，没人可枚举的条目放进来只会越攒越多）；
+   * - 是**快照**：每次调用返回新数组，失败重试成功、`mutate`、`hydrate`、`clear()` 之后自然消失；
+   * - 不做响应式追踪（不是 Signal），渲染期调用不会因失败变化而重渲染 —— SSR 一次性读取正合适。
+   */
+  errors(): readonly ResourceFailure[]
   dehydrate(): ResourceDehydratedState
   hydrate(snapshot: unknown): void
   get<T>(key: ResourceKey): ResourceSnapshot<T> | undefined
@@ -409,6 +429,21 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
         .map(entry => entry.inFlight)
         .filter((request): request is Promise<unknown> => request !== null)
       await Promise.allSettled(requests)
+    },
+    /*
+     * prefetchAll() 刻意不抛错（SSR 不该因一个请求失败整页 500），失败落在各条目的 error 上。
+     * 但"只持有 client 的调用方"此前无法一次问出失败清单：dehydrate() 跳过失败项，
+     * 于是连失败 key 都不可枚举，只能由调用方自己另存一份 key 列表再逐个 get() —— 那份列表
+     * 一旦漏了缓存里的 key（响应式 key、插件/路由建的 key）就永远发现不了失败。
+     * 这里把同一批缓存条目反过来筛一遍，给出一次性、只读、免序列化的失败视图。
+     */
+    errors(): readonly ResourceFailure[] {
+      const failures: ResourceFailure[] = []
+      for (const entry of cache.values()) {
+        const error = entry.error.value
+        if (error) failures.push({ key: entry.key ?? [], error })
+      }
+      return failures
     },
     dehydrate() {
       const entries: ResourceDehydratedEntry[] = []

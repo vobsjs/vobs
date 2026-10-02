@@ -12,6 +12,7 @@ export type {
   ResourceClientOptions,
   ResourceDehydratedEntry,
   ResourceDehydratedState,
+  ResourceFailure,
   ResourceFetcher,
   ResourceKey,
   ResourceKeySource,
