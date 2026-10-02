@@ -57,6 +57,15 @@ export function createJWTAuth<C extends Credentials = Credentials>(
   })
   let refreshing: Promise<string> | null = null
   let disposed = false
+  /*
+   * 先抓住**底层 auth 的 dispose**。
+   *
+   * 下面的 `Object.assign(baseAuth, {...})` 改的就是 `baseAuth` 本身 —— 于是 `baseAuth.dispose()`
+   * 变成**自调用**：`:97` 刚把 `disposed = true`，`:96` 的守卫立刻 return，原实现永远执行不到，
+   * **底层 createAuth 永不销毁**（实测 app.destroy() 后 login() 仍成功、hasPermission 仍 true）。
+   * 而现有测试恰好只断言那个还抛错的 getAccessToken() → 假绿。
+   */
+  const baseDispose = baseAuth.dispose.bind(baseAuth)
 
   const jwtAuth = Object.assign(baseAuth, {
     accessToken,
@@ -96,7 +105,7 @@ export function createJWTAuth<C extends Credentials = Credentials>(
       if (disposed) return
       disposed = true
       accessToken.dispose()
-      baseAuth.dispose()
+      baseDispose()      // 不是 baseAuth.dispose() —— 那是自调用（见上面 baseDispose 的说明）
     }
   }) as JWTAuthContext<C>
 
