@@ -210,7 +210,7 @@ export function setProperty(
   const previousValue = getRuntimeDebugHooks()
     ? readDebugValue(() => Reflect.get(node, key))
     : undefined
-  getRenderer().setProperty(node, key, value)
+  getRenderer().setProperty(node, PROPERTY_IDL_NAMES[key] ?? key, value)
   if (key === 'value' && (node as { tagName?: unknown }).tagName === 'SELECT') {
     scheduleSelectValueSync(node, value)
   }
@@ -294,8 +294,24 @@ export function removeAttribute(node: Element, key: string): void {
 /** 布尔型 property 的「清除」值是 false，其余是空串（与 React 的移除语义一致）。 */
 const BOOLEAN_PROPERTIES = new Set([
   'checked', 'selected', 'disabled', 'multiple', 'readOnly', 'required',
-  'hidden', 'open', 'indeterminate', 'defaultChecked', 'muted'
+  'hidden', 'open', 'indeterminate', 'defaultChecked', 'muted', 'autoFocus'
 ])
+
+/**
+ * JSX 属性名 → **IDL 属性名**（`el[name] = value` 里的那个 name）。
+ *
+ * 多数名字两边相同，但少数不同；写错名字的后果是**静默的**：
+ * `Reflect.set(el, 'autoFocus', …)` 只是给元素挂了一个不反射的 expando，
+ * 既不产生 `autofocus` 属性、也不改变 IDL 属性 —— 于是 `autoFocus={false}` 毫无作用。
+ * 实测（jsdom，与真实 DOM 同语义）：
+ *   IDL 名 `autofocus`（全小写）→ has=true/idl=true，写 false 则 has=false/idl=false  ← 反射正确
+ *   JSX 名 `autoFocus`（驼峰）  → 只挂 expando，属性与 IDL 都不变
+ * 这也解释了为什么 `disabled` / `checked` / `readOnly` / `tabIndex` 一直是对的：
+ * 它们的 IDL 名恰好与 JSX 名相同。
+ */
+const PROPERTY_IDL_NAMES: Readonly<Record<string, string>> = {
+  autoFocus: 'autofocus'
+}
 
 /**
  * 把一份 props 应用（或**增量**应用到）节点上。

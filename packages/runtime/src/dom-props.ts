@@ -22,16 +22,19 @@ const PROPERTY_NAMES: ReadonlySet<string> = new Set([
   // 表单状态
   'value', 'checked', 'selected', 'disabled', 'multiple', 'readOnly', 'required',
   'defaultValue', 'defaultChecked', 'indeterminate',
-  // 常见布尔 / 数字 property
-  //
-  // ⚠️ `autoFocus` **不在这里**，尽管 `BOOLEAN_PROPERTIES` 一度想把它收进来：
-  // 实测（jsdom 与真实 DOM 的 IDL）`HTMLInputElement.prototype.autofocus` 并**不反射** ——
-  // `el.autofocus = true` 既不改变属性、也不产生属性，所以走 property 通道是**静默失败**。
-  // 正确做法是把它当 **attribute 别名**（见下 ATTRIBUTE_ALIASES 的 autoFocus → autofocus），
-  // 这样 `autoFocus={false}` 走"attribute 的 false = 不设置"（属性不存在 → 不聚焦），
-  // `autoFocus` 走"属性存在 → 聚焦"。这正是同表里 readOnly 等能工作的原因：
-  // 那些 name 在 DOM 里真的有反射 property，autoFocus 没有。
-  'hidden', 'tabIndex', 'colSpan', 'rowSpan', 'open',
+  /*
+   * `autoFocus` 用**驼峰**（与同表 readOnly/tabIndex/defaultChecked 一致），且必须走
+   * **property 通道**：`autofocus` 是**布尔属性**（只看存在与否、与值无关），
+   * 所以 `autoFocus={false}` 必须"移除属性"而不是写 `autofocus="false"`
+   * （attribute 通道只能把 false 序列化成字符串，属性照样存在 = 仍然聚焦）。
+   *
+   * ⚠️ 但 `setProperty` 必须把它映射成 **IDL 名 `autofocus`（全小写）** ——
+   * `Reflect.set(el, 'autoFocus', …)` 只会挂一个不反射的 expando，**静默无效**。
+   * 映射表见 ops.ts 的 `PROPERTY_IDL_NAMES`。实测（jsdom，与真实 DOM 同语义）：
+   *   IDL `autofocus` → 写 true 得 has=true/idl=true；写 false 得 has=false/idl=false ✓
+   *   JSX `autoFocus` → 属性与 IDL 都不变（只是 expando）                        ✗
+   */
+  'autoFocus', 'hidden', 'tabIndex', 'colSpan', 'rowSpan', 'open',
   // 只能走 property 的（attribute 路径会静默无效）
   'innerHTML', 'innerText', 'textContent',
   // 媒体
@@ -44,16 +47,6 @@ const ATTRIBUTE_ALIASES: Readonly<Record<string, string>> = {
   htmlFor: 'for',
   autoComplete: 'autocomplete',
   spellCheck: 'spellcheck',
-  /*
-   * `autoFocus` → `autofocus`。
-   *
-   * HTML 属性名不区分大小写，所以理论上不映射也"能工作" —— 但 `autoFocus={false}`
-   * 之前落到 attribute 通道后被 `String(false)` 写成 `autofocus="false"`，
-   * 而**任何**存在 autofocus 属性的元素都会真的自动聚焦（属性存在即生效，值与 "false" 无关）。
-   * 别名本身不修这一条，真正修它的是"attribute 通道的 `false` = 不设置"那条既有规则；
-   * 加上别名是为了让 `domAttributeName('autoFocus')` 在有值时也产出规范的小写属性名。
-   */
-  autoFocus: 'autofocus'
 }
 
 /**

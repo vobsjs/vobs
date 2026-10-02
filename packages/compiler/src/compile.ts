@@ -1196,7 +1196,19 @@ function serializeStaticElement(
   let html = `<${name}`
   for (const attribute of attributes.properties) {
     if (!ts.isJsxAttribute(attribute)) continue
-    const attributeName = attribute.name.getText() === 'className' ? 'class' : attribute.name.getText()
+    /*
+     * 必须走**运行期那张表**（`domAttributeName`），不能只手工特判 className。
+     *
+     * 此前这里只写 `=== 'className' ? 'class' : 原名`，于是 `htmlFor` 被原样拼进模板串，
+     * HTML 解析器按大小写不敏感把它读成 `htmlfor="name"` —— 而 `for` 不是 `htmlfor`
+     * 的大小写变体，是**另一个名字**，label 与控件的关联因此静默断开。
+     * 动态路径（`bindAttribute(_el0, "for", …)`，见下面的 emit）产出的是正确的 `for`，
+     * 于是同一个属性名在静态/动态两条路径下行为不一致 —— 实测：
+     *   <label htmlFor="name">        → <label htmlfor="name">   ✗
+     *   <label htmlFor={f}>           → <label for="name">       ✓
+     * 修法：两条路径共用 `domAttributeName`（编译期与运行期判断同源，正是 dom-props.ts 的设计意图）。
+     */
+    const attributeName = domAttributeName(attribute.name.getText())
     const initializer = attribute.initializer
     if (!initializer) {
       html += ` ${attributeName}=""`

@@ -2,8 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { compile } from '@vobs/compiler'
 import { createDOMRenderer, setRenderer, state } from '@vobs/vobs'
-import { domAttributeName } from './dom-props'
-import { bindSpreadProps, createElement, setStaticProps, spreadProps } from './index'
+import { isPropertyName } from './dom-props'
+import { bindSpreadProps, createElement, setProperty, setStaticProps, spreadProps } from './index'
 
 setRenderer(createDOMRenderer())
 
@@ -91,12 +91,22 @@ describe('autoFocus={false} 不得让元素自动聚焦', () => {
     expect(node.hasAttribute('autofocus')).toBe(true)
   })
 
-  it('别名把驼峰映射成规范的小写属性名', () => {
-    // 注意 hasAttribute 是**大小写不敏感**的（HTML 属性名本来就如此），
-    // 所以这里不能拿 hasAttribute('autoFocus') 当"驼峰残留"的判据 —— 它必然为 true。
-    // 要验别名本身，直接验 domAttributeName 的输出。
-    expect(domAttributeName('autoFocus')).toBe('autofocus')
-    expect(domAttributeName('className')).toBe('class')
+  it('autoFocus 走 property 通道，且映射到全小写的 IDL 名', () => {
+    /*
+     * 这里曾经断言 `domAttributeName('autoFocus') === 'autofocus'`（走 attribute 别名）。
+     * 那个做法是**错的**：`autofocus` 是布尔属性，attribute 通道会把 false 序列化成
+     * `autofocus="false"`，而"属性存在即聚焦" → `autoFocus={false}` 反而真的聚焦。
+     * 正解是走 property 通道（属性随 IDL 反射被正确移除）。
+     */
+    expect(isPropertyName('autoFocus')).toBe(true)
+    // 但 IDL 名是全小写 `autofocus` —— 直接用驼峰 Reflect.set 只会挂 expando（静默无效）
+    const el = document.createElement('input') as HTMLInputElement
+    setProperty(el, 'autoFocus', true)
+    expect(el.hasAttribute('autofocus')).toBe(true)
+    expect(el.autofocus).toBe(true)
+    setProperty(el, 'autoFocus', false)
+    expect(el.hasAttribute('autofocus')).toBe(false)
+    expect(el.autofocus).toBe(false)
   })
 
   it('展开里值为 false 时不设置属性（初始与增量都算）', async () => {
