@@ -34,7 +34,7 @@ Every value is written as an envelope carrying its version, so reads of older da
 
 | Signature | Description |
 | --- | --- |
-| `createStorage(options?: StorageOptions): StorageContext` | Options: backend, `fallback`, `prefix` (default `vobs:`), `version`, `migrate`, `onError`. |
+| `createStorage(options?: StorageOptions): StorageContext` | Options: storage, `fallback`, `prefix` (default `vobs:`), `version`, `migrate`, `onError`. |
 | `storage.get(key) / set(key, value) / remove(key)` | JSON round-trip under the configured prefix. |
 | `storage.has(key) / keys() / clear()` | Prefix-scoped inspection and cleanup. |
 | `storage.subscribe(listener)` | Receives `{ key, value, source }`; returns an unsubscribe function. |
