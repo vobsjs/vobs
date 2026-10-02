@@ -1,9 +1,13 @@
 import { createVobs, type VobsConfig, type VobsPlugin } from '@vobs/vobs'
 import type { DictDehydratedState } from '@vobs/dict'
-import type { ResourceClient, ResourceDehydratedState } from '@vobs/resource'
+import {
+  resetDefaultResourceClient,
+  type ResourceClient,
+  type ResourceDehydratedState,
+  type ResourceFailure
+} from '@vobs/resource'
 import { pushRuntimeDebugContext, setRenderer } from '@vobs/runtime'
 import { subscribeHTTPDebug, type HTTPDebugRequest } from '@vobs/http'
-import type { ResourceFailure } from '@vobs/resource'
 import { createSSRRenderer } from './renderer'
 
 /** Async SSR result: HTML plus dehydrated client state. */
@@ -180,6 +184,19 @@ export async function renderToStringAsync(
   } finally {
     restoreDebugContext()
     stopDebug()
+    /*
+     * 进程级默认 client 必须在每次渲染收尾时复位。
+     *
+     * `resource()` 的函数式 API 用的是 `@vobs/resource` 的**模块级** client，它与本次请求
+     * 没有任何关系：不清就会被下一个请求（或同一进程里的下一轮预渲染）原样复用。
+     * 实测探针 `probe-audit-ssr-2.test.mjs` H5/H6：连续渲染「alice」「bob」两个用户，
+     * 第二次的产物与 `dehydrate()` 里都是 **alice**，fetcher 只被调用 1 次 ——
+     * 也就是把上一位用户的数据随脱水快照发给了下一个页面。
+     *
+     * 放在 finally 里是为了「渲染抛错也不把脏缓存留给下一个请求」。
+     * 调用方**自己传入**的 `options.resourceClient` 不动 —— 那个生命周期由调用方拥有。
+     */
+    resetDefaultResourceClient()
     app.destroy()
   }
 }

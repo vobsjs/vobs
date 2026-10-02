@@ -37,6 +37,7 @@ Resources created with the same serialized key share one cache entry and one in-
 | --- | --- |
 | `createResourceClient(options?: ResourceClientOptions): ResourceClient` | Create a client; options set default `staleTime`, `retry`, `retryDelay`, and `onError`. |
 | `resource(fetcher or options): Resource` | Create a resource on the module-level default client. |
+| `resetDefaultResourceClient(): void` | Clear the module-level default client's cache. **Server-side rendering must call this between requests** — see below. |
 | `client.resource(options): Resource` | Pass `key` to enable caching (also accepts a signal or function key for reactive re-fetch); `cache: false` opts out. |
 | `resource.data / error / loading` | Signals for current value, error, and request state. |
 | `resource.refetch() / prefetch() / invalidate()` | Force a request, start one opportunistically, or expire the cache. |
@@ -50,6 +51,24 @@ Resources created with the same serialized key share one cache entry and one in-
 | `serializeResourceState(snapshot): string` | JSON-stringify dehydrated state with HTML-safe escaping. |
 | `resourcePlugin(options?) / resourceRouterPlugin(options?)` | Provide the client as `RESOURCE_KEY`; run `route.meta.prefetch` handlers before navigation. |
 | `insertResourceBoundary(parent, anchor, options) / ResourceBoundary(props)` | Branch on loading, empty, error, and data of a resource. |
+
+## Server-side rendering: the module client is process-wide
+
+`resource()` (the function form) stores everything in a **module-level** client that is shared by
+every request handled by the process. That is fine in the browser and wrong on the server: without a
+reset, request #2 reads request #1's cached data with zero fetches and ships it in its own dehydrated
+snapshot.
+
+```ts
+import { resetDefaultResourceClient } from '@vobs/resource'
+
+await renderToStringAsync(render)          // does this for you: resets in `finally`
+resetDefaultResourceClient()               // do it yourself if you drive rendering manually
+```
+
+`renderToStringAsync` already calls it after every render (including when the render throws).
+Only the **module-level** client is reset — a client you create with `createResourceClient()` and pass
+as `options.resourceClient` belongs to you and is never touched.
 
 ## Types
 

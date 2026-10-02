@@ -1,5 +1,6 @@
 export {
   createResourceClient,
+  resetDefaultResourceClient,
   resource,
   stableSerialize,
   serializeResourceState

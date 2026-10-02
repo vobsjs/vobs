@@ -105,6 +105,22 @@ interface ResourceEntry<T> {
 
 const defaultClient = createResourceClient()
 
+/**
+ * 复位**模块级**默认 client 的缓存（`resource()` 函数式 API 用的那一个）。
+ *
+ * 为什么必须有这个出口：`defaultClient` 是**进程级**缓存，`resource()` 只导出函数本身、
+ * 不导出那个 client，所以此前**没有任何办法**把它清掉。实测探针
+ * `.artifacts/probe-audit-resource-1.test.mjs` R1：两次 `resource({key:['me'], staleTime:60_000})`
+ * （模拟两个 HTTP 请求）第二次 fetcher 调用次数仍是 **1**，直接拿到上一位用户的数据。
+ *
+ * 服务端每个请求共用同一个模块实例，所以这条在 SSR 下就是**跨请求数据泄漏**；
+ * `@vobs/ssr` 的 `renderToStringAsync` 因此在每次渲染的 `finally` 里调它。
+ * 浏览器端也可以用它做「登出/切换用户后清空共享缓存」。
+ */
+export function resetDefaultResourceClient(): void {
+  defaultClient.clear()
+}
+
 export function resource<T>(fetcher: ResourceFetcher<T>): Resource<T>
 export function resource<T>(options: ResourceOptions<T>): Resource<T>
 export function resource<T>(
