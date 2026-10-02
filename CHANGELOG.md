@@ -4,6 +4,29 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2] - 2026-10-02
+
+### Added
+
+- **Drag, clipboard, animation, transition, media and composition event types** on
+  `VobsHTMLAttributes`. `onDragOver` and `onDrop` previously failed to type-check
+  (`Property 'onDragOver' does not exist on type 'VobsHTMLAttributes'`), so drag-and-drop
+  imports had to fall back to a `ref` callback with a native `addEventListener`. The runtime
+  already supported these events (`resolveEventName` lower-cases any `on*` attribute, so
+  `onDragOver` resolved to `dragover`); only the declarations were missing. The event
+  attribute list grows from 28 to 77.
+
+### Fixed
+
+- **`@vobs/vite-plugin` silently dropped compiler warnings.** `describeDiagnostics` filters to
+  `severity === 'error'` and returns `null` when there are none, and the plugin only did
+  `if (summary) throw`. As a result `VOBS_C105` (module-level JSX) and `VOBS_C104` (top-level
+  conditional `return`, a warning since 1.8.1) were invisible in `vite build` and `vite dev` —
+  only `vobs check` reported them. Warnings now go through Vite's own warning channel
+  (`this.warn`), falling back to `console.warn` when no plugin context is available.
+  Deduplicated by code, location and message. They are still not errors, because the rules
+  behind them are heuristic.
+
 ## [1.8.1] - 2026-10-02
 
 ### Fixed

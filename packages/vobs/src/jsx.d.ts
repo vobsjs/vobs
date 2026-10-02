@@ -94,6 +94,71 @@ export interface VobsHTMLAttributes {
   onTouchEnd?: VobsEventHandler<TouchEvent>
   onWheel?: VobsEventHandler<WheelEvent>
   onScroll?: VobsEventHandler<Event>
+  /*
+   * ↓ 以下事件**运行时早就支持**（dom-events.ts 对任何 `on*` 做 toLowerCase 解析），
+   * 这里只是补类型。起因：真实项目里 `onDragOver`/`onDrop` 报「不存在于
+   * VobsHTMLAttributes」，于是拖拽导入只能退回 ref + 原生 addEventListener。
+   */
+  /* 拖拽（onDragOver / onDrop 就是这次的报错来源） */
+  onDrag?: VobsEventHandler<DragEvent>
+  onDragStart?: VobsEventHandler<DragEvent>
+  onDragEnd?: VobsEventHandler<DragEvent>
+  onDragEnter?: VobsEventHandler<DragEvent>
+  onDragLeave?: VobsEventHandler<DragEvent>
+  onDragOver?: VobsEventHandler<DragEvent>
+  onDragExit?: VobsEventHandler<DragEvent>
+  onDrop?: VobsEventHandler<DragEvent>
+  /* 剪贴板 */
+  onCopy?: VobsEventHandler<ClipboardEvent>
+  onCut?: VobsEventHandler<ClipboardEvent>
+  onPaste?: VobsEventHandler<ClipboardEvent>
+  /* 鼠标的补充（over/out 会冒泡，enter/leave 不会，两者语义不同） */
+  onMouseOver?: VobsEventHandler<MouseEvent>
+  onMouseOut?: VobsEventHandler<MouseEvent>
+  onContextMenu?: VobsEventHandler<MouseEvent>
+  /* 指针与触摸的补充 */
+  onPointerCancel?: VobsEventHandler<PointerEvent>
+  onPointerOver?: VobsEventHandler<PointerEvent>
+  onPointerOut?: VobsEventHandler<PointerEvent>
+  onTouchCancel?: VobsEventHandler<TouchEvent>
+  /* 键盘补充（keypress 已废弃但仍在广泛使用） */
+  onKeyPress?: VobsEventHandler<KeyboardEvent>
+  /* 表单补充 */
+  onSelect?: VobsEventHandler<Event>
+  onReset?: VobsEventHandler<Event>
+  onInvalid?: VobsEventHandler<Event>
+  /* 动画与过渡 */
+  onAnimationStart?: VobsEventHandler<AnimationEvent>
+  onAnimationEnd?: VobsEventHandler<AnimationEvent>
+  onAnimationIteration?: VobsEventHandler<AnimationEvent>
+  onTransitionEnd?: VobsEventHandler<TransitionEvent>
+  onTransitionStart?: VobsEventHandler<TransitionEvent>
+  onTransitionCancel?: VobsEventHandler<TransitionEvent>
+  /* 媒体 */
+  onPlay?: VobsEventHandler<Event>
+  onPause?: VobsEventHandler<Event>
+  onEnded?: VobsEventHandler<Event>
+  onTimeUpdate?: VobsEventHandler<Event>
+  onVolumeChange?: VobsEventHandler<Event>
+  onDurationChange?: VobsEventHandler<Event>
+  onRateChange?: VobsEventHandler<Event>
+  onSeeking?: VobsEventHandler<Event>
+  onSeeked?: VobsEventHandler<Event>
+  onWaiting?: VobsEventHandler<Event>
+  onStalled?: VobsEventHandler<Event>
+  onSuspend?: VobsEventHandler<Event>
+  onEmptied?: VobsEventHandler<Event>
+  onProgress?: VobsEventHandler<ProgressEvent>
+  onCanPlay?: VobsEventHandler<Event>
+  onLoadedMetadata?: VobsEventHandler<Event>
+  onLoadedData?: VobsEventHandler<Event>
+  /* 其它常用 */
+  onToggle?: VobsEventHandler<Event>
+  onAbort?: VobsEventHandler<UIEvent>
+  onBeforeInput?: VobsEventHandler<InputEvent>
+  onCompositionStart?: VobsEventHandler<CompositionEvent>
+  onCompositionUpdate?: VobsEventHandler<CompositionEvent>
+  onCompositionEnd?: VobsEventHandler<CompositionEvent>
   [name: `data-${string}`]: string | number | boolean | undefined
   [name: `aria-${string}`]: string | number | boolean | undefined
 }

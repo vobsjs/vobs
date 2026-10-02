@@ -166,6 +166,41 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
           fix: summary.primary.fix
         })
       }
+      /*
+       * **warning 必须也报出来**（真实项目 2026-10-02 反馈）。
+       *
+       * 此前这里只处理错误：`describeDiagnostics` 内部
+       * `diagnostics.filter(item => item.severity === 'error')`，没有错误就返回 `null`，
+       * 于是**警告被静默丢弃**。实测后果：`VOBS_C105`（模块顶层 JSX）与
+       * `VOBS_C104`（顶层条件 return，1.8.1 起降为 warning）在 `vite build` 里
+       * **完全隐形** —— 只有 `vobs check` 能看到。用户的原话是
+       * 「vite build 未拦属另一隐患」，这比"隐患"更严重：那两条诊断在主构建路径上
+       * 等于不存在。
+       *
+       * 走 Vite 自己的告警通道（`this.warn`），构建输出与 dev server 都能看到；
+       * 拿不到 PluginContext 时退回 `console.warn`（不静默）。
+       *
+       * 刻意**不**把 warning 升级成错误：它们的立论是启发式的（见 C104/C105 的注释），
+       * 不该有挡构建的强度。要强拦可以在 CI 里把 warning 当失败。
+       */
+      const warnings = result.diagnostics.filter(item => item.severity === 'warning')
+      if (warnings.length > 0) {
+        const context = this as unknown as { warn?: (message: string) => unknown }
+        const emit = typeof context.warn === 'function'
+          ? (message: string): unknown => context.warn!(message)
+          : (message: string): void => { console.warn(message) }
+        const seen = new Set<string>()
+        for (const warning of warnings) {
+          const where = `${warning.location.file}:${warning.location.line}:${warning.location.column}`
+          const text = `[vobs ${warning.code}] ${where}\n  ${warning.message}`
+            + (warning.fix ? `\n  修法：${warning.fix}` : '')
+          // 同一条诊断在同一文件里可能多处命中，按"代码+位置+消息"去重，避免刷屏
+          const key = `${warning.code}|${where}|${warning.message}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          emit(text)
+        }
+      }
       const hmrCode = hmr ? createHmrCode(cleanId) : ''
       return {
         code: `${result.code}${hmrCode}`,
