@@ -49,7 +49,12 @@ export type {
 export function hydrate(
   render: VobsConfig['render'],
   target: string | Element,
-  options: SSRStateOptions & { plugins?: VobsPlugin[]; state?: SSRState | string } = {}
+  options: SSRStateOptions & {
+    plugins?: VobsPlugin[]
+    state?: SSRState | string
+    /** 严格水合：服务端非空文本遇到客户端空文本时直接报不匹配（默认只发可观测事件）。 */
+    strictHydration?: boolean
+  } = {}
 ): VobsApp<Node> {
   const container = typeof target === 'string' ? document.querySelector(target) : target
   if (!container) throw new Error(`hydrate: 目标不存在: ${target}`)
@@ -60,7 +65,7 @@ export function hydrate(
   if (restored?.i18n && options.i18n) options.i18n.hydrate(restored.i18n)
   if (restored?.theme && options.theme) options.theme.hydrate(restored.theme)
 
-  const hydration = createHydrationRenderer(container)
+  const hydration = createHydrationRenderer(container, { strictTextContent: options.strictHydration })
   const app = createVobs({
     render,
     renderer: hydration.renderer,

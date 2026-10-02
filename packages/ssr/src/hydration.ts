@@ -4,7 +4,19 @@ export interface HydrationRenderer {
   readonly renderer: VobsRenderer<Node, Text, Element, Comment>
 }
 
-export function createHydrationRenderer(container: Element): HydrationRenderer {
+export interface HydrationRendererOptions {
+  /**
+   * 严格模式。服务端渲染了**非空文本**、而客户端此刻要空文本节点时（只能临时认领、等绑定 effect 覆写），
+   * 默认行为是"照旧认领 + 发一条 `hydrationProvisionalText` 事件"；打开此项则**直接报水合不匹配**
+   * （`kind: 'content'`）—— 用于把"值被悄悄换掉"从可观测升级为可拒绝。
+   */
+  readonly strictTextContent?: boolean
+}
+
+export function createHydrationRenderer(
+  container: Element,
+  options: HydrationRendererOptions = {}
+): HydrationRenderer {
   const claimed = new WeakMap<Node, Set<ChildNode>>()
   let currentParent: Node = container
   let hydrating = false
@@ -147,9 +159,14 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
         content === '' ? '动态文本节点' : `文本节点 "${content}"`
       )
       if (content === '' && claimedText.data !== '') {
-        // 服务端渲染的是**非空**文本，而客户端此刻要的是空文本 —— 只能临时认领、等绑定 effect 覆写。
-        // 这一步过去完全无声：服务端 "Ada" 遇上客户端忘传 state（会渲染 "loading"）时静默变成后者，
-        // 既不报错也没有任何线索。给它一个可观测出口（tools/devtools 可以据此提示"值被悄悄换掉"）。
+        /*
+         * 服务端渲染的是**非空**文本，而客户端此刻要的是空文本 —— 只能临时认领、等绑定 effect 覆写。
+         * 这一步过去完全无声：服务端 "Ada" 遇上客户端忘传 state（会渲染 "loading"）时静默变成后者。
+         * 现在：默认发一条可观测事件；`strictTextContent` 打开时直接拒绝（报水合不匹配）。
+         */
+        if (options.strictTextContent) {
+          throwHydrationMismatch('content', '动态文本节点（服务端非空 → 客户端为空）', JSON.stringify(claimedText.data), currentParent)
+        }
         invokeRuntimeDebug('hydrationProvisionalText', {
           expected: '动态文本节点',
           actual: JSON.stringify(claimedText.data)
