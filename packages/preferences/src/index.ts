@@ -178,6 +178,17 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
         }
       }
       for (const [name, value] of Object.entries(values)) {
+        /*
+         * 必须用**自有属性**判断。
+         *
+         * `schema[name]` 会沿原型链查到 `Object.prototype` —— 存档里一个 `__proto__` 键就让
+         * `definition` 恒为真，于是 `signals['__proto__'].value = value` 直接**写到 Object.prototype 上**
+         * （实测 `({}).value = {polluted:true}`，全程无 onError）；`constructor`/`toString` 键同理。
+         * 而全仓多处（resource / ui/forms / combobox / storage）靠 `'value' in x` **认信号** ——
+         * 一旦污染，所有普通对象都会被误判成信号。
+         */
+        if (!Object.prototype.hasOwnProperty.call(schema, name)) continue
+        if (!Object.prototype.hasOwnProperty.call(signals, name)) continue
         const definition = schema[name]
         if (!definition) continue
         try {
