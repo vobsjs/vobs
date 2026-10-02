@@ -131,6 +131,101 @@ describe('@vobs/storage', () => {
     storage.dispose()
   })
 
+  /*
+   * #7：外部 storage 事件送来的旧版本数据原来**不跑 migrate**（decodeExternal 只 JSON.parse + 解包），
+   * 于是同一份数据在订阅者手里是 `{old:1}`、在 get() 手里是 `{migrated:{old:1}}`。
+   * 现在事件路径复用读取路径的迁移，但**只迁移不写回**：回写等于把写副作用放回通知路径，而且会在
+   * 另一个标签页再触发一次 storage 事件，两个标签页互写就成了跨标签页写风暴。
+   */
+  it('外部 storage 事件跑 migrate 并把当前版本交给订阅者，但不回写存储', () => {
+    const oldRaw = JSON.stringify({ __vobsStorage: true, version: 1, value: { old: 1 } })
+    window.localStorage.setItem('ext:migrating', oldRaw)
+    const migrate = vi.fn((value: unknown, from: number, to: number) => ({ migrated: value, from, to }))
+    const changes: { source: string; key: string; value: unknown }[] = []
+    const storage = createStorage({ prefix: 'ext:', version: 2, migrate })
+    storage.subscribe(change => changes.push({ source: change.source, key: change.key, value: change.value }))
+
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'ext:migrating',
+      newValue: oldRaw,
+      storageArea: window.localStorage
+    }))
+
+    expect(changes).toEqual([
+      { source: 'external', key: 'migrating', value: { migrated: { old: 1 }, from: 1, to: 2 } }
+    ])
+    expect(migrate).toHaveBeenCalledWith({ old: 1 }, 1, 2)
+    // 事件路径只广播，不写回：盘上仍是旧信封
+    expect(window.localStorage.getItem('ext:migrating')).toBe(oldRaw)
+
+    // 真正读取时照既有契约迁移并回写 —— 读路径的写副作用只属于 get()
+    expect(storage.get('migrating')).toEqual({ migrated: { old: 1 }, from: 1, to: 2 })
+    expect(window.localStorage.getItem('ext:migrating')).toContain('"version":2')
+    storage.dispose()
+  })
+
+  it('外部事件迁移失败时报告 MIGRATION_FAILED、广播 null 且不写回、不丢盘上旧值', () => {
+    const oldRaw = JSON.stringify({ __vobsStorage: true, version: 1, value: { old: 1 } })
+    window.localStorage.setItem('extbad:settings', oldRaw)
+    const onError = vi.fn()
+    const changes: unknown[] = []
+    const storage = createStorage({
+      prefix: 'extbad:',
+      version: 2,
+      migrate: () => { throw new Error('cannot migrate') },
+      onError
+    })
+    storage.subscribe(change => changes.push(change.value))
+
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'extbad:settings',
+      newValue: oldRaw,
+      storageArea: window.localStorage
+    }))
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'MIGRATION_FAILED' }))
+    // 与 get() 一致：迁移不了就没有可交付的值（get 也是 null），且旧数据原样留在盘上
+    expect(changes).toEqual([null])
+    expect(storage.get('settings')).toBeNull()
+    expect(window.localStorage.getItem('extbad:settings')).toBe(oldRaw)
+    storage.dispose()
+  })
+
+  it('外部事件的信封版本不低于当前版本时原样交付、不调用 migrate', () => {
+    const newerRaw = JSON.stringify({ __vobsStorage: true, version: 3, value: { future: true } })
+    const migrate = vi.fn()
+    const changes: unknown[] = []
+    const storage = createStorage({ prefix: 'extnew:', version: 2, migrate })
+    storage.subscribe(change => changes.push(change.value))
+
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'extnew:settings',
+      newValue: newerRaw,
+      storageArea: window.localStorage
+    }))
+
+    expect(changes).toEqual([{ future: true }])
+    expect(migrate).not.toHaveBeenCalled()
+    storage.dispose()
+  })
+
+  it('外部事件里的无信封历史值也按 fromVersion=0 走 migrate，与 get() 一致', () => {
+    const changes: unknown[] = []
+    const migrate = vi.fn((value: unknown) => ({ migrated: value }))
+    const storage = createStorage({ prefix: 'extraw:', version: 2, migrate })
+    storage.subscribe(change => changes.push(change.value))
+
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'extraw:legacy',
+      newValue: JSON.stringify({ theme: 'dark' }),
+      storageArea: window.localStorage
+    }))
+
+    expect(changes).toEqual([{ migrated: { theme: 'dark' } }])
+    expect(migrate).toHaveBeenCalledWith({ theme: 'dark' }, 0, 2)
+    storage.dispose()
+  })
+
   it('插件注入 StorageContext，应用销毁后上下文不可用', () => {
     let injected: ReturnType<typeof createStorage> | undefined
     const app = createVobs({

@@ -133,7 +133,7 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
       const normalizedKey = validateKey(key)
       const raw = read(normalizedKey)
       if (raw === null) return null
-      return decode<T>(normalizedKey, raw)
+      return decode<T>(normalizedKey, raw, true)
     },
 
     set<T>(key: string, value: T): void {
@@ -220,7 +220,12 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
     withBackend(key, () => backend.setItem(toPhysicalKey(key), value))
   }
 
-  function decode<T>(key: string, raw: string): T | null {
+  /**
+   * `persist` 只对**读取路径**（`get`）为真：迁移后把这个键升到当前版本写回盘上，是既有契约
+   * （README「reads of older data run through migrate and are persisted back」）。
+   * 外部事件路径传 `false`，理由见 `decodeExternal`。
+   */
+  function decode<T>(key: string, raw: string, persist: boolean): T | null {
     let parsed: unknown
     try {
       parsed = JSON.parse(raw)
@@ -234,7 +239,9 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
 
     try {
       const migrated = options.migrate(envelope.value, envelope.version, version)
-      write(key, JSON.stringify({ __vobsStorage: true, version, value: migrated } satisfies Envelope))
+      if (persist) {
+        write(key, JSON.stringify({ __vobsStorage: true, version, value: migrated } satisfies Envelope))
+      }
       return migrated as T | null
     } catch (error) {
       const storageError = new StorageError(
@@ -248,14 +255,22 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
     }
   }
 
+  /**
+   * 别的标签页写完后发来的 `newValue`：解析信封后跑**同一套**迁移，把当前版本的值交给订阅者。
+   *
+   * 原来这里只做 JSON.parse + 解包（不复用 `decode`），于是同一份旧数据出现两个形状：
+   * 外部事件把 `{old:1}` 塞给订阅者，本页 `get('k')` 却给 `{migrated:{old:1}}` ——
+   * 同一个键、同一个上下文，订阅者拿到的结构却和读取不一致；而订阅者通常不会（也不该）
+   * 因为收到事件就再 `get()` 一次，于是"版本化信封 + migrate"在跨标签页这条路上直接失效。
+   *
+   * 这里**不回写存储**，与读取路径刻意不同：
+   *   ① 事件路径是**通知**不是读取，回写就是报告里点名的"读路径写副作用"；
+   *   ② 在 storage 事件处理器里写同一个键，会在**别的标签页**再触发一次 storage 事件，
+   *      两个标签页互写即形成跨标签页写风暴/自激循环（配额也白烧）。
+   * 盘上仍是旧信封，下一次真实 `get()` 会照既有契约迁移并回写（`decode(key, raw, true)`）。
+   */
   function decodeExternal(key: string, raw: string): unknown | null {
-    try {
-      const parsed = JSON.parse(raw)
-      return isEnvelope(parsed) ? parsed.value ?? null : parsed
-    } catch (error) {
-      handleCorrupt(key, error)
-      return null
-    }
+    return decode(key, raw, false)
   }
 
   function handleCorrupt(key: string, cause: unknown): void {

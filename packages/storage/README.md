@@ -28,7 +28,7 @@ const unsubscribe = storage.subscribe(change => {
 })
 ```
 
-Every value is written as an envelope carrying its version, so reads of older data run through `migrate` and are persisted back at the new version. Invalid JSON is reported as `CORRUPT_DATA`, removed, and reads return null. If the backend throws, the context degrades to the memory fallback and reports `STORAGE_UNAVAILABLE`; quota/capacity failures are reported as `QUOTA_EXCEEDED` and thrown without degrading. Writes from other tabs arrive through browser `storage` events with `source: 'external'`.
+Every value is written as an envelope carrying its version, so reads of older data run through `migrate` and are persisted back at the new version. Invalid JSON is reported as `CORRUPT_DATA`, removed, and reads return null. If the backend throws, the context degrades to the memory fallback and reports `STORAGE_UNAVAILABLE`; quota/capacity failures are reported as `QUOTA_EXCEEDED` and thrown without degrading. Writes from other tabs arrive through browser `storage` events with `source: 'external'`: the event's `newValue` is parsed and run through the same `migrate` (when its envelope is older than `version`), so subscribers always see the current-version shape — but an external event never writes back. Persisting an upgraded envelope stays a read-path (`get`) behaviour, because writing from a `storage` handler would fire another `storage` event in the tab that wrote. A failing migration on that path is reported as `MIGRATION_FAILED` and delivers `null`, matching `get`.
 
 ## API
 
