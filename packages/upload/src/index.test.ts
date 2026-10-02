@@ -118,6 +118,24 @@ describe('@vobs/upload', () => {
     uploader.dispose()
   })
 
+  /*
+   * `tasks` 是**公开可写**的 Signal。调用方把它写成 [] 之后，原来的 dispose 只遍历 tasks.value
+   * → 一个任务都取消不到：在途上传继续跑、`await task.promise` 永久挂起（报告探针 G 的形态）。
+   * createdTasks 才是在途任务的真相来源。
+   */
+  it('公开 tasks 被清空后 dispose 仍会取消在途上传', async () => {
+    const http = createHTTPClient({ adapter: () => new Promise(() => undefined) })
+    const uploader = createUpload({ http, url: '/upload', concurrency: 1 })
+    const task = uploader.upload(createFile('a.pdf', 'application/pdf'))
+    await vi.waitFor(() => expect(task.status.value).toBe('uploading'))
+
+    uploader.tasks.value = Object.freeze([])
+
+    uploader.dispose()
+    await expect(task.promise).resolves.toBeNull()
+    expect(task.status.value).toBe('cancelled')
+  })
+
   it('校验 MIME、扩展名和文件大小，并在创建任务前拒绝无效文件', () => {
     const uploader = createUpload({
       http: createHTTPClient(),

@@ -148,8 +148,17 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
     dispose(): void {
       if (disposed) return
       disposed = true
-      for (const task of tasks.value) task.cancel()
-      for (const task of createdTasks) task.__dispose()
+      /*
+       * 取消**所有创建过的任务**，而不是只遍历公开的 `tasks.value`。
+       *
+       * `tasks` 是公开可写的 Signal：调用方（或任何拿到上下文的代码）把它写成 `[]` 之后，
+       * 原来 dispose 就一个都取消不到 —— 在途上传继续跑，`await task.promise` **永久挂起**
+       * （报告探针 G：HUNG、status 卡在 uploading）。createdTasks 才是"在途任务"的真相来源。
+       */
+      for (const task of createdTasks) {
+        task.cancel()
+        task.__dispose()
+      }
       createdTasks.clear()
       queue.length = 0
       tasks.value = Object.freeze([])
