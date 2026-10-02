@@ -6,9 +6,14 @@
 >
 > 本文档此前描述「推送版本标签后由 `.github/workflows/publish.yml` 自动发布」。
 > 实际仓库里**没有** `publish.yml` —— `.github/workflows/` 下只有 `ci.yml`
-> （PR 与 `main` push 的质量门禁）。因此**推送标签不会自动发布**，发布是本地手动执行的。
-> 下面的「手动发布」一节给出当前实际可用的命令；「首次配置」里关于 Trusted Publisher
-> 的内容只有在补上 `publish.yml` 之后才适用。
+> （PR 与 `main` push 的质量门禁）与 `release.yml`（推 `v*` 标签时**校验**版本对齐）。
+> 因此**推送标签不会自动发布**，发布是本地手动执行的。
+> 下面的「手动发布」一节给出当前实际可用的命令。
+>
+> **这是决定，不是过渡状态**（2026-10-02 明确）：标签在本仓库**只做校验**，
+> 发布**始终手动执行**。不打算补 `publish.yml` 走 OIDC 自动发布 ——
+> 自动发布需要为 37 个包逐个配置 Trusted Publisher，而手动发布的实际频率很低，
+> 收益不抵维护面。「首次配置」一节保留为**备案**（真要做时的步骤），不属于待办。
 >
 > 另需知道：Git 标签在本仓库承担**两个**用途 —— npm 发版，以及 DSH 插件包的安装引用
 > （`github:vobsjs/vobs#<tag>&path:/packages/<name>`）。`v1.7.6` 是**只用后者**的标签：
@@ -17,7 +22,7 @@
 
 ## 发布范围
 
-当前自动发布名单为以下 37 个已完成产物构建与发布验证的公共包：
+当前发布名单为以下 37 个已完成产物构建与发布验证的公共包：
 
 ```text
 @vobs/reactivity
@@ -59,8 +64,7 @@
 @vobs/dsh
 ```
 
-根目录项目是 private workspace，不参与发布；其他尚未进入名单的包也不会被
-自动发布。
+根目录项目是 private workspace，不参与发布；其他尚未进入名单的包也不会被发布。
 
 `@vobs/cli` 和 `@vobs/payment` 现已加入公共打包、版本一致性校验和发布清单；
 两者继续保留 `dist/` 与 `/source` 双轨入口。
@@ -75,8 +79,10 @@
 
 ## 首次配置
 
-若日后补上 `publish.yml` 走 OIDC 自动发布，需要在 npm 中为上述每个包配置
-GitHub Actions Trusted Publisher：
+> **备案，不是待办**：按上面的决定，本仓库不采用 OIDC 自动发布。
+> 以下步骤只在"哪天决定改成自动发布"时才需要执行。
+
+若要走 OIDC 自动发布，需要在 npm 中为上述每个包配置 GitHub Actions Trusted Publisher：
 
 - Organization：`vobsjs`
 - Repository：`vobs`
@@ -84,9 +90,12 @@ GitHub Actions Trusted Publisher：
 
 发布工作流使用 OIDC，不需要在 GitHub Secrets 中保存长期 npm token。
 
-当前实际存在的工作流文件只有：
+当前实际存在的工作流文件（两个）：
 
 - `.github/workflows/ci.yml`：PR 和 `main` push 的质量门禁
+- `.github/workflows/release.yml`：**推送 `v*` 标签时校验「标签版本 == 全部可发布包版本」**
+  （只校验，不发布）。它拦的是「打了标签却忘了 bump 包版本」这类错位 ——
+  历史上真的发生过（`v1.7.8` 指向的提交里版本没对齐）
 
 注意 `ci.yml` **不构建也不校验**两个 DSH 插件包；它们的产物校验
 （`packages/dsh-plugin/scripts/verify-client.mjs` 与
@@ -94,24 +103,37 @@ GitHub Actions Trusted Publisher：
 
 ## 发布新版本（以 1.7.7 为例）
 
-先确认 37 个包的 `package.json` 版本已统一，并更新 `CHANGELOG.md`。
+先统一 37 个包与**根** `package.json` 的版本，并更新 `CHANGELOG.md`：
 
-然后执行版本门禁：
+```bash
+pnpm run release:version 1.7.7      # 一次写入根 + 全部可发布包（--dry 可预览）
+```
+
+然后执行版本门禁。**不带标签参数时进入「一致性模式」** —— 校验包之间是否互相一致、
+以及根版本是否同步（这一步不需要标签，随时可跑）：
+
+```bash
+pnpm run check:release
+```
+
+```text
+[release] 版本一致：1.7.7（37 个包，根版本同步）
+```
+
+创建标签前再用标签形态校验一次（`release.yml` 在 CI 里跑的就是这条）：
 
 ```bash
 pnpm run check:release -- v1.7.7
 ```
 
-看到以下结果后，才能创建标签：
-
 ```text
-[release] v1.7.7 matches 37 public packages
+[release] v1.7.7 matches 37 public packages（根版本同步）
 ```
 
 提交版本变更并推送 `main`：
 
 ```bash
-git add packages CHANGELOG.md
+git add package.json packages CHANGELOG.md
 git commit -m "release: v1.7.7"
 git push origin main
 ```
