@@ -27,3 +27,6 @@ export type {
 export { rules } from './rules'
 export { FORMS_KEY, formsPlugin } from './plugin'
 export type { FormsClient, FormsPluginOptions } from './plugin'
+
+export { describeNumberParseFailure, parseNumber } from './number'
+export type { NumberParseFailure, NumberParseResult, ParseNumberOptions } from './number'
