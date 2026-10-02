@@ -56,6 +56,42 @@ describe('@vobs/upload', () => {
     uploader.dispose()
   })
 
+  /*
+   * 响应 mapper 抛错原来被归成 `UPLOAD_FAILED`，与传输失败**不可区分**。
+   * 后果：调用方/重试 UI 只能盲目重传，而默认 POST 非幂等 —— 文件已被服务端接收并落库，
+   * 重传等于服务端静默重复写入（报告探针 F：adapter 调用 1→2）。
+   */
+  it('响应 mapper 抛错与传输失败分开报，避免调用方盲目重传', async () => {
+    const http = createHTTPClient({
+      adapter: config => response({ ok: true }, config)
+    })
+    const uploader = createUpload({
+      http,
+      url: '/upload',
+      concurrency: 1,
+      response: () => { throw new Error('响应结构不符合预期') }
+    })
+
+    const task = uploader.upload(createFile('report.pdf', 'application/pdf'))
+    await expect(task.promise).resolves.toBeNull()
+    expect(task.status.value).toBe('error')
+    expect(task.error.value?.code).toBe('UPLOAD_RESPONSE_INVALID')
+    expect(task.error.value?.message).toContain('不要盲目重传')
+    uploader.dispose()
+  })
+
+  it('真正的传输失败仍然是 UPLOAD_FAILED', async () => {
+    const http = createHTTPClient({
+      adapter: () => { throw new Error('network down') }
+    })
+    const uploader = createUpload({ http, url: '/upload', concurrency: 1 })
+
+    const task = uploader.upload(createFile('report.pdf', 'application/pdf'))
+    await expect(task.promise).resolves.toBeNull()
+    expect(task.error.value?.code).toBe('UPLOAD_FAILED')
+    uploader.dispose()
+  })
+
   it('校验 MIME、扩展名和文件大小，并在创建任务前拒绝无效文件', () => {
     const uploader = createUpload({
       http: createHTTPClient(),

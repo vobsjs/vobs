@@ -13,7 +13,7 @@ export interface UploadTask<Result = unknown> {
   readonly file: UploadFile
   readonly progress: Signal<number>
   readonly status: Signal<UploadStatus>
-  readonly error: Signal<Error | null>
+  readonly error: Signal<UploadError | null>
   readonly result: Signal<Result | null>
   readonly promise: Promise<Result | null>
   cancel(): void
@@ -68,6 +68,11 @@ export type UploadErrorCode =
   | 'FILE_TYPE_UNSUPPORTED'
   | 'FILE_TOO_LARGE'
   | 'UPLOAD_FAILED'
+  /**
+   * 响应解析/映射失败 —— 与 `UPLOAD_FAILED`（传输失败）**必须分开**：
+   * 走到这一步说明服务端已经收到并可能已落库，盲目重传在默认 POST 下等于重复写入。
+   */
+  | 'UPLOAD_RESPONSE_INVALID'
 
 export class UploadError extends Error {
   readonly code: UploadErrorCode
@@ -145,7 +150,8 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
   function createTask(file: UploadFile, id: string, taskOptions: UploadTaskOptions<Result>): InternalUploadTask<Result> {
     const progress = state(0)
     const status = state<UploadStatus>('pending')
-    const error = state<Error | null>(null)
+    // 类型收窄成 UploadError：调用方要靠 `.code` 区分"能不能安全重传"（见 UPLOAD_RESPONSE_INVALID）
+    const error = state<UploadError | null>(null)
     const result = state<Result | null>(null)
     let controller: AbortController | undefined
     let settle: ((value: Result | null) => void) | undefined
@@ -222,7 +228,22 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
         })
         if (isCancelled() || disposed) return
         const mapper = taskOptions.response ?? options.response ?? ((data: unknown) => data as Result)
-        const mapped = await mapper(response.data, task)
+        let mapped: Result
+        try {
+          mapped = await mapper(response.data, task)
+        } catch (reason) {
+          /*
+           * 请求**已经成功**，失败的只是我们这侧的响应解析。必须与传输失败分开报：
+           * 两者都归成 UPLOAD_FAILED 的话，调用方/重试 UI 分不清"能不能安全重传" ——
+           * 而默认 POST 非幂等，服务端已落库时的重传就是静默重复写入。
+           */
+          if (reason instanceof UploadError) throw reason
+          throw new UploadError(
+            'UPLOAD_RESPONSE_INVALID',
+            `Vobs Upload: ${fileName(file, id)} 的响应解析失败（文件可能已被服务端接收，不要盲目重传）`,
+            reason
+          )
+        }
         if (isCancelled() || disposed) return
         progress.value = 100
         result.value = mapped
