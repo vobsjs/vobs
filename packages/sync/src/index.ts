@@ -393,6 +393,14 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       if (!acknowledged.has(local.id)) continue
       if (!explicitAcknowledged && conflictIds.has(local.id)) continue
       nextPending.splice(index, 1)
+      /*
+       * 变更离队了，它的"判赢结论"也必须一并清账。
+       *
+       * 原实现只在"远端赢"分支 delete（见 resolveConflict），于是 local-wins 缓存只增不减 ——
+       * 长期运行下无界增长；更要命的是：若调用方之后用**同一个 id+timestamp** 重新提交同一份变更，
+       * `resolveConflict` 会短路成 'local' 而**不再调用**自定义 resolver。
+       */
+      localWinsResolved.delete(local.id)
     }
     if (signal.aborted) throw abortError()
     const nextCursor = response.cursor ?? (incremental ? cursor.value : null)
