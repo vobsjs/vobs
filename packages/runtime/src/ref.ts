@@ -21,9 +21,28 @@ export function setRef<T extends object>(node: T, target: unknown): void {
   const owner = getCurrentOwner()
   assignRef(target, node)
   owner?.onDispose(() => {
-    // Do not clear a ref that has since been reassigned to another node.
-    if (isObjectRef(target) && target.current !== node) return
-    assignRef(target, null)
+    /*
+     * 清除 ref 时**必须自己吞掉异常**，不能让 user 的 ref 回调把 dispose 级联打断。
+     *
+     * `assignRef` 内部已经 try/catch + `console.error`（回调是用户代码，不该让挂载失败），
+     * 但那条保护只覆盖"赋值"这一步 —— 而这里还有一个**可能抛错的前置判断**：
+     * `target.current !== node` 对**函数型 ref**（回调 ref）不适用，走到 `assignRef(target, null)`
+     * 时用户的回调会收到 `null`。按 React 语义这正是它该收到 null 的时刻，
+     * 但如果回调没判空（如 `node => insertList(node, …)`），它会抛。
+     *
+     * 实测（端到端交互冒烟）：playground 的 `<ul ref={attachList}>` 就是这种形状，
+     * 页面在 dispose 时抛 `Cannot read properties of null (reading 'insertBefore')`，
+     * 而**因为异常从 onDispose 里冒出去，Owner.dispose 的清理循环被中断** ——
+     * 即"一个坏 ref 回调"会让同一 owner 后续所有 cleanup（effect 解绑、监听移除）
+     * 全部不执行。这与 owner.ts:114-128 已经修过的"子 Owner 抛错不能中断级联"是同一类缺陷。
+     */
+    try {
+      // Do not clear a ref that has since been reassigned to another node.
+      if (isObjectRef(target) && target.current !== node) return
+      assignRef(target, null)
+    } catch (error) {
+      console.error(formatVobsError(error, { includeStack: true }))
+    }
   })
 }
 

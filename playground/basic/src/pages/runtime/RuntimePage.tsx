@@ -1,4 +1,4 @@
-﻿import { KitPage } from '@vobs/kit'
+import { KitPage } from '@vobs/kit'
 import { Alert, Button, Card, Tag } from '@vobs/ui'
 import { AsyncBoundary, Profiler, cloneTemplate, createId, createOwner, createTemplate, effect, insertList, memo, onDispose, ref, state } from '@vobs/vobs'
 import { useI18n } from '@vobs/i18n'
@@ -152,7 +152,13 @@ function KeyedListDemo() {
   }
 
   // 挂载时把 keyed 列表插入宿主节点；DOM 复用可通过 DevTools Elements 观察节点顺序。
-  function attachList(node: HTMLUListElement): void {
+  /*
+   * 回调 ref 会在**卸载时以 null 调用**（React 语义，`runtime/src/ref.ts` 的清理路径就是这么做的），
+   * 所以必须判空 —— 否则 `insertList(null, …)` 会在 dispose 期间抛
+   * `Cannot read properties of null (reading 'insertBefore')`。
+   */
+  function attachList(node: HTMLUListElement | null): void {
+    if (!node) return
     insertList(
       node,
       null,
