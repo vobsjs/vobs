@@ -123,6 +123,8 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
   let currentUserId = resolveUserId()
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   let skipNextSave = false
+  /** restore() 正在经 resetAll() 写信号；用来把"恢复自己的写入"和"用户的写入"分开。 */
+  let applyingRestore = false
   let disposed = false
 
   for (const [key, definition] of Object.entries(schema)) {
@@ -146,6 +148,15 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
       const name = String(key)
       const definition = schema[name]
       validateValue(name, definition, value)
+      /*
+       * 真实写入不能被上一个 restore() 留下的"跳过下一次保存"旗标吞掉。
+       *
+       * `skipNextSave` 由**下一次 flush** 消费，而 flush 是微任务：`restore()` 之后、
+       * flush 之前的任何 set() 都会连 restore 的那份一起被跳过 —— 内存改了、盘上没改、
+       * 也不报错（实测 `restore(); set('pageSize', 99)`：内存 99 / 盘上 50）。
+       * restore() 自己经 resetAll() 触发的写入由 applyingRestore 标记，不在这里清旗标。
+       */
+      if (!applyingRestore) skipNextSave = false
       signals[key].value = value
       emit({ key: name, value, source: 'local' })
     },
@@ -163,43 +174,63 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
       ensureActive()
       const key = getStorageKey()
       const stored = storage.get<StoredPreferences>(key)
+      /*
+       * 待触发的防抖保存必须在这里作废。
+       *
+       * restore() 之后内存已经以存储为准，之前排队的那次 save() 写的却是"当前内存"——
+       * 若对方标签页是 removeItem（stored 为 null），它就会把刚恢复的默认值写回盘上，
+       * 于是对方的清空被复活（实测 `[backend.setItem] vobs:pref:global = {"...theme":"light"...}`，
+       * 而该键在 restore 前已被另一标签页删除）。
+       */
+      cancelPendingSave()
+      /*
+       * skipNextSave 是旗标而不是"这些写入来自谁"的信息，且由**下一次 flush** 消费。
+       * 下面这一段经 resetAll() 也会走 set()，所以需要 applyingRestore 让 set() 知道
+       * "这是我自己的恢复写入，可以继续压制保存"，而 restore() 之后同一个同步任务里
+       * 用户的 set() 必须落盘。finally 保证两条提前 return 路径也会复位。
+       */
+      applyingRestore = true
       skipNextSave = true
-      context.resetAll()
-      if (!stored || !isStoredPreferences(stored)) return
+      try {
+        context.resetAll()
+        if (!stored || !isStoredPreferences(stored)) return
 
-      let values = stored.values
-      if (stored.version < version && options.migrate) {
-        try {
-          values = options.migrate(values, stored.version, version)
-        } catch (error) {
-          const preferenceError = new PreferenceError('MIGRATION_FAILED', `Vobs Preferences: ${key} 迁移失败`, key, error)
-          report(preferenceError)
-          return
+        let values = stored.values
+        if (stored.version < version && options.migrate) {
+          try {
+            values = options.migrate(values, stored.version, version)
+          } catch (error) {
+            const preferenceError = new PreferenceError('MIGRATION_FAILED', `Vobs Preferences: ${key} 迁移失败`, key, error)
+            report(preferenceError)
+            return
+          }
         }
-      }
-      for (const [name, value] of Object.entries(values)) {
-        /*
-         * 必须用**自有属性**判断。
-         *
-         * `schema[name]` 会沿原型链查到 `Object.prototype` —— 存档里一个 `__proto__` 键就让
-         * `definition` 恒为真，于是 `signals['__proto__'].value = value` 直接**写到 Object.prototype 上**
-         * （实测 `({}).value = {polluted:true}`，全程无 onError）；`constructor`/`toString` 键同理。
-         * 而全仓多处（resource / ui/forms / combobox / storage）靠 `'value' in x` **认信号** ——
-         * 一旦污染，所有普通对象都会被误判成信号。
-         */
-        if (!Object.prototype.hasOwnProperty.call(schema, name)) continue
-        if (!Object.prototype.hasOwnProperty.call(signals, name)) continue
-        const definition = schema[name]
-        if (!definition) continue
-        try {
-          validateValue(name, definition, value)
-          ;(signals as Record<string, Signal<unknown>>)[name].value = value
-          emit({ key: name, value, source: 'restore' })
-        } catch (error) {
-          report(error instanceof PreferenceError ? error : new PreferenceError('RESTORE_FAILED', String(error), name, error))
+        for (const [name, value] of Object.entries(values)) {
+          /*
+           * 必须用**自有属性**判断。
+           *
+           * `schema[name]` 会沿原型链查到 `Object.prototype` —— 存档里一个 `__proto__` 键就让
+           * `definition` 恒为真，于是 `signals['__proto__'].value = value` 直接**写到 Object.prototype 上**
+           * （实测 `({}).value = {polluted:true}`，全程无 onError）；`constructor`/`toString` 键同理。
+           * 而全仓多处（resource / ui/forms / combobox / storage）靠 `'value' in x` **认信号** ——
+           * 一旦污染，所有普通对象都会被误判成信号。
+           */
+          if (!Object.prototype.hasOwnProperty.call(schema, name)) continue
+          if (!Object.prototype.hasOwnProperty.call(signals, name)) continue
+          const definition = schema[name]
+          if (!definition) continue
+          try {
+            validateValue(name, definition, value)
+            ;(signals as Record<string, Signal<unknown>>)[name].value = value
+            emit({ key: name, value, source: 'restore' })
+          } catch (error) {
+            report(error instanceof PreferenceError ? error : new PreferenceError('RESTORE_FAILED', String(error), name, error))
+          }
         }
+        if (stored.version < version) context.save()
+      } finally {
+        applyingRestore = false
       }
-      if (stored.version < version) context.save()
     },
 
     save(): void {
@@ -286,6 +317,13 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
 
   function report(error: PreferenceError): void {
     try { options.onError?.(error) } catch { /* error handlers must not interrupt preferences */ }
+  }
+
+  /** 作废已排队但还没触发的防抖保存（restore 以存储为准，旧排队没有保留价值）。 */
+  function cancelPendingSave(): void {
+    if (saveTimer === undefined) return
+    clearTimeout(saveTimer)
+    saveTimer = undefined
   }
 
   function emit(change: PreferenceChange): void {

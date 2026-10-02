@@ -26,6 +26,16 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
   throw new Error(`waitFor 超时（${timeoutMs}ms）`)
 }
 
+/**
+ * 让出两个宏任务：effect flush 是微任务，`saveDebounce: 0` 的定时器排在它之后，
+ * 所以两个 0ms 宏任务足以覆盖"flush 已跑 + 防抖定时器已排上"。
+ * 不用固定墙钟睡眠 —— 并行负载下那才是偶发红的来源。
+ */
+async function settle(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 0))
+  await new Promise(resolve => setTimeout(resolve, 0))
+}
+
 const schema = definePreferences({
   theme: { type: 'string', default: 'light', validate: value => value === 'light' || value === 'dark' },
   locale: { type: 'string', default: 'zh-CN' },
@@ -89,6 +99,59 @@ describe('@vobs/preferences', () => {
     expect(storage.get('global')).toMatchObject({ version: 2, values: { theme: 'light', pageSize: 3 } })
     preferences.dispose()
     storage.dispose()
+  })
+
+  /*
+   * restore() 之后、flush（微任务）之前的真实 set() 会被 `skipNextSave` 一起跳过：
+   * 实测 `restore(); set('pageSize', 99)` → 内存 99 / 盘上仍是 50，且没有任何报错。
+   * 这条用例钉住"恢复之后同一个同步任务里的用户写入必须落盘"。
+   */
+  it('restore() 之后同一批 flush 里的真实 set 仍然落盘', async () => {
+    const storage = createStorage({ storage: createMemoryStorage(), prefix: 'pref:' })
+    storage.set('global', { version: 1, values: { pageSize: 50 } })
+    const preferences = createPreferences({ preferences: schema, storage, saveDebounce: 0 })
+    expect(preferences.pageSize.value).toBe(50)
+
+    // 应用里的常见写法：先按存储重放，再应用一次用户改动 —— 两者在同一个同步任务里。
+    preferences.restore()
+    preferences.set('pageSize', 99)
+    await settle()
+
+    expect(preferences.pageSize.value).toBe(99)
+    expect(storage.get('global')).toMatchObject({ values: { pageSize: 99 } })
+    preferences.dispose()
+    storage.dispose()
+  })
+
+  /*
+   * 待触发的防抖定时器不被 restore() 取消：另一标签页 removeItem 之后，旧定时器把刚恢复的
+   * 默认值写回盘上 —— 对方的清空被复活（实测 `[backend.setItem] vobs:pref:global = {...theme:"light"...}`）。
+   * 这条用例钉住"外部清空之后本标签页不再把该键写回"。
+   */
+  it('另一标签页清空后，待触发的防抖保存不会把该键写回', async () => {
+    const physicalKey = 'resurrect:global'
+    window.localStorage.removeItem(physicalKey)
+    const preferences = createPreferences({
+      preferences: schema,
+      prefix: 'resurrect:',
+      saveDebounce: 100
+    })
+    preferences.set('theme', 'dark')
+    await settle() // flush 已跑，100ms 防抖定时器已排上但还没触发
+
+    // 另一个标签页清空同一个键（真实浏览器里以 storage 事件到达本标签页）。
+    window.localStorage.removeItem(physicalKey)
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: physicalKey,
+      newValue: null,
+      storageArea: window.localStorage
+    }))
+    expect(preferences.theme.value).toBe('light')
+
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(window.localStorage.getItem(physicalKey)).toBeNull()
+    preferences.dispose()
+    window.localStorage.removeItem(physicalKey)
   })
 
   it('用户隔离并在用户变化时恢复对应数据', () => {
