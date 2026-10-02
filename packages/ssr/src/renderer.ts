@@ -159,8 +159,23 @@ function serializeAttributes(node: SSRElement): string {
     if (attribute && !attributes.has(attribute.key)) attributes.set(attribute.key, attribute.value)
   }
   return [...attributes.entries()]
+    // 属性名不能"转义"（HTML 没有名字实体），只能拒绝非法名字 —— 见 isSafeAttributeName
+    .filter(([key]) => isSafeAttributeName(key))
     .map(([key, value]) => ` ${key}="${escapeAttribute(value)}"`)
     .join('')
+}
+
+/**
+ * HTML 属性名是否安全。
+ *
+ * **属性名没有转义可用**：名字里不存在实体，所以把 key 直接拼进标签时，
+ * 只要名字里带 `"` 就能提前闭合属性、注入新属性 —— 实测把 key 设成
+ * `a" onmouseover="alert(1)//` 会让产物经真实解析器得到**活的 onmouseover**。
+ * 所以唯一的正确做法是**拒绝**（跳过）非法名字：按 HTML 规范的名字产生式，
+ * 除空白、" ' > / = 和控制字符之外都算合法。
+ */
+export function isSafeAttributeName(key: string): boolean {
+  return key.length > 0 && !/[\s"'<>/=\u0000-\u001f\u007f]/.test(key)
 }
 
 function propertyAttribute(key: string, value: unknown): { key: string; value: string } | null {

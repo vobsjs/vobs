@@ -10,7 +10,7 @@ import {
   type Router
 } from '@vobs/router'
 import type { VobsNode, VobsPlugin } from '@vobs/vobs'
-import { escapeAttribute, escapeHTML } from './renderer'
+import { escapeAttribute, escapeHTML, isSafeAttributeName } from './renderer'
 import { renderToStringAsync, serializeState, type SSRDebugSnapshot, type SSRState, type SSRStateOptions } from './render'
 
 /* ---------- Head 管理 ---------- */
@@ -38,6 +38,8 @@ function serializeAttrs(attrs: Readonly<Record<string, string>>): string {
   let html = ''
   for (const [key, value] of Object.entries(attrs)) {
     if (value === undefined || value === null) continue
+    // 属性名不可转义（HTML 没有名字实体），只能拒绝 —— 见 renderer.isSafeAttributeName
+    if (!isSafeAttributeName(key)) continue
     html += ` ${key}="${escapeAttribute(String(value))}"`
   }
   return html
