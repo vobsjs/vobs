@@ -85,6 +85,8 @@ describe('@vobs/i18n', () => {
     expect(i18n.formatRelativeTime(new Date('2026-09-03T10:59:00.000Z'), now)).toBe('1 hour ago')
     expect(i18n.formatRelativeTime(new Date('2026-09-03T11:01:00.000Z'), now)).toBe('59 minutes ago')
     expect(i18n.formatRelativeTime(new Date('2026-09-03T12:30:00.000Z'), now)).toBe('in 30 minutes')
+    // ISO 字符串也接受（JSON 载荷里最常见），运行时早就走 toDate，这里把类型补齐
+    expect(i18n.formatRelativeTime('2026-09-03T10:30:00.000Z', '2026-09-03T12:00:00.000Z')).toBe('1 hour ago')
     i18n.dispose()
   })
 

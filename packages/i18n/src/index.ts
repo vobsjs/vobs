@@ -73,7 +73,7 @@ export interface I18nContext {
     currency: string,
     options?: Omit<Intl.NumberFormatOptions, 'currency' | 'style'>
   ): string
-  formatRelativeTime(value: Date | number, now?: Date | number): string
+  formatRelativeTime(value: Date | number | string, now?: Date | number | string): string
   registerFormatter(name: string, formatter: I18nFormatter): () => void
   dispose(): void
 }
