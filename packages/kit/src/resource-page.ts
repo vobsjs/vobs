@@ -103,8 +103,9 @@ function createTableProps<Row>(
 }
 
 function translate(i18n: I18nContext, key: string, fallback: string): string {
-  const value = i18n.t(key)
-  return value === key ? fallback : value
+  // 原来只能靠 `value === key` 猜"是不是缺 key" —— 译文**恰好等于 key** 时会被误判成缺失、
+  // 被 fallback 顶掉。i18n 现在提供同步的 `has(key)`，直接问就行。
+  return i18n.has(key) ? i18n.t(key) : fallback
 }
 
 function isAllowed<Row>(props: KitResourcePageProps<Row>, auth: AuthContext): boolean {

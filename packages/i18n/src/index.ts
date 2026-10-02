@@ -62,6 +62,14 @@ export interface I18nContext {
   loadLocale(locale: Locale, loader?: I18nLocaleLoader): Promise<void>
   isLocaleLoaded(locale: Locale): boolean
   t(key: string, params?: Record<string, unknown>): string
+  /**
+   * 这个 key 在当前 locale（或 fallback locale）下**有没有译文**。
+   *
+   * 存在的理由是 `t()` 在缺 key 时返回 key 本身，调用方无法区分"缺 key"与"译文恰好等于 key" ——
+   * `@vobs/kit` 只能写成 `value === key ? fallback : value`（`kit/src/resource-page.ts` 的 `translate`）。
+   * 有了它就能直接问，不用再比较字符串。
+   */
+  has(key: string): boolean
   formatDate(
     value: Date | number | string,
     presetOrOptions?: DatePreset | Intl.DateTimeFormatOptions,
@@ -206,6 +214,14 @@ export function createI18n(options: I18nOptions): I18nContext {
         return key
       }
       return interpolate(template, params, context, formatters)
+    },
+
+    has(key: string): boolean {
+      ensureActive()
+      if (!key) return false
+      // 与 t() 用的是同一套查找（当前 locale → 主语言 → fallback locale → 主语言），
+      // 所以 `has(key)` 为真时 `t(key)` 一定拿到真译文，假的可能是"译文恰好等于 key"。
+      return findMessage(messages.value, locale.value, fallbackLocale, key) !== undefined
     },
 
     formatDate(value, presetOrOptions, dateOptions): string {

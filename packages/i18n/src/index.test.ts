@@ -114,6 +114,28 @@ describe('@vobs/i18n', () => {
     i18n.dispose()
   })
 
+  /*
+   * `t()` 缺 key 时返回 key 本身，调用方无法区分"缺 key"与"译文恰好等于 key"
+   * （`@vobs/kit` 因此只能写 `value === key ? fallback : value`）。`has(key)` 是可以直接问的答案。
+   */
+  it('has(key) 区分"缺 key"与"译文恰好等于 key"', () => {
+    const i18n = createI18n({
+      defaultLocale: 'zh-CN',
+      fallbackLocale: 'en-US',
+      messages: {
+        'zh-CN': { 'literal.key': 'literal.key', nested: { deep: '深' } },
+        'en-US': { fromFallback: 'From fallback' }
+      }
+    })
+
+    expect(i18n.has('literal.key')).toBe(true)
+    expect(i18n.has('nested.deep')).toBe(true)
+    expect(i18n.has('fromFallback')).toBe(true)   // 走 fallback locale 也算有
+    expect(i18n.has('missing.key')).toBe(false)
+    expect(i18n.has('')).toBe(false)
+    i18n.dispose()
+  })
+
   it('onMissingKey 能观测到缺 key，但不改变返回值，且观察者抛错不影响结果', () => {
     const seen: string[] = []
     const i18n = createI18n({
