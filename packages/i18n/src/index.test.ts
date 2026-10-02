@@ -74,6 +74,20 @@ describe('@vobs/i18n', () => {
    * ISO 字符串是 JSON 载荷里最常见的时间形态，原来 `formatDate('2024-…Z')` **静默吐空串**
    * （只认 Date/number），调用方只看到"没有日期"。现在合法字符串会被解析，非法仍为空串。
    */
+  /*
+   * 单位选择原来用 `Math.round`：90 分钟 = 1.5 小时 → 四舍五入成 "2 hours ago"。
+   * 正确语义是"取数量至少为 1 的最大单位" → "1 hour ago"。
+   */
+  it('formatRelativeTime 不会把 90 分钟说成 2 小时（单位按截断选）', () => {
+    const i18n = createI18n({ defaultLocale: 'en-US' })
+    const now = new Date('2026-09-03T12:00:00.000Z')
+    expect(i18n.formatRelativeTime(new Date('2026-09-03T10:30:00.000Z'), now)).toBe('1 hour ago')
+    expect(i18n.formatRelativeTime(new Date('2026-09-03T10:59:00.000Z'), now)).toBe('1 hour ago')
+    expect(i18n.formatRelativeTime(new Date('2026-09-03T11:01:00.000Z'), now)).toBe('59 minutes ago')
+    expect(i18n.formatRelativeTime(new Date('2026-09-03T12:30:00.000Z'), now)).toBe('in 30 minutes')
+    i18n.dispose()
+  })
+
   it('formatDate 接受 ISO 字符串（非法输入仍然是空串）', () => {
     // 用 fr-FR：Intl 实例缓存是**模块级**的，换 locale 才不会给下面那条"构造次数"用例预热掉
     const i18n = createI18n({ defaultLocale: 'fr-FR', timeZone: 'UTC' })
@@ -142,7 +156,9 @@ describe('@vobs/i18n', () => {
     const dateSpy = vi.spyOn(Intl, 'DateTimeFormat')
     const numberSpy = vi.spyOn(Intl, 'NumberFormat')
     const relativeSpy = vi.spyOn(Intl, 'RelativeTimeFormat')
-    const i18n = createI18n({ defaultLocale: 'en-US', timeZone: 'UTC' })
+    // 用 en-GB：Intl 实例缓存是**模块级**的，换个本文件其它用例都不用的 locale，
+    // 这条用例才不会因为别人先跑过而被"预热"成 0 次构造（那样就失去判别力了）。
+    const i18n = createI18n({ defaultLocale: 'en-GB', timeZone: 'UTC' })
 
     const firstDate = i18n.formatDate(new Date('2024-01-15T00:00:00Z'), 'short')
     const firstNumber = i18n.formatNumber(1234.5)

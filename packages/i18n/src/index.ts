@@ -252,7 +252,12 @@ export function createI18n(options: I18nOptions): I18nContext {
       ] as const
       const formatter = relativeTimeFormatter(locale.value)
       for (const [unit, milliseconds] of units) {
-        const amount = Math.round(difference / milliseconds)
+        /*
+         * 用**截断**而不是四舍五入来挑单位：`Math.round` 会把 90 分钟算成 "2 hours ago"
+         * （1.5 → 2），而正确语义是"取最大的、其数量至少为 1 的单位" → 90 分钟就是 "1 hour ago"。
+         * 截断同时保证不会因为进位而选到过大的单位。
+         */
+        const amount = Math.trunc(difference / milliseconds)
         if (Math.abs(amount) >= 1) {
           return formatter.format(-amount, unit)
         }
