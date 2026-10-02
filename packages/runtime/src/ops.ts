@@ -150,7 +150,17 @@ function syncSelectValue(parent: Node): void {
   while (current !== null) {
     if ((current as Element).nodeName === 'SELECT') {
       const read = selectValueReaders.get(current)
-      if (read !== undefined) setProperty(current as Element, 'value', read())
+      /*
+       * 读取必须 `untrack` —— 这里是在**插入 option 的过程中同步**重放当前值，
+       * 而插入往往发生在某个 effect 运行时（`insertList` / `insertDynamic` 都由 effect 驱动）。
+       * 若那次读取被算进外层 effect 的依赖，该 effect 以后会被这个信号唤醒：
+       * 一个**隐藏订阅** —— 依赖关系图上多一条没人打算建立的边，
+       * 表现为"插入选项时恰好重跑了某个不相关的 effect"，很难追。
+       *
+       * 这条绑定的订阅由 `bindProperty` 自己的 effect 负责（bind.ts），
+       * 这里的重放只是把值**再写一次**，不需要也不应该建立依赖。
+       */
+      if (read !== undefined) setProperty(current as Element, 'value', untrack(read))
       return
     }
     current = current.parentNode
