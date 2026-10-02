@@ -117,11 +117,21 @@ export function createHydrationRenderer(container: Element): HydrationRenderer {
           return textNode
         }
       }
-      return claim(
+      const claimedText = claim(
         (node): node is Text => node instanceof Text
           && (content === '' || node.data === content),
         content === '' ? '动态文本节点' : `文本节点 "${content}"`
       )
+      if (content === '' && claimedText.data !== '') {
+        // 服务端渲染的是**非空**文本，而客户端此刻要的是空文本 —— 只能临时认领、等绑定 effect 覆写。
+        // 这一步过去完全无声：服务端 "Ada" 遇上客户端忘传 state（会渲染 "loading"）时静默变成后者，
+        // 既不报错也没有任何线索。给它一个可观测出口（tools/devtools 可以据此提示"值被悄悄换掉"）。
+        invokeRuntimeDebug('hydrationProvisionalText', {
+          expected: '动态文本节点',
+          actual: JSON.stringify(claimedText.data)
+        })
+      }
+      return claimedText
     },
 
     createElement(tag: string): Element {

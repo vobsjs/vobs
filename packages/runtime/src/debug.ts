@@ -49,6 +49,17 @@ export interface RuntimeDebugHooks {
   domMutation?(mutation: RuntimeDomMutation): void
   error?(event: RuntimeErrorEvent): void
   hydrationMismatch?(event: RuntimeHydrationMismatch): void
+  /**
+   * 水合时**临时认领**了一个内容不为空的文本节点（服务端渲染了真实文本，客户端此刻要的是空文本：
+   * 只能先认领、等绑定 effect 覆写）。这一步过去完全无声 —— 服务端 "Ada" 遇上客户端忘传 state
+   * （会渲染 "loading"）时就静默变成了后者。给出可观测出口，便于工具发现这类"值被悄悄换掉"。
+   */
+  hydrationProvisionalText?(event: RuntimeProvisionalText): void
+}
+
+export interface RuntimeProvisionalText {
+  readonly expected: string
+  readonly actual: string
 }
 
 let activeRuntimeDebugHooks: RuntimeDebugHooks | null = null

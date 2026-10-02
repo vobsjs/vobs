@@ -15,7 +15,8 @@ export type {
   RuntimeDomMutation,
   RuntimeDomMutationOperation,
   RuntimeErrorEvent,
-  RuntimeHydrationMismatch
+  RuntimeHydrationMismatch,
+  RuntimeProvisionalText
 } from './debug'
 export { createFragment, isVobsFragment } from './fragment'
 export type { FragmentFactory, VobsFragment, VobsNode } from './fragment'

@@ -939,12 +939,13 @@ function scheduleSelectValueSync(node, value) {
   pendingSelectValues.set(node, value);
   if (selectSyncScheduled.has(node)) return;
   selectSyncScheduled.add(node);
+  const renderer = getRenderer();
   queueMicrotask(() => {
     selectSyncScheduled.delete(node);
     if (!pendingSelectValues.has(node)) return;
     const pending = pendingSelectValues.get(node);
     pendingSelectValues.delete(node);
-    getRenderer().setProperty(node, "value", pending);
+    renderer.setProperty(node, "value", pending);
   });
 }
 function setAttribute(node, key, value) {

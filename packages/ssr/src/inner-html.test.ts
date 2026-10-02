@@ -13,8 +13,7 @@ import { hydrate, renderToString } from './index'
  *
  * 于是「组件用 innerHTML 放原始标记」这条路在 SSR + 水合下根本走不通。
  */
-describe('SSR 的 innerHTML 逃生口', () => {
-  const markup = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1"/></svg>'
+describe('SSR 的 innerHTML 逃生口', () => {  const markup = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1"/></svg>'
   const render = () => {
     const span = createElement('span')
     setProperty(span, 'innerHTML', markup)
