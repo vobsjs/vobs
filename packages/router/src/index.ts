@@ -422,7 +422,8 @@ export function createRouter(options: RouterOptions): Router {
   const history = options.history ?? defaultHistory()
   const routerDebugId = createRouterDebugId()
   matchers.sort(compareMatchers)
-  const currentRoute = state<RouteLocation>(resolvePath(history.location))
+  // debug 名：C210/C211 等守卫告警会引用它；没有名字的信号报错时只显示「未命名信号」，无法定位
+  const currentRoute = state<RouteLocation>(resolvePath(history.location), 'router.currentRoute')
   const lazyStates = new Map<RouteRecord, LazyState>()
   const guards: NavigationGuard[] = []
   const navigationHistory: NavigationTrace[] = []
@@ -461,7 +462,7 @@ export function createRouter(options: RouterOptions): Router {
   let nextErrorId = 1
   let navigationId = 0
   let destroyed = false
-  const viewRevision = state(0)
+  const viewRevision = state(0, 'router.viewRevision')
 
   function resolve(to: RouteTarget): RouteLocation {
     ensureActive()

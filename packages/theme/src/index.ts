@@ -141,13 +141,14 @@ export const defaultDarkTheme: ThemeTokens = {
 const appliedVariables = new WeakMap<HTMLElement, Set<string>>()
 
 export function createTheme(options: ThemeOptions = {}): ThemeContext {
-  const mode = state<ThemeMode>(options.defaultMode ?? 'light')
-  const systemMode = state<ResolvedThemeMode>(readSystemMode())
+  // debug 名：守卫告警（C210/C211 等）会引用信号名，无名信号报错时只显示「未命名信号」，无法定位
+  const mode = state<ThemeMode>(options.defaultMode ?? 'light', 'theme.mode')
+  const systemMode = state<ResolvedThemeMode>(readSystemMode(), 'theme.systemMode')
   const themes = state<Record<ResolvedThemeMode, ThemeTokens>>({
     light: mergeThemes(defaultLightTheme, options.defaultTheme ?? {}, options.themes?.light ?? {}),
     dark: mergeThemes(defaultDarkTheme, options.defaultTheme ?? {}, options.themes?.dark ?? {})
-  })
-  const overrides = state<ThemeTokens>({})
+  }, 'theme.themes')
+  const overrides = state<ThemeTokens>({}, 'theme.overrides')
   const resolvedMode = memo<ResolvedThemeMode>(() => mode.value === 'system' ? systemMode.value : mode.value)
   const theme = memo<ThemeTokens>(() => mergeThemes(themes.value[resolvedMode.value], overrides.value))
   const brand = memo<BrandTokens>(() => {
@@ -196,7 +197,10 @@ export function createTheme(options: ThemeOptions = {}): ThemeContext {
 
     setMode(nextMode: ThemeMode): void {
       ensureActive()
-      mode.value = validateMode(nextMode)
+      // 与 setBrand 同理：setter 会被组件 effect 调用（App 的模式同步 effect 读 themeMode 后调
+      // setMode），写入必须在 untrack 内——否则 ensureActive 对 mode 的读取会把 mode 拉进调用方
+      // effect 的依赖集，随后写入 mode 触发 VOBS_C210 自订阅循环
+      untrack(() => { mode.value = validateMode(nextMode) })
     },
 
     setBrand(nextBrand: Partial<BrandTokens>): void {
