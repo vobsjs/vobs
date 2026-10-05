@@ -701,6 +701,9 @@
     .vui-menu__item {
       appearance: none; background: transparent; border: none; font-family: inherit;
       display: flex; align-items: center; gap: var(--spacer-8);
+      /* button 默认 shrink-to-fit：不给宽度时项宽 = 内容宽，hover 底色只盖住图标+文字，
+         且 .vui-menu__shortcut 的 margin-left: auto 没有可分配空间、快捷键贴不到右端 */
+      width: 100%;
       padding: var(--spacer-6) var(--spacer-8);
       border-radius: var(--radius-2);
       color: var(--text-default);
