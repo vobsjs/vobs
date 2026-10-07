@@ -6,6 +6,7 @@ import { generateCommand } from './commands/generate.js'
 import { addCommand } from './commands/add.js'
 import { dshCommand } from './commands/dsh.js'
 import { checkCommand } from './commands/check.js'
+import { agentDocCommand } from './commands/agent-doc.js'
 import { showBanner, showLogo, showDevBanner } from './banner.js'
 import { cliVersion } from './version.js'
 
@@ -109,6 +110,21 @@ export function createCLI(): ReturnType<typeof cac> {
     })
 
   cli
+    .command('agent-doc', '生成/校验给 LLM 读的框架契约（AGENTS.md + CLAUDE.md）')
+    .option('--dir <dir>', '目标目录', { default: process.cwd() })
+    .option('--write', '写入文件（默认打到 stdout）')
+    .option('--check', '校验项目里那份是否与当前框架版本一致（可进 CI）')
+    .option('--body', '只输出契约正文（不含标记块外说明）')
+    .action(async (options: Record<string, unknown>) => {
+      await agentDocCommand({
+        dir: options.dir as string | undefined,
+        write: options.write === true,
+        check: options.check === true,
+        body: options.body === true
+      })
+    })
+
+  cli
     .command('dsh [action] [target]', 'DSH 插件工具链（init / dev / build / check / install）')
     .option('--dir <dir>', 'init：目标目录')
     .option('--pm <pm>', 'init：包管理器（pnpm/npm）')
@@ -160,5 +176,5 @@ export function createCLI(): ReturnType<typeof cac> {
  * 用这份清单把"跑某个命令"与"顶层用法错误"分开。
  */
 export const KNOWN_SUBCOMMANDS: readonly string[] = [
-  'init', 'create', 'dev', 'build', 'generate', 'g', 'add', 'check', 'dsh', 'logo'
+  'init', 'create', 'dev', 'build', 'generate', 'g', 'add', 'check', 'dsh', 'agent-doc', 'logo'
 ]

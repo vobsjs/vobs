@@ -4,6 +4,30 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.6] - 2026-10-02
+
+### Added
+
+- **`vobs agent-doc`** — generates the framework contract into a project as `AGENTS.md` plus a
+  one-line `CLAUDE.md` (`@AGENTS.md`), so any coding agent reads the current rules instead of a
+  stale hand-written copy. The contract ships inside `@vobs/cli`, so it is pinned to the framework
+  version: upgrade, regenerate, stay in sync. Flags: `--write` (default prints to stdout),
+  `--check` (exit 1 when the project copy differs from this framework version, usable in CI),
+  `--body` (contract only), `--dir`.
+  - The generated text lives between `<!-- vobs:begin -->` and `<!-- vobs:end -->`; everything
+    outside is the project's own rules and is preserved on regeneration. An existing hand-written
+    `AGENTS.md` with no markers is **not overwritten** — the block is appended after it, because
+    discarding someone's rules is worse than not generating at all.
+  - The content is tool-neutral (it never names a specific model) and stays within one screen: hard
+    constraints with counter-examples, each tagged with the diagnostic that fires when violated.
+  - `CLAUDE.md` is a pointer rather than a copy, so there is only ever one copy to keep current.
+
+### Notes
+
+- The contract is deliberately a complement to the diagnostics, not a substitute. An agent always
+  reads build and test output but may not read a document, which is why 1.8.5 moved the structural
+  fix into the `VOBS_C210` / `VOBS_C211` messages themselves.
+
 ## [1.8.5] - 2026-10-02
 
 ### Changed
