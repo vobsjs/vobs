@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.5] - 2026-10-02
+
+### Changed
+
+- **`VOBS_C210` and `VOBS_C211` now teach the structural fix before the patch.** Both messages
+  previously offered only `untrack`, which suppresses this one write without answering why the
+  effect subscribed to that signal in the first place. They now lead with `effect(on(deps, fn))`
+  (added in 1.8.3, where the callback runs untracked so reads inside functions it calls cannot
+  subscribe) and with deriving the value via `memo`; `untrack` is the fallback. The `C210` example
+  shows the `on()` form. `C211` also notes that an async function runs synchronously up to its
+  first `await`, so calling one from an effect still subscribes — the compile-time `VOBS_C106`
+  warns about the direct form of that.
+
 ## [1.8.4] - 2026-10-02
 
 ### Added

@@ -50,8 +50,14 @@ describe('installDevGuardrails', () => {
     expect(violation?.error.severity).toBe('error')
     expect(violation?.error.layer).toBe('constraint')
     expect(violation?.error.message).toContain('"count"')
+    /*
+     * 1.8.5 起 fix 的顺序是「先教结构，再教补丁」：
+     * 首选 on()（显式声明依赖，回调在 untrack 作用域里跑），untrack 降为兜底。
+     * 所以 example 示范的是 on()，而 fix 文本里仍然有 untrack（作为兜底）。
+     */
     expect(violation?.error.fix).toContain('untrack')
-    expect(violation?.error.example).toContain('untrack')
+    expect(violation?.error.fix, 'fix 应该先给结构解 on()').toContain('on(')
+    expect(violation?.error.example).toContain('on(')
     // 位置指向用户调用处（本测试文件），而不是护栏内部或框架源码
     expect(violation?.error.location?.line).toBeGreaterThan(0)
     expect(violation?.error.location?.file).toContain('dev.test.ts')

@@ -171,8 +171,11 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
             layer: 'constraint',
             location: sites.get(effect),
             message: `同一个 effect 在 ${rerunWindowMs}ms 内连跑了 ${burst.runs} 次 —— 大概率是自订阅，或两个 effect 在互相触发`,
-            fix: '检查这些 effect 对信号的写入：写自己读过的信号要用 untrack 包住；'
-              + '由其它信号派生的值改用 memo，而不是「读 A 写 B」。',
+            fix: '首选：显式声明依赖 `effect(on(deps, () => { … }))`（on 让回调里的读取不订阅）；'
+              + '由其它信号派生的值改用 memo，而不是「读 A 写 B」；'
+              + '兜底才是把写自己读过的信号用 untrack 包住。'
+              + '注意被调函数在**首个 await 之前**的代码也是同步执行的 —— '
+              + '「effect 里只调了个函数」不等于没依赖（编译期 VOBS_C106 会提示 async 回调）。',
             docs: 'https://github.com/vobsjs/vobs/blob/main/docs/dev-guardrails.md'
           }))
         }
@@ -196,15 +199,31 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
       if (!current.dependencies.has(signal as unknown as Dependency)) return
 
       const label = signalLabel(signal)
+      const bare = label.replace(/"/gu, '')
       emit(new VobsError({
         code: VOBS_C210,
         severity: 'error',
         layer: 'constraint',
         location: sites.get(current),
         message: `effect 写入了它自己依赖的信号 ${label} —— 这次写入会把它重新调度，形成自订阅循环`,
-        fix: `把这次写入包进 untrack：untrack(() => { ${label.replace(/"/gu, '')}.value = next })；`
+        /*
+         * fix 的顺序很要紧：**先教结构，再教补丁**。
+         *
+         * 此前只写 `untrack(...)`。那是**局部补丁** —— 它让这次写入不再触发重跑，
+         * 但没有回答"这个 effect 为什么订阅了它"。真实项目反馈里这类问题高频复发
+         * （2026-10-02 用户报告：用 LLM 开发时 C210 非常频繁），而 `untrack` 是
+         * 需要人记得的写法，不是结构。
+         *
+         * 首选是 `on()`（1.8.3 加入，对齐 SolidJS）：显式声明依赖，回调在 untrack
+         * 作用域里跑，所以它调用的函数碰什么信号都不会反向订阅 —— **结构上写不出来**。
+         * 其次是改用派生值 / memo。
+         */
+        fix: `首选：显式声明依赖 ` + '`effect(on(deps, () => { … }))`'
+          + `（on 让回调里的读取不订阅，结构上不会形成自订阅）；`
+          + `或者这次写入本可以改成派生值 / memo（最常见的是"读 A 写 A"其实想问"派生出新值"）。`
+          + ` 兜底：只给这一次写入断开订阅 untrack(() => { ${bare}.value = next })；`
           + '如果这个 effect 本来就只该做副作用，检查是不是误读了不该读的信号。',
-        example: `effect(() => {\n  untrack(() => { ${label.replace(/"/gu, '')}.value = next })\n})`,
+        example: `effect(on(deps, () => {\n  // 这里的读取不订阅\n  ${bare}.value = next\n}))`,
         docs: 'https://github.com/vobsjs/vobs/blob/main/docs/dev-guardrails.md'
       }))
     }
