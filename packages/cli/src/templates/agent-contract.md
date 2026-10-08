@@ -81,13 +81,14 @@ return cond.value ? <A/> : null        // ❌ 冻结
 ## 八、提交前自测
 
 ```bash
-pnpm run check:source            # = vobs check，全仓一次列出全部诊断
+pnpm run check:source            # = vobs check：静态分析 + **编译器诊断**，全仓一次列全
+pnpm run check:source -- --no-compiler   # 只跑静态分析（更快）
 pnpm run check:runtime           # 真实浏览器逐路由跑护栏（需 Chrome）
 pnpm run check:runtime:interact  # 再点所有按钮、触发所有输入
 ```
 
-`vite build` **会**打印编译期警告（`C104`/`C105`/`C106`/`C107`），但只覆盖它编译到的文件；
-`check:source` 才是全仓入口。
+> 1.8.8 前 `vobs check` **不跑编译器**，所以 `C104`/`C105`/`C106`/`C107`/`C108` 在它那里
+> **一条都不报**（只有 `vite build` 看得到）。现在两边规则已合并，`check:source` 是真正的全仓入口。
 
 ---
 

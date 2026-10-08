@@ -100,12 +100,15 @@ export function createCLI(): ReturnType<typeof cac> {
     .option('--json', '以 JSON 输出（给 AI 与工具消费）')
     .option('--write', `把结果写到 ${'.vobs/check.json'}（开发台面板读它）`)
     .option('--include-tests', '把测试文件也纳入检查（默认跳过）')
+    .option('--no-compiler', '不跑编译器诊断（只跑静态分析；更快）')
     .action(async (dir: string | undefined, options: Record<string, unknown>) => {
       await checkCommand({
         dir,
         json: options.json === true,
         write: options.write === true,
-        includeTests: options.includeTests === true
+        includeTests: options.includeTests === true,
+        // --no-compiler 时 commander 会把 compiler 置为 false
+        compiler: options.compiler !== false
       })
     })
 

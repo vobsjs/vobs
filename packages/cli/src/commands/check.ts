@@ -24,6 +24,7 @@
  * 而不是关掉整条规则或改写本来正确的代码。
  */
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { compileWithSourceMap } from '@vobs/compiler'
 import path from 'node:path'
 import ts from 'typescript'
 import { logger } from '../utils/logger.js'
@@ -35,6 +36,20 @@ export interface CheckOptions {
   readonly write?: boolean
   /** 把测试文件也纳入检查（默认跳过：fixture 里常有意为之的写法会淹没真问题）。 */
   readonly includeTests?: boolean
+  /**
+   * 同时跑**编译器**诊断（默认 true）。
+   *
+   * 为什么必须合并：此前 `vobs check` **完全不跑编译器** —— 它只有自己那套
+   * `analyzeSource`（C118/C210/C232）。于是编译器的五条诊断
+   * （C104/C105/C106/C107/C108）**在批量入口隐形**，只有 `vite build` 看得到。
+   * 实测：一个模块顶层 JSX 的文件，`vobs check` 报「检查通过」。
+   *
+   * 这是同一类通道问题的第三次：① vite build 报第一个文件就停 ② describeDiagnostics
+   * 只过滤 error（warning 静默）③ 本处。**通道不通，等于诊断不存在。**
+   *
+   * 代价是每个文件多跑一次编译 —— 需要更快可用 `--no-compiler`。
+   */
+  readonly compiler?: boolean
 }
 
 /** 检查报告的固定落点，相对被检查的根目录。 */
@@ -397,6 +412,43 @@ export function analyzeSource(text: string, file: string): CheckDiagnostic[] {
     .sort((a, b) => a.line - b.line || a.column - b.column)
 }
 
+/**
+ * 跑编译器诊断并映射成 `CheckDiagnostic`。
+ *
+ * `compileWithSourceMap` 用 try/catch 包住：单个文件让编译器抛错不该中断整轮检查
+ * （那是"检查工具本身"的失败，不是源码的问题）。
+ */
+function compileDiagnostics(text: string, file: string, existing: readonly CheckDiagnostic[]): CheckDiagnostic[] {
+  let result: ReturnType<typeof compileWithSourceMap>
+  try {
+    result = compileWithSourceMap(text, { filename: file })
+  } catch {
+    return []
+  }
+  const lines = text.split(/\r?\n/u)
+  const seen = new Set(existing.map(item => `${item.code}|${item.file}|${item.line}|${item.column}`))
+  const out: CheckDiagnostic[] = []
+  for (const item of result.diagnostics) {
+    const { line, column } = item.location
+    const key = `${item.code}|${file}|${line}|${column}`
+    // 与 analyzeSource 的结果去重（两套规则偶有重叠码）
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({
+      code: item.code,
+      severity: item.severity,
+      message: item.message,
+      // fix 是必填字段：编译器没给时也要有可执行的方向，不能留空
+      fix: item.fix ?? '见该诊断码的说明（`vobs explain` 或框架文档）。',
+      file,
+      line,
+      column,
+      snippet: (lines[line - 1] ?? '').trim()
+    })
+  }
+  return out
+}
+
 export async function checkCommand(options: CheckOptions = {}): Promise<void> {
   const root = path.resolve(options.dir ?? process.cwd())
   let all: string[]
@@ -418,6 +470,7 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
     const text = await readFile(absolute, 'utf8')
     const relative = path.relative(root, absolute).split(path.sep).join('/')
     diagnostics.push(...analyzeSource(text, relative))
+    if (options.compiler !== false) diagnostics.push(...compileDiagnostics(text, relative, diagnostics))
   }
 
   const errors = diagnostics.filter(item => item.severity === 'error')
