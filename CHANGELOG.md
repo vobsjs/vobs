@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`VOBS_C108`**: JSX stored in a variable, which creates the node eagerly. Real-project crash
+  (2026-10-02): `const node = <ElementVarPicker el={pickerElement.value} />; return open.value ?
+  node : null` — the component is instantiated at the assignment, while `pickerElement.value` can
+  already be `null`, so its body reads `.content` on a null and throws.
+  - Measurement corrected an assumption: the attribute expression is **not** hoisted by the
+    compiler. `<div>{open.value ? <Picker el={picker.value}/> : null}</div>` is safe —
+    `createComponent` sits inside the conditional and the prop is a getter, so the component is
+    never created when the condition is false. The difference is where the JSX was written.
+  - This fills two documented "forbidden zones" that had **no diagnostic at all** (measured: all
+    silent): a node derived in a run-once component body, and JSX stored in a data constant (which
+    reaches SSG serialisation and emits `[object Xxx]`). Silent failures are the worst class for an
+    agent-written codebase, because this shape is completely legal in React.
+  - Reports only inside a function body, and walking stops at any nested function:
+    `const render = () => <Picker/>` is the recommended form and is not reported. Module top level
+    belongs to `VOBS_C105`, so there is no double report. Severity is warning — a node used exactly
+    once does work; the conditional shape is the one that crashes.
+  - False-positive check: zero hits across the repository, including test files.
+
 ## [1.8.6] - 2026-10-02
 
 ### Added

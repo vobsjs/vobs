@@ -181,6 +181,7 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
   reportModuleTopLevelJsx(state)
   reportAsyncEffectCallback(state)
   reportFrozenReactiveReturn(state)
+  reportEagerJsxInVariable(state)
 
   const statements = sourceFile.statements.map(statement =>
     ts.isImportDeclaration(statement) ? rebuildImport(state, statement) : transformStatement(state, statement, true)
@@ -411,6 +412,110 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
  * 仍是 **warning**（静态判不出"这个函数是不是组件"），仍然只认 **JSX 语法**
  * （`createElement(...)` 之类的调用形态不猜）。真正会坏的东西由运行时护栏兜底。
  */
+/**
+ * `VOBS_C108`：**JSX 被存进变量**（节点被急切创建）。
+ *
+ * ## 为什么是坑（真实项目 2026-10-02 崩溃）
+ *
+ * ```ts
+ * const node = <ElementVarPicker el={pickerElement.value} />   // ← 组件体，急切创建
+ * return open.value ? node : null                              // ← 条件在创建之后
+ * ```
+ *
+ * **组件在变量赋值那一刻就被 `createComponent` 实例化并跑了 body** ——
+ * 那时 `pickerElement.value` 可能已经是 `null`，于是组件读 `.content` 崩。
+ *
+ * 关键区分：**属性表达式不是被编译器提升的**。标准形态
+ * `<div>{open.value ? <Picker el={picker.value}/> : null}</div>` 的产物是安全的
+ * （`createComponent` 在条件内部、prop 是 getter）—— 实测确认。真正的差异是
+ * **JSX 被写在了条件外面**。
+ *
+ * ## 它同时覆盖用户文档里两条"靠纪律"的禁区
+ *
+ * 这两条此前**没有任何诊断**（实测 B/C/D 三类全静默），是典型的静默失败：
+ * 编译通过、类型通过、运行期偶发崩。
+ *
+ * 1. 「组件体 run-once 派生节点」—— 组件体只跑一次，这个节点身份被固化
+ * 2. 「JSX 存进数据常量」—— `<Picker el={picker.value} />`、`const items = [{icon: <X/>}]`
+ *    会进 SSG 序列化（产物出现 `[object Xxx]`）
+ *
+ * 对 LLM 尤其致命：React 里 `const node = <X/>; return cond ? node : null` **完全合法**，
+ * 所以它是模型最容易写出来的形状之一。
+ *
+ * ## 判据与边界
+ *
+ * 只报**函数体内**的变量声明，且初始化式里含 JSX；**走进函数就停** ——
+ * 因为下面这条是**推荐写法**，必须不报：
+ *
+ * ```ts
+ * const render = () => <Picker el={picker.value} />   // ✅ 延迟求值，不报
+ * ```
+ *
+ * 模块顶层不归它管（那是 `VOBS_C105` 的地盘，避免同一处报两条）。
+ *
+ * ## 严重度：warning
+ *
+ * `const icon = <I/>` 只用一次其实**能跑**（节点只插一次），属于"能跑但脆弱"；
+ * 上面那个 `?:` 形态才是真崩。所以不用 error —— **C104 那次的教训：误报会摧毁信任，
+ * 而信任一没，之后所有告警都会被无视。**
+ */
+function reportEagerJsxInVariable(state: CompileState): void {
+  const sourceFile = state.sourceFile
+  if (!sourceFile) return
+
+  const report = (target: ts.Node): void => {
+    const { line, column, codeFrame } = buildCodeFrame(sourceFile, target.getStart(sourceFile), target.getWidth(sourceFile))
+    state.diagnostics.push({
+      code: 'VOBS_C108',
+      severity: 'warning',
+      message: 'JSX 被存进了变量，所以这个节点在**这一行就被创建了** —— '
+        + '之后的条件判断、复用都发生在创建之后。组件是 run-once 的，'
+        + '节点身份会被固化；如果这时读到的状态还是空的（如 `el` 为 null），'
+        + '组件会在带空值的情况下渲染并崩。',
+      location: { file: state.filename, line, column },
+      codeFrame,
+      fix: '把 JSX 直接写在**使用位置**（`{open ? <Picker el={picker.value}/> : null}`  '
+        + '—— 条件为假时组件根本不会被创建）；要复用就用**返回节点的函数**：'
+        + '`const renderPicker = () => <Picker el={picker.value}/>`（延迟求值，不报）。'
+        + '**JSX 也别存进数据常量**（数组/对象里的节点会进 SSG 序列化）。'
+    })
+  }
+
+  /**
+   * 初始化式里是否有**急切创建**的 JSX。
+   *
+   * **走进函数体就停** —— `() => <X/>` 是延迟求值，是推荐的替代写法。
+   */
+  const hasEagerJsx = (root: ts.Node): boolean => {
+    let found = false
+    const walk = (node: ts.Node): void => {
+      if (found) return
+      if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) {
+        found = true
+        return
+      }
+      // 函数体内的 JSX 不是急切的
+      if (ts.isFunctionLike(node)) return
+      ts.forEachChild(node, walk)
+    }
+    walk(root)
+    return found
+  }
+
+  /** `inFunction` 为真时才算"函数体内"—— 模块顶层留给 C105。 */
+  const walk = (node: ts.Node, inFunction: boolean): void => {
+    if (inFunction && ts.isVariableStatement(node)) {
+      for (const declaration of node.declarationList.declarations) {
+        if (declaration.initializer && hasEagerJsx(declaration.initializer)) report(declaration.initializer)
+      }
+    }
+    // 进入函数之后，其内部所有语句都算"函数体内"
+    const nextInFunction = inFunction || ts.isFunctionLike(node)
+    ts.forEachChild(node, child => { walk(child, nextInFunction) })
+  }
+  walk(sourceFile, false)
+}
+
 function reportFrozenReactiveReturn(state: CompileState): void {
   const sourceFile = state.sourceFile
   if (!sourceFile) return
