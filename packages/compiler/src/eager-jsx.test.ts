@@ -68,6 +68,11 @@ describe('VOBS_C108 该报的形态（节点被急切创建）', () => {
     expect(fix).toContain('=>')
     // ④ 数据常量
     expect(fix, 'fix 应提醒别把节点存进数据常量').toContain('数据常量')
+    // ⑤ 生产验证过的更优解：常驻挂载 + 传状态对象 + 内部判空
+    // （① 虽然修了崩溃，但每次条件翻转都会重建子树 —— 那是另一个已记录的坑）
+    expect(fix, 'fix 缺少"有内部状态时用常驻挂载"这条').toContain('常驻挂载')
+    expect(fix).toContain('判空')
+    expect(fix, '应说明 ① 的代价是状态丢失').toContain('状态丢失')
   })
 })
 
