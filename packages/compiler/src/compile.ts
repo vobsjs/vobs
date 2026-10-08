@@ -474,10 +474,27 @@ function reportEagerJsxInVariable(state: CompileState): void {
         + '组件会在带空值的情况下渲染并崩。',
       location: { file: state.filename, line, column },
       codeFrame,
-      fix: '把 JSX 直接写在**使用位置**（`{open ? <Picker el={picker.value}/> : null}`  '
-        + '—— 条件为假时组件根本不会被创建）；要复用就用**返回节点的函数**：'
-        + '`const renderPicker = () => <Picker el={picker.value}/>`（延迟求值，不报）。'
-        + '**JSX 也别存进数据常量**（数组/对象里的节点会进 SSG 序列化）。'
+      /*
+       * fix 必须**按使用位置分情况** —— 第一版只说了"写到使用位置"，实测发现
+       * 那**只对 JSX 子节点位置成立**：
+       *
+       *   用在 JSX 子位置   → 产物有 insertDynamic，真的响应式，零诊断 ✅
+       *   用在组件顶层 return → 产物**没有** insertDynamic，仍然冻结，
+       *                        而且会同时命中 C104 + C107 ❌
+       *
+       * 顶层 return 处没有 parent/anchor，条件不会被编译成响应式 —— 所以那里
+       * 该用 Show / RouterView，不是三元。照第一版建议改的人会从"运行时崩"
+       * 变成"界面不切换"，**更隐蔽**。
+       */
+      fix: '① 若它用在 **JSX 子节点位置**：把 JSX 直接写在那里 —— '
+        + '`<div>{open.value ? <Picker el={picker.value}/> : null}</div>`'
+        + '（编译期生成响应式条件工厂，条件为假时组件根本不会被创建）。'
+        + '② 若它用在**组件顶层 `return`**：**别改成三元** —— 那里没有 parent/anchor，'
+        + '两支都是 JSX 也一样冻结（会命中 C107）。改用 `<Show when={open.value}>` '
+        + '或路由场景用 `<RouterView/>`。'
+        + '③ 要复用就用**返回节点的函数**：'
+        + '`const renderPicker = () => <Picker el={picker.value}/>`（延迟求值，本规则不报）。'
+        + '④ **JSX 也别存进数据常量**（数组/对象里的节点会进 SSG 序列化）。'
     })
   }
 

@@ -56,10 +56,17 @@ describe('VOBS_C108 该报的形态（节点被急切创建）', () => {
     expect(c108(`export function P(){ const node = <A/>; return <div>{node}</div> }`)[0]!.severity).toBe('warning')
   })
 
-  it('fix 同时给出"写在用位置"与"返回节点的函数"两条出路', () => {
+  it('fix **按使用位置分情况** —— 这是实测纠正过的（第一版只说了"写到使用位置"）', () => {
     const fix = c108(`export function P(){ const node = <A/>; return <div>{node}</div> }`)[0]!.fix ?? ''
-    expect(fix).toContain('使用位置')
+    // ① JSX 子节点位置才是"写在那里"的正确场景
+    expect(fix).toContain('子节点位置')
+    // ② 顶层 return 处**不能**改成三元 —— 那里没有 parent/anchor，两支都是 JSX 也冻结
+    expect(fix, 'fix 必须警告顶层 return 不能改用三元').toContain('别改成三元')
+    expect(fix).toContain('C107')
+    expect(fix).toContain('Show')
+    // ③ 返回节点的函数
     expect(fix).toContain('=>')
+    // ④ 数据常量
     expect(fix, 'fix 应提醒别把节点存进数据常量').toContain('数据常量')
   })
 })
