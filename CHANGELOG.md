@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.8.7] - 2026-10-02
 
 ### Added
 
@@ -25,6 +25,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
     belongs to `VOBS_C105`, so there is no double report. Severity is warning — a node used exactly
     once does work; the conditional shape is the one that crashes.
   - False-positive check: zero hits across the repository, including test files.
+  - Its fix text is **position-aware**, after measurement showed the first version was only half
+    right: inlining at a JSX child position compiles to a reactive conditional factory, but inlining
+    into a component's **top-level `return`** freezes instead — that position has no parent or
+    anchor, so even two JSX branches never re-branch (it trips `VOBS_C104` and `VOBS_C107`).
+    Following the earlier advice would have traded a crash for a screen that never switches, which is
+    the more deceptive failure. The text now branches on position, names `VOBS_C107` explicitly, and
+    adds a fifth option: when the component has internal state worth keeping (input contents, scroll
+    position, canvas state), mount it permanently, pass the state object in and null-check inside —
+    which avoids both the crash and the subtree rebuild that option ① causes.
 
 ## [1.8.6] - 2026-10-02
 
