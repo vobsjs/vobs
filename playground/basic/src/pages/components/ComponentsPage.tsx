@@ -49,7 +49,7 @@ export function ComponentsPage() {
   const activity = state('files')
   const selectedFile = state('runtime')
   const editorTabs = state([
-    { id: 'runtime', label: 'runtime.ts', icon: <Icon name="code" />, closeable: true },
+    { id: 'runtime', label: 'runtime.ts', icon: () => <Icon name="code" />, closeable: true },
     { id: 'readme', label: 'README.md', closeable: true }
   ])
 
@@ -108,7 +108,7 @@ export function ComponentsPage() {
       <div class="demo-workbench">
         <Card title={i18n.t('components.workbenchTitle')} description={i18n.t('components.workbenchDescription')}>
           <div class="demo-workbench__body">
-            <ActivityRail value={activity.value} items={[{ id: 'files', label: i18n.t('components.files'), icon: <Icon name="folder" /> }, { id: 'search', label: i18n.t('components.search'), icon: <Icon name="search" /> }, { divider: true }, { id: 'settings', label: i18n.t('components.settings'), icon: <Icon name="settings" /> }]} onChange={id => { activity.value = id }} />
+            <ActivityRail value={activity.value} items={[{ id: 'files', label: i18n.t('components.files'), icon: () => <Icon name="folder" /> }, { id: 'search', label: i18n.t('components.search'), icon: () => <Icon name="search" /> }, { divider: true }, { id: 'settings', label: i18n.t('components.settings'), icon: () => <Icon name="settings" /> }]} onChange={id => { activity.value = id }} />
             <FileTree
               value={selectedFile.value}
               items={[

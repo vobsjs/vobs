@@ -25,67 +25,67 @@ export function AppLayout(props: AppLayoutProps) {
     {
       key: '',
       label: i18n.t('nav.overview'),
-      icon: <Icon name="home" />
+      icon: () => <Icon name="home" />
     },
     {
       key: 'users',
       label: i18n.t('nav.resourceTable'),
-      icon: <Icon name="menu" />
+      icon: () => <Icon name="menu" />
     },
     {
       key: 'captcha',
       label: i18n.t('nav.captcha'),
-      icon: <Icon name="check-circle" />
+      icon: () => <Icon name="check-circle" />
     },
     {
       key: 'components',
       label: i18n.t('nav.components'),
-      icon: <Icon name="sparkles" />
+      icon: () => <Icon name="sparkles" />
     },
     {
       key: 'forms',
       label: i18n.t('nav.forms'),
-      icon: <Icon name="edit" />
+      icon: () => <Icon name="edit" />
     },
     {
       key: 'data',
       label: i18n.t('nav.data'),
-      icon: <Icon name="folder" />
+      icon: () => <Icon name="folder" />
     },
     {
       key: 'async',
       label: i18n.t('nav.async'),
-      icon: <Icon name="zap" />
+      icon: () => <Icon name="zap" />
     },
     {
       key: 'cli',
       label: i18n.t('nav.cli'),
-      icon: <Icon name="terminal" />
+      icon: () => <Icon name="terminal" />
     },
     {
       key: 'runtime',
       label: i18n.t('nav.runtime'),
-      icon: <Icon name="code" />
+      icon: () => <Icon name="code" />
     },
     {
       key: 'ssr',
       label: i18n.t('nav.ssr'),
-      icon: <Icon name="atom" />
+      icon: () => <Icon name="atom" />
     },
     {
       key: 'payment',
       label: i18n.t('nav.payment'),
-      icon: <Icon name="zap" />
+      icon: () => <Icon name="zap" />
     },
     {
       key: 'errors',
       label: i18n.t('nav.errors'),
-      icon: <Icon name="alert-triangle" />
+      icon: () => <Icon name="alert-triangle" />
     },
     {
       key: 'inbox',
       label: i18n.t('nav.inbox'),
-      icon: <Icon name="bell" />,
+      icon: () => <Icon name="bell" />,
       pin: 'bottom',
       badgePill: () => inboxBadge.value
     },
@@ -210,13 +210,13 @@ function PlaygroundStatusBar() {
     <StatusBar
       class="demo-statusbar"
       left={[
-        { icon: <Icon name="code" />, label: 'playground' },
+        { icon: () => <Icon name="code" />, label: 'playground' },
         { dot: 'success', label: i18n.t('common.ready') },
-        { icon: <Icon name="check-circle" />, label: () => `${errorCount.value} Errors` }
+        { icon: () => <Icon name="check-circle" />, label: () => `${errorCount.value} Errors` }
       ]}
       right={[
         { label: 'Vobs v1' },
-        { icon: <Icon name="home" />, label: 'Local' }
+        { icon: () => <Icon name="home" />, label: 'Local' }
       ]}
     />
   )
