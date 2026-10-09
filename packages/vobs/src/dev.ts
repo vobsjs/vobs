@@ -102,6 +102,36 @@ function signalLabel(signal: ReadableSignal<unknown>): string {
 }
 
 /**
+ * 信号没有名字时，补一句**为什么**以及**怎么修**。
+ *
+ * ## 实测出来的成因（不是推测）
+ *
+ * 编译器的 `inferStateDebugName` 只在 `state` 是**直接从 `@vobs/reactivity` /
+ * `@vobs/vobs` 引入**时才从变量名推断。实测四种形态：
+ *
+ * ```
+ * 有名字   .tsx 直接 import
+ * 有名字   .ts  直接 import          ← 与文件扩展名无关
+ * 无名字   .ts  经自己的 barrel 再导出引入
+ * 无名字   .tsx 经自己的 barrel 再导出引入
+ * ```
+ *
+ * 真凶是 **barrel 再导出**，不是「.ts 文件没被编译」（我最初的推测是错的）。
+ * 识别 barrel 需要跨文件模块解析，而编译器的 transform 是**逐文件**的，做不到。
+ *
+ * ## 为什么要在这里说
+ *
+ * 看到 `(未命名信号)` 时不知道该改什么，只能手工回溯 —— 实测反馈里这是最贵的一环。
+ * 而修法只是**一行 import 改动**（或显式传状态名），所以必须让报错本身讲出来。
+ */
+function unnamedSignalHint(signal: ReadableSignal<unknown>): string {
+  if (getSignalDebugName(signal) !== undefined) return ""
+  return "\n  该信号没有名字 —— 常见原因：`state` 是经**自己的 barrel / 再导出**引入的"
+    + "（编译器只对直接从 `@vobs/reactivity` / `@vobs/vobs` 引入的 `state` 自动命名）。"
+    + "改成直接引入，或显式传名：`state(initial, \"entSync\")`。有了名字，这条报错会直接点名。"
+}
+
+/**
  * 装上开发期护栏，返回卸载函数。重复调用幂等（返回同一个卸载函数）。
  */
 export function installDevGuardrails(options: DevGuardrailOptions = {}): () => void {
@@ -206,7 +236,8 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
         severity: 'error',
         layer: 'constraint',
         location: sites.get(current),
-        message: `effect 写入了它自己依赖的信号 ${label} —— 这次写入会把它重新调度，形成自订阅循环`,
+        message: `effect 写入了它自己依赖的信号 ${label} —— 这次写入会把它重新调度，形成自订阅循环`
+        + unnamedSignalHint(signal),
         /*
          * fix 的顺序很要紧：**先教结构，再教补丁**。
          *

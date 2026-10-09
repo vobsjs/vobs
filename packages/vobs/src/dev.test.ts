@@ -32,8 +32,29 @@ afterEach(() => {
   uninstall?.()
   uninstall = undefined
 })
-
 describe('installDevGuardrails', () => {
+
+  it('信号没有名字时，报错里说明**成因与修法**（实测：barrel 再导出）', async () => {
+    /*
+     * 实测四种形态：直接从 @vobs/reactivity / @vobs/vobs 引入时，编译器会从变量名
+     * 推断 debugName；经**自己的 barrel 再导出**引入时不会 —— 于是报错显示
+     * (未命名信号)，而使用者不知道该改什么（实测反馈里这是最贵的一环）。
+     * 所以提示必须把原因与一行修法讲出来。
+     */
+    start()
+    const count = state(0)                       // 刻意不传 debugName
+    // 用**收敛**的写法（与既有测试同）：无限循环会留下未处理的错误，干扰其它测试
+    effect(() => {
+      const current = count.value
+      if (current < 1) count.value = current + 1
+    })
+    await settle()
+    const violation = collected.find(item => item.error.code === VOBS_C210)
+    expect(violation).toBeDefined()
+    expect(violation!.error.message).toContain('未命名信号')
+    expect(violation!.error.message, '缺"为什么没名字"的说明').toContain('barrel')
+    expect(violation!.error.message, '缺一行可执行的修法').toContain('state(initial')
+  })
   it('抓到 effect 自订阅，产出结构化 VobsError（码 / 层 / 修复建议 / 位置）', async () => {
     start()
     const count = state(0, 'count')
