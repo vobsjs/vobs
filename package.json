@@ -29,7 +29,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify:packages": "pnpm run build:packages && pnpm run check:packages && node scripts/verify-packages.mjs",
     "check:runtime": "node scripts/check-runtime.mjs --ignore /devtools",
-    "check:runtime:interact": "node scripts/check-runtime.mjs --interact --ignore /devtools"
+    "check:runtime:interact": "node scripts/check-runtime.mjs --interact --ignore /devtools",
+    "check:invariants": "node scripts/check-invariants.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
