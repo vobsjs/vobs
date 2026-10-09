@@ -8,6 +8,7 @@ import { dshCommand } from './commands/dsh.js'
 import { checkCommand } from './commands/check.js'
 import { agentDocCommand } from './commands/agent-doc.js'
 import { explainCommand } from './commands/explain.js'
+import { apiCommand } from './commands/api.js'
 import { showBanner, showLogo, showDevBanner } from './banner.js'
 import { cliVersion } from './version.js'
 
@@ -114,6 +115,14 @@ export function createCLI(): ReturnType<typeof cac> {
     })
 
   cli
+    .command('api [query]', '框架导出索引（哪个包导出了什么名字）')
+    .option('--json', '机器可读输出（给 AI 与工具消费）')
+    .option('--dir <dir>', '仓库根目录')
+    .action(async (query: string | undefined, options: Record<string, unknown>) => {
+      await apiCommand({ query, json: options.json === true, dir: options.dir as string | undefined })
+    })
+
+  cli
     .command('explain [code]', '诊断码说明（Rust 的 rustc --explain 模式）')
     .option('--json', '机器可读输出')
     .option('--missing', '列出源码里存在但没有条目的码')
@@ -194,5 +203,5 @@ export function createCLI(): ReturnType<typeof cac> {
  * 用这份清单把"跑某个命令"与"顶层用法错误"分开。
  */
 export const KNOWN_SUBCOMMANDS: readonly string[] = [
-  'init', 'create', 'dev', 'build', 'generate', 'g', 'add', 'check', 'dsh', 'agent-doc', 'explain', 'logo'
+  'init', 'create', 'dev', 'build', 'generate', 'g', 'add', 'check', 'dsh', 'agent-doc', 'explain', 'api', 'logo'
 ]
