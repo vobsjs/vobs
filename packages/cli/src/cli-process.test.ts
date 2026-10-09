@@ -123,17 +123,24 @@ describe('vobs CLI 的进程级契约', () => {
   it('check 找到 error 级问题时 exit 1（确保上一条不是"永远通过"）', async () => {
     const bad = path.join(tempDir, 'bad-src')
     mkdirSync(bad, { recursive: true })
-    // effect 写入了它自己依赖的信号 —— C210（error 级；注意 C118 只是 warning）
-    writeFileSync(
-      path.join(bad, 'bad.tsx'),
-      'import { effect, state } from "@vobs/vobs"\n'
-      + 'const count = state(0)\n'
-      + 'export const A = () => { effect(() => { count.value = count.value + 1 }); return <div>x</div> }\n',
-      'utf8'
-    )
-    const result = await runCli(['check', bad])
-    expect(result.code).toBe(1)
-    expect(result.stdout).toContain('VOBS_C210')
-    expect(result.stdout).toContain('1 个错误')
+      /*
+       * 用 **error 级**的诊断当夹具。
+       *
+       * 这里原先用 C210（effect 自订阅），但它的**静态规则已降为 warning**：
+       * 该规则按信号变量名判定，实测有误报（同名局部遮蔽），而 error 会让正确代码的
+       * CI 失败（C104 的错误模式）。真正的硬门禁由运行时护栏提供（按真实依赖集判定）。
+       *
+       * 换成 C101（不支持的 JSX 标签形态）—— 稳定 error 级，且经 6e3a891 的合并后
+       * vobs check 也能看到编译器的诊断。
+       */
+      writeFileSync(
+        path.join(bad, 'bad.tsx'),
+        'export const A = () => <svg:rect />' + '\n',
+        'utf8'
+      )
+      const result = await runCli(['check', bad])
+      expect(result.code).toBe(1)
+      expect(result.stdout).toContain('VOBS_C101')
+      expect(result.stdout).toContain('1 个错误')
   }, CLI_TIMEOUT)
 })

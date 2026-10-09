@@ -7,6 +7,7 @@ import { addCommand } from './commands/add.js'
 import { dshCommand } from './commands/dsh.js'
 import { checkCommand } from './commands/check.js'
 import { agentDocCommand } from './commands/agent-doc.js'
+import { explainCommand } from './commands/explain.js'
 import { showBanner, showLogo, showDevBanner } from './banner.js'
 import { cliVersion } from './version.js'
 
@@ -113,6 +114,20 @@ export function createCLI(): ReturnType<typeof cac> {
     })
 
   cli
+    .command('explain [code]', '诊断码说明（Rust 的 rustc --explain 模式）')
+    .option('--json', '机器可读输出')
+    .option('--missing', '列出源码里存在但没有条目的码')
+    .option('--dir <dir>', '--missing 用的源码根目录')
+    .action(async (code: string | undefined, options: Record<string, unknown>) => {
+      await explainCommand({
+        code,
+        json: options.json === true,
+        missing: options.missing === true,
+        dir: options.dir as string | undefined
+      })
+    })
+
+  cli
     .command('agent-doc', '生成/校验给 LLM 读的框架契约（AGENTS.md + CLAUDE.md）')
     .option('--dir <dir>', '目标目录', { default: process.cwd() })
     .option('--write', '写入文件（默认打到 stdout）')
@@ -179,5 +194,5 @@ export function createCLI(): ReturnType<typeof cac> {
  * 用这份清单把"跑某个命令"与"顶层用法错误"分开。
  */
 export const KNOWN_SUBCOMMANDS: readonly string[] = [
-  'init', 'create', 'dev', 'build', 'generate', 'g', 'add', 'check', 'dsh', 'agent-doc', 'logo'
+  'init', 'create', 'dev', 'build', 'generate', 'g', 'add', 'check', 'dsh', 'agent-doc', 'explain', 'logo'
 ]

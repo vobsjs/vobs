@@ -63,6 +63,9 @@ importers:
       '@vobs/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@vobs/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       cac:
         specifier: ^6.7.14
         version: 6.7.14

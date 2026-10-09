@@ -95,3 +95,5 @@ export { ClientOnly } from './client-only'
 export type { ClientOnlyProps } from './client-only'
 
 export { VOBS_C210, vobsC210Example, vobsC210Fix } from './diagnostic-text'
+export { DIAGNOSTIC_GUIDES, findDiagnosticGuide } from './diagnostic-guide'
+export type { DiagnosticGuide } from './diagnostic-guide'
