@@ -287,10 +287,74 @@ function containsSignalRead(node: ts.Node): boolean {
   return seen
 }
 
+/**
+ * 取一个函数**自己的绑定名**（用于判断它是不是"被当组件调用"）。
+ *
+ * 覆盖 `const render = () => {…}`、`function render() {…}`、`const o = { render() {…} }`；
+ * 匿名函数（回调、IIFE）返回 `undefined`。
+ */
+function ownNameOf(fn: ts.FunctionLikeDeclaration): string | undefined {
+  if (fn.name !== undefined && ts.isIdentifier(fn.name)) return fn.name.text
+  const parent = fn.parent
+  if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) return parent.name.text
+  if (ts.isPropertyAssignment(parent) && ts.isIdentifier(parent.name)) return parent.name.text
+  return undefined
+}
+
+/**
+ * 在 **JSX 表达式里被调用**的标识符集合（`{render()}` 这种）。
+ *
+ * ## 为什么要单独收集
+ *
+ * C118 的前提是"这个函数体只执行一次"。而 `{render()}` 里的 `render` **每次求值都会重跑** ——
+ * 它体里的 `const shown = n.value` 每轮都是新鲜的，代码完全正确。
+ *
+ * 但 `returnsJsx(render)` 会把这种渲染 helper 认成"组件" → 误报（实测残留）。
+ *
+ * ## 为什么只收"调用"而不收"引用"
+ *
+ * 只认 callee，是为了**保住真阳性**：
+ * - `{render()}` → 是调用 → helper → 跳过 ✓
+ * - `component={P}` / `<RouterView component={P}/>` → 只是引用，未调用 → **仍然检查 P** ✓
+ * - `<P/>` → JSX 标签，本来就不在 JsxExpression 里 → 仍然检查 ✓
+ */
+function collectCalledInJsx(root: ts.Node): Set<string> {
+  const called = new Set<string>()
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxExpression(node) && node.expression !== undefined) {
+      const scan = (child: ts.Node): void => {
+        if (ts.isCallExpression(child) && ts.isIdentifier(child.expression)) {
+          called.add(child.expression.text)
+        }
+        ts.forEachChild(child, scan)
+      }
+      scan(node.expression)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(root)
+  return called
+}
+
 function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDiagnostic[] {
   const found: CheckDiagnostic[] = []
+  const calledInJsx = collectCalledInJsx(source)
 
   const inspectComponent = (fn: ts.FunctionLikeDeclaration): void => {
+    /*
+     * **被 JSX 表达式调用的函数是 helper，不是组件**（实测残留，本次修掉）。
+     *
+     * ```tsx
+     * const render = () => { const shown = n.value + 1; return <b>{shown}</b> }
+     * return <div>{render()}</div>      // ← 每次求值都重跑 → shown 是新鲜的
+     * ```
+     *
+     * 它与 `export const Page = () => {…}`（真组件）形态完全一样，
+     * 但**调用位置**把二者分开了：编译器不会在 JSX 里"手动调用"组件。
+     */
+    const ownName = ownNameOf(fn)
+    if (ownName !== undefined && calledInJsx.has(ownName)) return
+
     const body = fn.body
     if (body === undefined || !ts.isBlock(body) || !returnsJsx(fn)) return
 

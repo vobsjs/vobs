@@ -55,20 +55,21 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
   })
 
   /*
-   * **已知残留误报（未修，刻意）**：声明在组件体、在 JSX 里被**手动调用**的渲染 helper：
+   * **曾经的已知残留，现已修掉**：声明在组件体、在 JSX 里被**手动调用**的渲染 helper：
    *
    * ```tsx
    * const render = () => { const shown = n.value + 1; return <b>{shown}</b> }
    * return <div>{render()}</div>      // 每次求值都重跑 → shown 是新鲜的，代码对
    * ```
    *
-   * 它与 **`export const Page = () => {…}`（真组件）** 形态完全一样 —— 静态分不开
-   * 「编译器把它当组件调用」与「代码里手动调用」。硬猜会关掉真阳性。
+   * 它曾与 `export const Page = () => {…}`（真组件）形态无法区分。现在用**调用位置**分开：
+   * 被 JSX 表达式调用（`{render()}`）的函数是 helper，编译器不会那样"手动调用"组件。
+   * 只认 callee 而不认引用，是为了保住下面那几条真阳性。
    *
-   * 所以**只修实测到的那个 IIFE 形态**，这一条留着并写明（见 docs/silent-failures.md
-   * 的同类记录方式）。下面这条断言把**残留**固定下来：哪天修好了它会变红。
+   * （这条断言原先写的是 `toContain(VOBS_C118)` 并把残留固定住 —— 修好时它变红，
+   * 提示语就是"请把这条断言反过来"。**"已知限制写成测试"第二次发挥作用。**）
    */
-  it('已知残留：helper 被手动调用时仍会误报 C118（未修，见上方注释）', () => {
+  it('helper 被 JSX 表达式调用时**不该**报 C118（曾经的残留）', () => {
     const found = analyzeSource(`
       import { state } from '@vobs/vobs'
       export function P() {
@@ -77,7 +78,37 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
         return <div>{render()}</div>
       }
     `, 'a.tsx')
-    expect(codes(found), '这是已知残留；若已修好，请把这条断言反过来').toContain(VOBS_C118)
+    expect(codes(found), 'helper 每次求值都重跑，不是 run-once 快照').not.toContain(VOBS_C118)
+  })
+
+  it('但 helper 只在**非 JSX**处被调用时，仍按组件形态检查（别过度收窄）', () => {
+    // `{render()}` 才认定为 helper；仅从 effect 里调用时无法确定其重跑语义，
+    // 这时应保持原判（宁可少收，不可放过真阳性）
+    const found = analyzeSource(`
+      import { state, effect } from '@vobs/vobs'
+      export function P() {
+        const n = state(0)
+        const render = (): unknown => { const shown = n.value + 1; return <b>{shown}</b> }
+        effect(() => { void render() })
+        return <div>x</div>
+      }
+    `, 'a.tsx')
+    expect(codes(found)).toContain(VOBS_C118)
+  })
+
+  it('**传引用**（未调用）的组件仍要检查 —— 只认 callee 不认引用', () => {
+    const found = analyzeSource(`
+      import { state } from '@vobs/vobs'
+      const Card = () => {
+        const n = state(0)
+        const shown = n.value + 1
+        return <b>{shown}</b>
+      }
+      export function P() {
+        return <RouterView component={Card} />
+      }
+    `, 'a.tsx')
+    expect(codes(found), '只是被引用、没被调用 → 仍按组件检查').toContain(VOBS_C118)
   })
 
   it('但**组件体**里的同类写法仍要报（别为了消误报把真阳性一起关掉）', () => {
