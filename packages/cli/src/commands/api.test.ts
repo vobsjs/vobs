@@ -54,16 +54,37 @@ describe.skipIf(!hasDist)('vobs api 索引', () => {
 
   it('**种类解析覆盖率不能退回去** —— 曾经 1353/1355 全是 unknown', () => {
     /*
-     * 第一版只有一遍、且要求 `export declare …` 前缀，而打包出来的声明是
-     * `declare function x(...)`（无 export 前缀）→ 几乎全解析不出种类。
-     * 两遍法（先收被导出的名字，再收名字→种类，最后 join）把覆盖率提到 ~86%。
+     * 演进：单遍 → 1353/1355 全 unknown；两遍法 → 196/1359（14%）；
+     * 补上**别名映射**与**跨包种类回退** → 10/1359（0.7%）。
      *
-     * 这条断言守的是**那个数量级**，不是精确值：退回单遍就会立刻低于阈值。
+     * 阈值定 0.9（当前 0.993）—— 守的是"那两条修法还在"，而不是精确值。
+     * 退回两遍法（0.86）或单遍（0.001）都会立刻红。
      */
     const named = index.filter(item => item.kind !== 'unknown').length
     const ratio = named / index.length
-    expect(ratio, `种类解析率只有 ${Math.round(ratio * 100)}% —— 是不是退回单遍了？`)
-      .toBeGreaterThan(0.5)
+    expect(ratio, `种类解析率只有 ${Math.round(ratio * 100)}% —— 别名映射或跨包回退是不是被去掉了？`)
+      .toBeGreaterThan(0.9)
+  })
+
+  it('**跨包再导出**的名字能拿到种类 —— 这是 14% → 0.7% 的一半原因', () => {
+    /*
+     * `@vobs/vobs` 是一整行再导出列表（`export { AsyncBoundary, … }`），
+     * 而这些名字声明在**兄弟包**（@vobs/dom / @vobs/kit）的 dist 里。
+     * 按包收集的映射查不到 → 必须回退到全局同名声明。
+     */
+    const entry = index.find(item => item.name === 'AsyncBoundary' && item.package === '@vobs/vobs')
+    expect(entry, 'AsyncBoundary 应在 @vobs/vobs 的索引里').toBeDefined()
+    expect(entry!.kind, '跨包再导出的名字不该是 unknown').not.toBe('unknown')
+  })
+
+  it('**bundler 改名**（`index_X as X`）的名字也能拿到种类', () => {
+    /*
+     * 打包器会把声明改名为 `index_AlipaySdkConfig`，再 `export { index_… as AlipaySdkConfig }`。
+     * 导出名与声明名不同 → 必须靠别名映射走两步。
+     */
+    const entry = index.find(item => item.name === 'AlipaySdkConfig' && item.package === '@vobs/payment')
+    expect(entry, 'AlipaySdkConfig 应在 @vobs/payment 的索引里').toBeDefined()
+    expect(entry!.kind, '经别名导出的名字不该是 unknown').not.toBe('unknown')
   })
 
   it('已知符号的种类正确（不是"解析出来但错了"）', () => {

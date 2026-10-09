@@ -26,13 +26,26 @@ import { logger } from '../utils/logger.js'
  *
  * ## 已知限制
  *
- * **还有 14% 的条目不显示种类**（实测 1359 项里 196 项 unknown）。原因是那部分
- * 类型声明由 bundler 生成，形状更复杂（重载、命名空间、`export =` 等），
- * 简单行匹配取不到。**输出里 unknown 不显示那一列** —— 显示一列"没解析出来"
- * 会让人以为工具坏了；`--json` 里仍保留该字段，供工具消费。
+ * **还有约 0.7% 的条目不显示种类**（实测 1359 项里 10 项 unknown）。
+ * 逐个看过，它们**不是解析缺陷，而是 bundler 的去冲突改名残留**：
  *
- * （第一版只有一遍、且要求 `export declare …` 前缀，于是 **1353/1355 全是 unknown**。
- * 两遍法 —— 先收"被导出的名字"、再收"名字→种类"、最后 join —— 把它降到 14%。）
+ * ```
+ * captcha/index.d.ts:2   export { C as Captcha, a as CaptchaAnswer, b as CaptchaChallenge, … }
+ * payment/index.d.ts:1   export { i as alipay } from './index-B1aUR7Vt.js'
+ * ```
+ *
+ * 也就是 `a`/`b`/`alipay` 这些名字**确实在导出列表里**（列出来是准确的），
+ * 只是它们指向的本地声明（`i` 之类）没有可识别的声明头。
+ *
+ * **刻意不过滤单字母名**：那能让输出更好看，但会变成"我猜哪些导出不算 API" ——
+ * 而这个索引的价值恰恰在于"名字与包名是准的，不编"。
+ *
+ * **输出里 unknown 不显示那一列**（显示一列"没解析出来"会让人以为工具坏了）；
+ * `--json` 仍保留该字段供工具消费。
+ *
+ * （演进：单遍 → **1353/1355 全 unknown**；两遍法 → 196/1359 = 14%；
+ * 补上**别名映射**（`index_X as X`）与**跨包种类回退** → **10/1359 = 0.7%**。
+ * 两条修法的原因都写在上面的 `exportAliases` 与 `globalKinds` 注释里。）
  *
  * **不 import 任何工作区包**：只用 node:fs / node:path。
  * 这一轮已经有两次"import 了 workspace 包但没声明依赖"的坑（cwd 一换就炸），
@@ -82,6 +95,37 @@ function exportedNames(line: string): string[] {
 
   const single = text.match(/^export\s+(?:declare\s+)?(?:function|class|interface|type|const|let|var)\s+([A-Za-z_$][\w$]*)/u)
   return single ? [single[1]] : []
+}
+
+/**
+ * **别名映射**：`export { 本地名 as 公开名 }` 里的 `公开名 → 本地名`。
+ *
+ * ## 为什么必须有它（实测出来的 14% 的主因之一）
+ *
+ * 打包器会**改名**。`@vobs/payment/dist/index-B1aUR7Vt.d.ts` 实测：
+ *
+ * ```ts
+ * import { AlipaySdkConfig } from 'alipay-sdk'
+ * declare const index_AlipaySdkConfig: typeof AlipaySdkConfig     // ← 声明叫 index_…
+ * ```
+ *
+ * 而导出列表里写的是 `export { index_AlipaySdkConfig as AlipaySdkConfig }`。
+ * `exportedNames` 解析出的是**公开名**（`AlipaySdkConfig`），
+ * `declarationKinds` 记的是**本地名**（`index_AlipaySdkConfig`）—— 于是永远 join 不上 → `unknown`。
+ *
+ * 修法是先把别名记下来，join 时用 `公开名 → 本地名 → 种类` 走两步。
+ */
+function exportAliases(line: string): Array<[publicName: string, localName: string]> {
+  const text = line.trim()
+  if (text.startsWith('//') || text.startsWith('*') || text.startsWith('/*')) return []
+  const group = text.match(/^export\s+(?:type\s+)?\{([^}]*)\}/u)
+  if (!group) return []
+  const out: Array<[string, string]> = []
+  for (const part of group[1].split(',')) {
+    const asMatch = part.trim().match(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/u)
+    if (asMatch) out.push([asMatch[2], asMatch[1]])
+  }
+  return out
 }
 
 /**
@@ -136,6 +180,18 @@ export function buildApiIndex(root: string): ApiEntry[] {
   const exported = new Set<string>()
   /** 「包|名字」→ 种类（第二遍收集，最后 join 回 index）。 */
   const kinds = new Map<string, ApiEntry['kind']>()
+  /** 「包|公开名」→ 本地名（`export { 本地 as 公开 }`，见 exportAliases 的注释）。 */
+  const aliases = new Map<string, string>()
+  /**
+   * **跨包**的名字 → 种类（不带包名）。
+   *
+   * 为什么要它：`@vobs/vobs` 是一整行再导出列表（`export { AsyncBoundary, … }`），
+   * 而这些名字的声明在**兄弟包**（`@vobs/dom` / `@vobs/kit`）的 dist 里。
+   * 按包收集的映射永远查不到 → 实测 `@vobs/vobs` 有 100 条 unknown（占全部 196 的一半）。
+   *
+   * 只作**回退**用：先查本包（更精确，能区分同名不同包），查不到才用全局。
+   */
+  const globalKinds = new Map<string, ApiEntry['kind']>()
   for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     const pkgDir = path.join(packagesDir, entry.name)
@@ -155,8 +211,14 @@ export function buildApiIndex(root: string): ApiEntry[] {
        *  3. 最后 join：导出名 → 种类
        * 顺序无所谓（各写各的 map），但**必须两遍** —— 只有一遍时 1353/1355 是 unknown。
        */
-      for (const [name, kind] of declarationKinds(text)) kinds.set(`${manifest.name}|${name}`, kind)
+      for (const [name, kind] of declarationKinds(text)) {
+        kinds.set(`${manifest.name}|${name}`, kind)
+        if (!globalKinds.has(name)) globalKinds.set(name, kind)
+      }
       for (const line of text.split(/\r?\n/u)) {
+        for (const [publicName, localName] of exportAliases(line)) {
+          aliases.set(`${manifest.name}|${publicName}`, localName)
+        }
         for (const name of exportedNames(line)) {
           const key = `${manifest.name}|${name}`
           if (exported.has(key)) continue
@@ -166,10 +228,26 @@ export function buildApiIndex(root: string): ApiEntry[] {
       }
     }
   }
-  // join：导出名 → 种类（第二遍没覆盖到的保持 unknown）
+  /*
+   * join：导出名 → 种类。三步回退，每一步都只在前一步失败时才用：
+   *   ① 本包同名声明（最精确）
+   *   ② 解别名后的本包声明（bundler 改名，如 `index_AlipaySdkConfig as AlipaySdkConfig`）
+   *   ③ 全局同名声明（跨包再导出，如 vobs → dom/kit）
+   * 都查不到就保持 unknown —— **不编造**。
+   */
   for (const item of index) {
-    const kind = kinds.get(`${item.package}|${item.name}`)
-    if (kind !== undefined) (item as { kind: ApiEntry['kind'] }).kind = kind
+    const direct = kinds.get(`${item.package}|${item.name}`)
+    if (direct !== undefined) { (item as { kind: ApiEntry['kind'] }).kind = direct; continue }
+    let localName = aliases.get(`${item.package}|${item.name}`)
+    // 别名可能链式（a as b、b as c）；解析几轮足够，避免环导致的死循环
+    for (let hop = 0; hop < 4 && localName !== undefined; hop++) {
+      const byAlias = kinds.get(`${item.package}|${localName}`)
+      if (byAlias !== undefined) { (item as { kind: ApiEntry['kind'] }).kind = byAlias; break }
+      localName = aliases.get(`${item.package}|${localName}`)
+    }
+    if ((item as { kind: ApiEntry['kind'] }).kind !== 'unknown') continue
+    const fallback = globalKinds.get(item.name)
+    if (fallback !== undefined) (item as { kind: ApiEntry['kind'] }).kind = fallback
   }
   return index.sort((a, b) => a.name.localeCompare(b.name) || a.package.localeCompare(b.package))
 }
