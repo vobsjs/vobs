@@ -77,6 +77,22 @@
   用包名当路径 grep 会**静默返回空**
 - **改了 workspace 包的导出，必须先 `pnpm run build:packages`** ——
   CLI 引用的是 `dist/`，否则会以 `node:internal/modules/run_main` 这种看不懂的形态失败
+- **动了任何 `packages/*/package.json` 的依赖（包括回退！），必须同步 lockfile 并跑 `--frozen-lockfile` 验证**
+
+  ❌ 事故：我按错误结论给 3 个 dsh 插件包加了 `@vobs/dsh`/`@vobs/vobs` 并跑了 `pnpm install`
+  （lockfile 随之更新），随后 `git checkout` 回退了 `package.json`，**却把仍然带着那两个依赖的
+  lockfile 一起提交了**（`6a2e8cc`）。CI 从此在 `pnpm install --frozen-lockfile` 上红：
+
+  ```
+  ERR_PNPM_OUTDATED_LOCKFILE  pnpm-lock.yaml is not up to date with packages/dsh-console/package.json
+    * 2 dependencies were removed: @vobs/dsh@workspace:*, @vobs/vobs@workspace:*
+  ```
+
+  **为什么本地一直没发现**：门禁与 `verify:packages` 用的都是**已有的 `node_modules`**，
+  从不重装 → **结构上发现不了 lockfile 不同步**。这类问题只有 `--frozen-lockfile` 会拦。
+
+  ✅ 修法与检查：`pnpm install --no-frozen-lockfile` → 看 `git diff pnpm-lock.yaml` 是否**只**包含
+  预期的差异 → `pnpm install --frozen-lockfile` 必须通过 → 再提交
 
 ## 八、提交与发布
 

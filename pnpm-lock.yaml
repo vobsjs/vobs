@@ -158,32 +158,11 @@ importers:
         specifier: ^5.0.0 || ^6.0.0 || ^7.0.0
         version: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)
 
-  packages/dsh-console:
-    dependencies:
-      '@vobs/dsh':
-        specifier: workspace:*
-        version: link:../dsh
-      '@vobs/vobs':
-        specifier: workspace:*
-        version: link:../vobs
+  packages/dsh-console: {}
 
-  packages/dsh-devkit:
-    dependencies:
-      '@vobs/dsh':
-        specifier: workspace:*
-        version: link:../dsh
-      '@vobs/vobs':
-        specifier: workspace:*
-        version: link:../vobs
+  packages/dsh-devkit: {}
 
-  packages/dsh-plugin:
-    dependencies:
-      '@vobs/dsh':
-        specifier: workspace:*
-        version: link:../dsh
-      '@vobs/vobs':
-        specifier: workspace:*
-        version: link:../vobs
+  packages/dsh-plugin: {}
 
   packages/forms:
     dependencies:
@@ -523,9 +502,6 @@ importers:
       '@vobs/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@vobs/vobs':
-        specifier: workspace:*
-        version: link:../vobs
       parse5:
         specifier: ^8.0.1
         version: 8.0.1
