@@ -18,6 +18,7 @@
  * 搬迁的验收标准就是 `vobs check` 对全仓的输出与搬迁前**逐字节一致**。
  */
 import ts from 'typescript'
+import { VOBS_C210 as C210_CODE, vobsC210Fix } from '@vobs/runtime'
 
 export interface CheckDiagnostic {
   /** 稳定错误码，AI 与文档按它检索。 */
@@ -35,7 +36,7 @@ export interface CheckDiagnostic {
 }
 
 /** effect 写入了自己依赖的信号。 */
-export const VOBS_C210 = 'VOBS_C210'
+export const VOBS_C210 = C210_CODE
 /** 列表写在分支位置 —— 失去 keyed 复用。 */
 export const VOBS_C232 = 'VOBS_C232'
 /** 在组件体里读信号并存进局部变量 —— 组件体只执行一次，之后永不更新。 */
@@ -151,8 +152,9 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
         code: VOBS_C210,
         severity: 'error',
         message: `effect 写入了它自己依赖的信号 "${name}" —— 这次写入会把它重新调度，形成自订阅循环`,
-        fix: `把这次写入包进 untrack：untrack(() => { ${name}.value = next })；`
-          + '如果这个 effect 本来就只该做副作用，检查是不是误读了不该读的信号。'
+        // 文案与运行时护栏**共用同一份**（@vobs/runtime 的 diagnostic-text）——
+        // 此前两处各写一份，1.8.5 改进运行时那份时这里没同步，用户在 vite 里看到旧建议。
+        fix: vobsC210Fix(name)
       }))
     }
   }

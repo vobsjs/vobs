@@ -36,6 +36,7 @@ import {
   type ReadableSignal
 } from '@vobs/reactivity'
 import { VobsError, formatVobsError, type VobsErrorLocation } from '@vobs/runtime/error'
+import { vobsC210Example, vobsC210Fix } from '@vobs/runtime'
 
 /** effect 写入了自己依赖的信号 —— 最常见的自订阅。 */
 export const VOBS_C210 = 'VOBS_C210'
@@ -218,12 +219,10 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
          * 作用域里跑，所以它调用的函数碰什么信号都不会反向订阅 —— **结构上写不出来**。
          * 其次是改用派生值 / memo。
          */
-        fix: `首选：显式声明依赖 ` + '`effect(on(deps, () => { … }))`'
-          + `（on 让回调里的读取不订阅，结构上不会形成自订阅）；`
-          + `或者这次写入本可以改成派生值 / memo（最常见的是"读 A 写 A"其实想问"派生出新值"）。`
-          + ` 兜底：只给这一次写入断开订阅 untrack(() => { ${bare}.value = next })；`
-          + '如果这个 effect 本来就只该做副作用，检查是不是误读了不该读的信号。',
-        example: `effect(on(deps, () => {\n  // 这里的读取不订阅\n  ${bare}.value = next\n}))`,
+        // 与静态规则（@vobs/compiler 的 analyze）**共用同一份文案** —— 此前两处各写一份，
+        // 1.8.5 只改了这里，静态规则那份还是旧文案，于是 vite 通道给出过时建议。
+        fix: vobsC210Fix(bare),
+        example: vobsC210Example(bare),
         docs: 'https://github.com/vobsjs/vobs/blob/main/docs/dev-guardrails.md'
       }))
     }
