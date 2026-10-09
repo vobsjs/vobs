@@ -4,6 +4,97 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.9] - 2026-10-09
+
+### Added
+
+- **`vobs explain [code]` — every diagnostic code is now queryable.** The rules behind
+  `VOBS_C104`–`VOBS_C108` were previously only discoverable by reading the compiler's source; an
+  error message told you *that* something was wrong, not *why* it was a trap or what to write
+  instead. Each entry answers four questions — what it means, why it bites, the correct form, and a
+  counter-example — and a code with no entry says so explicitly rather than inventing prose
+  (**guessed documentation is worse than none**). `--json` for tools, `--missing` to list codes that
+  exist in the source but have no entry. All 14 codes are covered; `--missing` now reports 0.
+- **`vobs api [query]` — a queryable index of the framework's exports.** Reads the **built**
+  `dist/*.d.ts` files, so the index matches what consumers actually install and tracks the version
+  automatically. It answers "which package exports this name", which is the most commonly guessed
+  wrong. Unpublished internal packages and the three Git-installed `dsh-plugin-*` packages are
+  excluded. `--json` for tools.
+- **`pnpm run checks` — a generated index of this repository's own capability surface.** This is the
+  one gap neither of the above closes: both index *exported symbols*, while the repeated failure in
+  this cycle was re-implementing an existing *script*. `docs/checks.md` is rendered from
+  `package.json` plus each script's header comment, and `pnpm run checks -- --check` fails when the
+  file drifts from the repository — **an index that drifts is worse than no index, because it makes
+  people believe they checked.**
+- **`AGENTS.md` for this repository.** `vobs agent-doc` generates guidance for *applications using*
+  vobs; this repository had none for people and agents *working on* vobs. Every item is a real
+  regression from this cycle, with the cost attached.
+- **`docs/silent-failures.md` and an `ai-mistakes` corpus with measured coverage.** The corpus lists
+  React-shaped mistakes, and each entry declares either the code that catches it or that it is
+  currently silent — so the gaps are visible instead of remembered. Coverage is printed (10/12) and
+  deliberately **not** asserted against a threshold, because a threshold invites writing easy
+  entries.
+- **`guide-verification` tests: every `fix` suggestion must work.** For each code, the counter-
+  example must report it and the *rewritten* form must produce **zero** diagnostics. Diagnostic
+  advice is code, and two pieces of it were wrong in this cycle: `VOBS_C108`'s first version moved
+  users from a crash to a silently frozen view, and `VOBS_C104`'s recommended a CSS pattern real
+  projects do not have.
+- **Channel-reachability tests.** A declarative matrix asserting each code is visible on the
+  channels it claims (`vobs check` / vite) and invisible on the ones it does not. The same defect —
+  *a diagnostic that exists but is unreachable on a channel* — appeared three times in this cycle,
+  each time found by hand.
+
+### Fixed
+
+- **`vobs api`'s `kind` resolution: 0.1% → 86% → 99%.** The first version scanned for
+  `export declare …`, but bundled declarations are written `declare function x(...)` and exported
+  from a separate list at the end of the file, so 1353 of 1355 entries had no kind. Two passes fixed
+  the bulk; an alias map (`export { index_AlipaySdkConfig as AlipaySdkConfig }`) and a cross-package
+  fallback (names re-exported by `@vobs/vobs` but declared in `@vobs/dom`/`@vobs/kit`) took it to
+  10 of 1359. The remaining ten are bundler deconfliction artifacts (`export { C as Captcha, a as
+  CaptchaAnswer, … }`); they are real entries in the export lists and are deliberately **not**
+  filtered, because filtering them would mean guessing which exports are not real API.
+- **The two `VOBS_C210` implementations gave different advice.** The static rule and the runtime
+  guard each carried their own copy of the fix text; 1.8.5 improved only the runtime copy, so a user
+  seeing the warning in `vite dev` was taught the older, patch-first remedy. Both now read one
+  shared source in `@vobs/runtime`, which structurally prevents divergence.
+- **Static `VOBS_C210` false-positived on same-name shadowing** — a local object declared in the
+  effect body, or in the enclosing component body, was matched by name and reported as a
+  self-subscription. Seven adversarial shapes measured one false positive; the rule now skips names
+  whose binding is clearly not a signal (**an initializer that is not a call**), while deliberately
+  keeping bindings produced by calls so imported signals and custom store factories are not lost.
+  With the false positive gone the rule returned to `error`, since a real self-subscription is worth
+  failing CI over.
+- **`VOBS_C118` false-positived twice on shapes that re-evaluate.** An immediately-invoked arrow
+  function in JSX child position re-runs whenever its dependencies change, so `const x = s.value`
+  inside it is not a run-once snapshot; the same holds for a render helper called from a JSX
+  expression. The rule now skips both. The discriminator deliberately matches only **callees**:
+  `component={Card}` is a reference, not a call, so `Card` is still checked.
+- **Analyzer diagnostics were invisible to vite, and compiler diagnostics were invisible to
+  `vobs check`.** Both directions of the same defect. `analyzeSource` and its rules moved from
+  `@vobs/cli` to `@vobs/compiler` so the plugin and the CLI share one implementation, and the vite
+  plugin now emits analyzer findings through `this.warn` (analyzer *errors* go through the warning
+  channel too, so a finding can never block a build).
+- **`VOBS_C210` now explains why a signal has no name.** Measured cause: the compiler infers a debug
+  name only for `state` imported **directly** from `@vobs/reactivity` / `@vobs/vobs`; a barrel
+  re-export defeats it (the file extension is irrelevant). Resolving barrels needs cross-file module
+  resolution, which a per-file transform cannot do — so the message states the cause and the
+  one-line fix (`import` directly, or pass a name explicitly).
+- **`VOBS_C232`'s advice now carries the measured cost.** Compiling both forms showed the branch
+  version emits `insertDynamicValue(el, null, () => cond.value ? items.map(…) : null)`: every node is
+  recreated, **and the branch condition itself rebuilds the whole list** because the getter reads it.
+  The direct form emits `insertList(...)`, which reuses and moves entries. The message also states
+  when it is worth acting on — a handful of stateless buttons is negligible; dozens of items, or
+  items holding focus, input, or scroll state, are not.
+- **`@vobs/layout` imported `@vobs/runtime` without declaring it.** A phantom dependency: it
+  resolves from the monorepo root but not from a consumer's install. This one was introduced during
+  this cycle, and the repository already had a check that catches it (`check:imports`, using a
+  TypeScript AST rather than text matching) — which was written because another attempt to solve the
+  same problem by text matching produced a false positive and then three wrong "fixes".
+- **`check:scripts`** — `.mjs` files in `scripts/` must not contain TypeScript type annotations.
+  A `.mjs` with `const x: string[] = []` fails at parse time, so a generated edit script silently
+  changes nothing. Wired into `ci.yml` and the local gate.
+
 ## [1.8.8] - 2026-10-09
 
 ### Fixed
