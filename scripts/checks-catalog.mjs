@@ -99,7 +99,8 @@ const entries = Object.keys(scripts)
     }
   })
 
-if (process.argv.includes('--write')) {
+/** 渲染 `docs/checks.md` 的完整内容。`--write` 与 `--check` 共用，保证两者永不脱节。 */
+function renderCatalog(entries) {
   const lines = [
     '# 仓库能力索引',
     '',
@@ -119,8 +120,53 @@ if (process.argv.includes('--write')) {
     if (item.file !== null) lines.push(`- 实现：\`${item.file}\``)
     lines.push('')
   }
-  const target = path.join(ROOT, 'docs', 'checks.md')
-  writeFileSync(target, lines.join('\n'), 'utf8')
+  return lines.join('\n')
+}
+
+/*
+ * `--check`：比对 `docs/checks.md` 与当前仓库是否一致，不一致就**失败**。
+ *
+ * ## 为什么必须有它
+ *
+ * `docs/checks.md` 是**生成物**，但生成物最大的风险是**悄悄失真** ——
+ * 加了新脚本、改了头注释，文档还停在旧样子。而"索引失信"正是这一轮
+ * 重复造 5 次轮子的根因（第 5 次就是没意识到 `check-imports` 已经存在）。
+ *
+ * 一个会漂移的索引，比没有索引更糟：它让人**以为查过了**。
+ *
+ * 做法与 `vobs agent-doc --check` 相同：重新渲染 → 与磁盘比对。
+ * 因为整份文件都是生成的，直接比全文最简单也最不容易留死角。
+ */
+const TARGET = path.join(ROOT, 'docs', 'checks.md')
+const rendered = renderCatalog(entries)
+
+if (process.argv.includes('--check')) {
+  if (!existsSync(TARGET)) {
+    console.error('docs/checks.md 不存在 —— 跑 `pnpm run checks -- --write` 生成。')
+    process.exitCode = 1
+  } else {
+    const onDisk = readFileSync(TARGET, 'utf8').replace(/\r\n/g, '\n')
+    if (onDisk !== rendered.replace(/\r\n/g, '\n')) {
+      console.error('docs/checks.md 与当前仓库**不一致** —— 索引已失真。')
+      console.error('  修法：pnpm run checks -- --write')
+      // 指出第一处差异，省去人工全文 diff
+      const a = onDisk.split('\n')
+      const b = rendered.split('\n')
+      for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        if (a[i] !== b[i]) {
+          console.error(`  第一处差异在第 ${i + 1} 行：`)
+          console.error(`    磁盘: ${a[i] ?? '(无)'}`)
+          console.error(`    当前: ${b[i] ?? '(无)'}`)
+          break
+        }
+      }
+      process.exitCode = 1
+    } else {
+      console.log(`vobs checks --check —— docs/checks.md 与仓库一致（${entries.length} 项）✓`)
+    }
+  }
+} else if (process.argv.includes('--write')) {
+  writeFileSync(TARGET, rendered, 'utf8')
   console.log(`已写入 docs/checks.md（${entries.length} 项）`)
 } else {
   console.log(`仓库能力索引（${entries.length} 项）—— 动手前先看这里\n`)

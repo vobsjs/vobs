@@ -130,6 +130,70 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
       + '影响大小看**条目数与是否有状态**：几项无状态按钮可忽略；几十项、或条目内有焦点/输入/滚动状态时必须改。',
     correct: '把 list 提成**直接的**子表达式：先写条件分支，再单独写 `{items.map(...)}`。',
     wrong: '`{cond ? items.value.map(i => <li key={i}/>) : <b/>}`'
+  },
+
+  /* ---------- 构建器 / 配置层（补齐 --missing 指出的缺口） ---------- */
+  {
+    code: 'VOBS_C002',
+    severity: 'error',
+    title: '边界组件缺少必需属性',
+    why: '`ResourceBoundary` / `ErrorBoundary` / `AsyncBoundary` 靠各自那个属性工作：'
+      + '`resource` 决定订阅哪个资源、`fallback` 决定出错时渲染什么、`promise` 决定等哪个 Promise。'
+      + '缺了它，编译期不知道该挂什么，运行期也建立不起边界 —— '
+      + '而症状是"边界**没生效**"（错误照样冒到上层、资源不订阅），不是一条清楚的报错。',
+    correct: '`<ResourceBoundary resource={userResource}>…</ResourceBoundary>`；'
+      + '`<ErrorBoundary fallback={(e) => <Err error={e}/>}>…</ErrorBoundary>`；'
+      + '`<AsyncBoundary promise={pending}>…</AsyncBoundary>`。',
+    wrong: '`<ErrorBoundary>…</ErrorBoundary>`（漏了 `fallback`）'
+  },
+  {
+    code: 'VOBS_C007',
+    severity: 'error',
+    title: '编译器插件缺少 name 或重名',
+    why: '插件按 `name` 去重与排序，而**顺序决定谁先改 AST**。'
+      + '没有 name、或两个插件同名时，`transformPluginNodes` 的产出顺序不确定 —— '
+      + '于是"同一份源码两次编译结果不同"，这类构建不确定性比崩溃更难查。'
+      + '所以这里**直接抛错**（`VobsError`）而不是给警告。',
+    correct: '每个插件都给唯一且稳定的 `name`：`{ name: "vobs-plugin-i18n", transform(...) {…} }`。',
+    wrong: '两个插件都写 `{ name: "i18n" }`，或干脆不写 `name`'
+  },
+  {
+    code: 'VOBS_C101',
+    severity: 'error',
+    title: '不支持的 JSX 标签形态',
+    why: 'React 接受 `<svg:rect>`（JSX 命名空间标签）与 `<Foo.Bar>`（成员表达式）。'
+      + 'vobs 不做这两种解析：它们没有清晰的"组件还是 DOM 元素"归属，'
+      + '而 vobs 正是靠**大小写**来区分二者的 —— 猜错会导致整棵子树走错编译路径。',
+    correct: '组件用大写标识符 `<MyComponent/>`；DOM 元素用小写标签名 `<rect/>`；'
+      + 'Fragment 用 `<Fragment>` 或 `<>…</>`。',
+    wrong: '`<svg:rect/>`、`<Svg.Rect/>`'
+  },
+  {
+    code: 'VOBS_C102',
+    severity: 'warning',
+    title: 'on* 属性绑到了不存在 / 不规范的事件名',
+    why: '三种情形**分开定级**：'
+      + '① `onFoo` 解析出的事件既不符合 `on` + 大写的约定、也不是已知 DOM 事件'
+      + '→ **回调永远不会触发，而且毫无声音**（error）；'
+      + '② 小写 `onclick` 只是"碰巧对得上"，换个名字就会静默失效（warning）；'
+      + '③ `onFoo` 是未知事件 —— 可能是自定义事件（可忽略），也可能是拼错（warning）。'
+      + '**只在"不可能是对"时报 error**：这条的目的不是拦人，'
+      + '而是把"绑到不存在的事件上、回调永不触发且没有任何提示"这件事说出来。',
+    correct: '事件处理器写成 `on` + 大写字母开头：`onClick` / `onDoubleClick` / `onPointerDown`。'
+      + '本来不是事件处理器的属性换个别名；确需手动挂监听就在 effect 里 `addEventListener`。',
+    wrong: '`onclick={…}`（小写）、`onClik={…}`（拼错）、`onFooBar={…}`（非标准事件）'
+  },
+  {
+    code: 'VOBS_C103',
+    severity: 'warning',
+    title: 'map 回调体不满足「单个 JSX 表达式」或「恰好一个 return」',
+    why: '编译器靠这个形态把列表编译成 **keyed 复用**（`insertList`：按 key 调和、移动已有节点）。'
+      + '回调体一旦有多个语句、或返回的是 Fragment，它就认不出来 → 退化成**多态插入**：'
+      + '每轮**重建每一项**，`key` 与 keyed 复用全部失效（重排时节点身份丢失、项内状态被重置）。',
+    correct: '把计算提到 `map` 之外（或先用 `memo` 派生好），让回调体保持"单个 JSX 表达式"；'
+      + '列表项用**一个元素**而不要用 Fragment 包。',
+    wrong: '`{items.map(i => { const t = f(i); return <li key={i}>{t}</li> })}`　'
+      + '`{items.map(i => <><li key={i}/></>)}`'
   }
 ]
 
