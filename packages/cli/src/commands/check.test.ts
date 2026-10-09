@@ -25,6 +25,52 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
   })
 
   /*
+   * **外层次遮蔽**：同名局部声明在**组件体**里（不是 effect 体内）—— 之前只处理了体内那一圈。
+   * 现在的判据是「初始化式是不是调用」：非调用初始化式（对象字面量 / 属性访问）**肯定不是信号**。
+   */
+  it('组件体里的同名对象遮蔽也**不该**报 C210（外层次遮蔽）', () => {
+    const found = analyzeSource(`
+      import { effect, state } from '@vobs/vobs'
+      const count = state(0)
+      export function P() {
+        const count = { value: 0 }
+        effect(() => { count.value = count.value + 1 })
+        return <div>x</div>
+      }
+    `, 'a.tsx')
+    expect(codes(found), '组件体里的局部对象同样不是信号').not.toContain(VOBS_C210)
+  })
+
+  it('但**调用产出的**绑定仍要检查 —— 自定义工厂可能是信号（防过度收窄）', () => {
+    /*
+     * 判据的关键：只有"初始化式不是调用"才排除。
+     * 工厂调用（`createStore()` / `useFoo()`）产出的东西**可能就是信号** → 必须保留检查。
+     */
+    const found = analyzeSource(`
+      import { effect, createStore } from '@vobs/vobs'
+      const store = createStore({ n: 0 })
+      export function P() {
+        effect(() => { store.value = store.value + 1 })
+        return <div>x</div>
+      }
+    `, 'a.tsx')
+    expect(codes(found), '工厂调用产出 → 保留检查，否则会漏掉自定义 store 的自订阅').toContain(VOBS_C210)
+  })
+
+  it('属性访问的绑定不算信号（`const c = props.count`）', () => {
+    const found = analyzeSource(`
+      import { effect, state } from '@vobs/vobs'
+      const count = state(0)
+      export function P(props: { count: { value: number } }) {
+        const count = props.count
+        effect(() => { count.value = count.value + 1 })
+        return <div>x</div>
+      }
+    `, 'a.tsx')
+    expect(codes(found), 'props.count 不是信号').not.toContain(VOBS_C210)
+  })
+
+  /*
    * **实测误报（来自真实项目 Labelune）**：JSX 子节点位置里的**立即执行函数**
    * 每次依赖变化都会重跑，所以它体里的 `const x = signal.value` **不是** run-once 快照。
    *

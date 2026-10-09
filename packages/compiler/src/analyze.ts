@@ -100,6 +100,67 @@ const isWriteOperator = (kind: ts.SyntaxKind): boolean =>
 
 /* ------------------------------------------------- 规则 A：effect 自订阅 */
 
+/**
+ * 在 effect **外层作用域**里被声明、且初始化式**明显不是信号**的名字。
+ *
+ * ## 为什么需要（实测的误报类）
+ *
+ * effect 体内的同名遮蔽早已处理；但**在组件体里声明的**同名局部仍会误报：
+ *
+ * ```ts
+ * const count = state(0)          // 外层信号
+ * function P() {
+ *   const count = { value: 0 }    // ← 在**组件体**里声明（不在 effect 内）
+ *   effect(() => { count.value = 1 })   // 这不是信号，却被当成自订阅
+ * }
+ * ```
+ *
+ * ## 判据：初始化式是不是**调用**
+ *
+ * 信号几乎总是调用产生的，所以：
+ *
+ * | 写法 | 判定 | 理由 |
+ * |---|---|---|
+ * | `const c = { value: 0 }` | **不是信号** → 跳过 | 对象字面量 |
+ * | `const c = props.count` | **不是信号** → 跳过 | 属性访问 |
+ * | `const c = state(0)` | 继续检查 | 调用 —— 但确实是信号，正确 |
+ * | `const c = createStore()` | **继续检查** | 调用 —— **未知也保守保留**（自定义工厂） |
+ * | 无初始化式 / 解构 | 继续检查 | 无法判断 |
+ *
+ * 最后两行是这个判据的关键：**只要可能是工厂产出就保留**，
+ * 于是"从别处 import 的信号"（无本地声明）与"自定义 store 工厂"都不会被误杀。
+ */
+function collectNonSignalLocals(from: ts.Node): Set<string> {
+  const nonSignal = new Set<string>()
+  let node: ts.Node | undefined = from
+  while (node !== undefined && !ts.isSourceFile(node)) {
+    // `isFunctionLike` 也覆盖签名声明（没有 body），所以按可选属性取
+    const fnBody = ts.isFunctionLike(node) ? (node as { body?: ts.ConciseBody }).body : undefined
+    if (fnBody !== undefined && ts.isBlock(fnBody)) {
+      const scan = (child: ts.Node): void => {
+        // 不进入内层函数：内层有自己的作用域，由它自己那一轮处理
+        if (ts.isFunctionLike(child)) return
+        if (ts.isVariableDeclaration(child) && ts.isIdentifier(child.name)
+          && child.initializer !== undefined) {
+          let init: ts.Expression = child.initializer
+          while (ts.isParenthesizedExpression(init) || ts.isAsExpression(init)
+            || ts.isTypeAssertionExpression(init)) {
+            init = init.expression
+          }
+          // 调用/构造 → 可能是信号工厂 → 交给后续判断，不在此排除
+          if (!ts.isCallExpression(init) && !ts.isNewExpression(init)) {
+            nonSignal.add(child.name.text)
+          }
+        }
+        ts.forEachChild(child, scan)
+      }
+      ts.forEachChild(fnBody, scan)
+    }
+    node = node.parent
+  }
+  return nonSignal
+}
+
 function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckDiagnostic[] {
   const found: CheckDiagnostic[] = []
 
@@ -146,6 +207,12 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
         if (ts.isIdentifier(parameter.name)) shadowed.add(parameter.name.text)
       }
     }
+    /*
+     * **外层作用域**（组件体）里"明显不是信号"的局部名也要遮蔽 —— 见 collectNonSignalLocals。
+     * 这里比体内那圈**更精确**（只排除非调用初始化式），因为外层同名局部很常见
+     * （`const count = props.count` 这类），一刀切会漏掉大量真自订阅。
+     */
+    for (const name of collectNonSignalLocals(body)) shadowed.add(name)
 
     const visit = (node: ts.Node, insideUntrack: boolean): void => {
       // 嵌套函数有自己的订阅语义，不算在本次 effect 的读写里
