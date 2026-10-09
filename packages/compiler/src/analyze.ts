@@ -288,6 +288,39 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
     const body = fn.body
     if (body === undefined || !ts.isBlock(body) || !returnsJsx(fn)) return
 
+    /*
+     * **立即执行的函数不是组件**（实测出来的误报，来自真实项目 Labelune）。
+     *
+     * ```tsx
+     * {qExpanded.value === job.id ? (
+     *   <div>
+     *     {(() => {                          // ← IIFE，在 JSX **子节点位置**
+     *       const failedShown = ...signal.value...
+     *       return (<>...</>)
+     *     })()}
+     *   </div>
+     * ) : null}
+     * ```
+     *
+     * JSX 子节点位置的表达式是**动态的** —— 这个 IIFE 每次依赖变化都会重跑，
+     * 所以它体里的 `const x = signal.value` **不是** run-once 快照，代码是对的。
+     *
+     * 但 `returnsJsx(fn)` 会把它认成"组件"，于是报 C118 —— **误报**。
+     * （这条规则此前只在组件体是直接语句时被验证过，IIFE 形态是盲区。）
+     */
+    /*
+     * **要注意括号**：`(() => {...})()` 里那个 arrow 的**父节点是
+     * `ParenthesizedExpression`，不是 `CallExpression`** —— 实测确认过
+     * （第一版我只查了 `parent` 一层，于是这个误报没被拦住）。
+     */
+    let callee: ts.Node = fn
+    let up: ts.Node | undefined = fn.parent
+    while (up !== undefined && ts.isParenthesizedExpression(up)) {
+      callee = up
+      up = up.parent
+    }
+    if (up !== undefined && ts.isCallExpression(up) && up.expression === callee) return
+
     // 组件体里「读信号 + 存进 const」
     const captured: { name: string; node: ts.VariableDeclaration }[] = []
     for (const statement of body.statements) {

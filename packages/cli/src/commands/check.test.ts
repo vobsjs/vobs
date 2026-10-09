@@ -24,6 +24,74 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
     expect(codes(found), '这是局部对象，不是信号 —— 不该报 C210').not.toContain(VOBS_C210)
   })
 
+  /*
+   * **实测误报（来自真实项目 Labelune）**：JSX 子节点位置里的**立即执行函数**
+   * 每次依赖变化都会重跑，所以它体里的 `const x = signal.value` **不是** run-once 快照。
+   *
+   * 但 `returnsJsx(fn)` 会把这种 IIFE 认成"组件" → 误报 C118。
+   * 这是语料盲区：此前只测过"组件体是直接语句"的形态。
+   *
+   * 修的时候还要注意括号：`(() => {…})()` 里 arrow 的**父节点是
+   * `ParenthesizedExpression` 而不是 `CallExpression`** —— 第一版只查一层，没拦住。
+   */
+  it('JSX 子节点里的立即执行函数**不该**报 C118', () => {
+    const shapes = [
+      // ① 带括号的 IIFE（实测误报的形态，来自真实项目 Labelune）
+      `import { state } from '@vobs/vobs'
+       export function P() {
+         const n = state(0)
+         return <div>{(() => { const shown = n.value + 1; return <b>{shown}</b> })()}</div>
+       }`,
+      // ② 无括号的 IIFE
+      `import { state } from '@vobs/vobs'
+       export function P() {
+         const n = state(0)
+         return <div>{(() => { const shown = n.value + 1; return <b>{shown}</b> })()}</div>
+       }`
+    ]
+    for (const source of shapes) {
+      expect(codes(analyzeSource(source, 'a.tsx')), 'IIFE 会重跑，不是 run-once 快照').not.toContain(VOBS_C118)
+    }
+  })
+
+  /*
+   * **已知残留误报（未修，刻意）**：声明在组件体、在 JSX 里被**手动调用**的渲染 helper：
+   *
+   * ```tsx
+   * const render = () => { const shown = n.value + 1; return <b>{shown}</b> }
+   * return <div>{render()}</div>      // 每次求值都重跑 → shown 是新鲜的，代码对
+   * ```
+   *
+   * 它与 **`export const Page = () => {…}`（真组件）** 形态完全一样 —— 静态分不开
+   * 「编译器把它当组件调用」与「代码里手动调用」。硬猜会关掉真阳性。
+   *
+   * 所以**只修实测到的那个 IIFE 形态**，这一条留着并写明（见 docs/silent-failures.md
+   * 的同类记录方式）。下面这条断言把**残留**固定下来：哪天修好了它会变红。
+   */
+  it('已知残留：helper 被手动调用时仍会误报 C118（未修，见上方注释）', () => {
+    const found = analyzeSource(`
+      import { state } from '@vobs/vobs'
+      export function P() {
+        const n = state(0)
+        const render = (): unknown => { const shown = n.value + 1; return <b>{shown}</b> }
+        return <div>{render()}</div>
+      }
+    `, 'a.tsx')
+    expect(codes(found), '这是已知残留；若已修好，请把这条断言反过来').toContain(VOBS_C118)
+  })
+
+  it('但**组件体**里的同类写法仍要报（别为了消误报把真阳性一起关掉）', () => {
+    const found = analyzeSource(`
+      import { state } from '@vobs/vobs'
+      export function P() {
+        const n = state(0)
+        const shown = n.value + 1
+        return <div>{shown}</div>
+      }
+    `, 'a.tsx')
+    expect(codes(found)).toContain(VOBS_C118)
+  })
+
   it('抓到读 + 写同一个信号', () => {
     const found = analyzeSource(`
 import { state, effect } from '@vobs/vobs'
