@@ -52,6 +52,26 @@ describe.skipIf(!hasDist)('vobs api 索引', () => {
     expect(new Set(keys).size, '有重复项').toBe(keys.length)
   })
 
+  it('**种类解析覆盖率不能退回去** —— 曾经 1353/1355 全是 unknown', () => {
+    /*
+     * 第一版只有一遍、且要求 `export declare …` 前缀，而打包出来的声明是
+     * `declare function x(...)`（无 export 前缀）→ 几乎全解析不出种类。
+     * 两遍法（先收被导出的名字，再收名字→种类，最后 join）把覆盖率提到 ~86%。
+     *
+     * 这条断言守的是**那个数量级**，不是精确值：退回单遍就会立刻低于阈值。
+     */
+    const named = index.filter(item => item.kind !== 'unknown').length
+    const ratio = named / index.length
+    expect(ratio, `种类解析率只有 ${Math.round(ratio * 100)}% —— 是不是退回单遍了？`)
+      .toBeGreaterThan(0.5)
+  })
+
+  it('已知符号的种类正确（不是"解析出来但错了"）', () => {
+    const kinds = new Map(index.map(item => [item.name, item.kind]))
+    expect(kinds.get('state'), 'state 应该是函数').toBe('function')
+    expect(kinds.get('onMount'), 'onMount 应该是函数').toBe('function')
+  })
+
   it('每条都有包名与名字', () => {
     for (const item of index) {
       expect(item.package.startsWith('@vobs/')).toBe(true)
