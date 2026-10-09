@@ -3,7 +3,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Plugin, ViteDevServer } from 'vite'
-import { compileWithSourceMap, createI18nExtractor, describeDiagnostics, type CompileOptions, type VobsSourceMap } from '@vobs/compiler'
+import { analyzeSource, compileWithSourceMap, createI18nExtractor, describeDiagnostics, type CompileOptions, type VobsSourceMap } from '@vobs/compiler'
 import { VobsError, formatVobsError, type VobsErrorLocation, type VobsErrorOptions } from '@vobs/runtime/error'
 import { compileHtmlComponent } from './html-component.ts'
 
@@ -184,7 +184,18 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
        * 不该有挡构建的强度。要强拦可以在 CI 里把 warning 当失败。
        */
       const warnings = result.diagnostics.filter(item => item.severity === 'warning')
-      if (warnings.length > 0) {
+      /*
+       * 分析器诊断（`C118`/`C232`/`C210` 静态规则）**也要在这里报**。
+       *
+       * 它们此前只在 `@vobs/cli` 的 `vobs check` 里可见 —— `vite dev`/`vite build`
+       * **一条都不报**。后果：开发时看不到，只有人主动跑 `vobs check` 或 CI 才发现。
+       * 这与「错了不能静默」直接冲突：**AI 改完代码、`vite build` 通过，但问题还在。**
+       *
+       * 规则本体已抽到 `@vobs/compiler`（vite-plugin 与 CLI 都依赖它），直接调用即可 ——
+       * 见 `packages/compiler/src/analyze.ts` 的注释。
+       */
+      const analyzed = analyzeSource(code, cleanId)
+      if (warnings.length > 0 || analyzed.length > 0) {
         const context = this as unknown as { warn?: (message: string) => unknown }
         const emit = typeof context.warn === 'function'
           ? (message: string): unknown => context.warn!(message)
@@ -199,6 +210,17 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
           if (seen.has(key)) continue
           seen.add(key)
           emit(text)
+        }
+        for (const item of analyzed) {
+          // 分析器的 error 也走**告警通道**（不挡构建）：它是"写完之后、运行之前"的提示，
+          // 让人构建不过会把开发流程卡死，而它并不是编译错误。
+          const where = `${cleanId}:${item.line}:${item.column}`
+          const key = `${item.code}|${where}|${item.message}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          emit(`[vobs ${item.code}] ${where}\n  ${item.message}`
+            + (item.fix ? `\n  修法：${item.fix}` : '')
+            + (item.snippet ? `\n  ${item.snippet}` : ''))
         }
       }
       const hmrCode = hmr ? createHmrCode(cleanId) : ''
