@@ -93,6 +93,7 @@
   ],
   "dependencies": {
     "@vobs/reactivity": "workspace:*",
+    "@vobs/runtime": "workspace:*",
     "@vobs/vobs": "workspace:*"
   }
 }
