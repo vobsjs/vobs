@@ -4,6 +4,30 @@ import { analyzeSource, VOBS_C118, VOBS_C210, VOBS_C232, type CheckDiagnostic } 
 const codes = (diagnostics: readonly CheckDiagnostic[]): string[] => diagnostics.map(item => item.code)
 
 describe('vobs check · VOBS_C210 effect 自订阅', () => {
+  /*
+   * **已知限制**（实测出来的，不是推断）：这条规则按信号变量名比对读写集合，
+   * 所以"同名局部对象遮蔽"会被误报 —— 它不是信号，但名字与前文 state 相同。
+   *
+   * 这是 C210 静态规则**降为 warning** 的依据（error 会让正确代码的 CI 失败）。
+   * 若将来给规则补上作用域/绑定解析（确认该名字确实绑定到 state(...)），
+   * 这个断言应改为 toHaveLength(0)，并可把严重度恢复成 error。
+   */
+  it('已知限制：同名局部对象遮蔽会被误报（所以它是 warning）', () => {
+    const found = analyzeSource(`
+      import { state, effect } from '@vobs/vobs'
+      export function P() {
+        const count = state(0)
+        effect(() => {
+          const count = { value: 0 }
+          count.value = count.value + 1
+        })
+        return count.value
+      }
+    `, 'a.tsx')
+    // 记录现状：这**是**误报。断言它存在，是为了让限制可见、不被忘记。
+    expect(codes(found)).toContain(VOBS_C210)
+  })
+
   it('抓到读 + 写同一个信号', () => {
     const found = analyzeSource(`
 import { state, effect } from '@vobs/vobs'
@@ -14,8 +38,18 @@ effect(() => {
 `, 'a.ts')
     expect(codes(found)).toContain(VOBS_C210)
     const item = found.find(entry => entry.code === VOBS_C210)!
-    expect(item.severity).toBe('error')
+    /*
+     * **warning 而不是 error**（实测依据，见 analyze.ts 里 C210 的注释）：
+     * 这条规则按信号变量名比对读写集合，不是"真的订阅了"。对抗测试已确认一个误报形态
+     * —— 同名局部对象遮蔽（`const count = { value: 0 }`）。error 会让 vobs check
+     * 在**正确代码**上让 CI 失败，那是 C104 的错误模式（18 处命中 16 处误报）。
+     * 真正的硬门禁由**运行时护栏**提供（按真实依赖集判定，维持 error 级）。
+     */
+    expect(item.severity).toBe('warning')
     expect(item.message).toContain('"count"')
+    // 文案与运行时护栏**共用同一份**（@vobs/runtime 的 diagnostic-text）：
+    // 先教结构（on()），untrack 是兜底 —— 两处都含这两个关键词
+    expect(item.fix).toContain('on(')
     expect(item.fix).toContain('untrack')
     expect(item.line).toBe(5)
   })

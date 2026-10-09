@@ -149,8 +149,20 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
     for (const [name, writeNode] of writes) {
       if (!reads.has(name)) continue
       found.push(diagnosticAt(source, file, writeNode, {
+          /*
+           * **warning 而不是 error**（实测依据）：这条规则的判定是**按信号变量名比对读写集合**，
+           * 不是"真的订阅了"。对抗测试里已确认一个误报形态 —— 同名局部对象遮蔽：
+           *
+           *   const count = { value: 0 }                    // 不是信号
+           *   effect(() => { count.value = count.value + 1 })  // ← 被误报
+           *
+           * error 会让 `vobs check` 在**正确代码**上让 CI 失败 —— 那是 C104 的错误模式
+           * （18 处命中 16 处误报）。而真正的硬门禁**已由运行时护栏提供**：
+           * 它按真实依赖集判定（`dependencies.has(signal)`），跨函数/跨模块都精确，
+           * 且维持 error 级。静态规则只是"写完之后、运行之前"的预览，猜的东西不该当硬门禁。
+           */
         code: VOBS_C210,
-        severity: 'error',
+        severity: 'warning',
         message: `effect 写入了它自己依赖的信号 "${name}" —— 这次写入会把它重新调度，形成自订阅循环`,
         // 文案与运行时护栏**共用同一份**（@vobs/runtime 的 diagnostic-text）——
         // 此前两处各写一份，1.8.5 改进运行时那份时这里没同步，用户在 vite 里看到旧建议。
