@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.8] - 2026-10-09
+
+### Fixed
+
+- **`vobs check` now runs the compiler diagnostics, not just the CLI's own rules.** The batch
+  entrypoint only ran `analyzeSource` (C118/C210/C232), so the compiler's five rules
+  (`VOBS_C104`–`VOBS_C108`) were invisible there — a file with module-level JSX (which should
+  report `VOBS_C105`) printed "✔ 检查通过 —— 1 个文件，没有发现问题". This is the third instance of
+  the same channel defect that 1.8.2 fixed for `warn`-level output: **a diagnostic that is not
+  visible on a given channel does not exist.** `check.ts` now merges `compileWithSourceMap`
+  diagnostics, deduplicating against `analyzeSource` by `code|file|line|column`, and a single file
+  that makes the compiler throw no longer aborts the whole run (that is a tool failure, not a
+  source problem). Added `--no-compiler` for the faster analysis-only pass. `@vobs/cli` gained a
+  `@vobs/compiler` dependency; without it the CLI subprocess crashed at import time.
+  - The first real whole-repository run (270 files) reported `{ VOBS_C118: 3, VOBS_C108: 2 }`, both
+    `C108` hits genuine and in the documented forbidden zones: JSX stored in a data constant
+    (`KitLayout` menu array) and JSX stored in `state`. Both are fixed in the playground.
+  - Corrected two of my own claims in the 1.8.6 contract text: `check:source` did **not** list all
+    diagnostics (it never ran the compiler), so the earlier "C108 has zero false positives" check
+    was empty. The contract now describes `check:source` accurately, and the inline TypeScript
+    module was updated to match.
+
 ## [1.8.7] - 2026-10-02
 
 ### Added
