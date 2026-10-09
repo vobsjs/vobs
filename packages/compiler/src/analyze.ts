@@ -239,9 +239,15 @@ function isKeyedListCall(node: ts.Node): boolean {
 
 function ruleListInBranch(source: ts.SourceFile, file: string): CheckDiagnostic[] {
   const found: CheckDiagnostic[] = []
-  const message = 'list 写在三元/&& 的分支里 —— 会走多态插入，失去 keyed 复用'
+  const message = 'list 写在三元/&& 的分支里 —— 会走多态插入，失去 keyed 复用；'
+    + '而且**分支条件本身变化也会重建整个列表**'
   const fix = '把 list 提成**直接的**子表达式：先写条件分支，再单独写 {items.map(...)}。'
     + '三元里同时有节点与 list 时，list 那一支不会编译成 insertList。'
+    + '（实测产物对比：分支里是 insertDynamicValue(el, null, () => cond.value ? items.map(…) : null)，'
+    + '直接子表达式是 insertList(el, null, () => items, renderItem) —— 前者每次重跑都新建全部节点，'
+    + '且 cond 变化同样触发重建（那个 getter 读了它）；后者按 key 复用/移动，只订阅列表源。）'
+    + '影响大小取决于**条目数与是否有状态**：几项无状态按钮可忽略；'
+    + '几十项、或条目内有焦点/输入/滚动状态时必须改。'
 
   const visit = (node: ts.Node): void => {
     if (ts.isConditionalExpression(node)) {

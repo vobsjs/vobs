@@ -122,7 +122,12 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
     severity: 'warning',
     title: 'list 写在三元 / && 的分支里',
     why: '三元里同时有节点与 list 时，list 那一支**不会编译成 `insertList`** —— 会走多态插入，'
-      + '失去 keyed 复用（重排时整段重建而不是移动节点）。',
+      + '失去 keyed 复用（重排时整段重建而不是移动节点）。'
+      + '还有一个更容易被忽略的代价：**分支条件本身变化也会重建整个列表** —— '
+      + '因为编译产物是 `insertDynamicValue(el, null, () => cond.value ? items.map(…) : null)`，'
+      + '那个 getter 读了 `cond`。而直接子表达式编译成 `insertList(el, null, () => items, renderItem)`，'
+      + '只订阅列表源。'
+      + '影响大小看**条目数与是否有状态**：几项无状态按钮可忽略；几十项、或条目内有焦点/输入/滚动状态时必须改。',
     correct: '把 list 提成**直接的**子表达式：先写条件分支，再单独写 `{items.map(...)}`。',
     wrong: '`{cond ? items.value.map(i => <li key={i}/>) : <b/>}`'
   }
