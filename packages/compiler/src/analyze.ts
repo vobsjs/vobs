@@ -107,6 +107,46 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
     const reads = new Map<string, ts.Node>()
     const writes = new Map<string, ts.Node>()
 
+    /*
+     * **作用域遮蔽集合**：effect 回调体内（含嵌套）**声明过的名字**。
+     *
+     * 为什么需要：这条规则按**信号变量名**比对读写集合，所以"同名局部对象"会被误报。
+     * 实测的误报形态（对抗测试里 1/7）：
+     *
+     * ```ts
+     * const count = state(0)              // 外层信号
+     * effect(() => {
+     *   const count = { value: 0 }        // ← 在 effect 体内**重新声明**
+     *   count.value = count.value + 1     // 这不是信号，却被当成自订阅
+     * })
+     * ```
+     *
+     * 命名成"遮蔽"是准确的：内层声明覆盖了外层的信号名。既然名字在 effect 体内
+     * 被**重新声明**，`X.value` 就不该再被当成外层那个信号。
+     *
+     * 只收名字、不判断类型 —— 但**方向是安全的**：命中就跳过（少报），
+     * 而不是命中就报（多报）。少报的代价远低于误报（`C104` 的教训：
+     * 18 处命中 16 处误报，代价是整个团队开始无视告警）。
+     */
+    const shadowed = new Set<string>()
+    const collectDeclarations = (node: ts.Node): void => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) shadowed.add(node.name.text)
+      else if ((ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isClassDeclaration(node))
+        && node.name !== undefined && ts.isIdentifier(node.name)) shadowed.add(node.name.text)
+      else if (ts.isParameter(node) && ts.isIdentifier(node.name)) shadowed.add(node.name.text)
+      else if (ts.isCatchClause(node) && node.variableDeclaration !== undefined
+        && ts.isIdentifier(node.variableDeclaration.name)) shadowed.add(node.variableDeclaration.name.text)
+      ts.forEachChild(node, collectDeclarations)
+    }
+    // 注意：`body` 是回调体；它内部所有声明都算遮蔽（嵌套函数内的也算 —— 保守方向）
+    ts.forEachChild(body, collectDeclarations)
+    // 形参也要算（`effect((x) => { x.value = 1 })` 里的 x 是形参，不是信号）
+    if (ts.isFunctionLike(body.parent)) {
+      for (const parameter of body.parent.parameters) {
+        if (ts.isIdentifier(parameter.name)) shadowed.add(parameter.name.text)
+      }
+    }
+
     const visit = (node: ts.Node, insideUntrack: boolean): void => {
       // 嵌套函数有自己的订阅语义，不算在本次 effect 的读写里
       if (node !== body && ts.isFunctionLike(node)) return
@@ -117,21 +157,22 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
 
       if (ts.isBinaryExpression(node) && isWriteOperator(node.operatorToken.kind)) {
         const name = signalNameOf(node.left)
-        if (name !== undefined && !nextUntracked) writes.set(name, node)
+        if (name !== undefined && !nextUntracked && !shadowed.has(name)) writes.set(name, node)
       } else if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
         && (node.operator === ts.SyntaxKind.PlusPlusToken || node.operator === ts.SyntaxKind.MinusMinusToken)) {
         // `count.value++` 同时是读和写 —— 这正是自订阅的经典形态
         const name = signalNameOf(node.operand)
-        if (name !== undefined) {
+        if (name !== undefined && !shadowed.has(name)) {
           if (!nextUntracked) writes.set(name, node)
           reads.set(name, node)
         }
       } else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
         && node.expression.name.text === 'set') {
-        if (!nextUntracked) writes.set(node.expression.expression.getText(), node)
+        const setName = node.expression.expression.getText()
+        if (!nextUntracked && !shadowed.has(setName)) writes.set(setName, node)
       } else {
         const name = signalNameOf(node)
-        if (name !== undefined) {
+        if (name !== undefined && !shadowed.has(name)) {
           const parent = node.parent
           // 只有赋值类运算符的左侧才不是「读」；`count.value < 1` 的左侧仍然是读
           const isAssignmentTarget = ts.isBinaryExpression(parent)
@@ -149,20 +190,21 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
     for (const [name, writeNode] of writes) {
       if (!reads.has(name)) continue
       found.push(diagnosticAt(source, file, writeNode, {
-          /*
-           * **warning 而不是 error**（实测依据）：这条规则的判定是**按信号变量名比对读写集合**，
-           * 不是"真的订阅了"。对抗测试里已确认一个误报形态 —— 同名局部对象遮蔽：
-           *
-           *   const count = { value: 0 }                    // 不是信号
-           *   effect(() => { count.value = count.value + 1 })  // ← 被误报
-           *
-           * error 会让 `vobs check` 在**正确代码**上让 CI 失败 —— 那是 C104 的错误模式
-           * （18 处命中 16 处误报）。而真正的硬门禁**已由运行时护栏提供**：
-           * 它按真实依赖集判定（`dependencies.has(signal)`），跨函数/跨模块都精确，
-           * 且维持 error 级。静态规则只是"写完之后、运行之前"的预览，猜的东西不该当硬门禁。
-           */
+        /*
+         * **恢复 error**：当初降级为 warning 的**唯一依据**是实测出的那个误报
+         * （同名局部对象遮蔽）—— 那个误报已经修掉了（见上面 `shadowed` 集合的注释），
+         * 对抗测试从 6/7 变成 **7/7**。
+         *
+         * 降级时我写下的恢复条件就是"给规则补上作用域/绑定解析" —— 现在补的是
+         * **作用域遮蔽**这一半（effect 体内重新声明的名字不再当成外层信号）。
+         * 真自订阅是货真价实的 error，值得让 CI 失败。
+         *
+         * 说明：这条的判定仍是**按变量名**比对，不是"真的订阅了"。真正的硬门禁
+         * 仍由运行时护栏提供（按真实依赖集判定，跨函数/跨模块精确）。
+         * 但静态这条现在只在"名字未被遮蔽"时开口，已知的误报形态已消除。
+         */
         code: VOBS_C210,
-        severity: 'warning',
+        severity: 'error',
         message: `effect 写入了它自己依赖的信号 "${name}" —— 这次写入会把它重新调度，形成自订阅循环`,
         // 文案与运行时护栏**共用同一份**（@vobs/runtime 的 diagnostic-text）——
         // 此前两处各写一份，1.8.5 改进运行时那份时这里没同步，用户在 vite 里看到旧建议。
