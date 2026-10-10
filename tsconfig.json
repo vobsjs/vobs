@@ -29,6 +29,7 @@
       "@vobs/resource": ["packages/resource/src/index.ts"],
       "@vobs/router": ["packages/router/src/index.ts"],
       "@vobs/runtime": ["packages/runtime/src/index.ts"],
+      "@vobs/runtime/*": ["packages/runtime/src/*"],
       "@vobs/ssr": ["packages/ssr/src/index.ts"],
       "@vobs/storage": ["packages/storage/src/index.ts"],
       "@vobs/sync": ["packages/sync/src/index.ts"],

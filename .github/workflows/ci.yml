@@ -59,10 +59,10 @@ jobs:
       - name: Check package dependency declarations
         run: pnpm run check:imports
 
-      - name: Scripts 写法（.mjs 里不能有 TS 类型标注）
+      - name: Check scripts for TypeScript annotations in .mjs
         run: pnpm run check:scripts
 
-      - name: 能力索引未漂移（docs/checks.md 与仓库一致）
+      - name: Check capability index is not stale
         run: pnpm run checks -- --check
 
       - name: Verify published package artifacts
