@@ -58,10 +58,12 @@ jobs:
       # verify:packages 把 37 个包装进同一个临时工程，所以它结构上发现不了这类问题。
       - name: Check package dependency declarations
         run: pnpm run check:imports
-        - name: scripts 写法（.mjs 里不能有 TS 类型标注）
-          run: pnpm run check:scripts
-          - name: 能力索引未漂移（docs/checks.md 与仓库一致）
-            run: pnpm run checks -- --check
+
+      - name: Scripts 写法（.mjs 里不能有 TS 类型标注）
+        run: pnpm run check:scripts
+
+      - name: 能力索引未漂移（docs/checks.md 与仓库一致）
+        run: pnpm run checks -- --check
 
       - name: Verify published package artifacts
         run: pnpm run verify:packages
