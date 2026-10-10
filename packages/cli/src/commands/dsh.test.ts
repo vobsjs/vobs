@@ -1,4 +1,5 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -177,7 +178,9 @@ describe('buildInstallSpec', () => {
   it('--from 解析成绝对路径', () => {
     const result = buildInstallSpec({ from: '.' })
     expect(result.error).toBeUndefined()
-    expect(result.spec?.includes(':')).toBe(true)
+    // 原来断言 spec 含冒号 —— 那是**Windows 盘符**的代理，在 POSIX 上必然失败
+    // （/home/runner/... 没有冒号）。换成真正要断言的事：它是绝对路径。
+    expect(path.isAbsolute(result.spec as string)).toBe(true)
   })
 
   it('--from 指向不存在的路径时报错', () => {

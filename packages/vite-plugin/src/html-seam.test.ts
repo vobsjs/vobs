@@ -55,7 +55,13 @@ describe('HTML 组件的 resolveId → load 接缝', () => {
     expect(code as string).toContain('createElement("main")')
   })
 
-  it('load 也认得反斜杠形态 id（对调用方形态的防御）', async () => {
+  /*
+   * 反斜杠形态**只可能来自 Windows 调用方**：在 POSIX 上把 `/tmp/x` 换成 `\tmp\x`
+   * 得到的不是任何调用方会产出的 id（反斜杠在 POSIX 是合法文件名字符，不是分隔符）。
+   * 这个用例此前只在 Windows 本地跑过，所以在 ubuntu 的 CI 上一直失败 ——
+   * 它被更早的步骤失败掩盖了（CI 曾死在 `Install dependencies`，测试根本没执行）。
+   */
+  it.skipIf(process.platform !== 'win32')('load 也认得反斜杠形态 id（对调用方形态的防御）', async () => {
     const { resolveId, load } = pluginHooks()
     // 必须**先经 resolveId 登记**，否则它本来就不该被认领（那是另一个用例）
     const importer = path.join(tempDir, 'Backslash.tsx')
