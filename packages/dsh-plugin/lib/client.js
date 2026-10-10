@@ -50,6 +50,19 @@ class OwnerImpl {
   onDispose(cleanup) {
     this.addCleanup(cleanup);
   }
+  /**
+   * 撤销一条已注册的清理。
+   *
+   * 用 `splice` 而不是"标记失效"：标记法会让数组继续增长（本包已经因为
+   * `Owner.cleanups` 只增不减吃过一次亏 —— runtime 的事件重绑），
+   * 而这个 API 的语义就是"替换掉旧的"，就该真的从数组里去掉。
+   *
+   * 复杂度 O(n)，但调用场景是"同一资源被重新绑定"，不是热路径上的每帧操作。
+   */
+  removeCleanup(cleanup) {
+    const index2 = this.cleanups.indexOf(cleanup);
+    if (index2 >= 0) this.cleanups.splice(index2, 1);
+  }
   onError(handler) {
     this.errorHandlers.add(handler);
     const remove = () => this.errorHandlers.delete(handler);
@@ -340,79 +353,83 @@ function cleanupDependencies(subscriber) {
   }
   subscriber.dependencies.clear();
 }
+class EffectImpl {
+  constructor(owner, callback) {
+    this.owner = owner;
+    this.callback = callback;
+    this.dependencies = /* @__PURE__ */ new Set();
+    this.disposed = false;
+    this.dirty = true;
+    this.order = nextEffectOrder++;
+    this.depth = owner?.depth ?? 0;
+    this.dispose = () => {
+      this.disposeNow();
+    };
+  }
+  notify() {
+    if (this.disposed || this.dirty) return;
+    this.dirty = true;
+    scheduler.schedule(this);
+  }
+  run() {
+    if (this.disposed || !this.dirty) return;
+    this.dirty = false;
+    const previousCleanup = this.cleanup;
+    this.cleanup = void 0;
+    let cleanupError;
+    if (previousCleanup) {
+      try {
+        previousCleanup();
+      } catch (error) {
+        const handled2 = this.owner?.handleError(error) ?? false;
+        if (!handled2) cleanupError = error;
+      }
+    }
+    cleanupDependencies(this);
+    const previous = getCurrentSubscriber();
+    setCurrentSubscriber(this);
+    let thrown;
+    let handled = false;
+    try {
+      const result = this.owner ? this.owner.run(this.callback) : this.callback();
+      this.cleanup = typeof result === "function" ? result : void 0;
+    } catch (error) {
+      thrown = error;
+      handled = this.owner?.handleError(error) ?? false;
+      if (!handled) throw error;
+    } finally {
+      setCurrentSubscriber(previous);
+    }
+    if (cleanupError && !thrown) throw cleanupError;
+  }
+  scheduleLow() {
+    if (this.disposed || this.dirty) return;
+    this.dirty = true;
+    scheduler.scheduleLow(this);
+  }
+  disposeNow() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.dirty = false;
+    scheduler.remove(this);
+    const previousCleanup = this.cleanup;
+    this.cleanup = void 0;
+    let cleanupError;
+    if (previousCleanup) {
+      try {
+        previousCleanup();
+      } catch (error) {
+        const handled = this.owner?.handleError(error) ?? false;
+        if (!handled) cleanupError = error;
+      }
+    }
+    cleanupDependencies(this);
+    if (cleanupError) throw cleanupError;
+  }
+}
 function effect(callback) {
   const owner = getCurrentOwner();
-  let cleanup;
-  let dirty = true;
-  let disposed = false;
-  const eff = {
-    order: nextEffectOrder++,
-    depth: owner?.depth ?? 0,
-    dependencies: /* @__PURE__ */ new Set(),
-    get disposed() {
-      return disposed;
-    },
-    notify() {
-      if (disposed || dirty) return;
-      dirty = true;
-      scheduler.schedule(eff);
-    },
-    run() {
-      if (disposed || !dirty) return;
-      dirty = false;
-      const previousCleanup = cleanup;
-      cleanup = void 0;
-      let cleanupError;
-      if (previousCleanup) {
-        try {
-          previousCleanup();
-        } catch (error) {
-          const handled2 = owner?.handleError(error) ?? false;
-          if (!handled2) cleanupError = error;
-        }
-      }
-      cleanupDependencies(eff);
-      const previous = getCurrentSubscriber();
-      setCurrentSubscriber(eff);
-      let thrown;
-      let handled = false;
-      try {
-        const result = owner ? owner.run(callback) : callback();
-        cleanup = typeof result === "function" ? result : void 0;
-      } catch (error) {
-        thrown = error;
-        handled = owner?.handleError(error) ?? false;
-        if (!handled) throw error;
-      } finally {
-        setCurrentSubscriber(previous);
-      }
-      if (cleanupError && !thrown) throw cleanupError;
-    },
-    scheduleLow() {
-      if (disposed || dirty) return;
-      dirty = true;
-      scheduler.scheduleLow(eff);
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      dirty = false;
-      scheduler.remove(eff);
-      const previousCleanup = cleanup;
-      cleanup = void 0;
-      let cleanupError;
-      if (previousCleanup) {
-        try {
-          previousCleanup();
-        } catch (error) {
-          const handled = owner?.handleError(error) ?? false;
-          if (!handled) cleanupError = error;
-        }
-      }
-      cleanupDependencies(eff);
-      if (cleanupError) throw cleanupError;
-    }
-  };
+  const eff = new EffectImpl(owner, callback);
   owner?.addCleanup(eff.dispose);
   eff.run();
   return eff;
@@ -549,8 +566,19 @@ const PROPERTY_NAMES = /* @__PURE__ */ new Set([
   "defaultValue",
   "defaultChecked",
   "indeterminate",
-  // 常见布尔 / 数字 property
-  "autofocus",
+  /*
+   * `autoFocus` 用**驼峰**（与同表 readOnly/tabIndex/defaultChecked 一致），且必须走
+   * **property 通道**：`autofocus` 是**布尔属性**（只看存在与否、与值无关），
+   * 所以 `autoFocus={false}` 必须"移除属性"而不是写 `autofocus="false"`
+   * （attribute 通道只能把 false 序列化成字符串，属性照样存在 = 仍然聚焦）。
+   *
+   * ⚠️ 但 `setProperty` 必须把它映射成 **IDL 名 `autofocus`（全小写）** ——
+   * `Reflect.set(el, 'autoFocus', …)` 只会挂一个不反射的 expando，**静默无效**。
+   * 映射表见 ops.ts 的 `PROPERTY_IDL_NAMES`。实测（jsdom，与真实 DOM 同语义）：
+   *   IDL `autofocus` → 写 true 得 has=true/idl=true；写 false 得 has=false/idl=false ✓
+   *   JSX `autoFocus` → 属性与 IDL 都不变（只是 expando）                        ✗
+   */
+  "autoFocus",
   "hidden",
   "tabIndex",
   "colSpan",
@@ -865,6 +893,17 @@ function associateHmrInstance(node, instance) {
 let currentRenderer = null;
 const nodeOwners = /* @__PURE__ */ new WeakMap();
 const eventBindings = /* @__PURE__ */ new WeakMap();
+const eventCleanupSlots = /* @__PURE__ */ new WeakMap();
+const eventCleanupNodeIds = /* @__PURE__ */ new WeakMap();
+let nextEventCleanupNodeId = 0;
+function eventCleanupKey(node, event) {
+  let id = eventCleanupNodeIds.get(node);
+  if (id === void 0) {
+    id = ++nextEventCleanupNodeId;
+    eventCleanupNodeIds.set(node, id);
+  }
+  return `${id}:${event}`;
+}
 function setRenderer(renderer) {
   const previous = currentRenderer;
   currentRenderer = renderer ?? null;
@@ -909,7 +948,7 @@ function syncSelectValue(parent) {
   while (current !== null) {
     if (current.nodeName === "SELECT") {
       const read = selectValueReaders.get(current);
-      if (read !== void 0) setProperty(current, "value", read());
+      if (read !== void 0) setProperty(current, "value", untrack(read));
       return;
     }
     current = current.parentNode;
@@ -928,7 +967,7 @@ function setTextContent(node, content) {
   getRenderer().setTextContent(node, content);
 }
 function setProperty(node, key, value) {
-  getRenderer().setProperty(node, key, value);
+  getRenderer().setProperty(node, PROPERTY_IDL_NAMES[key] ?? key, value);
   if (key === "value" && node.tagName === "SELECT") {
     scheduleSelectValueSync(node, value);
   }
@@ -951,11 +990,45 @@ function scheduleSelectValueSync(node, value) {
 function setAttribute(node, key, value) {
   getRenderer().setAttribute(node, key, value);
 }
+const PROPERTY_IDL_NAMES = {
+  autoFocus: "autofocus"
+};
+const classListContributions = /* @__PURE__ */ new WeakMap();
+function parseClassList(value) {
+  const names = [];
+  const push = (candidate) => {
+    if (typeof candidate === "string") {
+      for (const name of candidate.split(/\s+/u)) if (name !== "") names.push(name);
+    }
+  };
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (entry !== null && typeof entry === "object") {
+        for (const [name, on] of Object.entries(entry)) if (on) push(name);
+      } else push(entry);
+    }
+  } else if (value !== null && typeof value === "object") {
+    for (const [name, on] of Object.entries(value)) if (on) push(name);
+  } else push(value);
+  return names;
+}
+function applyClassList(node, value) {
+  const next = parseClassList(value);
+  const previous = classListContributions.get(node) ?? [];
+  classListContributions.set(node, next);
+  const base = (node.getAttribute("class") ?? "").split(/\s+/u).filter((name) => name !== "" && !previous.includes(name));
+  const merged = [.../* @__PURE__ */ new Set([...base, ...next])];
+  setAttribute(node, "class", merged.join(" "));
+}
+function isClassListKey(key) {
+  return key === "classList";
+}
 function setStaticProps(node, props) {
   for (const [key, value] of Object.entries(props)) {
     if (key === "key" || key === "ref" || key.startsWith("on")) continue;
     if (value === null || value === void 0) continue;
-    if (isPropertyName(key)) setProperty(node, key, value);
+    if (isClassListKey(key)) applyClassList(node, value);
+    else if (isPropertyName(key)) setProperty(node, key, value);
     else if (value === false) continue;
     else setAttribute(node, domAttributeName(key), key === "style" && isStyleObject(value) ? formatStyle(value) : String(value));
   }
@@ -976,7 +1049,9 @@ function addEventListener(node, event, handler) {
   }
   const previous = bindings.get(event);
   if (previous && previous.original === handler && previous.owner === owner) return;
-  if (previous) renderer.removeEventListener(node, event, previous.handler);
+  if (previous) {
+    renderer.removeEventListener(node, event, previous.handler);
+  }
   const listener = owner ? (reason) => {
     if (owner.disposed) return;
     try {
@@ -999,10 +1074,23 @@ function addEventListener(node, event, handler) {
   const binding = { handler: listener, owner, original: handler };
   bindings.set(event, binding);
   renderer.addEventListener(node, event, listener);
-  owner?.onDispose(() => {
-    if (bindings?.get(event) !== binding) return;
-    bindings.delete(event);
-    renderer.removeEventListener(node, event, listener);
+  if (!owner) return;
+  const key = eventCleanupKey(node, event);
+  let slots = eventCleanupSlots.get(owner);
+  if (!slots) {
+    slots = /* @__PURE__ */ new Map();
+    eventCleanupSlots.set(owner, slots);
+  }
+  const hasSlot = slots.has(key);
+  slots.set(key, binding);
+  if (hasSlot) return;
+  owner.onDispose(() => {
+    const current = eventCleanupSlots.get(owner)?.get(key);
+    if (!current) return;
+    eventCleanupSlots.get(owner)?.delete(key);
+    const map = eventBindings.get(node);
+    if (map?.get(event) === current) map.delete(event);
+    renderer.removeEventListener(node, event, current.handler);
   });
 }
 function createComponent(component, props, source) {
@@ -1023,14 +1111,15 @@ function createComponent(component, props, source) {
     owner.onDispose(cleanup);
   }
   const renderScope = owner.mark();
-  let node;
+  let rendered;
   try {
-    node = owner.run(() => untrack(() => component(props)));
+    rendered = owner.run(() => untrack(() => component(props)));
   } catch (error) {
     owner.dispose();
     attachComponentContext(error, componentName, owner.id);
     throw error;
   }
+  const node = isRenderableNode(rendered) ? rendered : createComment("vobs:empty");
   associateNodeOwner(node, owner);
   if (instance) {
     instance.node = node;
@@ -1040,7 +1129,8 @@ function createComponent(component, props, source) {
     if (owner.disposed) return;
     const previous = instance.node;
     owner.disposeSince(renderScope);
-    const next = owner.run(() => untrack(() => component(props)));
+    const rawNext = owner.run(() => untrack(() => component(props)));
+    const next = isRenderableNode(rawNext) ? rawNext : createComment("vobs:empty");
     const parent = instance.parent;
     if (parent) {
       const anchor = isVobsFragment(previous) ? previous.start : previous;
@@ -1082,7 +1172,15 @@ function createBlock(factory) {
   associateNodeOwner(node, owner);
   return node;
 }
+function isRenderableNode(value) {
+  return typeof value === "object" && value !== null || typeof value === "function";
+}
 function associateNodeOwner(node, owner) {
+  if (node === null || node === void 0 || typeof node !== "object" && typeof node !== "function") {
+    throw new Error(
+      `Vobs: associateNodeOwner 收到非节点值（${String(node)}）。组件必须返回 VobsNode；返回 null/undefined 由 createComponent 转成空注释节点。`
+    );
+  }
   nodeOwners.set(node, owner);
 }
 function disposeNodeOwner(node) {
@@ -1160,7 +1258,7 @@ function bindAttribute(node, key, source) {
   effect(() => {
     const value = readSource(source);
     if (value === null || value === void 0) return;
-    setAttribute(node, key, key === "style" && value && typeof value === "object" && !Array.isArray(value) ? Object.entries(value).filter(([, entry]) => entry !== null && entry !== void 0 && entry !== false).map(([name, entry]) => `${name.replace(/[A-Z]/gu, (match) => `-${match.toLowerCase()}`)}:${String(entry)}`).join(";") : String(value));
+    setAttribute(node, key, String(value));
   });
 }
 function bindProperty(node, key, source) {
@@ -1850,7 +1948,7 @@ const _tpl17 = createTemplate('<span class="vobs-hint">count</span>');
 const _tpl19 = createTemplate('<span class="vobs-hint">memo ×2</span>');
 const _tpl29 = createTemplate('<span class="vobs-empty">列表为空（insertList 已清空所有行）</span>');
 const _tpl31 = createTemplate('<span class="vobs-badge__dot"></span>');
-const VOBS_VERSION = `v${"1.7.8"}`;
+const VOBS_VERSION = `v${"1.8.9"}`;
 let bodyExecutions = 0;
 function VobsPanel() {
   bodyExecutions += 1;
