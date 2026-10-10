@@ -2530,7 +2530,7 @@ function Project(props) {
       })(), null);
       return _el10;
     })(), null);
-    insertList(_el9, null, () => issues.value, (item) => createComponent(resolveComponent(IssueRow, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "IssueRow"), {
+    insertList(_el9, null, () => issues.value, (item) => createComponent(resolveComponent(IssueRow, "src/client/devkit.tsx", "IssueRow"), {
       get item() {
         return item;
       }
@@ -2726,7 +2726,7 @@ function ApiIndex(props) {
       })(), (group) => group.group);
       return _el47;
     })(), null);
-    insertBefore(_el46, createComponent(resolveComponent(ApiDetail, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "ApiDetail"), {
+    insertBefore(_el46, createComponent(resolveComponent(ApiDetail, "src/client/devkit.tsx", "ApiDetail"), {
       get name() {
         return props.apiName;
       }
@@ -2869,7 +2869,7 @@ function VobsDevKit(props) {
       setStaticProps(_el71, {
         "class": "vk-body"
       });
-      insertDynamic(_el71, null, () => props.tab.value === "project" ? createComponent(resolveComponent(Project, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Project"), {
+      insertDynamic(_el71, null, () => props.tab.value === "project" ? createComponent(resolveComponent(Project, "src/client/devkit.tsx", "Project"), {
         get project() {
           return props.project;
         },
@@ -2877,14 +2877,14 @@ function VobsDevKit(props) {
           return props.onRefreshProject;
         }
       }) : null);
-      insertDynamic(_el71, null, () => props.tab.value === "guardrails" ? createComponent(resolveComponent(Guardrails, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Guardrails"), {}) : null);
-      insertDynamic(_el71, null, () => props.tab.value === "api" ? createComponent(resolveComponent(ApiIndex, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "ApiIndex"), {
+      insertDynamic(_el71, null, () => props.tab.value === "guardrails" ? createComponent(resolveComponent(Guardrails, "src/client/devkit.tsx", "Guardrails"), {}) : null);
+      insertDynamic(_el71, null, () => props.tab.value === "api" ? createComponent(resolveComponent(ApiIndex, "src/client/devkit.tsx", "ApiIndex"), {
         get apiName() {
           return props.apiName;
         }
       }) : null);
-      insertDynamic(_el71, null, () => props.tab.value === "patterns" ? createComponent(resolveComponent(Patterns, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Patterns"), {}) : null);
-      insertDynamic(_el71, null, () => props.tab.value === "status" ? createComponent(resolveComponent(Status, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/devkit.tsx", "Status"), {}) : null);
+      insertDynamic(_el71, null, () => props.tab.value === "patterns" ? createComponent(resolveComponent(Patterns, "src/client/devkit.tsx", "Patterns"), {}) : null);
+      insertDynamic(_el71, null, () => props.tab.value === "status" ? createComponent(resolveComponent(Status, "src/client/devkit.tsx", "Status"), {}) : null);
       return _el71;
     })(), null);
     return _el67;
@@ -3064,14 +3064,14 @@ const index = defineDshPanel({
   sidebarEntry: {
     label: "Vobs 开发台",
     order: 8,
-    renderIcon: () => createComponent(resolveComponent(DevKitIcon, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/index.tsx", "DevKitIcon"), {})
+    renderIcon: () => createComponent(resolveComponent(DevKitIcon, "src/client/index.tsx", "DevKitIcon"), {})
   },
   setup(ctx) {
     const source = createProjectSource(ctx, { sink: project });
     refreshProject = source.refresh;
     return () => source.dispose();
   }
-}, () => createComponent(resolveComponent(VobsDevKit, "C:/Users/ck/Desktop/vobs framework/packages/dsh-devkit/src/client/index.tsx", "VobsDevKit"), {
+}, () => createComponent(resolveComponent(VobsDevKit, "src/client/index.tsx", "VobsDevKit"), {
   get tab() {
     return tab;
   },

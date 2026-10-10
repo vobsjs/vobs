@@ -2404,7 +2404,7 @@ const index = defineDshOverlay({
   id: "vobs-panel",
   order: 120,
   styles: PANEL_CSS
-}, () => createComponent(resolveComponent(VobsPanel, "C:/Users/ck/Desktop/vobs framework/packages/dsh-plugin/src/client/index.tsx", "VobsPanel"), {}));
+}, () => createComponent(resolveComponent(VobsPanel, "src/client/index.tsx", "VobsPanel"), {}));
 exports.default = index;
 var out=module.exports;
 return (out&&out.__esModule&&Object.prototype.hasOwnProperty.call(out,"default"))?out.default:out;

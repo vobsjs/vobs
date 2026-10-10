@@ -60,9 +60,37 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
   const guardrailsEnabled = options.devGuardrails ?? true
   let productionBuild = false
   let hmrStateEnabled = (options.hmr ?? true) && (options.hmrState ?? true)
+  /** 项目根（`configResolved` 里取）—— 用于把绝对模块 id 归一成仓库相对路径。 */
+  let projectRoot = ''
 
   /** dev 且未关闭时才装护栏。 */
   const guardrailsActive = (): boolean => !productionBuild && guardrailsEnabled
+
+  /**
+   * 传给编译器的**稳定**源名：项目相对 + POSIX 分隔符。
+   *
+   * ## 为什么不能直接用绝对 `id`
+   *
+   * 编译器会把源名写进产物的调试元数据（`resolveComponent(Comp, "<源名>", "Comp")`）。
+   * 用绝对路径会有两个后果：
+   *
+   * 1. **构建产物不可复现**：Windows 上得到 `C:/Users/…`、Linux 上得到 `/home/runner/…`
+   *    —— 同一份源码在不同平台产出不同字节。仓库的 CI 用
+   *    `pnpm run build:dsh && git diff --exit-code` 校验"产物与源码同步"，
+   *    于是**在 Windows 构建的产物永远无法通过 Linux 的校验**（实测差 ~100 字节）。
+   * 2. **泄漏开发者机器路径**：这些路径随包发布出去，对使用者毫无意义。
+   *
+   * 归一成相对 POSIX 路径后，构建结果与平台无关，报错定位仍然可用（相对项目根）。
+   *
+   * 注意：只影响调试元数据与 sourcemap 的 `sources`，不改变任何运行时行为。
+   */
+  const stableSourceName = (id: string): string => {
+    const clean = id.split(/[?#]/u, 1)[0]
+    if (projectRoot === '' || !clean.startsWith(projectRoot)) return toPosixPath(clean)
+    const relative = path.relative(projectRoot, clean)
+    // `..` 开头说明它其实在项目根之外（如 monorepo 上层）—— 那时相对路径没有意义，保留原名
+    return relative.startsWith('..') ? toPosixPath(clean) : toPosixPath(relative)
+  }
 
   return {
     name: 'vobs',
@@ -72,6 +100,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
     configResolved(config) {
       productionBuild = config.command === 'build'
       hmrStateEnabled = (options.hmr ?? true) && !productionBuild && (options.hmrState ?? true)
+      projectRoot = config.root ?? ''
     },
 
     transformIndexHtml() {
@@ -117,7 +146,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
       if (id === GUARDRAILS_ID) return guardrailsActive() ? createGuardrailsModule() : null
       // 防御性归一：即使某个调用方（或未来版本的 Vite）传回反斜杠形态也仍然命中
       if (!htmlModules.has(id) && !htmlModules.has(toPosixPath(id))) return null
-      return compileHtmlComponent(await readFile(id, 'utf8'), { filename: id })
+      return compileHtmlComponent(await readFile(id, 'utf8'), { filename: stableSourceName(id) })
     },
 
     transform(code: string, id: string, transformOptions?: { readonly ssr?: boolean }): { code: string; map: VobsSourceMap } | null {
@@ -144,7 +173,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
         ...options.compiler,
         // 生产构建默认剔除组件源码位置（错误定位走 source map）；显式配置优先。
         sourceLocation: options.compiler?.sourceLocation ?? !productionBuild,
-        filename: id,
+        filename: stableSourceName(id),
         // HMR 模块标识必须跨 ?t= 查询稳定（registry 复用语义依赖它），用干净路径。
         hmrModuleId: hmr ? cleanId : options.compiler?.hmrModuleId,
         // 显式配置优先；SSR 构建未显式配置时强制关闭（browser-only 优化）。

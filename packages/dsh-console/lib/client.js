@@ -2639,7 +2639,7 @@ function VobsConsole(props) {
             else
               props.store.pause();
           });
-          insertDynamic(_el10, null, () => props.store.paused.value ? createComponent(resolveComponent(PlayIcon, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/console.tsx", "PlayIcon"), {}) : createComponent(resolveComponent(PauseIcon, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/console.tsx", "PauseIcon"), {}));
+          insertDynamic(_el10, null, () => props.store.paused.value ? createComponent(resolveComponent(PlayIcon, "src/client/console.tsx", "PlayIcon"), {}) : createComponent(resolveComponent(PauseIcon, "src/client/console.tsx", "PauseIcon"), {}));
           insertDynamicValue(_el10, null, () => props.store.paused.value ? "继续" : "暂停");
           return _el10;
         })(), null);
@@ -2651,7 +2651,7 @@ function VobsConsole(props) {
           addEventListener(_el11, "click", () => {
             props.store.clear();
           });
-          insertBefore(_el11, createComponent(resolveComponent(TrashIcon, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/console.tsx", "TrashIcon"), {}), null);
+          insertBefore(_el11, createComponent(resolveComponent(TrashIcon, "src/client/console.tsx", "TrashIcon"), {}), null);
           insertBefore(_el11, createText("清空"), null);
           return _el11;
         })(), null);
@@ -2683,19 +2683,19 @@ function VobsConsole(props) {
       })(), (item) => item.id);
       return _el12;
     })(), null);
-    insertDynamic(_el0, null, () => tab.value === "overview" ? createComponent(resolveComponent(Overview, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/console.tsx", "Overview"), {
+    insertDynamic(_el0, null, () => tab.value === "overview" ? createComponent(resolveComponent(Overview, "src/client/console.tsx", "Overview"), {
       get store() {
         return props.store;
       }
-    }) : tab.value === "stream" ? createComponent(resolveComponent(Stream, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/console.tsx", "Stream"), {
+    }) : tab.value === "stream" ? createComponent(resolveComponent(Stream, "src/client/console.tsx", "Stream"), {
       get store() {
         return props.store;
       }
-    }) : tab.value === "tools" ? createComponent(resolveComponent(Tools, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/console.tsx", "Tools"), {
+    }) : tab.value === "tools" ? createComponent(resolveComponent(Tools, "src/client/console.tsx", "Tools"), {
       get store() {
         return props.store;
       }
-    }) : createComponent(resolveComponent(Artifacts, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/console.tsx", "Artifacts"), {
+    }) : createComponent(resolveComponent(Artifacts, "src/client/console.tsx", "Artifacts"), {
       get store() {
         return props.store;
       }
@@ -2859,7 +2859,7 @@ function Overview(props) {
             setStaticProps(_el39, {
               "class": "vc-stream"
             });
-            insertList(_el39, null, () => props.store.events.value.slice(0, 8), (event) => createComponent(resolveComponent(EventRow, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/console.tsx", "EventRow"), {
+            insertList(_el39, null, () => props.store.events.value.slice(0, 8), (event) => createComponent(resolveComponent(EventRow, "src/client/console.tsx", "EventRow"), {
               get event() {
                 return event;
               }
@@ -3052,7 +3052,7 @@ function Stream(props) {
           setStaticProps(_el65, {
             "class": "vc-stream"
           });
-          insertList(_el65, null, () => props.store.events.value.filter((event) => matchesFilter(event, filter.value)).slice(0, STREAM_RENDER_LIMIT), (event) => createComponent(resolveComponent(EventRow, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/console.tsx", "EventRow"), {
+          insertList(_el65, null, () => props.store.events.value.filter((event) => matchesFilter(event, filter.value)).slice(0, STREAM_RENDER_LIMIT), (event) => createComponent(resolveComponent(EventRow, "src/client/console.tsx", "EventRow"), {
             get event() {
               return event;
             }
@@ -3529,7 +3529,7 @@ const index = defineDshPanel({
     // 与面板标题一致：侧栏只写 Console 会和 DSH 自带的生态混淆，也让人对不上是哪个面板。
     label: "Vobs Console",
     order: 9,
-    renderIcon: () => createComponent(resolveComponent(ConsoleIcon, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/index.tsx", "ConsoleIcon"), {})
+    renderIcon: () => createComponent(resolveComponent(ConsoleIcon, "src/client/index.tsx", "ConsoleIcon"), {})
   },
   setup(ctx) {
     const selection = selectConsoleSource(ctx, demo);
@@ -3543,7 +3543,7 @@ const index = defineDshPanel({
     const timer = setInterval(() => demo.tick(), DEMO_TICK_MS);
     return () => clearInterval(timer);
   }
-}, () => createComponent(resolveComponent(VobsConsole, "C:/Users/ck/Desktop/vobs framework/packages/dsh-console/src/client/index.tsx", "VobsConsole"), {
+}, () => createComponent(resolveComponent(VobsConsole, "src/client/index.tsx", "VobsConsole"), {
   get store() {
     return store;
   },
