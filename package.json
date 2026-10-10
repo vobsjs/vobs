@@ -34,7 +34,7 @@
     "verify:packages": "pnpm run build:packages && pnpm run check:packages && node scripts/verify-packages.mjs"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.6.4",
     "jsdom": "^30.0.1",
     "tsup": "8.5.0",
     "typescript": "^5.9.3",
