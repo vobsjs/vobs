@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.10] - 2026-10-12
+
+### Changed
+
+- **`VOBS_C107` now checks call sites before warning.** The rule fired on any "signal read +
+  branch inside a function" pattern, even when the function is only ever invoked from JSX child
+  positions — where the branch is re-evaluated reactively and nothing is frozen. A real project
+  hit this: a `groupCards()` helper with `if (planGroup.value) return <cards/>` branches, called
+  solely as `{groupCards()}` in JSX. For a **named** host function whose call sites (file-wide,
+  all of them) sit inside JSX subtrees — child containers and attributes both evaluate inside
+  binding effects / prop getters — the warning is now skipped. Everything else keeps reporting,
+  by design: anonymous hosts (no name to trace), zero call sites (components, values passed
+  around, cross-file use), and any single call outside a JSX subtree (synchronous component-body
+  calls, effect callbacks, calls wrapped in a nested function) all keep the warning. The
+  conservative direction is deliberate: a missed warning is a silently frozen view; a false
+  positive costs thirty seconds of checking the call sites.
+
 ## [1.8.9] - 2026-10-09
 
 ### Added

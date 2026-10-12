@@ -605,18 +605,91 @@ function reportFrozenReactiveReturn(state: CompileState): void {
     // 情况一：`return <读了信号的表达式>`
     if (ts.isReturnStatement(node) && node.expression) {
       const expression = node.expression
-      if (containsJsx(expression) && readsReactiveValueOutsideJsx(expression)) report(expression)
+      if (containsJsx(expression) && readsReactiveValueOutsideJsx(expression)) {
+        if (!isJsxOnlyCaller(node)) report(expression)
+      }
     }
     // 情况二：`if (<读了信号>) return <JSX/>` —— 读取在 if 的 test 上，不在 return 表达式里
     if (ts.isIfStatement(node) && readsReactiveValueOutsideJsx(node.expression)) {
       if (branchReturnsNode(node.thenStatement)
         || (node.elseStatement !== undefined && branchReturnsNode(node.elseStatement))) {
-        report(node)
+        if (!isJsxOnlyCaller(node)) report(node)
       }
     }
     ts.forEachChild(node, visit)
   }
   ts.forEachChild(sourceFile, visit)
+
+  /**
+   * 豁免判断：被标记的分支若是包在一个**有名函数**里、且该名字在全文件的调用点
+   * **全部**位于 JSX 子树内（求值发生在 JSX 的响应式作用域里，会随信号重算），则不报。
+   *
+   * 动机（真实项目 2026-10-12）：账号页订阅分区的 `groupCards()`——组件体里定义
+   * `const groupCards = () => { if (planGroup.value) return <卡组A/>; … }`，
+   * 唯一调用点在 JSX 子节点位置 `{groupCards()}`。分支求值发生在响应式作用域内，
+   * 切页签正常重算 —— 不冻结，但命中了本规则（编译器只做函数内匹配，看不见调用点）。
+   *
+   * 保守边界（宁可误报不可漏报 —— 漏报 = 冻结 bug 静默上线）：
+   * - 匿名函数（内联回调、方法链中间态）拿不到名字 → 照报
+   * - 全文件**找不到任何调用点**（组件本身、仅被当作值传递、跨文件使用）→ 照报
+   * - 存在**任何一个**非 JSX 上下文的调用点（组件体同步调用、effect 回调、
+   *   JSX 内嵌套函数里的调用——那种调用发生在事件期而非 JSX 求值期）→ 照报
+   * - 同名函数多处定义时不做作用域区分：按文件级名字收集，任何一处危险调用
+   *   都会让所有同名函数照报（方向安全，只可能"多报"不可能"漏报"）
+   */
+  function isJsxOnlyCaller(node: ts.Node): boolean {
+    // 最近一层函数宿主的声明名：`const x = () => {}` / `function x() {}` / 类方法
+    let current: ts.Node = node
+    let name: string | null = null
+    while (current.parent !== undefined && current !== sourceFile) {
+      if (ts.isFunctionLike(current)) {
+        if (ts.isFunctionDeclaration(current) && current.name !== undefined && ts.isIdentifier(current.name)) {
+          name = current.name.text
+        } else if ((ts.isArrowFunction(current) || ts.isFunctionExpression(current))
+          && ts.isVariableDeclaration(current.parent)
+          && current.parent.initializer === current
+          && ts.isIdentifier(current.parent.name)) {
+          name = current.parent.name.text
+        } else if (ts.isMethodDeclaration(current) && ts.isIdentifier(current.name)) {
+          name = current.name.text
+        }
+        break
+      }
+      current = current.parent
+    }
+    if (name === null) return false
+
+    // 全文件收集对该名字的调用点并分类。调用点上下文 = 从调用处向上遇到的第一道边界：
+    // JSX 节点（属性/子节点都在绑定 effect / getter 里求值）→ 安全；函数/类边界 → 其它
+    let sawCall = false
+    let dangerous = false
+    const isJsxKind = (n: ts.Node): boolean =>
+      ts.isJsxElement(n) || ts.isJsxSelfClosingElement(n) || ts.isJsxFragment(n)
+        || ts.isJsxExpression(n) || ts.isJsxAttribute(n) || ts.isJsxSpreadAttribute(n)
+        || ts.isJsxAttributes(n) || ts.isJsxClosingElement(n) || ts.isJsxOpeningElement(n)
+    const walkCalls = (n: ts.Node): void => {
+      if (dangerous) return
+      if (ts.isCallExpression(n)) {
+        const callee = n.expression
+        const matches = (ts.isIdentifier(callee) && callee.text === name)
+          || (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name) && callee.name.text === name)
+        if (matches) {
+          sawCall = true
+          // 从调用点向上找第一道边界：先遇 JSX → 求值在响应式作用域；先遇函数/类 → 同步调用
+          let up: ts.Node = n
+          while (up.parent !== undefined && up !== sourceFile) {
+            if (isJsxKind(up.parent)) break
+            if (ts.isFunctionLike(up.parent) || ts.isClassLike(up.parent)) { dangerous = true; break }
+            up = up.parent
+          }
+          if (dangerous) return
+        }
+      }
+      ts.forEachChild(n, walkCalls)
+    }
+    walkCalls(sourceFile)
+    return sawCall && !dangerous
+  }
 }
 
 function reportAsyncEffectCallback(state: CompileState): void {

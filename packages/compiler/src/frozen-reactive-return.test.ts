@@ -96,3 +96,60 @@ describe('VOBS_C107 不该报的形态（正确写法与无关写法）', () => 
     expect(c107(`export function S({ on }: P){ return on ? <A/> : <B/> }`)).toEqual([])
   })
 })
+
+describe('VOBS_C107 调用点豁免（有名函数仅被 JSX 上下文调用 = 求值在响应式作用域）', () => {
+  it('**只在 JSX 子节点调用** —— 分支求值随信号重算，不冻结（真实案例 groupCards）', () => {
+    expect(c107(`export function S(){
+  const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
+  return <div>{groupCards()}</div>
+}`)).toEqual([])
+  })
+
+  it('**只在 JSX 属性位置调用** —— 属性经绑定 effect / getter 求值，同样响应式', () => {
+    expect(c107(`export function S(){
+  const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
+  return <Picker items={groupCards()} />
+}`)).toEqual([])
+  })
+
+  it('**组件体同步调用** —— 函数体在组件体执行期跑过一遍，真冻结，照报', () => {
+    expect(c107(`export function S(){
+  const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
+  const cards = groupCards()
+  return <div>{cards}</div>
+}`)).toHaveLength(1)
+  })
+
+  it('**JSX 内嵌套函数里的调用** —— 调用点与 JSX 之间隔着函数边界，求值时机未知，保守照报', () => {
+    expect(c107(`export function S(){
+  const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
+  return <div>{() => groupCards()}</div>
+}`)).toHaveLength(1)
+  })
+
+  it('**effect 回调里调用** —— 同样是组件体执行期（同步跑到首 await），照报', () => {
+    expect(c107(`export function S(){
+  const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
+  effect(() => { void groupCards() })
+  return <B/>
+}`)).toHaveLength(1)
+  })
+
+  it('**没有任何调用点**（组件本身 / 仅当值传递）—— 无法证明安全，保守照报', () => {
+    expect(c107(`export function S(){
+  const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
+  pass(groupCards)
+  return <B/>
+}`)).toHaveLength(1)
+    expect(c107(`export function S(){
+  const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
+  return <B/>
+}`)).toHaveLength(1)
+  })
+
+  it('豁免只作用于有名函数 —— 匿名宿主（IIFE）拿不到名字，保守照报（return + if 双路径各报一条）', () => {
+    expect(c107(`export function S(){
+  return (() => { if (cond.value) return <A/>; return <B/> })()
+}`)).toHaveLength(2)
+  })
+})
