@@ -5,6 +5,7 @@
 // (Node >=22.13) and does not rely on the deprecated --loader worker path.
 import { register } from 'tsx/esm/api'
 import { fileURLToPath } from 'node:url'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 
 /*
@@ -24,9 +25,16 @@ import path from 'node:path'
  *
  * 这正是 CI 真实报的那个错。把 tsconfig 路径固定成**相对本文件**的绝对路径，
  * 解析就不再随调用者的目录变化。
+ *
+ * **但这个假设只在 vobs 仓库内成立**：CLI 被安装到用户项目时，`here/../../..`
+ * 指向的是 `.pnpm` 虚拟目录，那里没有 tsconfig —— 1.8.10 因此把所有安装态的
+ * `vobs` 命令搞挂了（tsx register 直接抛 "Cannot resolve tsconfig"）。
+ * 修法：文件**存在才覆盖**；安装态回退 tsx 默认（从 CWD 找用户项目的 tsconfig，
+ * src 里的 `@vobs/*` 导入走 node_modules 的 dist，本就不需要仓库的 paths 映射）。
  */
 const here = path.dirname(fileURLToPath(import.meta.url))
-process.env.TSX_TSCONFIG_PATH ??= path.resolve(here, '..', '..', '..', 'tsconfig.json')
+const repoTsconfig = path.resolve(here, '..', '..', '..', 'tsconfig.json')
+if (existsSync(repoTsconfig)) process.env.TSX_TSCONFIG_PATH ??= repoTsconfig
 
 register()
 

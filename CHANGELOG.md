@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.11] - 2026-10-12
+
+### Fixed
+
+- **`@vobs/cli` was broken in every installed project** (worked only inside this monorepo).
+  `bin/vobs.js` pinned `TSX_TSCONFIG_PATH` to `<pkg>/../../../tsconfig.json` — the framework
+  repo's root tsconfig. From a pnpm virtual store that path resolves to
+  `.pnpm/@vobs+cli@*/node_modules/tsconfig.json`, which does not exist, so `tsx`'s register threw
+  "Cannot resolve tsconfig" and every `vobs` command died on startup (caught by Labelune's CI,
+  not by this repo's own tests — the repo scenario is exactly where the assumption holds). The
+  override now applies **only when the file exists**; installed projects fall back to tsx's
+  CWD-based resolution, which is sufficient because the shipped `src` imports `@vobs/*` through
+  `node_modules` and needs no repo path mappings.
+
 ## [1.8.10] - 2026-10-12
 
 ### Changed
