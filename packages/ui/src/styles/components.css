@@ -1301,4 +1301,358 @@
       color: var(--text-secondary);
       padding-left: var(--spacer-4);
     }
+
+    /* ===== Segmented（分段选择） ===== */
+    .vui-seg {
+      display: inline-flex;
+      gap: var(--spacer-4);
+      padding: 2px;
+      border-radius: var(--radius-6);
+      background: var(--bg-overlay-l1);
+    }
+    .vui-seg__opt {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 24px;
+      padding: 0 var(--spacer-12);
+      border: none;
+      border-radius: var(--radius-4);
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: var(--body-sm-font-size);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .12s ease, color .12s ease;
+    }
+    .vui-seg__opt:hover { background: var(--bg-overlay-l2); }
+    .vui-seg__opt.is-active {
+      background: var(--bg-brand);
+      color: var(--text-onbrand);
+    }
+    .vui-seg__opt[data-tone="success"].is-active { background: var(--accent-teal); color: #08130d; }
+    .vui-seg__opt[data-tone="danger"].is-active { background: var(--accent-coral); color: #180b0b; }
+    .vui-seg__opt[data-tone="warning"].is-active { background: var(--accent-amber); color: #171204; }
+    .vui-seg__opt[data-tone="brand"].is-active { background: var(--bg-brand); color: var(--text-onbrand); }
+
+    /* ===== Progress（进度条 / 环形进度） ===== */
+    .vui-progress {
+      position: relative;
+      width: 100%;
+      height: 6px;
+      border-radius: var(--radius-full);
+      background: var(--bg-overlay-l2);
+      overflow: hidden;
+    }
+    .vui-progress__bar {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--bg-brand);
+      transition: width .18s ease;
+    }
+    .vui-progress.is-ok .vui-progress__bar { background: var(--accent-teal); }
+    .vui-progress.is-warn .vui-progress__bar { background: var(--accent-amber); }
+    .vui-progress.is-bad .vui-progress__bar { background: var(--accent-coral); }
+
+    .vui-ring {
+      position: relative;
+      display: inline-flex;
+      flex-shrink: 0;
+    }
+    .vui-ring__arc { stroke: var(--bg-brand); }
+    .vui-ring__arc.is-ok { stroke: var(--accent-teal); }
+    .vui-ring__arc.is-warn { stroke: var(--accent-amber); }
+    .vui-ring__arc.is-bad { stroke: var(--accent-coral); }
+    .vui-ring__center {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-family: var(--font-family-mono);
+      font-size: var(--body-xs-font-size);
+      color: var(--text-secondary);
+    }
+
+    /* ===== NumberInput（数字步进输入） ===== */
+    .vui-numberinput {
+      display: inline-flex;
+      align-items: center;
+      height: 28px;
+      border: 1px solid var(--border-neutral-l1);
+      border-radius: var(--radius-4);
+      background: var(--bg-overlay-l1);
+      overflow: hidden;
+    }
+    .vui-numberinput__btn {
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 100%;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: var(--body-sm-font-size);
+      cursor: pointer;
+    }
+    .vui-numberinput__btn:hover { background: var(--bg-overlay-l2); color: var(--text-default); }
+    .vui-numberinput__btn:disabled { opacity: .5; cursor: not-allowed; }
+    .vui-numberinput__input {
+      width: 44px;
+      height: 100%;
+      padding: 0 var(--spacer-4);
+      border: none;
+      background: transparent;
+      color: var(--text-default);
+      font-family: var(--font-family-mono);
+      font-size: var(--body-sm-font-size);
+      text-align: center;
+      outline: none;
+    }
+    .vui-numberinput__suffix {
+      padding: 0 var(--spacer-8) 0 0;
+      color: var(--text-tertiary);
+      font-size: var(--body-sm-font-size);
+    }
+
+    /* ===== FormField（表单字段壳） ===== */
+    .vui-field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacer-6);
+      min-width: 0;
+    }
+    .vui-field__label {
+      font-size: var(--body-sm-font-size);
+      color: var(--text-secondary);
+    }
+    .vui-field__control { min-width: 0; }
+    .vui-field__msg {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacer-4);
+      font-size: var(--body-xs-font-size);
+      color: var(--text-tertiary);
+    }
+    .vui-field__msg[data-tone="bad"] { color: var(--accent-coral); }
+    .vui-field.is-error .vui-input,
+    .vui-field.is-error .vui-textarea { border-color: var(--accent-coral); }
+
+    /* ===== Input 前缀/后缀 ===== */
+    .vui-input__affix {
+      display: inline-flex;
+      align-items: center;
+      flex-shrink: 0;
+      color: var(--text-tertiary);
+      font-size: var(--body-sm-font-size);
+    }
+    .vui-input__prefix { padding-right: var(--spacer-4); }
+    .vui-input__suffix { padding-left: var(--spacer-4); }
+
+    /* ===== Checkbox 半选（indeterminate） ===== */
+    .vui-check__box[data-mixed="true"] {
+      background: var(--bg-brand);
+      border-color: var(--bg-brand);
+    }
+    .vui-check__box[data-mixed="true"]::after {
+      content: '';
+      width: 8px;
+      height: 1.5px;
+      border-radius: 1px;
+      background: var(--text-onbrand);
+    }
+
+    /* ===== Table 增强态（骨架 / 错误 / 行选中） ===== */
+    .vui-table__skeleton {
+      display: block;
+      height: 10px;
+      border-radius: var(--radius-full);
+      background: var(--bg-overlay-l3);
+      animation: vui-skeleton-pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes vui-skeleton-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .45; }
+    }
+    .vui-table tr[data-active="true"] td {
+      background: var(--bg-brand-popup);
+    }
+    .vui-table tr[data-active="true"] td:first-child {
+      box-shadow: inset 2px 0 0 var(--bg-brand);
+    }
+    .vui-table__error {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--spacer-8);
+      padding: var(--spacer-24) var(--spacer-16);
+      color: var(--text-secondary);
+      font-size: var(--body-sm-font-size);
+    }
+    .vui-table__retry {
+      height: 24px;
+      padding: 0 var(--spacer-12);
+      border: 1px solid var(--border-neutral-l2);
+      border-radius: var(--radius-4);
+      background: transparent;
+      color: var(--text-default);
+      font-size: var(--body-sm-font-size);
+      cursor: pointer;
+    }
+    .vui-table__retry:hover { background: var(--bg-overlay-l2); }
+
+    /* ===== Charts（环形占比 / 折线） ===== */
+    .vui-pie__seg {
+      stroke: var(--bg-base-secondary);
+      stroke-width: 2;
+    }
+    .vui-pie__seg[data-index="0"] { fill: var(--bg-brand); }
+    .vui-pie__seg[data-index="1"] { fill: var(--accent-blue); }
+    .vui-pie__seg[data-index="2"] { fill: var(--accent-amber); }
+    .vui-pie__seg[data-index="3"] { fill: var(--accent-violet); }
+    .vui-pie__seg[data-index="4"] { fill: var(--accent-cyan); }
+    .vui-pie__seg[data-index="5"] { fill: var(--accent-coral); }
+    .vui-line__grid { stroke: var(--border-1); }
+    .vui-line__zero { stroke: var(--border-neutral-l2); stroke-dasharray: 3 3; }
+    .vui-line__area {
+      stroke: var(--bg-brand);
+      stroke-width: 2;
+      stroke-linejoin: round;
+    }
+    .vui-line__dot {
+      fill: var(--bg-base-secondary);
+      stroke: var(--bg-brand);
+      stroke-width: 1.7;
+    }
+    .vui-line__label {
+      fill: var(--text-tertiary);
+      font-size: 10px;
+    }
+
+    /* ===== Money / Num 文本 ===== */
+    .vui-money {
+      font-family: var(--font-family-mono);
+      font-variant-numeric: tabular-nums;
+      color: var(--text-default);
+    }
+    .vui-money__currency {
+      margin-right: var(--spacer-4);
+      color: var(--text-tertiary);
+    }
+    .vui-money.is-in { color: var(--accent-teal); }
+    .vui-money.is-out { color: var(--accent-coral); }
+    .vui-num {
+      font-family: var(--font-family-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ===== MonthPicker / DateRange ===== */
+    .vui-monthpicker {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacer-8);
+      height: 28px;
+      padding: 0 var(--spacer-4);
+      border: 1px solid var(--border-neutral-l1);
+      border-radius: var(--radius-4);
+      background: var(--bg-overlay-l1);
+    }
+    .vui-monthpicker__value,
+    .vui-monthpicker > .vui-num {
+      font-family: var(--font-family-mono);
+      font-size: var(--body-sm-font-size);
+      color: var(--text-default);
+    }
+    .vui-monthpicker__btn {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border: none;
+      border-radius: var(--radius-4);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+    .vui-monthpicker__btn:hover { background: var(--bg-overlay-l2); color: var(--text-default); }
+    .vui-monthpicker__btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .vui-daterange { position: relative; display: inline-block; }
+    .vui-daterange__trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacer-8);
+      height: 28px;
+      padding: 0 var(--spacer-12);
+      border: 1px solid var(--border-neutral-l1);
+      border-radius: var(--radius-4);
+      background: var(--bg-overlay-l1);
+      color: var(--text-default);
+      font-family: inherit;
+      font-size: var(--body-sm-font-size);
+      cursor: pointer;
+    }
+    .vui-daterange__trigger:hover { border-color: var(--border-neutral-l2); }
+    .vui-daterange[data-open="true"] .vui-daterange__trigger { border-color: var(--bg-brand); }
+    .vui-daterange__pop {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      z-index: 60;
+      padding: var(--spacer-12);
+      border: 1px solid var(--border-neutral-l1);
+      border-radius: var(--radius-8);
+      background: var(--bg-base-secondary);
+      box-shadow: var(--shadow-popup, 0 8px 24px rgb(0 0 0 / 18%));
+    }
+    .vui-daterange-panel__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--spacer-8);
+    }
+    .vui-daterange-panel__ym {
+      font-family: var(--font-family-mono);
+      font-size: var(--body-sm-font-size);
+      color: var(--text-default);
+    }
+    .vui-daterange-panel__body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--spacer-16);
+    }
+    .vui-daterange-panel__week {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      margin-bottom: var(--spacer-4);
+    }
+    .vui-daterange-panel__week span {
+      text-align: center;
+      font-size: var(--body-xs-font-size);
+      color: var(--text-tertiary);
+    }
+    .vui-daterange-panel__days {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+    }
+    .vui-daterange-panel__day {
+      display: grid;
+      place-items: center;
+      height: 26px;
+      border: none;
+      border-radius: var(--radius-4);
+      background: transparent;
+      color: var(--text-default);
+      font-size: var(--body-xs-font-size);
+      cursor: pointer;
+    }
+    .vui-daterange-panel__day:hover { background: var(--bg-overlay-l2); }
+    .vui-daterange-panel__day.is-mid { background: var(--bg-brand-popup); border-radius: 0; }
+    .vui-daterange-panel__day.is-edge {
+      background: var(--bg-brand);
+      color: var(--text-onbrand);
+    }
+    .vui-daterange-panel__day[data-current="true"] { box-shadow: inset 0 0 0 1px var(--bg-brand); }
 } /* @layer base */

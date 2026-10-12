@@ -45,7 +45,7 @@ export { PageHeader, PageHeaderAction } from './page-header'
 export type { PageHeaderActionProps, PageHeaderProps } from './page-header'
 
 export { Table, TablePanel } from './table'
-export type { TableAlign, TableColumn, TablePanelProps, TableProps } from './table'
+export type { TableAlign, TableColumn, TablePanelProps, TableProps, TableState } from './table'
 
 export { StatCard, StatCardGrid } from './stat-card'
 export type { StatCardGridProps, StatCardProps, StatDeltaDirection } from './stat-card'
@@ -95,5 +95,26 @@ export type {
 
 export { Icon, createIcon, registerIcon, resolveIcon, VUI_ICON_PATHS } from './icon'
 export type { IconDefinition, IconProps } from './icon'
+
+export { Segmented } from './segmented'
+export type { SegmentedItem, SegmentedProps, SegmentedTone } from './segmented'
+
+export { ProgressBar, ProgressRing } from './progress'
+export type { ProgressBarProps, ProgressRingProps, ProgressTone } from './progress'
+
+export { NumberInput } from './number-input'
+export type { NumberInputProps } from './number-input'
+
+export { FormField } from './field'
+export type { FormFieldProps } from './field'
+
+export { LineChart, PieChart } from './charts'
+export type { LineChartProps, PieChartProps, PieSlice } from './charts'
+
+export { formatNumber, MoneyText, NumText } from './money'
+export type { MoneyKind, MoneyTextProps, NumTextProps } from './money'
+
+export { DateRange, DateRangePanel, MonthPicker } from './date'
+export type { DateRangePanelProps, DateRangeProps, MonthPickerProps } from './date'
 
 export type { VuiAttributeValue, VuiChildren, VuiCommonProps, VuiEventHandler } from './types'

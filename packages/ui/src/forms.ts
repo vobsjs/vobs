@@ -2,7 +2,9 @@ import { effect, type Signal } from '@vobs/reactivity'
 import {
   createElement,
   insertBefore,
+  insertDynamic,
   setAttribute,
+  setProperty,
   type VobsNode
 } from '@vobs/vobs'
 import {
@@ -14,10 +16,11 @@ import {
   listen,
   mountSlot,
   readProp,
+  resolveSlot,
   setOptionalAttribute,
   setOptionalProperty
 } from './utils'
-import type { VuiCommonProps, VuiEventHandler } from './types'
+import type { VuiChildren, VuiCommonProps, VuiEventHandler } from './types'
 
 export type InputType = 'date' | 'email' | 'number' | 'password' | 'search' | 'text' | 'url'
 
@@ -37,6 +40,10 @@ export interface InputProps extends VuiCommonProps {
   readonly readOnly?: boolean
   readonly required?: boolean
   readonly icon?: VobsNode | (() => VobsNode | null | undefined)
+  /** 控件前缀内容（如货币符号）；纯展示 */
+  readonly prefix?: VuiChildren
+  /** 控件后缀内容（如单位）；纯展示 */
+  readonly suffix?: VuiChildren
   readonly onInput?: VuiEventHandler<InputEvent>
   readonly onChange?: VuiEventHandler<Event>
   readonly onBlur?: VuiEventHandler<FocusEvent>
@@ -60,6 +67,8 @@ export function Input(props: InputProps = {}): VobsNode {
     'readOnly',
     'required',
     'icon',
+    'prefix',
+    'suffix',
     'onInput',
     'onChange',
     'onBlur'
@@ -87,7 +96,19 @@ export function Input(props: InputProps = {}): VobsNode {
     mountSlot(icon, props, 'icon')
     insertBefore(root, icon, null)
   }
+  if (hasProp(props, 'prefix')) {
+    const prefix = createElement('span')
+    setAttribute(prefix, 'class', 'vui-input__affix vui-input__prefix')
+    insertDynamic(prefix, null, () => resolveSlot(Reflect.get(props, 'prefix')))
+    insertBefore(root, prefix, null)
+  }
   insertBefore(root, control, null)
+  if (hasProp(props, 'suffix')) {
+    const suffix = createElement('span')
+    setAttribute(suffix, 'class', 'vui-input__affix vui-input__suffix')
+    insertDynamic(suffix, null, () => resolveSlot(Reflect.get(props, 'suffix')))
+    insertBefore(root, suffix, null)
+  }
   if (hasProp(props, 'children')) mountSlot(root, props, 'children')
 
   listen(control, 'input', props, 'onInput', () => readProp(props, 'disabled', false))
@@ -193,6 +214,8 @@ export interface ChoiceProps extends VuiCommonProps {
   readonly value?: string
   readonly checked?: boolean
   readonly bind?: Signal<boolean>
+  /** 仅 checkbox：半选（indeterminate）态——子项部分选中时父项展示，再次点击进入全选 */
+  readonly mixed?: boolean
   readonly disabled?: boolean
   readonly required?: boolean
   readonly onChange?: VuiEventHandler<Event>
@@ -236,6 +259,14 @@ function createChoice(type: 'checkbox' | 'radio', props: ChoiceProps): VobsNode 
     listen(control, 'change', { onChange: (event: Event) => { bind.value = (event.target as HTMLInputElement).checked } }, 'onChange', () => readProp(props, 'disabled', false))
   } else if (hasProp(props, 'checked')) {
     bindPropertyValue(control, 'checked', () => readProp(props, 'checked', false))
+  }
+  if (type === 'checkbox') {
+    // 半选态：indeterminate 是 DOM property（非 attribute），视觉态同步到 data-mixed 供样式选择
+    effect(() => {
+      const mixed = readProp(props, 'mixed', false)
+      setProperty(control, 'indeterminate', mixed)
+      setOptionalAttribute(visual, 'data-mixed', mixed ? 'true' : undefined)
+    })
   }
   insertBefore(root, control, null)
   insertBefore(root, visual, null)
