@@ -4,6 +4,49 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.12] - 2026-10-13
+
+### Added
+
+- **`@vobs/ui` `Segmented`** — mutually exclusive single choice (distinct from Tabs page
+  semantics). Items support semantic tones (`success`/`danger`/`warning`/`brand`); the active
+  option follows a controlled `value` or two-way `bind`.
+
+- **`@vobs/ui` `ProgressBar` / `ProgressRing`** — linear and donut progress. Values clamp to
+  0–100; tones `ok`/`warn`/`bad` besides brand; the ring center accepts arbitrary children
+  (defaults to `N%`).
+
+- **`@vobs/ui` `NumberInput`** — stepper input with −/+ buttons and typed digits, clamped to
+  `[min, max]` on every commit; optional `suffix` unit label.
+
+- **`@vobs/ui` `FormField`** — label / required marker / error (bad tone) / hint shell for
+  form controls.
+
+- **`@vobs/ui` `PieChart` / `LineChart`** — dependency-free SVG charts. Pie renders donut
+  segments from `{label, value, color?}` slices with a built-in palette fallback; Line draws
+  grid, zero line (for negative ranges), dots and x labels. Both rebuild reactively from data.
+
+- **`@vobs/ui` `MoneyText` / `NumText`** — tabular-numeric money display (kind
+  `auto`/`in`/`out`/`plain`, currency slot, thousands separator via the exported
+  `formatNumber`) and plain mono text.
+
+- **`@vobs/ui` `MonthPicker` / `DateRangePanel` / `DateRange`** — month stepper and dual-month
+  range picker. Weekday headers and button labels are localizable; the popup closes on outside
+  click with disposal-safe listeners.
+
+### Changed
+
+- **`@vobs/ui` `Checkbox` supports `mixed`** (indeterminate). Sets the `indeterminate` property
+  and mirrors a `data-mixed` attribute onto the visual box for styling.
+
+- **`@vobs/ui` `Input` supports `prefix` / `suffix`** display slots (currency symbol, units)
+  rendered reactively inside the control frame.
+
+- **`@vobs/ui` `Table` / `TablePanel` gain data states**: `state` (`ok`/`loading`/`empty`/
+  `error`, derived from rows when omitted), skeleton rows via `loadingRows`, an error area with
+  optional `onRetry` button, `rowActive` marking rows with `data-active`, `rowHeight`, and
+  per-column `width` on `TableColumn`.
+
 ## [1.8.11] - 2026-10-12
 
 ### Fixed
