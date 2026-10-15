@@ -509,7 +509,9 @@
     .vui-combobox.is-disabled { opacity: 0.55; pointer-events: none; }
     .vui-combobox__input {
       width: 100%; height: 28px;
-      padding: 0 var(--spacer-28) 0 var(--spacer-12);
+      /* --spacer-28 不在 token 阶梯（0/4/6/8/10/12/16/20/24/32/40）——引用不存在的变量
+         会让整条 padding 声明失效（CSS 变量计算值失败），曾致 Combobox 输入框内边距全丢 */
+      padding: 0 var(--spacer-24) 0 var(--spacer-12);
       background: var(--bg-overlay-l1, var(--bg-base-secondary));
       border: 1px solid var(--border-neutral-l1, var(--bg-base-tertiary));
       border-radius: var(--radius-4);
