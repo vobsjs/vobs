@@ -11,7 +11,7 @@
     "type": "git",
     "url": "git+https://github.com/vobsjs/vobs.git"
   },
-  "version": "1.8.14",
+  "version": "1.8.15",
   "publishConfig": {
     "access": "public"
   },

@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.15] - 2026-10-21
+
+### Changed
+
+- **`@vobs/table` `DataTableChildren` accepts `null` / `undefined`.** The union was missing the
+  nullish members that conditional JSX (`{cond ? <A/> : null}`) routinely produces, so wrapper
+  layers passing their own children type through to `columns[].render` / `head` failed type
+  checking (Finora's `Children` includes `null`). Runtime already handled nullish via
+  `resolveSlot` — this aligns the type with `@vobs/ui`'s `VuiChildren`.
+
 ## [1.8.14] - 2026-10-21
 
 ### Added
