@@ -39,6 +39,8 @@ export type DataTableChildren =
   | VobsNode
   | string
   | number
+  | null
+  | undefined
   | readonly DataTableChildren[]
   | (() => DataTableChildren | null | undefined)
 
