@@ -202,4 +202,52 @@ describe('@vobs/ui second batch', () => {
     expect(emptyContainer.querySelector('tbody')?.textContent).toContain('Nothing here')
     emptyApp.destroy()
   })
+
+  it('Table column head node renders reactively (selection header use case)', async () => {
+    const selected = state(false)
+    const toggles: boolean[] = []
+    const columns: readonly TableColumn<{ id: number; name: string }>[] = [
+      {
+        id: 'sel',
+        label: '',
+        head: () => {
+          const input = document.createElement('input')
+          input.type = 'checkbox'
+          input.checked = selected.value
+          input.addEventListener('change', () => {
+            selected.value = input.checked
+            toggles.push(input.checked)
+          })
+          return input
+        },
+        render: row => row.name
+      },
+      { id: 'name', label: 'Name', key: 'name' }
+    ]
+    const rows: readonly { id: number; name: string }[] = [{ id: 1, name: 'Avery' }]
+    const container = document.createElement('main')
+    const app = createVobs({
+      render: () => createComponent(Table, { columns, rows })
+    })
+    app.mount(container)
+
+    const headInput = container.querySelector('thead input[type="checkbox"]') as HTMLInputElement
+    expect(headInput).toBeTruthy()
+    expect(headInput.checked).toBe(false)
+
+    // 外部信号翻转 → insertDynamic 重建表头节点（新节点带新勾选态）；effect 走微任务刷新
+    selected.value = true
+    await Promise.resolve()
+    const headInputAfter = container.querySelector('thead input[type="checkbox"]') as HTMLInputElement
+    expect(headInputAfter).not.toBe(headInput)
+    expect(headInputAfter.checked).toBe(true)
+
+    // 节点内交互回调可达（change → onToggle 语义）
+    headInputAfter.dispatchEvent(new Event('change'))
+    expect(toggles).toEqual([true])
+
+    // 纯文本表头不受影响
+    expect(container.querySelector('thead')?.textContent).toContain('Name')
+    app.destroy()
+  })
 })

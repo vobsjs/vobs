@@ -29,6 +29,9 @@ export type TableState = 'ok' | 'loading' | 'empty' | 'error'
 export interface TableColumn<Row = Record<string, unknown>> {
   readonly id: string
   readonly label: string
+  /** 表头节点（可选）：节点或返回节点的函数——走动态插入并随信号响应。
+   *  用途：表头全选框等表头控件；提供 head 时 label 不渲染 */
+  readonly head?: VuiChildren | (() => VuiChildren)
   readonly key?: keyof Row
   readonly render?: (row: Row, index: number) => VuiChildren
   readonly align?: TableAlign
@@ -141,7 +144,14 @@ function createTableHead<Row>(props: TableProps<Row>): VobsNode {
       if (column.width !== undefined) {
         setAttribute(cell, 'style', `width:${typeof column.width === 'number' ? `${column.width}px` : column.width}`)
       }
-      insertBefore(cell, createText(column.label), null)
+      const head = column.head
+      if (head === undefined) {
+        insertBefore(cell, createText(column.label), null)
+      } else {
+        // 表头节点：动态插入（随信号响应——全选框勾选态等）；纯文本列不受影响。
+        // resolveSlot 把 VuiChildren（字符串/数字/数组/节点）归一为可挂载节点
+        insertDynamic(cell, null, () => resolveSlot(typeof head === 'function' ? head() : head))
+      }
       insertBefore(row, cell, null)
     }
     insertBefore(parent, row, anchor)
