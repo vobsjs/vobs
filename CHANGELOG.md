@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.14] - 2026-10-21
+
+### Added
+
+- **`@vobs/table` column `head` nodes.** `DataTableColumn` gains an optional `head` — a
+  `DataTableChildren` node or factory — rendered into the header cell through dynamic insertion
+  (reactive to signals; the node is recreated when its dependencies change). Use case:
+  selection-column header checkboxes. Sortable columns keep rendering the sort button and ignore
+  `head`; plain-text `label` columns are unaffected.
+
+- **`@vobs/table` `rowActive`.** `KitDataTable` gains an optional `rowActive(row, index)` that
+  marks rows with `data-active="true"` (current-row highlight). It is evaluated inside the row's
+  effect scope, so flipping the underlying signal updates the attribute in place — keyed row
+  reuse keeps the subscription alive. Shipped with a default highlight style (brand-tinted
+  background + inset edge, overridable via `--vobs-table-row-active` / `--vobs-table-row-active-edge`).
+
+### Fixed
+
+- **`@vobs/ui` Checkbox checked state never rendered.** The checkbox label element is
+  `vui-checkbox` (generated as `vui-${type}`), but the checked/disabled styling in
+  `components.css` targeted `.vui-check input:checked + .vui-check__box` — a class that no
+  element carries. Checked boxes rendered as empty squares once the native input was hidden
+  (the same class-mismatch family as the hidden-input rule fixed in Finora earlier; that
+  app-level patch masked the base label styles but could not cover the checked/::after/disabled
+  rules). All five selectors now target `.vui-checkbox`; `.vui-radio` was already correct.
+
 ## [1.8.13] - 2026-10-21
 
 ### Added
