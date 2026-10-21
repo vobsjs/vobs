@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.13] - 2026-10-21
+
+### Added
+
+- **`@vobs/ui` Table: column `head` nodes.** `TableColumn` gains an optional `head` — a
+  `VuiChildren` node or a factory — rendered into the header cell through dynamic insertion
+  (reactive to signals; the node is recreated when its dependencies change). Use case:
+  selection-column header checkboxes and other header controls. Plain-text `label` columns are
+  unaffected; when `head` is provided the label is not rendered.
+
+### Fixed
+
+- **`@vobs/ui` declares `@vobs/runtime`.** Test files imported it directly while the package
+  manifest never declared it — pnpm's strict layout left it unresolved and 8 suites failed under
+  `vitest --environment jsdom`. The workspace dependency is now declared and all suites resolve.
+
 ## [1.8.12] - 2026-10-13
 
 ### Added
