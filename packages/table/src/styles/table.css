@@ -36,6 +36,8 @@
 .vobs-data-table [data-align="end"] { text-align: end; font-variant-numeric: tabular-nums; }
 .vobs-data-table tr[data-clickable="true"] { cursor: pointer; }
 .vobs-data-table tr[data-clickable="true"]:hover { background: var(--vobs-table-row-hover, var(--bg-overlay-l2, rgba(0, 0, 0, .04))); }
+/* 行激活态（rowActive）：当前行高亮，弱于 hover 的中性灰、带品牌色左缘指示 */
+.vobs-data-table tbody tr[data-active="true"] { background: var(--vobs-table-row-active, var(--bg-brand-weak, rgba(59, 130, 246, .08))); box-shadow: inset 2px 0 0 var(--vobs-table-row-active-edge, var(--bg-brand, #3b82f6)); }
 .vobs-data-table__sort,
 .vobs-data-table__page-button {
   border: 0;

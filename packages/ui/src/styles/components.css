@@ -576,7 +576,7 @@
     .vui-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--text-default); border: 2px solid var(--bg-base-default); box-shadow: 0 0 0 1px var(--border-neutral-l2); cursor: pointer; }
 
     /* ===== Checkbox / Radio / Switch ===== */
-    .vui-check, .vui-radio {
+    .vui-checkbox, .vui-radio {
       display: inline-flex; align-items: center; gap: var(--spacer-8);
       font-size: var(--body-sm-font-size); color: var(--text-default);
       cursor: pointer; user-select: none;
@@ -590,18 +590,18 @@
       color: var(--text-onbrand);
       transition: background .12s, border-color .12s;
     }
-    .vui-check input { display: none; }
-    .vui-check input:checked + .vui-check__box {
+    .vui-checkbox input { display: none; }
+    .vui-checkbox input:checked + .vui-check__box {
       background: var(--bg-brand);
       border-color: var(--bg-brand);
     }
-    .vui-check input:checked + .vui-check__box::after {
+    .vui-checkbox input:checked + .vui-check__box::after {
       content: ''; width: 8px; height: 4px;
       border-left: 2px solid var(--text-onbrand);
       border-bottom: 2px solid var(--text-onbrand);
       transform: rotate(-45deg) translate(1px, -1px);
     }
-    .vui-check input:disabled + .vui-check__box { opacity: .5; cursor: not-allowed; }
+    .vui-checkbox input:disabled + .vui-check__box { opacity: .5; cursor: not-allowed; }
 
     .vui-radio__dot {
       width: 16px; height: 16px;

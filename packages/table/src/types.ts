@@ -45,6 +45,13 @@ export type DataTableChildren =
 export interface DataTableColumn<Row = Record<string, unknown>> {
   readonly id: string
   readonly label: string
+  /**
+   * Header cell content; defaults to the plain-text `label`. A node or factory
+   * renders through dynamic insertion (reactive — recreated when its signal
+   * dependencies change): selection-column header checkboxes and similar header
+   * controls. Sortable columns render the sort button instead and ignore `head`.
+   */
+  readonly head?: DataTableChildren
   readonly key?: keyof Row
   readonly render?: (row: Row, index: number) => DataTableChildren
   readonly compare?: (left: Row, right: Row) => number
@@ -166,6 +173,12 @@ export interface KitDataTableProps<Row = Record<string, unknown>> extends DataTa
   /** Receives table-originated sort and pagination changes for a page-level query controller. */
   readonly onQueryChange?: (query: DataTableQuery) => void
   readonly onRowClick?: (row: Row, index: number) => void
+  /**
+   * Marks rows with `data-active="true"` (current-row highlight). Evaluated
+   * inside the row's effect scope, so flipping the underlying signal updates
+   * the attribute in place — keyed row reuse keeps the subscription alive.
+   */
+  readonly rowActive?: (row: Row, index: number) => boolean
   readonly onVisibleColumnIdsChange?: (ids: readonly string[]) => void
 }
 

@@ -132,7 +132,10 @@ function createHeader<Row>(props: KitDataTableProps<Row>): VobsNode {
       setAttribute(cell, 'data-column-id', column.id)
       applyColumnStyle(cell, column, readProp<DataTableColumnSettings | undefined>(props, 'columnSettings', undefined))
       if (column.sortable) insertBefore(cell, createSortButton(props, column, cell), null)
-      else insertBefore(cell, createText(column.label), null)
+      else if (column.head !== undefined) {
+        // 表头节点：动态插入（随信号响应——表头全选框等）；resolveSlot 归一节点/文本/工厂
+        insertDynamic(cell, null, () => resolveSlot(column.head))
+      } else insertBefore(cell, createText(column.label), null)
       insertBefore(row, cell, null)
     }
     insertBefore(parent, row, anchor)
@@ -302,6 +305,14 @@ function createRow<Row>(
       // 空格默认会滚动页面，必须挡掉
       keyboardEvent.preventDefault?.()
       onRowClick(getRow(), getIndex())
+    })
+  }
+  const rowActive = readProp<KitDataTableProps<Row>['rowActive'] | undefined>(props, 'rowActive', undefined)
+  if (rowActive) {
+    // 行激活态：effect 内求值——信号翻转原地更新 data-active（keyed 行复用不丢订阅），
+    // 行数据/位置变化（getRow/getIndex 读当前值）同样触发重算
+    effect(() => {
+      setOptionalAttribute(tableRow, 'data-active', rowActive(getRow(), getIndex()) ? 'true' : undefined)
     })
   }
   for (const column of columns) {
