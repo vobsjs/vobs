@@ -1,4 +1,4 @@
-import { effect, onDispose, state, type Signal, memo } from '@vobs/reactivity'
+import { effect, onDispose, state, untrack, type Signal, memo } from '@vobs/reactivity'
 import {
   addEventListener,
   createElement,
@@ -155,9 +155,13 @@ function setupRowMenu<Row>(props: KitDataTableProps<Row>, root: Element): void {
     if (matched === undefined) return
     event.preventDefault()
     const items = factory(matched.row, matched.index)
-    ctx.value = items.length > 0
-      ? { x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY, items }
-      : null
+    // 事件回调的写入包 untrack：handler 经 owner.run 重入组件作用域，
+    // 写入不应对该作用域建立订阅（结构性免疫 C210 自订阅误判）
+    untrack(() => {
+      ctx.value = items.length > 0
+        ? { x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY, items }
+        : null
+    })
   })
   // 弹层容器保持稳定（外点关闭用它判包含），菜单内容随 ctx 响应式重建
   const layer = createElement('div')
@@ -169,17 +173,18 @@ function setupRowMenu<Row>(props: KitDataTableProps<Row>, root: Element): void {
     const target = event.target as HTMLElement | null
     // 菜单内的 mousedown（如条目按下）不算外点；右键另一行先关再由 contextmenu 重开
     if (target !== null && layer.contains(target)) return
-    ctx.value = null
+    untrack(() => { ctx.value = null })
   }
   const onKeyDown = (event: Event): void => {
-    if ((event as KeyboardEvent).key === 'Escape') ctx.value = null
+    if ((event as KeyboardEvent).key === 'Escape') untrack(() => { ctx.value = null })
   }
   document.addEventListener('mousedown', onOutsideDown)
   document.addEventListener('keydown', onKeyDown)
   onDispose(() => {
     document.removeEventListener('mousedown', onOutsideDown)
     document.removeEventListener('keydown', onKeyDown)
-    ctx.value = null
+    // 卸载清理可能发生在效果重排的同步窗口内，写入同样断开追踪
+    untrack(() => { ctx.value = null })
   })
 }
 
@@ -204,7 +209,7 @@ function renderRowMenu(ctx: Signal<{ x: number; y: number; items: readonly DataT
     setAttribute(entry, 'role', 'menuitem')
     if (item.label !== undefined) insertBefore(entry, createText(item.label), null)
     addEventListener(entry, 'click', () => {
-      ctx.value = null
+      untrack(() => { ctx.value = null })
       item.onRun?.()
     })
     insertBefore(menu, entry, null)
