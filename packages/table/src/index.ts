@@ -18,6 +18,7 @@ export type {
   DataTableResource,
   DataTableQuery,
   DataTableResourceData,
+  DataTableRowMenuItem,
   DataTableSort,
   DataTableSortDirection,
   DataTableSortType,

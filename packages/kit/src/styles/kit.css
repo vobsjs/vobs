@@ -89,6 +89,83 @@
 .vobs-kit-page-actions--end { justify-content: flex-end; }
 .vobs-kit-page-actions--between { justify-content: space-between; }
 
+/* ── Layout primitives：ToolbarBar / TablePanel / StatRow ──
+   page-main 之内中段积木的统一写法（滚动契约：只有 TablePanel 内部滚动，
+   工具栏/指标行随页头常驻）。块间距交给父级布局（KitPage 自带 gap），原语不背 margin。 */
+.vobs-kit-toolbar-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: none;
+}
+
+.vobs-kit-toolbar-bar__left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+
+.vobs-kit-toolbar-bar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.vobs-kit-table-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--vobs-kit-table-panel-border, var(--border-neutral-l1, #d0d7de));
+  border-radius: var(--vobs-kit-table-panel-radius, var(--radius-8, 8px));
+  background: var(--vobs-kit-table-panel-surface, var(--bg-base-secondary, #fff));
+}
+
+.vobs-kit-table-panel--pad {
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+/* 包 DataTable：表格撑满面板内部滚动（thead sticky 承接），外壳自身不滚 */
+.vobs-kit-table-panel > .vobs-data-table {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 裸列表内容：scroll 模式的内部滚动层 */
+.vobs-kit-table-panel__scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.vobs-kit-stat-row {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  flex: none;
+}
+
+.vobs-kit-stat-row--cols-3 { grid-template-columns: repeat(3, 1fr); }
+.vobs-kit-stat-row--cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+@media (max-width: 640px) {
+  .vobs-kit-stat-row--cols-3,
+  .vobs-kit-stat-row--cols-4 { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 640px) {
   .vobs-kit-filter-bar { align-items: stretch; }
   .vobs-kit-filter-bar__actions { width: 100%; }

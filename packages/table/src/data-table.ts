@@ -1,12 +1,12 @@
-import { effect, state, type Signal, memo } from '@vobs/reactivity'
+import { effect, onDispose, state, type Signal, memo } from '@vobs/reactivity'
 import {
   addEventListener,
   createElement,
   createFragment,
   createText,
   insertBefore,
-  insertList,
   insertDynamic,
+  insertList,
   setAttribute,
   setProperty,
   type VobsNode
@@ -30,6 +30,7 @@ import type {
   DataTableColumnSettings,
   DataTableIcons,
   DataTablePage,
+  DataTableRowMenuItem,
   DataTableQuery,
   DataTableResourceData,
   DataTableSort,
@@ -63,12 +64,13 @@ export function KitDataTable<Row = Record<string, unknown>>(props: KitDataTableP
 
   bindClassList(root, props, () => [
     'vobs-data-table',
-    readProp(props, 'stickyHeader', true) ? 'vobs-data-table--sticky-header' : undefined
+    readProp(props, 'stickyHeader', true) ? 'vobs-data-table--sticky-header' : undefined,
+    hasProp(props, 'rowMenu') ? 'vobs-data-table--rowmenu' : undefined
   ])
   bindCommonAttributes(root, props, [
     'columns', 'rows', 'resource', 'rowKey', 'page', 'pageSize', 'total', 'sort', 'filters', 'columnSettings',
     'sortingMode', 'visibleColumnIds', 'virtual', 'stickyHeader', 'virtualHeight', 'rowHeight', 'overscan', 'loading', 'empty',
-    'error', 'toolbar', 'footer', 'pagination', 'paginationMode', 'icons',
+    'error', 'toolbar', 'footer', 'pagination', 'paginationMode', 'icons', 'rowMenu',
     'previousLabel', 'nextLabel', 'jumpToLabel', 'jumpToPlaceholder', 'jumpToSubmitLabel',
     'pageSizeOptions', 'pageSizeLabel', 'pageLabel',
     'onQueryChange', 'onRowClick', 'onVisibleColumnIdsChange'
@@ -116,10 +118,98 @@ export function KitDataTable<Row = Record<string, unknown>>(props: KitDataTableP
   insertDynamic(footer, null, () => createFooter(props))
   effect(() => { setProperty(footer, 'hidden', !shouldShowFooter(props)) })
 
+  setupRowMenu(props, root)
+
   insertBefore(root, toolbar, null)
   insertBefore(root, viewport, null)
   insertBefore(root, footer, null)
   return root
+}
+
+/**
+ * 行右键菜单（纯交互机制）：contextmenu 委托 + `data-row-key` 反查行 + fixed 弹层。
+ * 菜单项由页面的 `rowMenu(row, index)` 工厂给出（业务词汇全在页面侧）；
+ * 机制层只负责定位、开关与清理。依赖 `rowKey`（行身份反查）。
+ */
+function setupRowMenu<Row>(props: KitDataTableProps<Row>, root: Element): void {
+  if (!hasProp(props, 'rowMenu')) return
+  const ctx = state<{ x: number; y: number; items: readonly DataTableRowMenuItem[] } | null>(null, 'table.rowMenuCtx')
+  addEventListener(root, 'contextmenu', event => {
+    const factory = readProp<KitDataTableProps<Row>['rowMenu'] | undefined>(props, 'rowMenu', undefined)
+    const rowKey = readProp<KitDataTableProps<Row>['rowKey'] | undefined>(props, 'rowKey', undefined)
+    if (factory === undefined || rowKey === undefined) return
+    const target = event.target as HTMLElement | null
+    const rowElement = target?.closest?.('[data-row-key]') as HTMLElement | null
+    if (rowElement === null) return
+    const key = rowElement.getAttribute('data-row-key') ?? ''
+    // 事件时再解析当前页行：行会被 keyed 复用，闭包里的行可能是旧的
+    const rows = resolvePage(props).rows
+    let matched: { row: Row; index: number } | undefined
+    for (let index = 0; index < rows.length; index++) {
+      const candidate = rows[index]
+      if (candidate !== undefined && String(rowKey(candidate, index)) === key) {
+        matched = { row: candidate, index }
+        break
+      }
+    }
+    if (matched === undefined) return
+    event.preventDefault()
+    const items = factory(matched.row, matched.index)
+    ctx.value = items.length > 0
+      ? { x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY, items }
+      : null
+  })
+  // 弹层容器保持稳定（外点关闭用它判包含），菜单内容随 ctx 响应式重建
+  const layer = createElement('div')
+  setAttribute(layer, 'class', 'vobs-data-table__rowmenu-layer')
+  insertDynamic(layer, null, () => renderRowMenu(ctx))
+  insertBefore(root, layer, null)
+  const onOutsideDown = (event: Event): void => {
+    if (ctx.value === null) return
+    const target = event.target as HTMLElement | null
+    // 菜单内的 mousedown（如条目按下）不算外点；右键另一行先关再由 contextmenu 重开
+    if (target !== null && layer.contains(target)) return
+    ctx.value = null
+  }
+  const onKeyDown = (event: Event): void => {
+    if ((event as KeyboardEvent).key === 'Escape') ctx.value = null
+  }
+  document.addEventListener('mousedown', onOutsideDown)
+  document.addEventListener('keydown', onKeyDown)
+  onDispose(() => {
+    document.removeEventListener('mousedown', onOutsideDown)
+    document.removeEventListener('keydown', onKeyDown)
+    ctx.value = null
+  })
+}
+
+/** ctx 传信号本体（条目点击要写回信号关菜单——传快照对象会把 `.value` 写在死对象上） */
+function renderRowMenu(ctx: Signal<{ x: number; y: number; items: readonly DataTableRowMenuItem[] } | null>): VobsNode | null {
+  const value = ctx.value
+  if (value === null) return null
+  const menu = createElement('div')
+  setAttribute(menu, 'class', 'vobs-data-table__rowmenu')
+  setAttribute(menu, 'role', 'menu')
+  setAttribute(menu, 'style', `left: ${value.x}px; top: ${value.y}px`)
+  for (const item of value.items) {
+    if (item.sep === true) {
+      const separator = createElement('div')
+      setAttribute(separator, 'class', 'vobs-data-table__rowmenu-sep')
+      setAttribute(separator, 'role', 'separator')
+      insertBefore(menu, separator, null)
+      continue
+    }
+    const entry = createElement('div')
+    setAttribute(entry, 'class', `vobs-data-table__rowmenu-item${item.danger === true ? ' is-danger' : ''}`)
+    setAttribute(entry, 'role', 'menuitem')
+    if (item.label !== undefined) insertBefore(entry, createText(item.label), null)
+    addEventListener(entry, 'click', () => {
+      ctx.value = null
+      item.onRun?.()
+    })
+    insertBefore(menu, entry, null)
+  }
+  return menu
 }
 
 function createHeader<Row>(props: KitDataTableProps<Row>): VobsNode {

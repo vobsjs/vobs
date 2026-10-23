@@ -11,7 +11,7 @@
     "type": "git",
     "url": "git+https://github.com/vobsjs/vobs.git"
   },
-  "version": "1.8.15",
+  "version": "1.8.16",
   "publishConfig": {
     "access": "public"
   },
@@ -47,6 +47,24 @@
       "import": "./dist/page-actions.js",
       "require": "./dist/page-actions.cjs",
       "default": "./dist/page-actions.js"
+    },
+    "./toolbar-bar": {
+      "types": "./dist/toolbar-bar.d.ts",
+      "import": "./dist/toolbar-bar.js",
+      "require": "./dist/toolbar-bar.cjs",
+      "default": "./dist/toolbar-bar.js"
+    },
+    "./table-panel": {
+      "types": "./dist/table-panel.d.ts",
+      "import": "./dist/table-panel.js",
+      "require": "./dist/table-panel.cjs",
+      "default": "./dist/table-panel.js"
+    },
+    "./stat-row": {
+      "types": "./dist/stat-row.d.ts",
+      "import": "./dist/stat-row.js",
+      "require": "./dist/stat-row.cjs",
+      "default": "./dist/stat-row.js"
     },
     "./layout": {
       "types": "./dist/index.d.ts",

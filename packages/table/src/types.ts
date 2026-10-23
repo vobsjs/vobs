@@ -116,6 +116,14 @@ export type DataTablePagination =
   | DataTableChildren
   | ((context: DataTablePaginationContext) => DataTableChildren | null | undefined)
 
+/** Context-menu entry for a table row. `sep` renders a divider and ignores the other fields. */
+export interface DataTableRowMenuItem {
+  readonly label?: string
+  readonly danger?: boolean
+  readonly sep?: boolean
+  readonly onRun?: () => void
+}
+
 export interface DataTableCommonProps {
   readonly class?: string
   readonly className?: string
@@ -181,6 +189,14 @@ export interface KitDataTableProps<Row = Record<string, unknown>> extends DataTa
    * the attribute in place — keyed row reuse keeps the subscription alive.
    */
   readonly rowActive?: (row: Row, index: number) => boolean
+  /**
+   * Row context menu (pure interaction mechanism: delegation + row lookup +
+   * fixed-position popup; all business wording lives in the returned items).
+   * Requires `rowKey` — rows are identified through their `data-row-key`.
+   * Right-clicking a row preventDefaults and shows the menu at the pointer;
+   * clicking an item runs `onRun` and closes, outside mousedown / Escape close.
+   */
+  readonly rowMenu?: (row: Row, index: number) => readonly DataTableRowMenuItem[]
   readonly onVisibleColumnIdsChange?: (ids: readonly string[]) => void
 }
 

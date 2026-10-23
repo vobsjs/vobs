@@ -18,6 +18,12 @@ export { KitFilterBar } from './filter-bar'
 export type { KitFilterBarProps } from './filter-bar'
 export { KitPageActions } from './page-actions'
 export type { KitPageActionsAlign, KitPageActionsProps } from './page-actions'
+export { KitToolbarBar } from './toolbar-bar'
+export type { KitToolbarBarProps } from './toolbar-bar'
+export { KitTablePanel } from './table-panel'
+export type { KitTablePanelProps } from './table-panel'
+export { KitStatRow } from './stat-row'
+export type { KitStatRowCols, KitStatRowProps } from './stat-row'
 
 export type {
   KitBreadcrumbItem,

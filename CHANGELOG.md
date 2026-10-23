@@ -4,6 +4,39 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.16] - 2026-10-23
+
+### Added
+
+- **`@vobs/kit` layout primitives.** Three mid-page building blocks sunk from the Finora app
+  layer (proven shape, 2026-10-23):
+  - `KitToolbarBar` — headless toolbar strip: `left` filter/search zone (wraps, `flex: 1 1 auto`)
+    + `right` action zone (pinned to the end); `flex: none` so it stays put while the panel
+    below scrolls. Spacing against neighbouring blocks is the parent layout's business
+    (KitPage already provides the gap) — the primitive carries no margins.
+  - `KitTablePanel` — table/list shell card (border + radius + `overflow: hidden`), so
+    scrolling only ever happens inside it. Two content modes: wrapping a `KitDataTable`
+    (`.vobs-data-table` stretches to fill and its sticky header keeps working) or bare list
+    content via `scroll` (inner scroll layer) / `pad` (padded self-scrolling card).
+  - `KitStatRow` — metric row between toolbar and panel; uniform `cols: 3 | 4` grid, collapses
+    to one column under 640px. Replaces hand-written grid/blk class mixes.
+  Classes are `vobs-kit-toolbar-bar` / `vobs-kit-table-panel` / `vobs-kit-stat-row` (BEM-ish
+  modifiers `--pad`, `--cols-3/4`); tokens follow the kit convention
+  (`--border-neutral-l1`, `--bg-base-secondary`) with per-component override hooks
+  (`--vobs-kit-table-panel-*`). Subpath exports added (`@vobs/kit/toolbar-bar`, `table-panel`,
+  `stat-row`).
+
+- **`@vobs/table` row context menu (`rowMenu`).** `KitDataTable` gains an optional
+  `rowMenu(row, index)` factory returning `DataTableRowMenuItem[]` (neutral shape:
+  `label` / `danger` / `sep` / `onRun` — all business wording stays in the page). The kernel
+  implements the pure interaction mechanism: `contextmenu` delegation, row lookup through the
+  existing `data-row-key` (requires `rowKey`), fixed-position popup at the pointer, item click
+  runs `onRun` and closes, outside mousedown / Escape close, `onDispose` removes the document
+  listeners. Root gets a `vobs-data-table--rowmenu` modifier (row cursor via CSS) and the popup
+  ships with default styles overridable via `--vobs-table-*` hooks. Implementation note: the
+  render function receives the signal itself, not a snapshot — item click handlers must write
+  back to the signal to close the menu (writing `.value` on a snapshot object is a silent no-op).
+
 ## [1.8.15] - 2026-10-21
 
 ### Changed
