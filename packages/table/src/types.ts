@@ -119,6 +119,8 @@ export type DataTablePagination =
 /** Context-menu entry for a table row. `sep` renders a divider and ignores the other fields. */
 export interface DataTableRowMenuItem {
   readonly label?: string
+  /** Leading icon inside the menu entry (node or factory, resolved through a fixed-size slot). */
+  readonly icon?: DataTableChildren
   readonly danger?: boolean
   readonly sep?: boolean
   readonly onRun?: () => void

@@ -87,6 +87,29 @@ describe('KitDataTable 行右键菜单', () => {
     cleanup()
   })
 
+  it('icon 通道：节点经固定槽位渲染在 label 之前', async () => {
+    const { rows, openMenuAt, menu, cleanup } = await mountTable({
+      rowMenu: () => [{
+        label: 'Edit',
+        icon: () => {
+          const svg = document.createElement('svg')
+          return svg
+        }
+      }]
+    })
+    await openMenuAt(rows()[0]!)
+    await settle()
+
+    const item = menu()!.querySelector('.vobs-data-table__rowmenu-item')!
+    const slot = item.querySelector('.vobs-data-table__rowmenu-icon')
+    expect(slot).not.toBeNull()
+    expect(slot!.querySelector('svg')).not.toBeNull()
+    // icon 槽位在 label 文本之前（文本节点是 entry 的最后一个子节点）
+    expect(item.lastChild?.nodeType).toBe(Node.TEXT_NODE)
+    expect(item.lastChild?.textContent).toBe('Edit')
+    cleanup()
+  })
+
   it('菜单外 mousedown 关闭；菜单内按下不误关', async () => {
     const { rows, openMenuAt, menu, cleanup } = await mountTable({
       rowMenu: () => [{ label: 'Edit' }]

@@ -207,6 +207,15 @@ function renderRowMenu(ctx: Signal<{ x: number; y: number; items: readonly DataT
     const entry = createElement('div')
     setAttribute(entry, 'class', `vobs-data-table__rowmenu-item${item.danger === true ? ' is-danger' : ''}`)
     setAttribute(entry, 'role', 'menuitem')
+    if (item.icon !== undefined) {
+      const icon = resolveSlot(item.icon)
+      if (icon !== null) {
+        const slot = createElement('span')
+        setAttribute(slot, 'class', 'vobs-data-table__rowmenu-icon')
+        insertBefore(slot, icon, null)
+        insertBefore(entry, slot, null)
+      }
+    }
     if (item.label !== undefined) insertBefore(entry, createText(item.label), null)
     addEventListener(entry, 'click', () => {
       untrack(() => { ctx.value = null })

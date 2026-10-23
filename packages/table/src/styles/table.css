@@ -131,6 +131,9 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
 }
 .vobs-data-table__rowmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 10px;
   border-radius: 3px;
   color: var(--vobs-table-text, var(--text-default, #1f2328));
@@ -140,6 +143,13 @@
   cursor: pointer;
   user-select: none;
 }
+.vobs-data-table__rowmenu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.vobs-data-table__rowmenu-icon > svg { display: block; }
 .vobs-data-table__rowmenu-item:hover { background: var(--vobs-table-row-hover, var(--bg-overlay-l2, rgba(0, 0, 0, .04))); }
 .vobs-data-table__rowmenu-item.is-danger { color: var(--text-danger, #d1242f); }
 .vobs-data-table__rowmenu-sep {
