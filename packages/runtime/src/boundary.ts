@@ -40,7 +40,7 @@ export function insertBoundary(
 ): void {
   const boundary = createOwner()
   boundary.run(() => {
-    const error = state<Error | null>(null)
+    const error = state<Error | null>(null, 'error')
     let fallbackActive = false
     let lastError: Error | null = null
     let initialized = false

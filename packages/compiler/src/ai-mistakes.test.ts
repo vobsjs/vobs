@@ -101,13 +101,18 @@ const CORPUS: readonly Mistake[] = [
     caughtBy: 'VOBS_C232'
   },
 
-  /* ---------- 以下为**当前静默**的形态：P2 的工作清单 ---------- */
   {
+    /*
+     * 2026-10-28 补上诊断（VOBS_C233）：补的就是 silentNote 当时要求的**绑定分析** ——
+     * 只对「名字确实绑定到 `state(...)`」的接收者报警，普通数组的 push 一个不报。
+     * 当年它记在 silent-failures.md 的静默清单里，现在是「已从静默转为有诊断」的第 6 条。
+     */
     why: 'React 里数组原地 push 后靠重新渲染生效；vobs 里引用没变，信号不通知。',
     source: 'export function P(){ const list = state([1]); list.value.push(2); return <div>{list.value.length}</div> }',
-    caughtBy: null,
-    silentNote: '需要作用域/绑定分析（确认 `list` 确实绑定到 state(...)），否则对普通数组的 push 会误报。'
+    caughtBy: 'VOBS_C233'
   },
+
+  /* ---------- 以下为**当前静默**的形态：P2 的工作清单 ---------- */
   {
     why: '组件体内提前 return null 做守卫 —— React 每次渲染重算，vobs 里挂载时固化。',
     source: 'export function P(){ if (loading.value) return null; return <div>done</div> }',
@@ -139,6 +144,22 @@ const CORPUS: readonly Mistake[] = [
       '}'
     ].join('\n'),
     caughtBy: 'VOBS_C210'
+  },
+  {
+    /*
+     * Finora 死穴 §1-3（实证 2 次）：C210 报「(未命名信号)」时无法定位是哪个信号 ——
+     * 2026-10-28 起静态规则在**创建处**就提醒（VOBS_C120）。
+     */
+    why: 'React DevTools 里组件名即标签；vobs 的运行时诊断靠调试名，`state(0)` 不传名报错时只显示 "(未命名信号)"。',
+    source: [
+      "import { effect, state } from '@vobs/vobs'",
+      'export function P() {',
+      '  const count = state(0)',
+      '  effect(() => { count.value = count.value + 1 })',
+      '  return <div>{count.value}</div>',
+      '}'
+    ].join('\n'),
+    caughtBy: 'VOBS_C120'
   }
 ]
 

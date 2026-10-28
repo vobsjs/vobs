@@ -137,14 +137,14 @@ export function createForm<T extends object>(initialValues: T, options: FormOpti
   const fields = new Map<string, InternalField<unknown, T>>()
   const touchedNames = new Set<FormFieldName<T>>()
   const validatingNames = new Set<FormFieldName<T>>()
-  const dirty = owner.run(() => state(false))
-  const touched = owner.run(() => state<ReadonlySet<FormFieldName<T>>>(new Set()))
-  const errors = owner.run(() => state<Readonly<FormErrors<T>>>({} as FormErrors<T>))
-  const hasErrors = owner.run(() => state(false))
-  const submitting = owner.run(() => state(false))
-  const validating = owner.run(() => state(false))
-  const validatingFields = owner.run(() => state<ReadonlySet<FormFieldName<T>>>(new Set()))
-  const fieldNames = owner.run(() => state<ReadonlySet<string>>(new Set(names)))
+  const dirty = owner.run(() => state(false, 'signal'))
+  const touched = owner.run(() => state<ReadonlySet<FormFieldName<T>>>(new Set(), 'signal'))
+  const errors = owner.run(() => state<Readonly<FormErrors<T>>>({} as FormErrors<T>, 'signal'))
+  const hasErrors = owner.run(() => state(false, 'signal'))
+  const submitting = owner.run(() => state(false, 'signal'))
+  const validating = owner.run(() => state(false, 'signal'))
+  const validatingFields = owner.run(() => state<ReadonlySet<FormFieldName<T>>>(new Set(), 'signal'))
+  const fieldNames = owner.run(() => state<ReadonlySet<string>>(new Set(names), 'signal'))
   let schemaRun = 0
   let schemaPending = 0
   let formError: string | null = null
@@ -156,11 +156,11 @@ export function createForm<T extends object>(initialValues: T, options: FormOpti
       const initialValue = initialValues[name as FormFieldName<T>]
       fields.set(name, {
         name,
-        value: state(initialValue),
-        touched: state(false),
-        dirty: state(false),
-        error: state<string | null>(null),
-        validating: state(false),
+        value: state(initialValue, 'value'),
+        touched: state(false, 'touched'),
+        dirty: state(false, 'dirty'),
+        error: state<string | null>(null, 'error'),
+        validating: state(false, 'validating'),
         initialValue,
         validationRun: 0
       })
@@ -517,11 +517,11 @@ function reportUnknownSchemaKeys<T extends object>(
       : undefined
     fields.set(name, {
       name,
-      value: state(initialValue),
-      touched: state(false),
-      dirty: state(false),
-      error: state<string | null>(null),
-      validating: state(false),
+      value: state(initialValue, 'value'),
+      touched: state(false, 'touched'),
+      dirty: state(false, 'dirty'),
+      error: state<string | null>(null, 'error'),
+      validating: state(false, 'validating'),
       initialValue,
       validationRun: 0,
       validators,

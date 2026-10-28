@@ -34,24 +34,24 @@ const sampleRows = [
 
 export function ComponentsPage() {
   const i18n = useI18n()
-  const dialogOpen = state(false)
-  const drawerOpen = state(false)
-  const feedbackState = state<'success' | 'empty' | 'error'>('success')
-  const overlayMessage = state(i18n.t('components.noOverlay'))
-  const inputValue = state('Try editing this input')
-  const textareaValue = state('A textarea with a real DOM binding.')
-  const selectValue = state('signals')
-  const rememberChoice = state(true)
-  const choice = state('core')
-  const featureEnabled = state(true)
-  const tab = state('overview')
-  const composerValue = state('')
-  const activity = state('files')
-  const selectedFile = state('runtime')
+  const dialogOpen = state(false, 'dialogOpen')
+  const drawerOpen = state(false, 'drawerOpen')
+  const feedbackState = state<'success' | 'empty' | 'error'>('success', 'feedbackState')
+  const overlayMessage = state(i18n.t('components.noOverlay'), 'overlayMessage')
+  const inputValue = state('Try editing this input', 'inputValue')
+  const textareaValue = state('A textarea with a real DOM binding.', 'textareaValue')
+  const selectValue = state('signals', 'selectValue')
+  const rememberChoice = state(true, 'rememberChoice')
+  const choice = state('core', 'choice')
+  const featureEnabled = state(true, 'featureEnabled')
+  const tab = state('overview', 'tab')
+  const composerValue = state('', 'composerValue')
+  const activity = state('files', 'activity')
+  const selectedFile = state('runtime', 'selectedFile')
   const editorTabs = state([
     { id: 'runtime', label: 'runtime.ts', icon: () => <Icon name="code" />, closeable: true },
     { id: 'readme', label: 'README.md', closeable: true }
-  ])
+  ], 'editorTabs')
 
   return (
     <KitPage

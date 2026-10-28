@@ -209,7 +209,7 @@ export function collectCaptchaDeviceSignals(): CaptchaDeviceSignals {
 
 export function SliderCaptcha(props: SliderCaptchaProps = {}): VobsNode {
   const positions = new Map<string, number>()
-  const successDismissed = state(false)
+  const successDismissed = state(false, 'successDismissed')
   let successTimer: ReturnType<typeof setTimeout> | undefined
   let waitingForDismiss = false
 
@@ -314,8 +314,8 @@ function createSliderChallenge(
   const trail: SliderTrailPoint[] = []
   const startX = clamp(payload.startX ?? 0, 0, Math.max(0, payload.width - payload.pieceWidth))
   const maxPosition = Math.max(0, payload.width - payload.pieceWidth - startX)
-  const position = state(clamp(initialPosition, 0, maxPosition))
-  const dragging = state(false)
+  const position = state(clamp(initialPosition, 0, maxPosition), 'position')
+  const dragging = state(false, 'dragging')
   const handleWidth = 50
   let startClientX = 0
   let startPosition = 0

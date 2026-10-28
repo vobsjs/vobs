@@ -21,8 +21,8 @@ const demo = createSyntheticSource({ seed: 20260101 })
 const source = createSwitchableSource(demo)
 const store = createConsoleStore(source)
 
-const note = state(demo.note)
-const live = state(false)
+const note = state(demo.note, 'note')
+const live = state(false, 'live')
 
 /** 演示数据的推进间隔（毫秒）。接真实数据后这段不会启动。 */
 const DEMO_TICK_MS = 900

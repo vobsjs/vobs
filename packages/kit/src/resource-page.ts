@@ -55,7 +55,7 @@ export function KitResourcePage<Row = Record<string, unknown>>(
    *
    * （memo 那条是框架级行为，要改得动它的传播模型 —— 已记入待办，不在本次范围。）
    */
-  const allowed = state(isAllowed(props, auth))
+  const allowed = state(isAllowed(props, auth), 'allowed')
   effect(() => { allowed.value = isAllowed(props, auth) })
   insertDynamic(root, null, () => allowed.value
     ? createAuthorizedPage(props, i18n)

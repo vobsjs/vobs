@@ -54,17 +54,17 @@ export function KitLayout(props: KitLayoutProps = {}): VobsNode {
   const viewport = createKitViewport(() => breakpoint.value)
   const sidebarExpanded = readProp(props, 'sidebarExpanded', false)
   const internalCollapsed = state(
-    readProp<boolean | undefined>(props, 'sidebarCollapsed', undefined) ?? !sidebarExpanded
+    readProp<boolean | undefined>(props, 'sidebarCollapsed', undefined) ?? !sidebarExpanded, 'internalCollapsed'
   )
-  const internalMobileOpen = state(readProp<boolean | undefined>(props, 'mobileOpen', undefined) ?? false)
+  const internalMobileOpen = state(readProp<boolean | undefined>(props, 'mobileOpen', undefined) ?? false, 'internalMobileOpen')
   const collapsed = memo(() => readProp<boolean | undefined>(props, 'sidebarCollapsed', undefined) ?? internalCollapsed.value)
   const mobileOpen = memo(() => readProp<boolean | undefined>(props, 'mobileOpen', undefined) ?? internalMobileOpen.value)
-  const headerVisible = state(!isProvided(props, 'header'))
-  const sidebarVisible = state(isProvided(props, 'sidebar') || hasProp(props, 'menu'))
-  const backdropVisible = state(!isProvided(props, 'mobileBackdrop'))
-  const breadcrumbVisible = state(false)
-  const tabsVisible = state(false)
-  const footerVisible = state(false)
+  const headerVisible = state(!isProvided(props, 'header'), 'headerVisible')
+  const sidebarVisible = state(isProvided(props, 'sidebar') || hasProp(props, 'menu'), 'sidebarVisible')
+  const backdropVisible = state(!isProvided(props, 'mobileBackdrop'), 'backdropVisible')
+  const breadcrumbVisible = state(false, 'breadcrumbVisible')
+  const tabsVisible = state(false, 'tabsVisible')
+  const footerVisible = state(false, 'footerVisible')
 
   const context: KitLayoutContext = {
     sidebarCollapsed: collapsed,

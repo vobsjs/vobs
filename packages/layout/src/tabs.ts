@@ -22,7 +22,7 @@ import type { KitTabItem, KitTabsProps } from './types'
 
 export function KitTabs(props: KitTabsProps = {}): VobsNode {
   const root = createElement('nav')
-  const active = state<string | undefined>(undefined)
+  const active = state<string | undefined>(undefined, 'active')
 
   bindClassList(root, props, () => ['vobs-kit-tabs'])
   bindCommonAttributes(root, props, [

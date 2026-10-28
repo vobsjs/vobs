@@ -45,7 +45,7 @@ export function createJWTAuth<C extends Credentials = Credentials>(
   options: JWTAuthOptions<C>
 ): JWTAuthContext<C> {
   validateOptions(options)
-  const accessToken = state<string | null>(null)
+  const accessToken = state<string | null>(null, 'accessToken')
   const baseAuth = createAuth<C>({
     session: options.session,
     loginHandler: async credentials => {

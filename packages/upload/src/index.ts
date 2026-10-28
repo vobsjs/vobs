@@ -93,7 +93,7 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
   validateOptions(options)
   const fieldName = options.fieldName ?? 'file'
   const concurrency = options.concurrency ?? 3
-  const tasks = state<readonly UploadTask<Result>[]>([])
+  const tasks = state<readonly UploadTask<Result>[]>([], 'tasks')
   const createdTasks = new Set<InternalUploadTask<Result>>()
   const queue: Array<() => void> = []
   let nextId = 0
@@ -170,11 +170,11 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
   return context
 
   function createTask(file: UploadFile, id: string, taskOptions: UploadTaskOptions<Result>): InternalUploadTask<Result> {
-    const progress = state(0)
-    const status = state<UploadStatus>('pending')
+    const progress = state(0, 'progress')
+    const status = state<UploadStatus>('pending', 'status')
     // 类型收窄成 UploadError：调用方要靠 `.code` 区分"能不能安全重传"（见 UPLOAD_RESPONSE_INVALID）
-    const error = state<UploadError | null>(null)
-    const result = state<Result | null>(null)
+    const error = state<UploadError | null>(null, 'error')
+    const result = state<Result | null>(null, 'result')
     let controller: AbortController | undefined
     let settle: ((value: Result | null) => void) | undefined
     let promise = createPromise()

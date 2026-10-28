@@ -39,7 +39,7 @@ export interface ActivityRailProps extends VuiCommonProps {
 
 export function ActivityRail(props: ActivityRailProps = {}): VobsNode {
   const root = createElement('nav')
-  const internalValue = state<string | undefined>(undefined)
+  const internalValue = state<string | undefined>(undefined, 'internalValue')
   bindClassList(root, props, () => ['vui-activityrail'])
   bindCommonAttributes(root, props, ['items', 'value', 'defaultValue', 'onChange'])
   bindUserStyle(root, props)

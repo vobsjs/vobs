@@ -2,8 +2,8 @@ import { createHTTPClient, createMockAdapter, httpPlugin } from '@vobs/http'
 import { state } from '@vobs/vobs'
 import { waitFor } from '../utils/async'
 
-export const httpScenario = state<'success' | 'error' | 'slow'>('success')
-export const uploadScenario = state<'success' | 'error' | 'slow'>('success')
+export const httpScenario = state<'success' | 'error' | 'slow'>('success', 'httpScenario')
+export const uploadScenario = state<'success' | 'error' | 'slow'>('success', 'uploadScenario')
 const uploadAttempts = new Map<string, number>()
 
 export const playgroundHttp = createHTTPClient({

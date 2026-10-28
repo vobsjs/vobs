@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeSource, VOBS_C118, VOBS_C210, VOBS_C232, type CheckDiagnostic } from './check'
+import { analyzeSource, VOBS_C118, VOBS_C120, VOBS_C210, VOBS_C232, VOBS_C233, type CheckDiagnostic } from './check'
 
 const codes = (diagnostics: readonly CheckDiagnostic[]): string[] => diagnostics.map(item => item.code)
 
@@ -280,6 +280,172 @@ export function A(props: { ok: boolean }) {
   })
 })
 
+describe('vobs check · VOBS_C233 数组信号原地修改', () => {
+  it('绑定到 state 的数组用 push —— 引用没变，订阅处永不更新', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P() {
+  const list = state([1, 2])
+  const add = () => { list.value.push(3) }
+  return <button onClick={add}>{list.value.length}</button>
+}
+`, 'a.tsx')
+    expect(codes(found)).toContain(VOBS_C233)
+    const item = found.find(entry => entry.code === VOBS_C233)!
+    expect(item.severity).toBe('warning')
+    expect(item.message).toContain('"list"')
+    expect(item.message).toContain('push()')
+    // fix 文案教换引用 —— 与 AGENTS 契约「数组更新必须换引用」同一句话
+    expect(item.fix).toContain('换引用')
+    expect(item.fix).toContain('[...list.value')
+  })
+
+  it('sort / splice 等其它 mutator 也算', () => {
+    const shapes = [
+      'const rows = state([3, 1]); const f = () => { rows.value.sort() }',
+      'const rows = state([1]); const f = () => { rows.value.splice(0, 1) }',
+      'const rows = state([1]); const f = () => { rows.value.reverse() }'
+    ]
+    for (const body of shapes) {
+      const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P() {
+  ${body}
+  return <div>{rows.value.length}</div>
+}
+`, 'a.tsx')
+      expect(codes(found), body).toContain(VOBS_C233)
+    }
+  })
+
+  it('换引用的写法不报 —— 这正是 fix 推荐的写法', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P() {
+  const list = state([1, 2])
+  const add = () => { list.value = [...list.value, 3] }
+  return <button onClick={add}>{list.value.length}</button>
+}
+`, 'a.tsx')
+    expect(codes(found)).not.toContain(VOBS_C233)
+  })
+
+  it('普通数组（未绑定 state）的 push 不报 —— 绑定分析是这条规则的地基', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+const log: number[] = []
+export function P() {
+  const plain = [1, 2]
+  plain.push(3)
+  log.push(plain.length)
+  const count = state(0)
+  return <button onClick={() => { count.value++ }}>{count.value}</button>
+}
+`, 'a.tsx')
+    expect(codes(found), '普通数组没有信号语义').not.toContain(VOBS_C233)
+  })
+
+  it('同名局部遮蔽（含形参）不报 —— 保守方向：少报不误报', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+const list = state([1])
+export function P(list: { value: number[] }) {
+  list.value.push(9)
+  return <div>{list.value.length}</div>
+}
+`, 'a.tsx')
+    expect(codes(found), '形参 list 不是那个信号').not.toContain(VOBS_C233)
+  })
+
+  it('内层非信号的同名对象声明遮蔽外层信号 —— 不报', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+const list = state([1])
+export function P() {
+  const inner = () => {
+    const list = { value: [1, 2] }   // 普通对象，不是信号
+    list.value.push(9)
+    return list.value.length
+  }
+  return <div>{inner()}</div>
+}
+`, 'a.tsx')
+    expect(codes(found), 'inner 里的 list 是普通对象').not.toContain(VOBS_C233)
+  })
+
+  it('信号声明与变异在同一函数体内 —— 照报（信号自己不算遮蔽，首个对抗用例暴露的 bug）', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P() {
+  const list = state([1])
+  list.value.push(2)
+  return <div>{list.value.length}</div>
+}
+`, 'a.tsx')
+    expect(codes(found)).toContain(VOBS_C233)
+  })
+
+  it('链上带非 value 属性的不报（obj.value.rows.push 是内层数组，另论）', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P() {
+  const model = state({ rows: [1] })
+  const f = () => { model.value.rows.push(2) }
+  return <button onClick={f}>{model.value.rows.length}</button>
+}
+`, 'a.tsx')
+    expect(codes(found), '只认 <name>.value.<mutator> 顶层形态；嵌套对象变异留给后续').not.toContain(VOBS_C233)
+  })
+})
+
+describe('vobs check · VOBS_C120 state() 未传调试名', () => {
+  it('单参 state() 报 warning，fix 直接给出与变量同名的建议', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P() {
+  const count = state(0)
+  return <div>{count.value}</div>
+}
+`, 'a.tsx')
+    expect(codes(found)).toContain(VOBS_C120)
+    const item = found.find(entry => entry.code === VOBS_C120)!
+    expect(item.severity).toBe('warning')
+    expect(item.fix).toContain("state(<初值>, 'count')")
+  })
+
+  it('第二参有名字的不报', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P() {
+  const count = state(0, 'count')
+  return <div>{count.value}</div>
+}
+`, 'a.tsx')
+    expect(codes(found)).not.toContain(VOBS_C120)
+  })
+
+  it('spread 参数无法确定个数 —— 少报不误报', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P(args: unknown[]) {
+  const s = state(...args)
+  return <div>{s.value}</div>
+}
+`, 'a.tsx')
+    expect(codes(found)).not.toContain(VOBS_C120)
+  })
+
+  it('非变量初始化场景给通用提示（不猜名字）', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+const registry = { flag: state(false) }
+`, 'a.tsx')
+    const item = found.find(entry => entry.code === VOBS_C120)!
+    expect(item).toBeDefined()
+    expect(item.fix).toContain('通常与变量同名')
+  })
+})
+
 describe('vobs check · VOBS_C118 组件体里读信号', () => {
   it('读信号存进 const 又在 JSX 里用 —— 组件体只跑一次', () => {
     const found = analyzeSource(`
@@ -351,7 +517,7 @@ describe('vobs check · 汇总', () => {
   it('干净文件没有问题', () => {
     const found = analyzeSource(`
 import { state, memo } from '@vobs/vobs'
-const count = state(0)
+const count = state(0, 'count')
 const doubled = memo(() => count.value * 2)
 export function Counter() {
   return <button onClick={() => count.value++}>{doubled.value}</button>
@@ -363,7 +529,7 @@ export function Counter() {
   it('诊断按位置排序，且带可定位的 snippet', () => {
     const found = analyzeSource(`
 import { state, effect } from '@vobs/vobs'
-const count = state(0)
+const count = state(0, 'count')
 effect(() => { count.value++ })
 `, 'a.ts')
     expect(found.length).toBeGreaterThan(0)

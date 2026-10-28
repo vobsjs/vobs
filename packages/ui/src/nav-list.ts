@@ -47,7 +47,7 @@ export interface NavListProps extends VuiCommonProps {
 
 export function NavList(props: NavListProps = {}): VobsNode {
   const root = createElement('nav')
-  const internalValue = state<string | undefined>(undefined)
+  const internalValue = state<string | undefined>(undefined, 'internalValue')
 
   bindClassList(root, props, () => ['vui-navlist'])
   bindCommonAttributes(root, props, ['groups', 'value', 'defaultValue', 'onChange'])

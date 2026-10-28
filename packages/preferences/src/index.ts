@@ -129,7 +129,7 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
 
   for (const [key, definition] of Object.entries(schema)) {
     validateValue(key, definition, definition.default)
-    ;(signals as Record<string, Signal<unknown>>)[key] = state(definition.default)
+    ;(signals as Record<string, Signal<unknown>>)[key] = state(definition.default, 'signal')
   }
 
   const context = {

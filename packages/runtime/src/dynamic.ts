@@ -397,7 +397,7 @@ function createListEntry<T>(
   let viewOwner!: Owner
   let node!: VobsNode
   owner.run(() => {
-    itemSignal = state(item)
+    itemSignal = state(item, 'signal')
     viewOwner = createOwner()
     node = viewOwner.run(() => renderItem(toReactiveItem(itemSignal, item), index))
   })

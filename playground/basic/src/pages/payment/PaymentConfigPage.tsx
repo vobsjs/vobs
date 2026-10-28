@@ -5,12 +5,12 @@ import { useI18n } from '@vobs/i18n'
 
 export function PaymentConfigPage() {
   const i18n = useI18n()
-  const appId = state('')
-  const privateKey = state('')
-  const alipayPublicKey = state('')
-  const notifyUrl = state('')
-  const returnUrl = state('')
-  const configSaved = state(false)
+  const appId = state('', 'appId')
+  const privateKey = state('', 'privateKey')
+  const alipayPublicKey = state('', 'alipayPublicKey')
+  const notifyUrl = state('', 'notifyUrl')
+  const returnUrl = state('', 'returnUrl')
+  const configSaved = state(false, 'configSaved')
 
   function saveConfig(): void {
     configSaved.value = true

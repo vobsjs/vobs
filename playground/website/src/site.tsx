@@ -7,7 +7,7 @@ import type { HeadTag } from '@vobs/ssr'
 
 /** 首页：证明 SSR 内容直出（爬虫可见）+ 水合后事件可交互 */
 export function HomePage(): VobsNode {
-  const clicks = state(0)
+  const clicks = state(0, 'clicks')
   return (
     <main class="page">
       <h1>Vobs 官网 Demo</h1>

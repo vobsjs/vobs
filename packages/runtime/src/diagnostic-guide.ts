@@ -132,6 +132,27 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
     wrong: '`{cond ? items.value.map(i => <li key={i}/>) : <b/>}`'
   },
 
+  {
+    code: 'VOBS_C233',
+    severity: 'warning',
+    title: '数组信号用 mutator 原地修改（push/sort/splice…）',
+    why: '这些方法改的是**同一个数组引用** —— 信号靠引用相等判断要不要通知，'
+      + '所以订阅它的 JSX 永远不会更新，界面停留在旧数据且没有任何报错。',
+    correct: '数组更新必须**换引用**：push 用 `list.value = [...list.value, item]`；'
+      + '排序/截断先拷贝再改：`list.value = [...list.value].sort(...)`。',
+    wrong: '`list.value.push(item)`（`list` 绑定到 `state([...])`）'
+  },
+
+  {
+    code: 'VOBS_C120',
+    severity: 'warning',
+    title: 'state() 没传调试名',
+    why: '运行时诊断（如 C210 自订阅、C211 循环）会把这个信号显示为 **"(未命名信号)"** —— '
+      + '页面上有多个信号时，你无法从报错定位是哪一个。排查成本全部后置到了出错的时刻。',
+    correct: '创建时给第二个参数传与变量同名的调试名：`const count = state(0, \'count\')`。',
+    wrong: '`const count = state(0)`'
+  },
+
   /* ---------- 构建器 / 配置层（补齐 --missing 指出的缺口） ---------- */
   {
     code: 'VOBS_C002',

@@ -1,7 +1,7 @@
 ﻿import { syncPlugin } from '@vobs/sync'
 import { state } from '@vobs/vobs'
 
-export const syncScenario = state<'success' | 'error' | 'slow'>('success')
+export const syncScenario = state<'success' | 'error' | 'slow'>('success', 'syncScenario')
 
 function waitForSync(signal: AbortSignal, delay: number): Promise<void> {
   return new Promise((resolve, reject) => {

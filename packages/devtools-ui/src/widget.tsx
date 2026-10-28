@@ -17,9 +17,9 @@ export function DevToolsWidget(props: DevToolsWidgetProps = {}): VobsNode {
   const widgetOwner = getCurrentOwner()
   if (widgetOwner) setOwnerDebugName(widgetOwner, 'DevToolsWidget')
 
-  const open = state(false)
-  const maximized = state(false)
-  const query = state('')
+  const open = state(false, 'open')
+  const maximized = state(false, 'maximized')
+  const query = state('', 'query')
   const toolbarProps = {
     get api() { return props.api === undefined ? getDevTools() : props.api ?? null },
     query,

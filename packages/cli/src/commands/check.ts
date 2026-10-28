@@ -19,6 +19,9 @@
  *   会连 `props.name.value` 这种真信号一起放过，所以保持现状 + 提供行内抑制。
  * - `VOBS_C232` / `VOBS_C118`：前者看的是「列表表达式是否写在分支里」，后者看「组件体里
  *   是否把信号读取存进了局部变量」。都只看形状，不做类型推断。
+ * - `VOBS_C233`：数组原地变异（`list.value.push(...)`）只对**名字确实绑定到
+ *   `state(...)`** 的接收者报警 —— 这条绑定分析让它成为四条里误报风险最低的；
+ *   自定义 store 工厂产出的数组不认（漏报不误报）。
  *
  * 撞上误报时的正规做法是**行内抑制**（`// vobs-check-ignore-next-line`），
  * 而不是关掉整条规则或改写本来正确的代码。
@@ -210,5 +213,5 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
 
 
 // 搬迁到 @vobs/compiler 后继续从这里再导出，避免既有导入方失效
-export { analyzeSource, VOBS_C118, VOBS_C210, VOBS_C232 } from '@vobs/compiler'
+export { analyzeSource, VOBS_C118, VOBS_C120, VOBS_C210, VOBS_C232, VOBS_C233 } from '@vobs/compiler'
 export type { CheckDiagnostic } from '@vobs/compiler'

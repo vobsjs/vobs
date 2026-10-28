@@ -40,8 +40,8 @@ export interface VobsConsoleProps {
  * 因此每秒几百条事件注入时，只有变化的文本节点与新增的行被触碰。
  */
 export function VobsConsole(props: VobsConsoleProps) {
-  const tab = state<TabId>('overview')
-  const range = state<'15m' | '1h' | '24h'>('1h')
+  const tab = state<TabId>('overview', 'tab')
+  const range = state<'15m' | '1h' | '24h'>('1h', 'range')
 
   return (
     <div class="vc">
@@ -238,7 +238,7 @@ function matchesFilter(event: ConsoleEvent, filter: string): boolean {
 }
 
 function Stream(props: { store: ConsoleStore }) {
-  const filter = state('')
+  const filter = state('', 'filter')
 
   return (
     <div class="vc-body">

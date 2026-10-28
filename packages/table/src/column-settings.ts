@@ -35,8 +35,8 @@ export function KitColumnSettings<Row = Record<string, unknown>>(
   const summary = createElement('summary')
   const panel = createElement('div')
   const columns = readColumns(props)
-  const internalSettings = state(untrack(() => initialSettings(props, columns)))
-  const panelOpen = state(false)
+  const internalSettings = state(untrack(() => initialSettings(props, columns)), 'internalSettings')
+  const panelOpen = state(false, 'panelOpen')
 
   untrack(() => restoreSettings(props, columns, internalSettings))
 

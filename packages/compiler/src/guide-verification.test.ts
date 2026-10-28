@@ -77,7 +77,7 @@ const PAIRS: readonly Pair[] = [
     correct: [
       "import { state } from '@vobs/vobs'",
       'export function Page() {',
-      '  const count = state(0)',
+      "  const count = state(0, 'count')",
       '  return <div>{count.value}</div>',
       '}'
     ].join('\n')
@@ -96,7 +96,7 @@ const PAIRS: readonly Pair[] = [
     correct: [
       "import { effect, on, state } from '@vobs/vobs'",
       'export function P() {',
-      '  const count = state(0)',
+      "  const count = state(0, 'count')",
       '  effect(on(count, () => { count.value = count.value + 1 }))',
       '  return <div>{count.value}</div>',
       '}'
@@ -107,6 +107,64 @@ const PAIRS: readonly Pair[] = [
     wrong: 'export function P(){ return <div>{open.value ? items.value.map(i => <li key={i}/>) : <b/>}</div> }',
     // 把 list 提成直接的子表达式（fix 的推荐）
     correct: 'export function P(){ return <div>{open.value ? <b/> : null}{items.value.map(i => <li key={i}/>)}</div> }'
+  },
+  {
+    code: 'VOBS_C233',
+    wrong: [
+      "import { state } from '@vobs/vobs'",
+      'export function P() {',
+      '  const list = state([1, 2])',
+      '  const add = () => { list.value.push(3) }',
+      '  return <button onClick={add}>{list.value.length}</button>',
+      '}'
+    ].join('\n'),
+    // 换引用（fix 的推荐）：push 换成展开重建
+    correct: [
+      "import { state } from '@vobs/vobs'",
+      'export function P() {',
+      "  const list = state([1, 2], 'list')",
+      '  const add = () => { list.value = [...list.value, 3] }',
+      '  return <button onClick={add}>{list.value.length}</button>',
+      '}'
+    ].join('\n')
+  },
+  {
+    code: 'VOBS_C233',
+    wrong: [
+      "import { state } from '@vobs/vobs'",
+      'export function P() {',
+      '  const rows = state([3, 1, 2])',
+      '  const order = () => { rows.value.sort() }',
+      '  return <button onClick={order}>{rows.value.join(",")}</button>',
+      '}'
+    ].join('\n'),
+    // 排序同理：先拷贝再改，赋回新引用（fix 的第二条路径）
+    correct: [
+      "import { state } from '@vobs/vobs'",
+      'export function P() {',
+      "  const rows = state([3, 1, 2], 'rows')",
+      '  const order = () => { rows.value = [...rows.value].sort() }',
+      '  return <button onClick={order}>{rows.value.join(",")}</button>',
+      '}'
+    ].join('\n')
+  },
+  {
+    code: 'VOBS_C120',
+    wrong: [
+      "import { state } from '@vobs/vobs'",
+      'export function P() {',
+      '  const count = state(0)',
+      '  return <div>{count.value}</div>',
+      '}'
+    ].join('\n'),
+    // 补上与变量同名的调试名（fix 的推荐）
+    correct: [
+      "import { state } from '@vobs/vobs'",
+      'export function P() {',
+      "  const count = state(0, 'count')",
+      '  return <div>{count.value}</div>',
+      '}'
+    ].join('\n')
   }
 ]
 

@@ -50,7 +50,7 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
   const root = createElement('div')
   // auto 方向的测量结果走信号：类名统一由 bindClassList 管理（整体覆盖 className），
   // 手动 classList.toggle 的类会在其 effect 重跑时被抹掉
-  const flipUp = state(false)
+  const flipUp = state(false, 'flipUp')
   bindClassList(root, props, () => {
     const direction = readProp<'down' | 'up' | 'auto'>(props, 'direction', 'down')
     return [
@@ -89,9 +89,9 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
   insertBefore(root, toggle, null)
 
   /* ---------- 内部状态 ---------- */
-  const open = state(false)
-  const query = state('')
-  const active = state(0)
+  const open = state(false, 'open')
+  const query = state('', 'query')
+  const active = state(0, 'active')
 
   const options = (): readonly ComboboxOption[] => readProp<readonly ComboboxOption[]>(props, 'options', [])
   const disabled = (): boolean => readProp(props, 'disabled', false)

@@ -19,13 +19,13 @@ import { createProjectSource, type ProjectState } from './project'
 import { DEVKIT_CSS } from './styles'
 
 /** 面板状态放在模块级：组件体只执行一次，signal 才是驱动更新的东西。 */
-const tab = state<DevKitTab>('project')
-const apiName = state('state')
+const tab = state<DevKitTab>('project', 'tab')
+const apiName = state('state', 'apiName')
 /**
  * 检查报告的状态。模块级存在是因为 render 在 setup 之前就装配好了 ——
  * `setup(ctx)` 里把同一个信号交给数据源去驱动（与 Console 同一套模式）。
  */
-const project = state<ProjectState>({ status: 'loading', message: '正在读取检查报告…' })
+const project = state<ProjectState>({ status: 'loading', message: '正在读取检查报告…' }, 'project')
 
 let refreshProject: () => void = () => {}
 

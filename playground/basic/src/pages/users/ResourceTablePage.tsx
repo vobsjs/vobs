@@ -60,8 +60,8 @@ export function ResourceTablePage() {
     columns,
     usersColumnSettingsPersistence.load() ?? createDefaultColumnSettings(columns)
   ), 'resource.users.columnSettings')
-  const currentPage = state(1)
-  const currentPageSize = state(3)
+  const currentPage = state(1, 'currentPage')
+  const currentPageSize = state(3, 'currentPageSize')
 
   return (
     <>
@@ -140,8 +140,8 @@ function ResourceLab() {
     { id: 'role', label: 'Role', key: 'role' }
   ] as const
   const serverColumns = scenarioColumns
-  const writeStatus = state(i18n.t('resource.noWrite'))
-  const scenarioMessage = state(i18n.t('resource.scenarioReady'))
+  const writeStatus = state(i18n.t('resource.noWrite'), 'writeStatus')
+  const scenarioMessage = state(i18n.t('resource.scenarioReady'), 'scenarioMessage')
 
   const loadScenario = (next: typeof resourceScenario.value): void => {
     resourceScenario.value = next

@@ -167,7 +167,7 @@ function createGroupEntry(descriptor: GroupDescriptor): GroupEntry {
   let node!: VobsNode
   try {
     owner.run(() => {
-      itemSignal = state(descriptor.item)
+      itemSignal = state(descriptor.item, 'signal')
       node = renderGroupNode(itemSignal, descriptor, owner)
     })
   } catch (error) {

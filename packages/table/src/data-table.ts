@@ -54,13 +54,13 @@ export function KitDataTable<Row = Record<string, unknown>>(props: KitDataTableP
   const head = createElement('thead')
   const body = createElement('tbody')
   const footer = createElement('footer')
-  const scrollTop = state(0)
+  const scrollTop = state(0, 'scrollTop')
   internalQueries.set(props, state({
     page: 1,
     pageSize: DEFAULT_PAGE_SIZE,
     sort: null,
     filters: {}
-  }))
+  }, 'signal'))
 
   bindClassList(root, props, () => [
     'vobs-data-table',

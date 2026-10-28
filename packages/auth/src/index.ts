@@ -107,7 +107,7 @@ function readSessionList(session: Session | null, field: 'roles' | 'permissions'
   return value.filter((item): item is string => typeof item === 'string')
 }
 export function createAuth<C extends Credentials = Credentials>(options: AuthOptions<C> = {}): AuthContext<C> {
-  const ownedSession = options.session ? undefined : state<Session | null>(null)
+  const ownedSession = options.session ? undefined : state<Session | null>(null, 'signal')
   const session = options.session ?? ownedSession!
   const status = memo<AuthStatus>(() => session.value ? 'authenticated' : 'anonymous')
   /**

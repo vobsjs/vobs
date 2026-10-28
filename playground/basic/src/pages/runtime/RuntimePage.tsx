@@ -25,7 +25,7 @@ export function RuntimePage() {
 
 function StateMemoDemo() {
   const i18n = useI18n()
-  const count = state(0)
+  const count = state(0, 'count')
   const doubled = memo(() => count.value * 2)
   return (
     <Card title={i18n.t('runtime.stateTitle')} description={i18n.t('runtime.stateDescription')}>
@@ -43,9 +43,9 @@ function StateMemoDemo() {
 
 function EffectDemo() {
   const i18n = useI18n()
-  const dependency = state(0)
-  const effectRuns = state(0)
-  const cleanupRuns = state(0)
+  const dependency = state(0, 'dependency')
+  const effectRuns = state(0, 'effectRuns')
+  const cleanupRuns = state(0, 'cleanupRuns')
   let runCount = 0
   let cleanupCount = 0
   effect(() => {
@@ -67,7 +67,7 @@ function EffectDemo() {
 
 function OwnerDemo() {
   const i18n = useI18n()
-  const active = state(true)
+  const active = state(true, 'active')
   const owner = createOwner()
   owner.run(() => {
     onDispose(() => { active.value = false })
@@ -125,7 +125,7 @@ function KeyedListDemo() {
     { id: 2, label: 'Beta' },
     { id: 3, label: 'Gamma' }
   ], 'runtime.list.items')
-  const events = state<string[]>([])
+  const events = state<string[]>([], 'events')
   let nextId = 4
 
   function record(action: string, label: string): void {
@@ -186,7 +186,7 @@ function KeyedListDemo() {
 function TemplateDemo() {
   const i18n = useI18n()
   const template = createTemplate('<span>cloned template node</span>')
-  const clones = state(0)
+  const clones = state(0, 'clones')
   let host: HTMLDivElement | null = null
 
   function addClone(): void {
@@ -230,7 +230,7 @@ function createDeferred<T>(): Deferred<T> {
 
 function AsyncBoundaryDemo() {
   const i18n = useI18n()
-  const requestKey = state(0)
+  const requestKey = state(0, 'requestKey')
   let deferred = createDeferred<string>()
   const startRequest = () => {
     deferred = createDeferred<string>()
@@ -259,8 +259,8 @@ function AsyncBoundaryDemo() {
 
 function ProfilerDemo() {
   const i18n = useI18n()
-  const viewVersion = state(0)
-  const snapshotVersion = state(0)
+  const viewVersion = state(0, 'viewVersion')
+  const snapshotVersion = state(0, 'snapshotVersion')
   let latestPhase = 'idle'
   let latestDuration = 0
   const refreshSnapshot = () => { snapshotVersion.value++ }

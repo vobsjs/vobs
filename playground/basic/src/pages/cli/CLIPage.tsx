@@ -49,7 +49,7 @@ const templateFiles = [
 
 export function CLIPage() {
   const i18n = useI18n()
-  const output = state('')
+  const output = state('', 'output')
 
   const handlePreview = () => {
     output.value = `> vobs init my-app

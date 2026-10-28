@@ -307,7 +307,7 @@ export function flattenTheme(theme: ThemeTokens): Record<string, string> {
 }
 
 function createScopedTheme(parent: ThemeContext, initialOverrides: ThemeTokens): ThemeContext {
-  const overrides = state<ThemeTokens>(initialOverrides)
+  const overrides = state<ThemeTokens>(initialOverrides, 'overrides')
   const theme = memo<ThemeTokens>(() => mergeThemes(parent.theme.value, overrides.value))
   const brand = memo<BrandTokens>(() => {
     const value = theme.value.brand

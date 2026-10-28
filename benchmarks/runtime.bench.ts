@@ -67,7 +67,7 @@ describe('runtime: 列表挂载', () => {
 
 describe('runtime: keyed 列表更新（1000 行）', () => {
   const container = document.createElement('div')
-  const source = state(makeRows(1000))
+  const source = state(makeRows(1000), 'source')
   insertList(container, null, () => source.value, renderRow, row => row.id)
 
   const reversed = [...source.value].reverse()

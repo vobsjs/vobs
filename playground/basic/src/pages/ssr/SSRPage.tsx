@@ -6,10 +6,10 @@ import { useI18n } from '@vobs/i18n'
 
 export function SSRPage() {
   const i18n = useI18n()
-  const serverHtml = state('')
-  const snapshot = state('')
-  const hydrationStatus = state<'idle' | 'success' | 'error'>('idle')
-  const mismatchMessage = state('')
+  const serverHtml = state('', 'serverHtml')
+  const snapshot = state('', 'snapshot')
+  const hydrationStatus = state<'idle' | 'success' | 'error'>('idle', 'hydrationStatus')
+  const mismatchMessage = state('', 'mismatchMessage')
   const stableId = createId('ssr-field')
 
   const renderExample = () => {

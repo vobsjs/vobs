@@ -44,7 +44,7 @@ export interface EditorTabsProps extends VuiCommonProps {
 
 export function EditorTabs(props: EditorTabsProps = {}): VobsNode {
   const root = createElement('div')
-  const internalValue = state<string | undefined>(undefined)
+  const internalValue = state<string | undefined>(undefined, 'internalValue')
   bindClassList(root, props, () => ['vui-editortabs'])
   bindCommonAttributes(root, props, [
     'tabs',

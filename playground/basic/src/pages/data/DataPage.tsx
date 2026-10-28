@@ -27,17 +27,17 @@ export function DataPage() {
   const preferences = usePreferences<typeof playgroundPreferences>()
   const dict = useDict()
   const router = useRouter()
-  const storageKey = state('demo-note')
-  const storageValue = state(i18n.t('data.defaultStorageValue'))
-  const storageRevision = state(0)
+  const storageKey = state('demo-note', 'storageKey')
+  const storageValue = state(i18n.t('data.defaultStorageValue'), 'storageValue')
+  const storageRevision = state(0, 'storageRevision')
   const dictName = 'statuses'
   const dictQuery = dict.query(dictName)
-  const actionState = state<RunStatus>('idle')
-  const fetcherState = state<RunStatus>('idle')
-  const actionResult = state('')
-  const fetcherResult = state('')
-  const actionScenario = state<Scenario>('success')
-  const fetcherScenario = state<Scenario>('success')
+  const actionState = state<RunStatus>('idle', 'actionState')
+  const fetcherState = state<RunStatus>('idle', 'fetcherState')
+  const actionResult = state('', 'actionResult')
+  const fetcherResult = state('', 'fetcherResult')
+  const actionScenario = state<Scenario>('success', 'actionScenario')
+  const fetcherScenario = state<Scenario>('success', 'fetcherScenario')
 
   // DataPage 的 action/fetcher 流程完全同构：abort → loading → track → 成功/取消/失败。
   function createRunner(

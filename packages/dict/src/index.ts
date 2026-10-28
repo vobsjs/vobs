@@ -106,9 +106,9 @@ export function createDict(options: DictOptions = {}): DictContext {
   const staleTime = validateStaleTime(options.staleTime ?? 5 * 60 * 1000)
   const now = options.now ?? Date.now
   const initial = normalizeData(options.data ?? {})
-  const data = state<DictData>(initial)
-  const loading = state(false)
-  const error = state<Error | null>(null)
+  const data = state<DictData>(initial, 'data')
+  const loading = state(false, 'loading')
+  const error = state<Error | null>(null, 'error')
   const entries = new Map<DictName, DictEntry>()
   let disposed = false
 
@@ -294,10 +294,10 @@ export function createDict(options: DictOptions = {}): DictContext {
   function createEntry(name: DictName, items: DictItems, updatedAt: number): DictEntry {
     const entry = {
       name,
-      items: state(items),
-      loading: state(false),
-      error: state<Error | null>(null),
-      updatedAt: state(updatedAt),
+      items: state(items, 'items'),
+      loading: state(false, 'loading'),
+      error: state<Error | null>(null, 'error'),
+      updatedAt: state(updatedAt, 'updatedAt'),
       controller: null,
       inFlight: null,
       failure: null,

@@ -42,6 +42,10 @@ export const VOBS_C210 = C210_CODE
 export const VOBS_C232 = 'VOBS_C232'
 /** 在组件体里读信号并存进局部变量 —— 组件体只执行一次，之后永不更新。 */
 export const VOBS_C118 = 'VOBS_C118'
+/** 数组信号用 mutator 原地修改 —— 引用没变，订阅处不会更新。 */
+export const VOBS_C233 = 'VOBS_C233'
+/** state() 未传调试名 —— 运行时诊断显示 "(未命名信号)"，无法定位。 */
+export const VOBS_C120 = 'VOBS_C120'
 
 function returnsJsx(node: ts.Node): boolean {
   let seen = false
@@ -550,6 +554,162 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
   return found
 }
 
+/* --------------------------------- 规则 D：数组信号原地修改（C233） */
+
+/** 数组原地变异方法：这些调用改的是**同一个引用**，信号不会通知订阅方。 */
+const ARRAY_MUTATORS = new Set([
+  'push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin'
+])
+
+/**
+ * 判断变异点处的名字是否被**同名局部遮蔽**。
+ *
+ * 沿 parent 链向上，途经的每个函数检查它的**参数**与**体内声明**（含嵌套 ——
+ * 保守方向：多排除 = 少报。真实场景里「内层回调声明了同名而变异点在外层直接
+ * 使用信号」的概率极低，少报的代价远低于误报，见 C104 的教训）。
+ */
+function shadowedByName(from: ts.Identifier, name: string): boolean {
+  let parent: ts.Node | undefined = from.parent
+  while (parent !== undefined && !ts.isSourceFile(parent)) {
+    if (ts.isFunctionLike(parent)) {
+      const fn = parent as ts.FunctionLikeDeclaration
+      for (const parameter of fn.parameters) {
+        if (ts.isIdentifier(parameter.name) && parameter.name.text === name) return true
+      }
+      const body = fn.body
+      if (body !== undefined && ts.isBlock(body)) {
+        let hit = false
+        const scan = (child: ts.Node): void => {
+          if (hit) return
+          if (ts.isVariableDeclaration(child) && ts.isIdentifier(child.name) && child.name.text === name) {
+            /*
+             * **绑定到 state(...) 的声明就是信号本身，不算遮蔽** —— 否则变异点
+             * 永远会被「信号自己的声明」误判成同名遮蔽、规则一次都报不出来
+             * （第一个对抗用例就暴露了这个 bug）。只排除这一种：内层**非信号**
+             * 的同名声明（`const list = { value: [] }`）才是真遮蔽。
+             */
+            let init: ts.Expression | undefined = child.initializer
+            while (init !== undefined && (ts.isParenthesizedExpression(init) || ts.isAsExpression(init))) {
+              init = init.expression
+            }
+            const isSignalBinding = init !== undefined && ts.isCallExpression(init)
+              && ts.isIdentifier(init.expression) && init.expression.text === 'state'
+            if (!isSignalBinding) hit = true
+            return
+          }
+          ts.forEachChild(child, scan)
+        }
+        scan(body)
+        if (hit) return true
+      }
+    }
+    parent = parent.parent
+  }
+  return false
+}
+
+/**
+ * 数组信号的原地变异（`silent-failures.md` 曾记录的第 1 条静默，2026-10-28 补上诊断）。
+ *
+ * ```ts
+ * const list = state([1])
+ * list.value.push(2)   // 引用没变 → 信号不通知 → 订阅处永不更新
+ * ```
+ *
+ * ## 判据（按 silentNote 当时的要求：先确认绑定，再开口）
+ *
+ * 只对「**名字确实绑定到 `state(...)`**」的接收者报警 —— 这就是当年缺的
+ * **绑定分析**。普通数组的 `.push()` 是完全正常的代码，一个都不报。
+ * 同名遮蔽（内层重声明/形参）排除；`untrack` 内也不例外
+ * （换不换引用与订阅无关，原地变异永远到不了订阅方）。
+ *
+ * 方向是保守的：只认 `state` 标识符直调（自定义 store 工厂不认 = 漏报不误报），
+ * severity 先给 warning —— 等全仓实测误报后再决定是否升 error。
+ */
+function ruleSignalArrayMutation(source: ts.SourceFile, file: string): CheckDiagnostic[] {
+  const found: CheckDiagnostic[] = []
+
+  // 全文件收集「绑定到 state(...) 调用」的名字 —— 这就是 silentNote 里说的绑定分析
+  const stateBindings = new Set<string>()
+  const collectBindings = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined) {
+      let init: ts.Expression = node.initializer
+      while (ts.isParenthesizedExpression(init) || ts.isAsExpression(init)) init = init.expression
+      if (ts.isCallExpression(init) && ts.isIdentifier(init.expression) && init.expression.text === 'state') {
+        stateBindings.add(node.name.text)
+      }
+    }
+    ts.forEachChild(node, collectBindings)
+  }
+  collectBindings(source)
+  if (stateBindings.size === 0) return found
+
+  const visit = (node: ts.Node): void => {
+    // 形态：<name>.value.<mutator>(...) —— 三层属性访问链 + 调用
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+      && ts.isPropertyAccessExpression(node.expression.expression)) {
+      const mutator = node.expression.name
+      const receiver = node.expression.expression
+      if (ARRAY_MUTATORS.has(mutator.text) && receiver.name.text === 'value'
+        && ts.isIdentifier(receiver.expression)) {
+        const name = receiver.expression.text
+        if (stateBindings.has(name) && !shadowedByName(receiver.expression, name)) {
+          found.push(diagnosticAt(source, file, node, {
+            code: VOBS_C233,
+            severity: 'warning',
+            message: `数组信号 "${name}" 用 ${mutator.text}() 原地修改 —— 引用没变，`
+              + `订阅它的 JSX 永远不会更新`,
+            fix: `数组更新必须换引用：push 用 ${name}.value = [...${name}.value, 新项]；`
+              + `排序/截断同理先拷贝再改：${name}.value = [...${name}.value].sort(...)。`
+          }))
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+
+  return found
+}
+
+/* ------------------------------------ 规则 E：state() 未传调试名（C120） */
+
+/**
+ * state() 未传调试名（Finora 死穴 §1-3 的静态前移，2026-10-28）。
+ *
+ * C210/C211 的运行时报错里信号显示为 **"(未命名信号)"** —— 没传第二参的信号
+ * 在排查时无法定位（页面上多个信号都叫这个）。运行时无法在报错前提醒；
+ * 静态规则在**创建处**就能说清楚。
+ *
+ * fix 文案直接给出**与变量同名**的建议（`state(0, 'count')`）—— 约定俗成的写法，
+ * AI 与人都能照抄。spread 参数跳过（无法确定参数个数，少报不误报）。
+ */
+function ruleUnnamedSignal(source: ts.SourceFile, file: string): CheckDiagnostic[] {
+  const found: CheckDiagnostic[] = []
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'state'
+      && node.arguments.length < 2
+      && !node.arguments.some(item => ts.isSpreadElement(item))) {
+      // 建议名：const count = state(0) → 建议 'count'；其它场景给通用提示
+      let suggested: string | undefined
+      const parent = node.parent
+      if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) suggested = parent.name.text
+      found.push(diagnosticAt(source, file, node, {
+        code: VOBS_C120,
+        severity: 'warning',
+        message: 'state() 没传调试名 —— 运行时诊断（如 C210 自订阅）会把它显示为 "(未命名信号)"，'
+          + '页面上有多个信号时无法定位是哪一个',
+        fix: suggested !== undefined
+          ? `给第二个参数传与变量同名的调试名：state(<初值>, '${suggested}')。`
+          : `给第二个参数传一个调试名（通常与变量同名）：state(<初值>, '名字')。`
+      }))
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return found
+}
+
 /* -------------------------------------------------------------- 入口 */
 
 /**
@@ -581,7 +741,9 @@ export function analyzeSource(text: string, file: string): CheckDiagnostic[] {
   return [
     ...ruleEffectSelfSubscription(source, file),
     ...ruleListInBranch(source, file),
-    ...ruleSignalCapturedInBody(source, file)
+    ...ruleSignalCapturedInBody(source, file),
+    ...ruleSignalArrayMutation(source, file),
+    ...ruleUnnamedSignal(source, file)
   ]
     .filter(item => !suppressed.has(item.line))
     .sort((a, b) => a.line - b.line || a.column - b.column)

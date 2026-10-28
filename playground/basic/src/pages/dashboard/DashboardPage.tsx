@@ -11,7 +11,7 @@ export function DashboardPage() {
   const auth = useAuth()
   const i18n = useI18n()
   const logger = useLogger()
-  const lastAction = state('dashboard.lastAction')
+  const lastAction = state('dashboard.lastAction', 'lastAction')
 
   function go(path: string, label: string): void {
     lastAction.value = label

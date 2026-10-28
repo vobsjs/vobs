@@ -9,11 +9,11 @@ export interface PlaygroundUser {
   readonly status: 'Active' | 'Invited'
 }
 
-export const usersSearch = state('')
-export const usersStatus = state<'' | PlaygroundUser['status']>('')
-export const resourceScenario = state<'ready' | 'error' | 'empty' | 'slow'>('ready')
-export const serverPage = state(1)
-export const serverPageSize = state(2)
+export const usersSearch = state('', 'usersSearch')
+export const usersStatus = state<'' | PlaygroundUser['status']>('', 'usersStatus')
+export const resourceScenario = state<'ready' | 'error' | 'empty' | 'slow'>('ready', 'resourceScenario')
+export const serverPage = state(1, 'serverPage')
+export const serverPageSize = state(2, 'serverPageSize')
 export const playgroundResourceClient = createResourceClient()
 export const usersColumnSettingsPersistence = createLocalColumnSettingsPersistence('vobs:playground:users.columns')
 

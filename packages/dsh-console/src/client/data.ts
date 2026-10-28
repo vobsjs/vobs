@@ -220,15 +220,15 @@ export interface ConsoleStore {
  */
 export function createConsoleStore(source: ConsoleSource): ConsoleStore {
   const seed = source.snapshot()
-  const events = state<readonly ConsoleEvent[]>(seed.events.slice())
-  const sessions = state<readonly SessionSummary[]>(seed.sessions.slice())
-  const paused = state(false)
-  const droppedWhilePaused = state(0)
-  const revision = state(0)
+  const events = state<readonly ConsoleEvent[]>(seed.events.slice(), 'events')
+  const sessions = state<readonly SessionSummary[]>(seed.sessions.slice(), 'sessions')
+  const paused = state(false, 'paused')
+  const droppedWhilePaused = state(0, 'droppedWhilePaused')
+  const revision = state(0, 'revision')
 
   const buckets = new Map<string, ToolBucket>()
   for (const event of [...seed.events].reverse()) recordTool(buckets, event)
-  const tools = state<readonly ToolStat[]>(toToolStats(buckets))
+  const tools = state<readonly ToolStat[]>(toToolStats(buckets), 'tools')
 
   const totals = memo<ToolTotals>(() => {
     const list = tools.value

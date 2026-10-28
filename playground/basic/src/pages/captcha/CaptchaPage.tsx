@@ -105,10 +105,10 @@ function shuffle<T>(values: readonly T[]): T[] {
 
 export function CaptchaPage() {
   const i18n = useI18n()
-  const challenge = state<SliderCaptchaChallenge | null>(createDemoChallenge())
-  const status = state<'idle' | 'loading' | 'ready' | 'verifying' | 'verified' | 'expired' | 'error'>('ready')
-  const error = state<unknown>(null)
-  const closed = state(false)
+  const challenge = state<SliderCaptchaChallenge | null>(createDemoChallenge(), 'challenge')
+  const status = state<'idle' | 'loading' | 'ready' | 'verifying' | 'verified' | 'expired' | 'error'>('ready', 'status')
+  const error = state<unknown>(null, 'error')
+  const closed = state(false, 'closed')
   let operation = 0
   let timer: ReturnType<typeof setTimeout> | undefined
   let finishPending: (() => void) | undefined

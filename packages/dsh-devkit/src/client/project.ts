@@ -162,7 +162,7 @@ export function createProjectSource(
   options: ProjectSourceOptions = {}
 ): ProjectSource {
   const pollMs = options.pollMs ?? 2500
-  const projectState = options.sink ?? state<ProjectState>({ status: 'loading', message: '正在读取检查报告…' })
+  const projectState = options.sink ?? state<ProjectState>({ status: 'loading', message: '正在读取检查报告…' }, 'signal')
   projectState.value = { status: 'loading', message: '正在读取检查报告…' }
 
   const session = pickSession(ctx)

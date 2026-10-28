@@ -155,13 +155,13 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
   const storageKey = options.storageKey ?? 'sync:default'
   const incremental = options.incremental ?? true
   const clock = options.clock ?? (() => Date.now())
-  const status = state<SyncStatus>('idle')
-  const progress = state(0)
-  const error = state<SyncError | null>(null)
-  const lastSyncAt = state<string | null>(null)
-  const cursor = state<SyncCursor>(null)
-  const pendingChanges = state<readonly SyncChange<T>[]>([])
-  const pending = state(0)
+  const status = state<SyncStatus>('idle', 'status')
+  const progress = state(0, 'progress')
+  const error = state<SyncError | null>(null, 'error')
+  const lastSyncAt = state<string | null>(null, 'lastSyncAt')
+  const cursor = state<SyncCursor>(null, 'cursor')
+  const pendingChanges = state<readonly SyncChange<T>[]>([], 'pendingChanges')
+  const pending = state(0, 'pending')
   const listeners: { [K in SyncEventName<T>]: Set<SyncEventListener<T, K>> } = {
     start: new Set(),
     done: new Set(),

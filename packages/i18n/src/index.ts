@@ -131,8 +131,8 @@ export function createI18n(options: I18nOptions): I18nContext {
     ? defaultLocale
     : validateLocale(options.fallbackLocale)
   const initialMessages = validateLocaleMessages(options.messages ?? {})
-  const locale = state(defaultLocale)
-  const messages = state<LocaleMessages>({ ...initialMessages })
+  const locale = state(defaultLocale, 'locale')
+  const messages = state<LocaleMessages>({ ...initialMessages }, 'messages')
   const formatters = new Map<string, I18nFormatter>(Object.entries(options.formatters ?? {}))
   const loadedLocales = new Set(Object.keys(initialMessages))
   const pendingLoads = new Map<string, Promise<void>>()

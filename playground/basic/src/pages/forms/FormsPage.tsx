@@ -16,9 +16,9 @@ export function FormsPage() {
       email: [rules.required, rules.email]
     }
   })
-  const result = state(i18n.t('forms.fillAndSubmit'))
-  const submitScenario = state<Scenario>('success')
-  const submitState = state<'idle' | 'loading' | 'success' | 'error' | 'cancelled'>('idle')
+  const result = state(i18n.t('forms.fillAndSubmit'), 'result')
+  const submitScenario = state<Scenario>('success', 'submitScenario')
+  const submitState = state<'idle' | 'loading' | 'success' | 'error' | 'cancelled'>('idle', 'submitState')
   let submitController: AbortController | undefined
 
   onDispose(() => {

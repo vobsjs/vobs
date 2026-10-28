@@ -100,13 +100,13 @@ interface InternalTask<T> extends QueueTask<T> {
 
 export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
   const concurrency = resolveConcurrency(options)
-  const tasks = state<readonly QueueTask[]>([])
-  const pending = state(0)
-  const processing = state(0)
-  const completed = state(0)
-  const failed = state(0)
-  const total = state(0)
-  const paused = state(false)
+  const tasks = state<readonly QueueTask[]>([], 'tasks')
+  const pending = state(0, 'pending')
+  const processing = state(0, 'processing')
+  const completed = state(0, 'completed')
+  const failed = state(0, 'failed')
+  const total = state(0, 'total')
+  const paused = state(false, 'paused')
   const queue: InternalTask<any>[] = []
   const ownedTasks = new Set<InternalTask<any>>()
   let sequence = 0
@@ -212,10 +212,10 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
     const retryDelay = taskOptions.retryDelay ?? 0
     validateRetryDelay(retryDelay)
 
-    const status = state<QueueTaskStatus>('pending')
-    const attempt = state(0)
-    const result = state<T | null>(null)
-    const error = state<Error | null>(null)
+    const status = state<QueueTaskStatus>('pending', 'status')
+    const attempt = state(0, 'attempt')
+    const result = state<T | null>(null, 'result')
+    const error = state<Error | null>(null, 'error')
     let promise!: Promise<T>
 
     const task: InternalTask<T> = {

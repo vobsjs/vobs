@@ -42,7 +42,7 @@ export interface ClientOnlyProps {
  */
 export function ClientOnly(props: ClientOnlyProps = {}): VobsNode {
   return createFragment((parent, anchor) => {
-    const ready = state(false)
+    const ready = state(false, 'ready')
     /*
      * 只有存在 `document` 才排这个微任务 —— Node 端预渲染时不应留下会稍后执行的副作用
      * （那会让"服务端渲染"在 renderToString 返回之后还动到已完成的输出）。

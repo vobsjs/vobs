@@ -5,10 +5,10 @@ import { Alert, Button, Card, Icon, Tag } from '@vobs/ui'
 import { KitPage } from '@vobs/kit'
 
 export function ErrorDiagnosticsPage() {
-  const renderFailure = state(false)
-  const effectFailure = state(false)
-  const requestMessage = state('No request error has been triggered.')
-  const lastAction = state('No probe has been triggered.')
+  const renderFailure = state(false, 'renderFailure')
+  const effectFailure = state(false, 'effectFailure')
+  const requestMessage = state('No request error has been triggered.', 'requestMessage')
+  const lastAction = state('No probe has been triggered.', 'lastAction')
   const failingHttp = createHTTPClient({
     adapter: async () => {
       throw new Error('Error diagnostics HTTP request failed')

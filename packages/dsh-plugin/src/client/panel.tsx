@@ -20,12 +20,12 @@ let bodyExecutions = 0
 export function VobsPanel() {
   bodyExecutions += 1
 
-  const visible = state(true)
-  const collapsed = state(false)
+  const visible = state(true, 'visible')
+  const collapsed = state(false, 'collapsed')
 
-  const count = state(0)
+  const count = state(0, 'count')
   const doubled = memo(() => count.value * 2)
-  const effectRuns = state(0)
+  const effectRuns = state(0, 'effectRuns')
 
   // effect 只订阅 count：它重跑的次数就是真实的更新次数。
   // 对比 bodyExecutions 恒为 1，就是「Zero Re-renders」的字面证据。
@@ -39,8 +39,8 @@ export function VobsPanel() {
     })
   })
 
-  const draft = state('')
-  const tags = state<readonly string[]>(['signals', 'run-once'])
+  const draft = state('', 'draft')
+  const tags = state<readonly string[]>(['signals', 'run-once'], 'tags')
 
   const addTag = () => {
     const text = draft.value.trim()

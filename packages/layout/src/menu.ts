@@ -22,7 +22,7 @@ import type { KitMenuItem, KitMenuProps } from './types'
 
 export function KitMenu(props: KitMenuProps): VobsNode {
   const root = createElement('ul')
-  const expanded = state<ReadonlySet<string>>(new Set())
+  const expanded = state<ReadonlySet<string>>(new Set(), 'expanded')
 
   bindClassList(root, props, () => ['vobs-kit-menu'])
   bindCommonAttributes(root, props, ['items', 'collapsed', 'activeKey', 'onSelect'])

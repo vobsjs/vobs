@@ -38,7 +38,7 @@ export function Tabs(props: TabsProps): VobsNode {
   const root = createElement('div')
   const tablist = createElement('div')
   const panel = createElement('div')
-  const internalValue = state<string | undefined>(undefined)
+  const internalValue = state<string | undefined>(undefined, 'internalValue')
 
   bindClassList(root, props, () => ['vui-tabs-root'])
   bindCommonAttributes(root, props, ['items', 'value', 'variant', 'onChange'])

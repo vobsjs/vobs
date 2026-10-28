@@ -39,16 +39,16 @@ const products: Product[] = [
 export function PaymentPage() {
   const router = useRouter()
   const i18n = useI18n()
-  const selectedProduct = state<Product | null>(null)
-  const paying = state(false)
-  const paymentLog = state<string[]>(['>>> 等待发起支付...'])
-  const dialogOpen = state(false)
+  const selectedProduct = state<Product | null>(null, 'selectedProduct')
+  const paying = state(false, 'paying')
+  const paymentLog = state<string[]>(['>>> 等待发起支付...'], 'paymentLog')
+  const dialogOpen = state(false, 'dialogOpen')
   const portal = createDOMPortalAdapter()
-  const configAppId = state('')
-  const configPrivateKey = state('')
-  const configAlipayPublicKey = state('')
-  const configNotifyUrl = state('')
-  const configReturnUrl = state('')
+  const configAppId = state('', 'configAppId')
+  const configPrivateKey = state('', 'configPrivateKey')
+  const configAlipayPublicKey = state('', 'configAlipayPublicKey')
+  const configNotifyUrl = state('', 'configNotifyUrl')
+  const configReturnUrl = state('', 'configReturnUrl')
 
   onDispose(() => {
     selectedProduct.value = null

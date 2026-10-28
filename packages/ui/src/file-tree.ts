@@ -53,7 +53,7 @@ interface VisibleFileTreeItem {
 
 export function FileTree(props: FileTreeProps = {}): VobsNode {
   const items = readProp<readonly FileTreeItem[]>(props, 'items', [])
-  const internalExpanded = state<readonly string[]>(initialExpanded(props, items))
+  const internalExpanded = state<readonly string[]>(initialExpanded(props, items), 'internalExpanded')
   const root = createElement('div')
   bindClassList(root, props, () => ['vui-filetree'])
   bindCommonAttributes(root, props, [
@@ -77,7 +77,7 @@ export function FileTree(props: FileTreeProps = {}): VobsNode {
    *
    * 用内部状态而不是只看选中项：受控 `value` 不更新的场景下，光看选中会让焦点与 tabindex 分家。
    */
-  const focusedId = state<string | undefined>(undefined)
+  const focusedId = state<string | undefined>(undefined, 'focusedId')
   addEventListener(root, 'keydown', event => {
     const keyboardEvent = event as KeyboardEvent
     const key = keyboardEvent.key

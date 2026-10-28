@@ -142,9 +142,9 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
   function createEntry<T>(key: ResourceKey | undefined, staleTime: number): ResourceEntry<T> {
     const entry: ResourceEntry<T> = owner.run(() => ({
       key,
-      data: state<T | null>(null),
-      error: state<Error | null>(null),
-      loading: state(false),
+      data: state<T | null>(null, 'data'),
+      error: state<Error | null>(null, 'error'),
+      loading: state(false, 'loading'),
       staleTime,
       subscribers: new Set(),
       updatedAt: 0,
@@ -307,9 +307,9 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
     function createReactiveResource(
       reactiveConfig: ReturnType<typeof normalizeOptions<T>>
     ): Resource<T> {
-      const data = state<T | null>(null)
-      const error = state<Error | null>(null)
-      const loading = state(false)
+      const data = state<T | null>(null, 'data')
+      const error = state<Error | null>(null, 'error')
+      const loading = state(false, 'loading')
       const handle = {}
       let activeEntry: ResourceEntry<T> | undefined
       let activeKey: ResourceKey | undefined

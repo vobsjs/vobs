@@ -16,7 +16,7 @@ const _memo = memo
 const _batch = batch
 
 describe('reactivity: 读取路径', () => {
-  const plain = state(0)
+  const plain = state(0, 'plain')
 
   test('signal 读取 ×10000（未追踪）', async ({ bench }) => {
     await bench('signal 读取 ×10000（未追踪）', () => {
@@ -45,7 +45,7 @@ describe('reactivity: 写入与调度', () => {
   })
 
   {
-    const source = state(0)
+    const source = state(0, 'source')
     let runs = 0
     effect(() => { runs = source.value })
     let i = 0
@@ -58,9 +58,9 @@ describe('reactivity: 写入与调度', () => {
   }
 
   {
-    const source = state(0)
+    const source = state(0, 'source')
     const siblings = Array.from({ length: 99 }, () => {
-      const s = state(0)
+      const s = state(0, 's')
       effect(() => { void (s.value + source.value) })
       return s
     })
@@ -78,7 +78,7 @@ describe('reactivity: 写入与调度', () => {
 
 describe('reactivity: memo 链式失效', () => {
   {
-    const base = state(0)
+    const base = state(0, 'base')
     const derived = _memo(() => base.value * 2)
     effect(() => { void derived.value })
     let i = 0

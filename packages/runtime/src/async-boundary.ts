@@ -16,10 +16,10 @@ export interface AsyncBoundaryProps<T> extends AsyncBoundaryOptions<T> {}
 export function insertAsyncBoundary<T>(parent: Node, anchor: Node | null, options: AsyncBoundaryOptions<T>): void {
   const boundary = createOwner()
   boundary.run(() => {
-    const loading = state(true)
-    const data = state<T | undefined>(undefined)
-    const resolved = state(false)
-    const error = state<Error | null>(null)
+    const loading = state(true, 'loading')
+    const data = state<T | undefined>(undefined, 'data')
+    const resolved = state(false, 'resolved')
+    const error = state<Error | null>(null, 'error')
     let token = 0
     let previousKey: unknown
     let initialized = false
