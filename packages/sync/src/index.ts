@@ -170,13 +170,16 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
     offline: new Set()
   }
   /*
-   * 已经判给 local 的冲突（键 = 本地变更 id）。
+   * Conflicts already resolved in favor of local (key = local change id).
    *
-   * 服务端只要还在重复推同一个 key，每轮 sync 都会重新走一遍冲突判定：pulled 永远 0、
-   * 自定义 resolver 每轮被再调一次 —— 但本地这份变更一个字都没变，结论不可能变。
-   * 这里只缓存"本地赢"的结论（指纹取 timestamp）：远端赢的结果本就被丢弃、行为等价，
-   * 而缓存它会在"服务端修正了远端值"时错误地跳过重新判定。
-   * 只是缓存，不是水位：不落盘，重启实例后重新判定一次，结论一致。
+   * As long as the server keeps pushing the same key, every sync round re-runs conflict
+   * resolution: pulled stays 0 and a custom resolver gets invoked again each round — but the
+   * local change hasn't changed one bit, so the verdict cannot change. This only caches
+   * "local wins" verdicts (fingerprint = timestamp): "remote wins" results are discarded anyway
+   * (behaviorally equivalent), while caching them would wrongly skip re-resolution when "the
+   * server corrected the remote value".
+   * It's a cache, not a watermark: not persisted; after a restart it re-resolves once with the
+   * same verdict.
    */
   const localWinsResolved = new Map<string, number>()
   let disposed = false
@@ -209,7 +212,7 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       }
       if (!isOnline()) {
         markOffline()
-        throw new SyncError('SYNC_OFFLINE', 'Vobs Sync: 当前处于离线状态')
+        throw new SyncError('SYNC_OFFLINE', 'Vobs Sync: currently offline')
       }
       emit('start', undefined)
       return context.sync()
@@ -233,7 +236,7 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       ensureActive()
       if (!isOnline()) {
         markOffline()
-        const offline = Promise.reject(new SyncError('SYNC_OFFLINE', 'Vobs Sync: 当前处于离线状态'))
+        const offline = Promise.reject(new SyncError('SYNC_OFFLINE', 'Vobs Sync: currently offline'))
         offline.catch(() => undefined)
         return offline
       }
@@ -248,7 +251,7 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
           priority: 'normal'
         })
       } catch (reason) {
-        const syncError = toSyncError(reason, '同步任务无法入队')
+        const syncError = toSyncError(reason, 'failed to enqueue the sync task')
         fail(syncError)
         return Promise.reject(syncError)
       }
@@ -261,7 +264,7 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
         }
         return result
       }).catch(reason => {
-        const syncError = toSyncError(reason, '同步失败')
+        const syncError = toSyncError(reason, 'sync failed')
         if (!disposed && !isCancellation(reason)) fail(syncError)
         throw syncError
       }).finally(() => {
@@ -276,15 +279,17 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       ensureActive()
       const normalized = normalizeChange(change, options.idFactory?.() ?? `change-${++sequence}`, clock())
       if (pendingChanges.value.some(item => item.id === normalized.id)) {
-        throw new SyncError('INVALID_CHANGE', `Vobs Sync: 已存在变更 ${normalized.id}`)
+        throw new SyncError('INVALID_CHANGE', `Vobs Sync: change ${normalized.id} already exists`)
       }
       /*
-       * **先落盘再改内存**：这是"离线优先"的全部意义。
+       * **Persist to disk first, then update memory**: this is the entire point of "offline first".
        *
-       * 原来 enqueue/removePending/clearPending 只调 setPending（纯内存信号），而 persist() 只在
-       * restore()/runCycle() 末尾调用 —— 于是"离线编辑 → 关页面"这条最常见的路径会**丢掉全部
-       * 未上传变更**（README 承诺的持久化不成立）。落盘失败抛 SYNC_FAILED，且此时内存仍是旧值，
-       * 不会出现"调用方以为失败了、内存里却有"的半状态。
+       * enqueue/removePending/clearPending used to only call setPending (a pure in-memory signal),
+       * while persist() only ran at the end of restore()/runCycle() — so the most common path,
+       * "edit offline → close the page", **dropped every unuploaded change** (the README's promise
+       * of persistence did not hold). A failed persist throws SYNC_FAILED, and memory still holds
+       * the old value at that point, so you never get the half-state where "the caller thinks it
+       * failed but memory has it".
        */
       const next = [...pendingChanges.value, normalized]
       persist(next)
@@ -299,7 +304,8 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       if (next.length === pendingChanges.value.length) return false
       persist(next)
       setPending(next)
-      // 变更被调用方移除，它的"判赢结论"同样过期（否则缓存只增不减，且同 id+timestamp 复用时被短路）
+      // The change was removed by the caller, so its "win verdict" is stale too (otherwise the
+      // cache only grows, and reusing the same id+timestamp gets short-circuited)
       localWinsResolved.delete(id)
       return true
     },
@@ -308,7 +314,8 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       ensureActive()
       persist([])
       setPending([])
-      // 一个待上传变更都不剩了，判定缓存也必须清空（同上：只增不减会无界增长）
+      // No pending changes left at all, so the verdict cache must be cleared too (same as above:
+      // grow-only would be unbounded)
       localWinsResolved.clear()
     },
 
@@ -352,7 +359,7 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       response = options.parse?.(result) ?? parseResponse(result)
     } catch (reason) {
       if (isAbortError(reason)) throw reason
-      throw toSyncError(reason, 'Vobs Sync: 同步 transport 调用失败')
+      throw toSyncError(reason, 'Vobs Sync: sync transport call failed')
     }
     progress.value = 70
     const remote = (response.changes ?? []).map((change, index) => normalizeChange(change, `remote-${index + 1}`, clock()))
@@ -378,18 +385,19 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       accepted.push(selected)
     }
     /*
-     * 摘掉已 ack 的本地变更。
+     * Drop local changes that were acknowledged.
      *
-     * `response.acknowledged` **显式**给定时，它是服务端"我收下了哪些 id"的清单：
-     * 只要某个 id 出现在里面，这份变更就该离队 —— 哪怕它刚在冲突里胜出。
-     * 原来的 `&& !conflictIds.has(local.id)` 让这类变更永远留在 pending：
-     * 服务端每轮都确认收下了，客户端却每个周期原样重推（pushed 恒 ≥1）。
-     * 冲突判定只回答"远端值要不要覆盖本地值"，不回答"服务端收没收下"。
+     * When `response.acknowledged` is given **explicitly**, it is the server's list of "which ids I
+     * accepted": as soon as an id appears in it, that change should leave the queue — even if it
+     * just won a conflict. The old `&& !conflictIds.has(local.id)` kept such changes in pending
+     * forever: the server acknowledged them every round, yet the client re-pushed them verbatim
+     * every cycle (pushed stuck ≥1). Conflict resolution only answers "should the remote value
+     * override the local value", not "did the server accept it".
      *
-     * 反过来，`acknowledged` 缺省时整份 sent 都被当作已接受（协议默认），
-     * 那是没有信息量的假设，不能用来丢弃一份刚刚判赢的本地变更：此时保持
-     * pending（= 下轮重推，at-least-once）是既有契约，见 index.test.ts
-     * "保留 local-wins 变更"。
+     * Conversely, when `acknowledged` is absent the entire `sent` batch is treated as accepted
+     * (protocol default). That is an assumption with zero information and must not be used to drop
+     * a local change that just won a conflict: keeping it pending (= re-push next round,
+     * at-least-once) is the existing contract — see index.test.ts "keeps local-wins changes"
      */
     const explicitAcknowledged = response.acknowledged !== undefined
     for (let index = nextPending.length - 1; index >= 0; index--) {
@@ -398,11 +406,12 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
       if (!explicitAcknowledged && conflictIds.has(local.id)) continue
       nextPending.splice(index, 1)
       /*
-       * 变更离队了，它的"判赢结论"也必须一并清账。
+       * The change left the queue, so its "win verdict" must be cleared with it.
        *
-       * 原实现只在"远端赢"分支 delete（见 resolveConflict），于是 local-wins 缓存只增不减 ——
-       * 长期运行下无界增长；更要命的是：若调用方之后用**同一个 id+timestamp** 重新提交同一份变更，
-       * `resolveConflict` 会短路成 'local' 而**不再调用**自定义 resolver。
+       * The old implementation only deleted in the "remote wins" branch (see resolveConflict), so
+       * the local-wins cache grew without bound over a long run; worse, if the caller later
+       * resubmitted the same change with the **same id+timestamp**, `resolveConflict` would
+       * short-circuit to 'local' and **never call** the custom resolver again.
        */
       localWinsResolved.delete(local.id)
     }
@@ -437,13 +446,13 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
   function restore(): void {
     let saved: PersistedState<T> | null = null
     try { saved = storage.get<PersistedState<T>>(storageKey) } catch (reason) {
-      throw new SyncError('SYNC_FAILED', 'Vobs Sync: 无法读取本地同步状态', reason)
+      throw new SyncError('SYNC_FAILED', 'Vobs Sync: failed to read local sync state', reason)
     }
     if (saved !== null) {
       if (!saved || saved.version !== 1 || (saved.cursor !== null && typeof saved.cursor !== 'string')
         || (saved.lastSyncAt !== null && typeof saved.lastSyncAt !== 'string')
         || !Array.isArray(saved.pending)) {
-        throw new SyncError('SYNC_FAILED', 'Vobs Sync: 本地同步状态格式无效')
+        throw new SyncError('SYNC_FAILED', 'Vobs Sync: local sync state has an invalid format')
       }
       cursor.value = saved.cursor
       lastSyncAt.value = saved.lastSyncAt
@@ -454,7 +463,7 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
     persist()
   }
 
-  /** 落盘。默认写当前 pending（runCycle/restore 用），也可显式传入"下一次"的 pending。 */
+  /** Persist to disk. Defaults to writing the current pending (used by runCycle/restore); can also take the "next" pending explicitly. */
   function persist(changes: readonly SyncChange<T>[] = pendingChanges.value): void {
     try {
       storage.set<PersistedState<T>>(storageKey, {
@@ -464,7 +473,7 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
         pending: changes
       })
     } catch (reason) {
-      throw new SyncError('SYNC_FAILED', 'Vobs Sync: 无法保存本地同步状态', reason)
+      throw new SyncError('SYNC_FAILED', 'Vobs Sync: failed to save local sync state', reason)
     }
   }
 
@@ -512,7 +521,7 @@ export function createSync<T = unknown>(options: SyncOptions<T>): SyncContext<T>
   }
 
   function ensureActive(): void {
-    if (disposed) throw new SyncError('SYNC_CONTEXT_DISPOSED', 'Vobs Sync: 上下文已销毁')
+    if (disposed) throw new SyncError('SYNC_CONTEXT_DISPOSED', 'Vobs Sync: context has been disposed')
   }
 }
 
@@ -534,16 +543,16 @@ export function syncPlugin<T = unknown>(options: SyncPluginOptions<T>): VobsPlug
 
 export function useSync<T = unknown>(): SyncContext<T> {
   const sync = inject(SYNC_KEY)
-  if (!sync) throw new SyncError('SYNC_CONTEXT_MISSING', 'Vobs Sync: 找不到上下文，请安装 syncPlugin')
+  if (!sync) throw new SyncError('SYNC_CONTEXT_MISSING', 'Vobs Sync: context not found; install syncPlugin first')
   return sync as SyncContext<T>
 }
 
 function validateOptions<T>(options: SyncOptions<T>): void {
   if (!options || typeof options !== 'object' || !options.transport || typeof options.transport.sync !== 'function') {
-    throw new SyncError('INVALID_SYNC_OPTIONS', 'Vobs Sync: 必须提供 transport.sync')
+    throw new SyncError('INVALID_SYNC_OPTIONS', 'Vobs Sync: transport.sync is required')
   }
   if (options.pollInterval !== undefined && (!Number.isFinite(options.pollInterval) || options.pollInterval <= 0)) {
-    throw new SyncError('INVALID_SYNC_OPTIONS', 'Vobs Sync: pollInterval 必须是正数')
+    throw new SyncError('INVALID_SYNC_OPTIONS', 'Vobs Sync: pollInterval must be a positive number')
   }
 }
 
@@ -551,12 +560,12 @@ function normalizeChange<T>(change: SyncChangeInput<T>, fallbackId: string, fall
   if (!change || typeof change !== 'object'
     || typeof change.key !== 'string' || change.key.trim() === ''
     || (change.operation !== 'upsert' && change.operation !== 'delete')) {
-    throw new SyncError('INVALID_CHANGE', 'Vobs Sync: change 必须包含有效的 key 和 operation')
+    throw new SyncError('INVALID_CHANGE', 'Vobs Sync: change must contain a valid key and operation')
   }
   const id = change.id ?? fallbackId
   const timestamp = change.timestamp ?? fallbackTimestamp
   if (typeof id !== 'string' || id.trim() === '' || !Number.isFinite(timestamp)) {
-    throw new SyncError('INVALID_CHANGE', 'Vobs Sync: change 的 id 和 timestamp 无效')
+    throw new SyncError('INVALID_CHANGE', 'Vobs Sync: change id and timestamp are invalid')
   }
   return Object.freeze({
     id,
@@ -568,31 +577,32 @@ function normalizeChange<T>(change: SyncChangeInput<T>, fallbackId: string, fall
 }
 
 function parseResponse<T>(data: unknown): SyncResponse<T> {
-  // 数组也是 `typeof === 'object'`：原来放行后 `candidate.changes === undefined` 又过关，
-  // 于是服务端返回 `[{...}]` 这种形状会**假成功**（status=done、pulled=0）。
+  // Arrays also satisfy `typeof === 'object'`: the old check let them through and then
+  // `candidate.changes === undefined` passed too, so a server response shaped like `[{...}]`
+  // **faked success** (status=done, pulled=0).
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: 服务端响应必须是对象')
+    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: server response must be an object')
   }
   const candidate = data as Partial<SyncResponse<T>>
   if (candidate.cursor !== undefined && candidate.cursor !== null && typeof candidate.cursor !== 'string') {
-    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: 响应 cursor 必须是字符串或 null')
+    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: response cursor must be a string or null')
   }
   if (candidate.timestamp !== undefined && typeof candidate.timestamp !== 'string' && typeof candidate.timestamp !== 'number') {
-    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: 响应 timestamp 无效')
+    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: response timestamp is invalid')
   }
   if (candidate.changes !== undefined && !Array.isArray(candidate.changes)) {
-    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: 响应 changes 必须是数组')
+    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: response changes must be an array')
   }
   if (candidate.acknowledged !== undefined && (!Array.isArray(candidate.acknowledged)
     || candidate.acknowledged.some(id => typeof id !== 'string'))) {
-    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: 响应 acknowledged 必须是字符串数组')
+    throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: response acknowledged must be a string array')
   }
   return candidate as SyncResponse<T>
 }
 
 function normalizeTimestamp(value: string | number): string {
   const date = typeof value === 'number' ? new Date(value) : new Date(value)
-  if (Number.isNaN(date.getTime())) throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: 响应 timestamp 无效')
+  if (Number.isNaN(date.getTime())) throw new SyncError('INVALID_RESPONSE', 'Vobs Sync: response timestamp is invalid')
   return date.toISOString()
 }
 

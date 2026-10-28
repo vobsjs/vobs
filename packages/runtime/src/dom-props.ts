@@ -1,47 +1,53 @@
 /**
- * JSX 属性名 → DOM 设置方式的**单一来源**。
+ * **Single source of truth** for JSX prop names → DOM application method.
  *
- * compiler 在编译期用它决定生成 setProperty/bindProperty 还是 setAttribute/bindAttribute，
- * runtime 在展开 `{...props}` 时用同一套判断 —— 分开写就会出现编译期与运行期
- * 各一份**逐字重复**的实现，分叉即静默改道，所以收到这里。
+ * The compiler uses it at compile time to decide between setProperty/bindProperty and
+ * setAttribute/bindAttribute; the runtime applies the same judgment when spreading
+ * `{...props}` — written separately you get two **verbatim-duplicated** implementations
+ * (compile-time and runtime), and any fork silently reroutes behavior, hence it lives here.
  *
- * 这张表只描述「名字」，不占用户包体：compiler 侧是构建期用，runtime 侧是几十个字符串。
+ * This table only describes **names** and doesn't bloat the user bundle: the compiler side
+ * is build-time only, the runtime side is a few dozen strings.
  */
 
 /**
- * 走 property 通道的名字（`el[name] = value`）。
+ * Names that go through the property channel (`el[name] = value`).
  *
- * 判断标准是「当成 attribute 设不管用、或者语义不同」：
- * - `innerHTML` / `textContent` 不是 HTML 属性，setAttribute 完全无效（静默无操作）
- * - `defaultValue` / `defaultChecked` 的 attribute 形式是 value/checked，名字对不上
- * - `indeterminate` / `currentTime` / `volume` 等根本没有对应 attribute
- * 其余常见名字（value/checked/disabled/…）两条通道都能工作，列在这里是为了语义正确
- * （如 `disabled={false}` 必须清除 property）。
+ * The criterion is "setting it as an attribute doesn't work, or means something different":
+ * - `innerHTML` / `textContent` are not HTML attributes; setAttribute is completely
+ *   ineffective (silent no-op)
+ * - the attribute forms of `defaultValue` / `defaultChecked` are value/checked — the names
+ *   don't match
+ * - `indeterminate` / `currentTime` / `volume` etc. have no corresponding attribute at all
+ * The other common names (value/checked/disabled/…) work on both channels and are listed
+ * here for semantic correctness (e.g. `disabled={false}` must clear the property).
  */
 const PROPERTY_NAMES: ReadonlySet<string> = new Set([
-  // 表单状态
+  // Form state
   'value', 'checked', 'selected', 'disabled', 'multiple', 'readOnly', 'required',
   'defaultValue', 'defaultChecked', 'indeterminate',
   /*
-   * `autoFocus` 用**驼峰**（与同表 readOnly/tabIndex/defaultChecked 一致），且必须走
-   * **property 通道**：`autofocus` 是**布尔属性**（只看存在与否、与值无关），
-   * 所以 `autoFocus={false}` 必须"移除属性"而不是写 `autofocus="false"`
-   * （attribute 通道只能把 false 序列化成字符串，属性照样存在 = 仍然聚焦）。
+   * `autoFocus` uses **camelCase** (consistent with readOnly/tabIndex/defaultChecked in this
+   * table) and must go through the **property channel**: `autofocus` is a **boolean
+   * attribute** (presence only, value ignored), so `autoFocus={false}` must "remove the
+   * attribute" rather than write `autofocus="false"` (the attribute channel can only
+   * serialize false into a string — the attribute remains present = still focused).
    *
-   * ⚠️ 但 `setProperty` 必须把它映射成 **IDL 名 `autofocus`（全小写）** ——
-   * `Reflect.set(el, 'autoFocus', …)` 只会挂一个不反射的 expando，**静默无效**。
-   * 映射表见 ops.ts 的 `PROPERTY_IDL_NAMES`。实测（jsdom，与真实 DOM 同语义）：
-   *   IDL `autofocus` → 写 true 得 has=true/idl=true；写 false 得 has=false/idl=false ✓
-   *   JSX `autoFocus` → 属性与 IDL 都不变（只是 expando）                        ✗
+   * ⚠️ But `setProperty` must map it to the **IDL name `autofocus` (all lowercase)** —
+   * `Reflect.set(el, 'autoFocus', …)` only hangs a non-reflecting expando, **silently
+   * ineffective**. See `PROPERTY_IDL_NAMES` in ops.ts for the mapping table. Measured
+   * (jsdom, same semantics as real DOM):
+   *   IDL `autofocus` → write true gives has=true/idl=true; write false gives has=false/idl=false ✓
+   *   JSX `autoFocus` → attribute and IDL both unchanged (just an expando)                ✗
    */
   'autoFocus', 'hidden', 'tabIndex', 'colSpan', 'rowSpan', 'open',
-  // 只能走 property 的（attribute 路径会静默无效）
+  // Property-only (the attribute path is silently ineffective)
   'innerHTML', 'innerText', 'textContent',
-  // 媒体
+  // Media
   'muted', 'volume', 'currentTime', 'playbackRate'
 ])
 
-/** camelCase JSX 属性名 → HTML attribute 名的别名。 */
+/** Aliases from camelCase JSX prop names to HTML attribute names. */
 const ATTRIBUTE_ALIASES: Readonly<Record<string, string>> = {
   className: 'class',
   htmlFor: 'for',
@@ -50,15 +56,19 @@ const ATTRIBUTE_ALIASES: Readonly<Record<string, string>> = {
 }
 
 /**
- * SVG 里「JSX 写驼峰、真实 DOM 属性是短横线」的那一批。
+ * The batch of SVG names where "JSX is camelCase but the real DOM attribute is kebab-case".
  *
- * **不能按通用规则把驼峰转短横线** —— SVG 的属性命名是混合的：
- * - 表现属性（就是那些能当 CSS 用的）是短横线：`stroke-width`、`fill-opacity`、`text-anchor`
- * - 结构属性却真是驼峰：`viewBox`、`preserveAspectRatio`、`markerWidth`、`pathLength`
- * 所以只对下面这批做转换；其余同名照旧（`viewBox` 写驼峰本来就是对的）。
+ * **CamelCase must not be converted to kebab-case by a general rule** — SVG attribute
+ * naming is mixed:
+ * - presentation attributes (the ones usable as CSS) are kebab-case: `stroke-width`,
+ *   `fill-opacity`, `text-anchor`
+ * - structural attributes really are camelCase: `viewBox`, `preserveAspectRatio`,
+ *   `markerWidth`, `pathLength`
+ * So only the batch below is converted; the rest keep their names as-is (`viewBox` written
+ * in camelCase is already correct).
  *
- * 写错大小写的后果是完全静默：setAttribute 出一个浏览器不认识的属性，图形照旧没有描边，
- * 没有任何报错。
+ * Getting the casing wrong is completely silent: setAttribute writes an attribute the
+ * browser doesn't know, the shape still has no stroke, and nothing errors.
  */
 const SVG_KEBAB_ATTRIBUTES: ReadonlySet<string> = new Set([
   // stroke
@@ -66,38 +76,39 @@ const SVG_KEBAB_ATTRIBUTES: ReadonlySet<string> = new Set([
   'strokeMiterlimit', 'strokeOpacity',
   // fill
   'fillOpacity', 'fillRule',
-  // clip（注意 clipPathUnits 是结构属性，不在这里）
+  // clip (note: clipPathUnits is a structural attribute, not here)
   'clipPath', 'clipRule',
-  // 文本对齐
+  // Text alignment
   'textAnchor', 'dominantBaseline', 'alignmentBaseline', 'baselineShift',
-  // 字体
+  // Fonts
   'fontFamily', 'fontSize', 'fontSizeAdjust', 'fontStretch', 'fontStyle', 'fontVariant', 'fontWeight',
   'letterSpacing', 'wordSpacing',
-  // marker 的表现属性（markerWidth / markerHeight / markerUnits 是结构属性，不在这里）
+  // marker presentation attributes (markerWidth / markerHeight / markerUnits are structural, not here)
   'markerStart', 'markerMid', 'markerEnd',
-  // 颜色
+  // Color
   'colorInterpolation', 'colorInterpolationFilters', 'colorProfile', 'colorRendering',
   'floodColor', 'floodOpacity', 'lightingColor', 'stopColor', 'stopOpacity',
   'glyphOrientationHorizontal', 'glyphOrientationVertical',
-  // 渲染与合成
+  // Rendering and compositing
   'imageRendering', 'paintOrder', 'pointerEvents', 'shapeRendering',
   'textDecoration', 'textRendering', 'transformOrigin', 'vectorEffect', 'writingMode'
 ])
 
-/** 名字是否应走 property 通道（`el[name] = value`）。 */
+/** Whether the name should go through the property channel (`el[name] = value`). */
 export function isPropertyName(name: string): boolean {
   return PROPERTY_NAMES.has(name)
 }
 
-/** SVG 驼峰属性名是否应转成短横线形式（`strokeWidth` → `stroke-width`）。 */
+/** Whether an SVG camelCase attribute name should be converted to kebab-case (`strokeWidth` → `stroke-width`). */
 export function isSvgKebabAttribute(name: string): boolean {
   return SVG_KEBAB_ATTRIBUTES.has(name)
 }
 
 /**
- * camelCase JSX 属性名 → 真正写进 DOM 的 attribute 名。
+ * camelCase JSX prop name → the attribute name actually written to the DOM.
  *
- * 注意 property 通道**不**经过这里：`colSpan` / `rowSpan` 的 JS 属性名本就是驼峰。
+ * Note the property channel does **not** go through here: the JS property names of
+ * `colSpan` / `rowSpan` are camelCase to begin with.
  */
 export function domAttributeName(name: string): string {
   const alias = ATTRIBUTE_ALIASES[name]

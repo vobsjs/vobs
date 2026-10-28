@@ -4,18 +4,20 @@ import { state } from '@vobs/vobs'
 import { createResourceClient } from './index'
 
 /*
- * 取消不是失败 —— 不该把 AbortError 留在**共享缓存**里。
+ * Cancellation is not failure — an AbortError must not stay in the **shared cache**.
  *
- * 原来 `resource.ts` 的 error 分支在 revision 未变时无条件写 error（只有 onError 那行用
- * aborted 挡住了）。后果会跨页面：一次 refetch 中途被取消/dispose，缓存里就留下
- * `{ data, error: AbortError }`；同 key 的新页面因为 isFresh（staleTime 未到）**零请求**就拿到
- * 这条错误，而 boundary 先判 error → 直接渲染错误兜底。
+ * The original `resource.ts` error branch wrote the error unconditionally whenever the revision was
+ * unchanged (only the onError line was guarded by `aborted`). The consequence crossed pages: a
+ * refetch cancelled/disposed midway left `{ data, error: AbortError }` in the cache; a new page on
+ * the same key, seeing isFresh (staleTime not yet elapsed), picked up that error with **zero
+ * requests**, and since the boundary checks error first it rendered the error fallback directly.
  *
- * 仓库既有的取消用例（resource.test.ts 的"响应式 key 切换时取消旧请求"）只断言旧信号被
- * abort，**没有断言被取消条目的 error** —— 这个缺口正是 bug 藏身之处。
+ * The repo's existing cancellation case (resource.test.ts's "cancel the old request when a reactive
+ * key changes") only asserted the old signal got aborted, **never asserted the cancelled entry's
+ * error** — that gap is exactly where the bug was hiding.
  */
-describe('resource 取消与共享缓存', () => {
-  it('被取消的请求不写 error，同 key 的新页面不会零请求拿到 AbortError', async () => {
+describe('resource cancellation vs the shared cache', () => {
+  it('a cancelled request writes no error, so a new page on the same key cannot pick up an AbortError with zero requests', async () => {
     const client = createResourceClient()
     let calls = 0
     const makeFetcher = () => (signal: AbortSignal) => {
@@ -30,25 +32,25 @@ describe('resource 取消与共享缓存', () => {
     await first.prefetch()
     expect(first.data.value).toBe('v1')
 
-    const refetching = first.refetch()          // 第二次请求，挂住
+    const refetching = first.refetch()          // second request, hangs
     await vi.waitFor(() => expect(calls).toBe(2))
-    first.dispose()                             // 取消在飞的那次
+    first.dispose()                             // cancel the in-flight one
     await refetching.catch(() => undefined)
 
-    // 同 key 的"新页面"
+    // a "new page" on the same key
     const callsBefore = calls
     const second = client.resource({ key: ['k'], staleTime: 60_000, fetcher: makeFetcher() })
     await second.prefetch()
 
-    expect(second.error.value, '被取消的请求把 AbortError 写进了共享缓存').toBeNull()
-    expect(calls).toBe(callsBefore)             // 仍然新鲜 → 没有多余请求
+    expect(second.error.value, 'the cancelled request wrote an AbortError into the shared cache').toBeNull()
+    expect(calls).toBe(callsBefore)             // still fresh → no extra request
     expect(second.data.value).toBe('v1')
 
     second.dispose()
     client.clear()
   })
 
-  it('真正的失败仍然写 error（取消的例外没有波及正常错误路径）', async () => {
+  it('a genuine failure still writes error (the cancellation carve-out did not touch the normal error path)', async () => {
     const client = createResourceClient()
     const item = client.resource({ key: ['boom'], fetcher: () => Promise.reject(new Error('网络炸了')) })
     await item.prefetch().catch(() => undefined)
@@ -57,7 +59,7 @@ describe('resource 取消与共享缓存', () => {
     client.clear()
   })
 
-  it('reactive key 切换取消旧请求的既有语义不变', async () => {
+  it('the existing semantics of reactive-key switching cancelling the old request are unchanged', async () => {
     const key = state<readonly unknown[]>(['first'])
     const signals = new Map<string, AbortSignal>()
     const client = createResourceClient()

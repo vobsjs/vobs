@@ -4,7 +4,7 @@ import { analyzeSource, compile, compileWithSourceMap, createCompiler, createI18
 import { VobsError } from '@vobs/runtime'
 
 describe('compiler', () => {
-  it('提取静态 i18n key，不提取动态 key', () => {
+  it('extracts static i18n keys, skipping dynamic keys', () => {
     const extractor = createI18nExtractor()
     compile(`
       const title = t('page.title')
@@ -14,7 +14,7 @@ describe('compiler', () => {
 
     expect(extractor.getKeys()).toEqual(['common.label', 'page.title'])
   })
-  it('解析 JSX', () => {
+  it('parses JSX', () => {
     const code = `const el = <div>hello</div>`
 
     const result = compile(code)
@@ -23,7 +23,7 @@ describe('compiler', () => {
     expect(result).toContain('hello')
   })
 
-  it('编译 JSX 为 DOM 渲染调用', () => {
+  it('compiles JSX into DOM rendering calls', () => {
     const code = `const el = <div>hello {name.value}</div>`
 
     const result = compile(code)
@@ -33,7 +33,7 @@ describe('compiler', () => {
     expect(result).toContain('insertBefore')
   })
 
-  it('编译函数组件', () => {
+  it('compiles function components', () => {
     const code = `
   function Counter() {
     const count = state(0)
@@ -47,7 +47,7 @@ describe('compiler', () => {
     expect(result).toContain('createElement')
   })
   
-  it('编译事件绑定', () => {
+  it('compiles event bindings', () => {
     const code = `
   const el = <button onClick={() => { console.log('clicked') }}>点击</button>
   `
@@ -58,9 +58,9 @@ describe('compiler', () => {
     expect(result).toContain('click')
   })
 
-  it('重入安全：插件在编译过程中调用 compile() 不污染外层编译状态', () => {
-    // 外层源码的变量名会命中内层片段用到的 helper 名，验证 takenNames/helperAliases
-    // 等状态在外层编译全程保持独立（此前为模块级变量，嵌套编译会互相覆盖）。
+  it('reentrancy: a plugin calling compile() mid-compilation does not pollute the outer compilation state', () => {
+    // The outer source's variable names collide with helper names the inner snippet uses, verifying that takenNames/helperAliases
+    // and similar state stay independent throughout the outer compilation (these used to be module-level variables; nested compilations overwrote each other).
     const nestedPlugin: CompilerPlugin = {
       name: 'nested-compile',
       analyze() {
@@ -77,92 +77,92 @@ describe('compiler', () => {
       plugins: [nestedPlugin]
     })
 
-    // 外层的局部绑定 createElement 仍在，运行时 helper 注入为别名导入
+    // The outer local binding createElement survives; the runtime helper is injected as an aliased import
     expect(result.code).toContain('const createElement = () => null')
     expect(result.code).toContain('_vobs_createElement')
     expect(result.code).toContain('outer')
     expect(result.diagnostics).toEqual([])
   })
 
-  it('重入安全：连续多次编译各自独立，计数器与别名不跨编译泄漏', () => {
+  it('reentrancy: consecutive compilations stay independent; counters and aliases do not leak across compilations', () => {
     const first = compileWithSourceMap(`const a = () => <div className="x">{a.value}</div>`, { filename: 'a.tsx' })
     const second = compileWithSourceMap(`const b = () => <div className="y">{b.value}</div>`, { filename: 'b.tsx' })
 
-    // 临时变量计数器每次编译从 0 开始
+    // The temporary-variable counter restarts at 0 for every compilation
     expect(first.code).toContain('_el0')
     expect(second.code).toContain('_el0')
-    // 第二次编译不带第一次残留的诊断
+    // The second compilation carries no diagnostics left over from the first
     expect(second.diagnostics).toEqual([])
   })
 
-  it('将静态属性合并为一次 setStaticProps 调用', () => {
+  it('merges static props into a single setStaticProps call', () => {
     const result = compile(`const el = <input className="field" disabled id="name" />`)
     expect(result).toContain('setStaticProps')
     expect(result).not.toContain('setAttribute(_el')
   })
 
-  it('将动态文本和属性编译为 getter 绑定', () => {
+  it('compiles dynamic text and attributes into getter bindings', () => {
     const result = compile(`const el = <input value={name.value}>{name.value}</input>`)
 
     expect(result).toContain('bindProperty')
     expect(result).toContain('() => name.value')
-    // 子节点表达式统一走 insertDynamicValue 多态插入（原始值在运行时命中文本快路径）
+    // Child expressions uniformly go through insertDynamicValue polymorphic insertion (primitive values hit the text fast path at runtime)
     expect(result).toContain('insertDynamicValue')
   })
 
-  it('将首字母大写的标签编译为组件实例', () => {
+  it('compiles uppercase-initial tags into component instances', () => {
     const result = compile(`const el = <Counter value={count.value} />`)
 
     expect(result).toContain('createComponent(resolveComponent(Counter')
     expect(result).toContain('get value()')
   })
 
-  it('保留非 JSX 声明的初始化参数', () => {
+  it('keeps initializers of non-JSX declarations intact', () => {
     const result = compile(`function Counter() { const count = state(0); return <span>{count.value}</span> }`)
 
     expect(result).toContain('state(0)')
   })
 
-  it('自动推断 state() 的 debugName（未显式传参时使用变量名）', () => {
+  it('infers state() debugName automatically (uses the variable name when not passed explicitly)', () => {
     const result = compile(`import { state } from '@vobs/reactivity'\nconst username = state('')`)
 
     expect(result).toContain(`state('', "username")`)
   })
 
-  it('别名导入的 state 同样推断 debugName', () => {
+  it('infers debugName for aliased state imports too', () => {
     const result = compile(`import { state as signal } from '@vobs/reactivity'\nconst username = signal('')`)
 
     expect(result).toContain(`signal('', "username")`)
   })
 
-  it('显式传入 debugName 时不覆盖', () => {
+  it('does not overwrite an explicitly passed debugName', () => {
     const result = compile(`import { state } from '@vobs/reactivity'\nconst username = state('', 'auth.name')`)
 
     expect(result).toContain(`state('', 'auth.name')`)
     expect(result).not.toContain('"username"')
   })
 
-  it('state 被本地声明遮蔽时不推断 debugName', () => {
+  it('does not infer debugName when state is shadowed by a local declaration', () => {
     const result = compile(`import { state } from '@vobs/reactivity'\nfunction state(value: unknown) { return value }\nconst username = state('')`)
 
     expect(result).toContain(`state('')`)
     expect(result).not.toContain('"username"')
   })
 
-  it('非 state 调用不推断 debugName', () => {
+  it('does not infer debugName for non-state calls', () => {
     const result = compile(`const items = useState([])`)
 
     expect(result).toContain('useState([])')
   })
 
-  it('编译条件 JSX 为动态块', () => {
+  it('compiles conditional JSX into a dynamic block', () => {
     const result = compile(`const el = <div>{show.value && <span>visible</span>}</div>`)
 
     expect(result).toContain('insertDynamic')
     expect(result).toContain('show.value ?')
   })
 
-  it('编译 JSX map 为 keyed 列表', () => {
+  it('compiles a JSX map into a keyed list', () => {
     const result = compile(`const el = <ul>{items.value.map(item => <li key={item.id}>{item.name}</li>)}</ul>`)
 
     expect(result).toContain('insertList')
@@ -171,23 +171,23 @@ describe('compiler', () => {
     expect(result).not.toContain('setAttribute(_el2, "key"')
   })
 
-  it('编译嵌套三元的全部分支（不再只保留第一个分支）', () => {
+  it('compiles every branch of a nested ternary (no longer keeps only the first branch)', () => {
     const result = compile(`const el = <div>{flag ? <A /> : other ? <B /> : <C />}</div>`)
 
     expect(result).toContain('insertDynamic')
-    // 三个分支全部编译为组件调用
+    // All three branches compile into component calls
     expect(result.match(/createComponent\(resolveComponent/gu)).toHaveLength(3)
     expect(result).not.toContain('React')
   })
 
-  it('编译 && 与嵌套动态节点组合', () => {
+  it('compiles && combined with a nested dynamic node', () => {
     const result = compile(`const el = <div>{flag && (other ? <A /> : <B />)}</div>`)
 
     expect(result).toContain('insertDynamic')
     expect(result.match(/createComponent\(resolveComponent/gu)).toHaveLength(2)
   })
 
-  it('编译 if 块内的 JSX 早返回（不再泄漏到 React 降级路径）', () => {
+  it('compiles JSX early returns inside if blocks (no longer leaking into the React fallback path)', () => {
     const code = `
   function App() {
     if (items.value.length === 0) return <Empty />
@@ -196,14 +196,14 @@ describe('compiler', () => {
   `
     const result = compile(code)
 
-    // 早返回分支与主 return 分支都编译为 vobs 组件调用，源码中不残留 JSX
+    // Both the early-return branch and the main return branch compile into vobs component calls; no JSX remains in the output
     expect(result.match(/createComponent\(resolveComponent/gu)).toHaveLength(2)
     expect(result).not.toContain('<Empty')
     expect(result).not.toContain('<Footer')
     expect(result).not.toContain('React')
   })
 
-  it('编译函数体内部初始化器与嵌套函数中的 JSX', () => {
+  it('compiles initializers inside function bodies and JSX in nested functions', () => {
     const code = `
   function App() {
     const render = () => <Inner />
@@ -219,7 +219,7 @@ describe('compiler', () => {
     expect(result).not.toContain('React')
   })
 
-  it('hmrModuleId 将模块顶层 state 包装为 HMR 保鲜引用', () => {
+  it('hmrModuleId wraps module-top-level state into an HMR preservation ref', () => {
     const code = `import { state } from '@vobs/reactivity'
 export const count = state(0)
 function helper() {
@@ -229,13 +229,13 @@ function helper() {
 `
     const result = compile(code, { hmrModuleId: 'src/stores/counter.ts' })
 
-    // 顶层声明被包装，函数内的局部声明不受影响
+    // The top-level declaration is wrapped; function-local declarations are untouched
     expect(result).toContain('hmrStateRef("src/stores/counter.ts#count"')
     expect(result).toContain('() => state(0, "count")')
     expect(result).not.toContain('hmrStateRef("src/stores/counter.ts#local"')
   })
 
-  it('hmrModuleId 保留显式 debugName 且兼容别名导入', () => {
+  it('hmrModuleId keeps explicit debugNames and works with aliased imports', () => {
     const code = `import { state as st } from '@vobs/reactivity'
 export const width = st(50, 'doc.width')
 `
@@ -245,7 +245,7 @@ export const width = st(50, 'doc.width')
     expect(result).toContain("() => st(50, 'doc.width')")
   })
 
-  it('在 JSX 转换前执行编译器插件的分析、程序与节点钩子', () => {
+  it('runs the plugin analyze/program/node hooks before the JSX transform', () => {
     const filenames: string[] = []
     const plugin: CompilerPlugin = {
       name: 'replace-label',
@@ -288,7 +288,7 @@ export const width = st(50, 'doc.width')
     expect(result).toContain('const label = "after";')
   })
 
-  it('支持 createCompiler 与旧版 transformNode 钩子', () => {
+  it('supports createCompiler and the legacy transformNode hook', () => {
     const compiler = createCompiler({
       plugins: [{
         name: 'legacy-transform',
@@ -304,15 +304,15 @@ export const width = st(50, 'doc.width')
     expect(compiler.compile(`const el = <span>{message}</span>`)).toContain('() => title')
   })
 
-  it('拒绝重复命名的编译器插件', () => {
+  it('rejects duplicate compiler plugin names', () => {
     const plugins: CompilerPlugin[] = [{ name: 'duplicate' }, { name: 'duplicate' }]
-    expect(() => compile(`const el = <div />`, { plugins })).toThrow('重复插件')
+    expect(() => compile(`const el = <div />`, { plugins })).toThrow('Duplicate plugin')
   })
 
-  it('只导入生成代码实际使用的运行时 helper', () => {
+  it('imports only the runtime helpers the generated code actually uses', () => {
     const result = compile(`const el = <div>hello</div>`)
 
-    // 完全静态的子树提升为模板：只需 createTemplate + cloneTemplate
+    // Fully static subtrees are hoisted into templates: only createTemplate + cloneTemplate are needed
     expect(result).toContain('createTemplate')
     expect(result).toContain('cloneTemplate')
     expect(result).not.toContain('createElement')
@@ -323,14 +323,14 @@ export const width = st(50, 'doc.width')
     expect(result).not.toContain('insertList')
   })
 
-  it('编译 Fragment 为无包装节点范围', () => {
+  it('compiles a Fragment into an unwrapped node range', () => {
     const result = compile(`const el = <><span>one</span><span>two</span></>`)
 
     expect(result).toContain('createFragment')
     expect(result).toContain('insertBefore(_fragmentParent')
   })
 
-  it('支持显式 Fragment 和 Vobs.Fragment 写法', () => {
+  it('supports explicit Fragment and Vobs.Fragment spellings', () => {
     const explicit = compile(`const el = <Fragment><span>one</span><span>two</span></Fragment>`)
     const namespaced = compile(`const el = <Vobs.Fragment><span>one</span><span>two</span></Vobs.Fragment>`)
     expect(explicit).toContain('createFragment')
@@ -338,21 +338,21 @@ export const width = st(50, 'doc.width')
     expect(namespaced).not.toContain('createElement("Vobs.Fragment")')
   })
 
-  it('将 JSX 动态表达式统一编译为可归一化的动态节点', () => {
+  it('compiles JSX dynamic expressions uniformly into normalizable dynamic nodes', () => {
     const result = compile(`const content = <strong>ready</strong>; const el = <div>{content}</div>`)
     expect(result).toContain('insertDynamicValue')
     expect(result).toContain('() => content')
   })
 
-  // 回归（Vobs Console 踩坑备忘）：`{cond ? <A/> : items.map(...)}` 里列表那一支
-  // 曾被写成 `null` 分支而**静默消失** —— convertDynamicNodeExpression 只要有一支
-  // 产出节点就提交条件树，其余分支一律变 null。现在只要有一支不是节点表达式
-  // （列表、文本、数值…），整个条件就回落 insertDynamicValue 多态插入。
-  it('三元中非节点分支回落多态插入，不被写成 null', () => {
+  // Regression (Vobs Console pitfall memo): in `{cond ? <A/> : items.map(...)}`, the list branch
+  // used to be written as a `null` branch and **vanish silently** — convertDynamicNodeExpression committed the
+  // conditional tree as soon as one branch produced a node, turning the rest into null. Now, if any branch is not a node
+  // expression (list, text, number, ...), the whole conditional falls back to insertDynamicValue polymorphic insertion.
+  it('falls back to polymorphic insertion for non-node ternary branches instead of writing null', () => {
     const withList = compile(`const el = <div>{ok ? <span>empty</span> : items.map(i => <b key={i}>{i}</b>)}</div>`)
     expect(withList).toContain('insertDynamicValue')
     expect(withList).toContain('items.map(i =>')
-    // 关键：列表那一支不能再被写成 null
+    // Key point: the list branch must no longer be written as null
     expect(withList).not.toContain('? cloneTemplate(_tpl1) : null')
     expect(withList).not.toMatch(/\? cloneTemplate\([^)]*\) : null/u)
 
@@ -362,22 +362,22 @@ export const width = st(50, 'doc.width')
     expect(withText).not.toContain(': null')
   })
 
-  it('所有分支都是节点时仍走 insertDynamic 快路径', () => {
+  it('still takes the insertDynamic fast path when every branch is a node', () => {
     const result = compile(`const el = <div>{ok ? <A/> : <B/>}</div>`)
     expect(result).toContain('insertDynamic(')
     expect(result).not.toContain('insertDynamicValue')
   })
 
-  it('列表作为直接子表达式时仍编译为 keyed insertList', () => {
+  it('still compiles a list at a direct child position into a keyed insertList', () => {
     const result = compile(`const el = <div>{items.map(i => <b key={i}>{i}</b>)}</div>`)
     expect(result).toContain('insertList')
   })
 
-  // 回归（Labelune 踩坑备忘）：JSX 子节点里的函数调用曾被编译为 bindText 文本绑定
-  // （String(fragment) → "[object Object]"）。现在所有非静态子表达式统一走
-  // insertDynamicValue 多态插入：值类型由运行时判断，返回节点的辅助函数与返回
-  // 字符串的 t('...') 同样安全。
-  it('函数调用子表达式编译为 insertDynamicValue 多态插入（不文本绑定）', () => {
+  // Regression (Labelune pitfall memo): function calls at JSX child positions used to compile into bindText text bindings
+  // (String(fragment) → "[object Object]"). Now every non-static child expression uniformly goes through
+  // insertDynamicValue polymorphic insertion: value types are decided at runtime, so helpers returning nodes and
+  // helpers returning strings like t('...') are equally safe.
+  it('compiles function-call child expressions into insertDynamicValue polymorphic insertion (not text binding)', () => {
     const result = compile(`const el = <div>{renderSections(doc)}{t('greeting')}</div>`)
     expect(result).not.toContain('bindText')
     expect(result).toContain('insertDynamicValue')
@@ -385,33 +385,33 @@ export const width = st(50, 'doc.width')
     expect(result).toContain(`() => t('greeting')`)
   })
 
-  // 回归（Labelune 踩坑备忘）：用户态组件透传 children 曾渲染为 "[object HTMLDivElement]"。
-  // children 必须编译为 getter 返回节点/节点数组，{children} 表达式走 insertDynamicValue
-  // 直传节点，任何一侧都不允许落入文本序列化路径。
-  it('用户态组件透传 children 编译为节点 getter 与节点直传（不字符串化）', () => {
+  // Regression (Labelune pitfall memo): user components passing children through used to render as "[object HTMLDivElement]".
+  // children must compile into a getter returning a node/node array, and the {children} expression goes through
+  // insertDynamicValue passing the node straight through; neither side may fall into the text serialization path.
+  it('compiles children pass-through in user components into a node getter and direct node passing (no stringification)', () => {
     const result = compile(`
       function Section({ children }) {
         return <section>{children}</section>
       }
       const el = <Section><div class="inner">inner</div></Section>
     `)
-    // 调用方：children 是 getter，值为构建好的节点（transformElement 求值结果 / 静态提升 clone）
+    // Caller side: children is a getter whose value is the built node (the transformElement evaluation result / a hoisted clone)
     expect(result).toContain('get children()')
     expect(result).toContain('createComponent(')
-    // 被调方：{children} 标识符表达式直传节点（insertDynamicValue），不走 createText(String(...))
+    // Callee side: the {children} identifier expression passes the node straight through (insertDynamicValue), never createText(String(...))
     expect(result).toContain('insertDynamicValue')
     expect(result).toContain('() => children')
     expect(result).not.toContain('String(children)')
   })
 
-  it('支持 DOM spread 和对象样式', () => {
+  it('supports DOM spread and object styles', () => {
     const result = compile(`const props = { className: 'card' }; const el = <div {...props} style={{ backgroundColor: 'red' }} />`)
-    // 展开现在走响应式绑定（原来是创建时应用一次的 spreadProps）
+    // Spread now goes through a reactive binding (it used to be spreadProps applied once at creation)
     expect(result).toContain('bindSpreadProps')
     expect(result).toContain('bindAttribute')
   })
 
-  it('编译 ResourceBoundary 为范围内的资源边界指令', () => {
+  it('compiles ResourceBoundary into an in-range resource boundary directive', () => {
     const result = compile(`
       const el = <ResourceBoundary resource={users} loading={<p>loading</p>}>
         <p>ready</p>
@@ -425,7 +425,7 @@ export const width = st(50, 'doc.width')
     expect(result).not.toContain('createComponent(ResourceBoundary')
   })
 
-  it('编译 ErrorBoundary 为范围内的错误边界指令', () => {
+  it('compiles ErrorBoundary into an in-range error boundary directive', () => {
     const result = compile(`
       const el = <ErrorBoundary fallback={(error, retry) => <button onClick={retry}>{error.message}</button>}>
         <p>ready</p>
@@ -437,15 +437,15 @@ export const width = st(50, 'doc.width')
     expect(result).not.toContain('createComponent(ErrorBoundary')
   })
 
-  // 回归（Labelune 踩坑备忘）：残留 JSX（早返回/嵌套分支中主转换未覆盖的 JSX）此前在
-  // runtime import 与模板声明生成之后才转换，其引用的 _tplN 模板与 insertDynamicValue
-  // 等 helper 不会出现在最终产物中，运行时抛 "XXX is not defined"。
-  // 产物自检：每个被引用的 _tplN 必须有声明，每个 helper 调用必须有对应导入。
+  // Regression (Labelune pitfall memo): residual JSX (early returns / nested branches the main transform missed) used to be transformed
+  // after the runtime import and template declarations were generated, so the _tplN templates and insertDynamicValue
+  // helpers it referenced never appeared in the final output, and the runtime threw "XXX is not defined".
+  // Output self-check: every referenced _tplN must have a declaration, and every helper call must have a matching import.
   function assertNoDanglingReferences(result: string): void {
     const usedTemplates = [...result.matchAll(/_tpl\d+/gu)].map(match => match[0])
     const declaredTemplates = new Set([...result.matchAll(/const (_tpl\d+)\s*=/gu)].map(match => match[1]))
     for (const template of new Set(usedTemplates)) {
-      expect(declaredTemplates.has(template), `引用了未声明的模板 ${template}`).toBe(true)
+      expect(declaredTemplates.has(template), `referenced undeclared template ${template}`).toBe(true)
     }
     const runtimeHelpers = [
       'createElement', 'createText', 'createFragment', 'createTemplate', 'cloneTemplate',
@@ -455,11 +455,11 @@ export const width = st(50, 'doc.width')
     const importSection = result.slice(0, result.indexOf('@vobs/vobs'))
     for (const helper of runtimeHelpers) {
       const used = new RegExp(`\\b${helper}\\(`, 'u').test(result)
-      if (used) expect(importSection.includes(helper), `调用了 helper ${helper} 但未导入`).toBe(true)
+      if (used) expect(importSection.includes(helper), `called helper ${helper} without importing it`).toBe(true)
     }
   }
 
-  it('三元分支 JSX：模板声明与 helper 导入完整（残留转换先于 import 生成）', () => {
+  it('ternary-branch JSX: template declarations and helper imports complete (residual transform runs before import generation)', () => {
     const result = compile(`
       const HINT = '未发现设备'
       function DiscoveryResults() {
@@ -477,7 +477,7 @@ export const width = st(50, 'doc.width')
     assertNoDanglingReferences(result)
   })
 
-  it('早返回 JSX：模板声明与 helper 导入完整（残留转换先于 import 生成）', () => {
+  it('early-return JSX: template declarations and helper imports complete (residual transform runs before import generation)', () => {
     const result = compile(`
       function DiscoveryResults() {
         if (list.length === 0) return <p class="hint">未发现设备</p>
@@ -487,29 +487,29 @@ export const width = st(50, 'doc.width')
     assertNoDanglingReferences(result)
   })
 
-  it('不为没有运行时调用的源码注入 import', () => {
+  it('injects no import for source without runtime calls', () => {
     const result = compile(`export const version = '0.1.0'`)
 
     expect(result).not.toContain('@vobs/vobs')
   })
 
-  it('源文件已有同名导入时注入别名 import', () => {
+  it('injects an aliased import when the source already imports the same name', () => {
     const result = compile(`
       import { createElement } from './shim'
       export const tag = createElement('span')
       const el = <div>hello {name.value}</div>
     `)
 
-    // 用户导入与调用保持不变，编译器 helper 走别名，不再产生重复声明
+    // The user's import and call stay untouched; the compiler helper goes through the alias, producing no duplicate declarations
     expect(result).toContain('import { createElement } from "./shim"')
     expect(result).toContain('createElement as _vobs_createElement')
     expect(result).toContain('from "@vobs/vobs"')
     expect(result).toContain('_vobs_createElement("div")')
-    // 用户自己的调用原样保留（保留原始引号风格）
+    // The user's own call is kept verbatim (original quote style preserved)
     expect(result).toContain("createElement('span')")
   })
 
-  it('源文件本地声明与 helper 同名时注入别名 import', () => {
+  it('injects an aliased import when a local declaration shares a helper name', () => {
     const result = compile(`
       const createText = (value: string) => value
       const el = <div>hello {name.value}</div>
@@ -518,11 +518,11 @@ export const width = st(50, 'doc.width')
     expect(result).toContain('createText as _vobs_createText')
     expect(result).toContain('from "@vobs/vobs"')
     expect(result).toContain('insertBefore(_el0, _vobs_createText("hello ")')
-    // 用户本地声明不受影响
+    // The user's local declaration is untouched
     expect(result).toContain('const createText = (value: string) => value')
   })
 
-  it('嵌套作用域的同名绑定也触发别名 import', () => {
+  it('same-named bindings in nested scopes also trigger the aliased import', () => {
     const result = compile(`
       export function Page() {
         const insertList = (items: unknown[]) => items.length
@@ -537,29 +537,29 @@ export const width = st(50, 'doc.width')
     expect(result).toContain('const insertList = (items: unknown[]) => items.length')
   })
 
-  it('同名绑定触发别名时保留别名一致性（同一 helper 只注入一次）', () => {
+  it('keeps alias consistency when same-named bindings trigger aliasing (each helper injected once)', () => {
     const result = compile(`
       const createElement = String
       const el = <div><span>one {name.value}</span></div>
     `)
 
     expect(result.match(/_vobs_createElement/g)?.length).toBeGreaterThanOrEqual(2)
-    // import 别名声明只出现一次，产物引用与之一致
+    // The import alias declaration appears exactly once, and output references match it
     expect(result.match(/ as _vobs_createElement/g)?.length).toBe(1)
   })
 
-  it('生成的临时变量避开用户已声明的名称', () => {
+  it('generates temporary variables that avoid user-declared names', () => {
     const result = compile(`
       const _el0 = 'reserved'
       const el = <div>hello {name.value}</div>
     `)
 
-    // _el0 被用户占用，编译产物必须改用下一个可用名称
+    // _el0 is taken by the user, so the output must use the next available name
     expect(result).toContain('const _el1 = createElement("div")')
     expect(result).not.toContain('const _el0 = createElement')
   })
 
-  it('组件 children 中的 JSX 表达式保持惰性并递归编译', () => {
+  it('keeps JSX expressions in component children lazy and compiles them recursively', () => {
     const result = compile(`
       const el = <Layout>{show.value && <Panel>{title.value}</Panel>}</Layout>
     `)
@@ -570,7 +570,7 @@ export const width = st(50, 'doc.width')
     expect(result).not.toContain('<Panel>')
   })
 
-  it('组件属性中的 JSX slot 保持惰性并递归编译', () => {
+  it('keeps JSX slots in component props lazy and compiles them recursively', () => {
     const result = compile(`
       const el = <Button icon={<Icon name="search" />}>Search</Button>
     `)
@@ -580,7 +580,7 @@ export const width = st(50, 'doc.width')
     expect(result).not.toContain('<Icon')
   })
 
-  it('动态 DOM property 使用 bindProperty，并为组件生成源码位置', () => {
+  it('uses bindProperty for dynamic DOM properties and emits component source locations', () => {
     const result = compile(`
       const el = <Editor><input disabled={locked.value} value={text.value} /></Editor>
     `, { filename: 'src/editor.tsx' })
@@ -592,7 +592,7 @@ export const width = st(50, 'doc.width')
     expect(result).toContain('line: 2')
   })
 
-  it('sourceLocation: false 剔除组件源码位置', () => {
+  it('sourceLocation: false strips component source locations', () => {
     const result = compile(`
       const el = <Editor><input disabled={locked.value} value={text.value} /></Editor>
     `, { filename: 'src/editor.tsx', sourceLocation: false })
@@ -603,7 +603,7 @@ export const width = st(50, 'doc.width')
     expect(result).not.toContain('column:')
   })
 
-  it('生成包含原始内容的 Source Map', () => {
+  it('generates a Source Map carrying the original content', () => {
     const result = compileWithSourceMap(`const el = <div>hello</div>`, { filename: 'src/App.tsx' })
 
     expect(result.map.version).toBe(3)
@@ -612,7 +612,7 @@ export const width = st(50, 'doc.width')
     expect(result.map.mappings.split(';').length).toBe(result.code.split('\n').length)
   })
 
-  it('Source Map 映射真实源码位置（语句级）', () => {
+  it('Source Map maps to real source positions (statement level)', () => {
     const source = [
       `import { state } from '@vobs/vobs'`,
       ``,
@@ -630,25 +630,25 @@ export const width = st(50, 'doc.width')
     const segments = decodeMappings(map.mappings)
     expect(segments.length).toBeGreaterThan(0)
 
-    // 生成行号必须落在产物范围内
+    // Generated line numbers must fall within the output range
     for (const segment of segments) {
       expect(segment.genLine).toBeLessThan(codeLines.length)
       expect(segment.srcLine).toBeLessThan(source.split('\n').length)
     }
 
-    // 用户自己的语句 1:1 映射
+    // The user's own statements map 1:1
     expect(findSourceLine(segments, codeLines, 'const count')).toBe(3)
-    // JSX 元素与属性映射回标签所在行（含列号）
+    // JSX elements and attributes map back to the tag's line (including columns)
     expect(findSourceLine(segments, codeLines, 'createElement("div")')).toBe(5)
     expect(findSourceLine(segments, codeLines, 'addEventListener(')).toBe(5)
-    // IIFE 内的动态子表达式插入映射回表达式子节点所在行
+    // Dynamic child-expression insertion inside the IIFE maps back to the expression child's line
     expect(findSourceLine(segments, codeLines, 'insertDynamicValue(')).toBe(6)
-    // 注入的 import 不产生错误映射
+    // The injected import produces no bogus mappings
     const importLine = codeLines.findIndex(line => line.startsWith('import { createElement'))
     expect(segments.some(segment => segment.genLine === importLine)).toBe(false)
   })
 
-  it('Source Map 覆盖嵌套函数体内的列表语句', () => {
+  it('Source Map covers list statements inside nested function bodies', () => {
     const source = [
       `const items = []`,
       `function List() {`,
@@ -662,7 +662,7 @@ export const width = st(50, 'doc.width')
     expect(findSourceLine(segments, codeLines, 'createElement("li")')).toBe(2)
   })
 
-  it('返回结构化编译诊断，并在 compile 中抛出 VobsError', () => {
+  it('returns structured compile diagnostics and throws VobsError from compile', () => {
     const result = compileWithSourceMap('const el = <div>', { filename: 'src/Broken.tsx' })
     expect(result.diagnostics.length).toBeGreaterThan(0)
     expect(result.diagnostics[0]).toMatchObject({
@@ -672,7 +672,7 @@ export const width = st(50, 'doc.width')
     expect(() => compile('const el = <div>', { filename: 'src/Broken.tsx' })).toThrow(VobsError)
   })
 
-  it('成员表达式标签产生 VOBS_C101 诊断', () => {
+  it('member-expression tags produce a VOBS_C101 diagnostic', () => {
     const result = compileWithSourceMap(`const el = <Foo.Bar />`, { filename: 'src/Member.tsx' })
     const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C101')
 
@@ -685,22 +685,22 @@ export const width = st(50, 'doc.width')
     expect(() => compile(`const el = <Foo.Bar />`)).toThrow(VobsError)
   })
 
-  it('命名空间标签产生 VOBS_C101 诊断', () => {
+  it('namespaced tags produce a VOBS_C101 diagnostic', () => {
     const result = compileWithSourceMap(`const el = <svg:rect width="1" />`)
     const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C101')
 
     expect(diagnostic).toBeDefined()
     expect(diagnostic?.message).toContain('svg:rect')
-    expect(diagnostic?.message).toContain('命名空间')
+    expect(diagnostic?.message).toContain('namespaced tag')
     expect(() => compile(`const el = <svg:rect width="1" />`)).toThrow(VobsError)
   })
 
   /*
-   * 事件名。原来的实现是无条件 `name.slice(2).toLowerCase()`：
-   * onDoubleClick 绑到不存在的 "doubleclick"、once 绑到 "ce"，
-   * 两者都静默失效 —— 回调永不触发且没有任何报错。
+   * Event names. The original implementation was an unconditional `name.slice(2).toLowerCase()`:
+   * onDoubleClick bound to the nonexistent "doubleclick", once bound to "ce",
+   * both silently broken — the callback never fires and nothing reports an error.
    */
-  it('onDoubleClick 编译成 dblclick（DOM 里没有 doubleclick 这个事件）', () => {
+  it('compiles onDoubleClick into dblclick (the DOM has no doubleclick event)', () => {
     const result = compileWithSourceMap(`const el = <div onDoubleClick={fn}>x</div>`)
 
     expect(result.code).toContain('"dblclick"')
@@ -708,11 +708,11 @@ export const width = st(50, 'doc.width')
     expect(result.diagnostics.filter(item => item.code === 'VOBS_C102')).toEqual([])
   })
 
-  it('onDblClick 同样归一到 dblclick', () => {
+  it('normalizes onDblClick to dblclick as well', () => {
     expect(compileWithSourceMap(`const el = <div onDblClick={fn}>x</div>`).code).toContain('"dblclick"')
   })
 
-  it('once 这种「on + 非大写」且不是已知事件的属性报 VOBS_C102 错误', () => {
+  it('reports a VOBS_C102 error for attributes like once ("on + non-uppercase", not a known event)', () => {
     const result = compileWithSourceMap(`const el = <div once={fn}>x</div>`, { filename: 'src/Once.tsx' })
     const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C102')
 
@@ -721,11 +721,11 @@ export const width = st(50, 'doc.width')
     expect(diagnostic?.message).toContain('"ce"')
     expect(diagnostic?.location).toMatchObject({ file: 'src/Once.tsx', line: 1 })
     expect(diagnostic?.codeFrame).toContain('once')
-    expect(diagnostic?.fix).toContain('大写')
+    expect(diagnostic?.fix).toContain('uppercase')
     expect(() => compile(`const el = <div once={fn}>x</div>`)).toThrow(VobsError)
   })
 
-  it('onclick 能工作但给出警告（小写只是碰巧对得上）', () => {
+  it('onclick works but gets a warning (lowercase only happens to match)', () => {
     const result = compileWithSourceMap(`const el = <div onclick={fn}>x</div>`)
     const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C102')
 
@@ -734,55 +734,55 @@ export const width = st(50, 'doc.width')
     expect(diagnostic?.fix).toContain('onClick')
   })
 
-  it('未知事件名给警告而不是错误（自定义事件必须继续可用）', () => {
+  it('warns instead of erroring on unknown event names (custom events must keep working)', () => {
     const result = compileWithSourceMap(`const el = <div onFoo={fn}>x</div>`)
     const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C102')
 
     expect(result.code).toContain('"foo"')
     expect(diagnostic?.severity).toBe('warning')
-    expect(diagnostic?.message).toContain('自定义事件')
+    expect(diagnostic?.message).toContain('custom event')
   })
 
-  it('常规事件属性不产生任何诊断', () => {
+  it('produces no diagnostics for ordinary event attributes', () => {
     const result = compileWithSourceMap(`const el = <input onClick={a} onKeyDown={b} onPointerEnter={c} />`)
     expect(result.diagnostics.filter(item => item.code === 'VOBS_C102')).toEqual([])
   })
 
   /*
-   * JSX 文本的空白规范化。
+   * Whitespace normalization for JSX text.
    *
-   * 原来三处都用 `replace(/\s+/g, ' ').trimStart()`，元素之间那个**合法的空格**被删掉：
-   * <p><b>a</b> <i>b</i></p> 渲染成 "ab"，而 React / Solid 都是 "a b"。
-   * 仓库里恰好没有这种写法，所以任何测试都没覆盖到。
+   * All three places used to run `replace(/\s+/g, ' ').trimStart()`, deleting that **legitimate space** between elements:
+   * <p><b>a</b> <i>b</i></p> rendered as "ab", while React / Solid render "a b".
+   * The repo happened to contain no such code, so no test ever covered it.
    */
-  describe('JSX 文本空白', () => {
-    it('元素之间的一个空格保留（提升成模板时也在）', () => {
+  describe('JSX text whitespace', () => {
+    it('keeps the single space between elements (also after hoisting into a template)', () => {
       const code = compileWithSourceMap(`const el = <p><b>a</b> <i>b</i></p>`).code
       expect(code).toContain('<p><b>a</b> <i>b</i></p>')
     })
 
-    it('本来没有空格就还是没空格', () => {
+    it('keeps no space where there was none', () => {
       const code = compileWithSourceMap(`const el = <p><b>a</b><i>b</i></p>`).code
       expect(code).toContain('<p><b>a</b><i>b</i></p>')
       expect(code).not.toContain('<b>a</b> <i>')
     })
 
-    it('多个空格原样保留', () => {
+    it('keeps multiple spaces as-is', () => {
       expect(compileWithSourceMap(`const el = <p><b>a</b>   <i>b</i></p>`).code)
         .toContain('<b>a</b>   <i>')
     })
 
-    it('换行与缩进被吃掉（与 React 一致）', () => {
+    it('eats line breaks and indentation (matching React)', () => {
       const code = compileWithSourceMap(`const el = <p>\n  <b>a</b>\n  <i>b</i>\n</p>`).code
       expect(code).toContain('<p><b>a</b><i>b</i></p>')
     })
 
-    it('表达式之间的空格成为真实文本节点', () => {
+    it('turns the space between expressions into a real text node', () => {
       const code = compileWithSourceMap(`const el = <p>{x} {y}</p>`).code
       expect(code).toContain('createText(" ")')
     })
 
-    it('文本与表达式相邻的空格只在有换行时被吃掉', () => {
+    it('eats spaces between text and expressions only when line breaks are present', () => {
       expect(compileWithSourceMap(`const el = <p>a {x}</p>`).code).toContain('createText("a ")')
       expect(compileWithSourceMap(`const el = <p>{x} b</p>`).code).toContain('createText(" b")')
       expect(compileWithSourceMap(`const el = <p>\n  {x}\n  {y}\n</p>`).code).not.toContain('createText(" ")')
@@ -790,26 +790,26 @@ export const width = st(50, 'doc.width')
   })
 
   /*
-   * SVG 子树不能提升成模板：模板走 HTML 解析器，`<g>`/`<rect>` 会变成
-   * HTMLUnknownElement —— 命名空间错了，整棵图形不渲染且没有报错。
-   * createElement 那条路径（ops.ts 的 isSvgTag）早就对了，唯独提升这条漏着。
+   * SVG subtrees must not be hoisted into templates: templates go through the HTML parser, where `<g>`/`<rect>` become
+   * HTMLUnknownElement — wrong namespace, the whole graphic never renders and nothing errors.
+   * The createElement path (ops.ts's isSvgTag) was right all along; only hoisting missed it.
    */
-  describe('静态 SVG 不提升成模板', () => {
-    it('svg 内的静态子树走 createElement', () => {
+  describe('static SVG is not hoisted into templates', () => {
+    it('static subtrees inside svg go through createElement', () => {
       const code = compileWithSourceMap(`const el = <svg width={w}><g><rect width="4" /></g></svg>`).code
       expect(code).not.toContain('createTemplate')
       expect(code).toContain('createElement("g")')
       expect(code).toContain('createElement("rect")')
     })
 
-    it('HTML 外层里嵌的 svg 同样不提升', () => {
+    it('svg nested inside an HTML shell is not hoisted either', () => {
       const code = compileWithSourceMap(`const el = <div><svg><circle r="4" /></svg></div>`).code
       expect(code).not.toContain('createTemplate')
       expect(code).toContain('createElement("svg")')
       expect(code).toContain('createElement("circle")')
     })
 
-    it('纯 HTML 子树仍然提升（性能不受影响）', () => {
+    it('pure HTML subtrees still hoist (performance unaffected)', () => {
       expect(compileWithSourceMap(`const el = <div><span>hi</span></div>`).code)
         .toContain('createTemplate("<div><span>hi</span></div>")')
       expect(compileWithSourceMap(`const el = <p><b>a</b></p>`).code).toContain('createTemplate')
@@ -817,58 +817,58 @@ export const width = st(50, 'doc.width')
   })
 
   /*
-   * 列表判定。
+   * List detection.
    *
-   * 认不出 `.map` 时会静默退化成多态插入：功能仍然正常，但每一项每轮重建、
-   * key 与 keyed 复用全部失效，而且**没有任何提示**。这里放宽能安全支持的写法，
-   * 剩下确实做不到的（Fragment 体、多语句块体）报警告。
+   * Failing to recognize a `.map` silently degrades to polymorphic insertion: functionality still works, but every item
+   * rebuilds every round and key + keyed reuse stop working entirely, with **no hint whatsoever**. This relaxes the shapes that
+   * can be safely supported, and warns on the ones genuinely impossible (Fragment bodies, multi-statement blocks).
    */
-  describe('列表判定', () => {
+  describe('list detection', () => {
     const listCode = (source: string) => compileWithSourceMap(source, { filename: 'a.tsx' })
 
-    it('回调体上的 as 断言不再让它漏掉列表', () => {
+    it('an as assertion on the callback body no longer hides the list', () => {
       const code = listCode(`const el = <ul>{items.map(item => (<li>{item}</li>) as any)}</ul>`).code
-      // 列表本身走 insertList（对比：降级时整份 items 会交给 insertDynamicValue）
+      // The list itself goes through insertList (contrast: on degradation the whole items goes to insertDynamicValue)
       expect(code).toContain('insertList(')
       expect(code).not.toMatch(/insertDynamicValue\(_el\w+, null, \(\) => items/)
     })
 
-    it('块体里恰好一个 return 也算列表', () => {
+    it('a block body with exactly one return also counts as a list', () => {
       const code = listCode(`const el = <ul>{items.map(item => { return <li>{item}</li> })}</ul>`).code
       expect(code).toContain('insertList(')
     })
 
-    it('map 带 thisArg 仍然算列表', () => {
+    it('a map with thisArg still counts as a list', () => {
       const code = listCode(`const el = <ul>{items.map(item => <li>{item}</li>, this)}</ul>`).code
       expect(code).toContain('insertList(')
     })
 
-    it('Fragment 体退化成多态插入并报 VOBS_C103 警告', () => {
+    it('a Fragment body degrades to polymorphic insertion and warns VOBS_C103', () => {
       const result = listCode(`const el = <ul>{items.map(item => <><li>{item}</li></>)}</ul>`)
       const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C103')
 
-      // 降级的判据是「没有 insertList」——insertDynamicValue 在正常列表里也会出现（列表项内部的文本绑定）
+      // The degradation test is "no insertList" — insertDynamicValue also appears in normal lists (text binding inside list items)
       expect(result.code).not.toContain('insertList(')
       expect(diagnostic?.severity).toBe('warning')
       expect(diagnostic?.message).toContain('Fragment')
       expect(diagnostic?.fix).toContain('Fragment')
     })
 
-    it('多语句块体报 VOBS_C103 警告', () => {
+    it('a multi-statement block body warns VOBS_C103', () => {
       const result = listCode(`const el = <ul>{items.map(item => { const n = item; return <li>{n}</li> })}</ul>`)
       const diagnostic = result.diagnostics.find(item => item.code === 'VOBS_C103')
 
       expect(diagnostic?.severity).toBe('warning')
-      expect(diagnostic?.message).toContain('多个语句')
+      expect(diagnostic?.message).toContain('multiple statements')
       expect(result.diagnostics.every(item => item.severity === 'warning')).toBe(true)
     })
 
-    it('返回字符串的 map 不是列表，也不报警告', () => {
+    it('a string-returning map is not a list and raises no warning', () => {
       const result = listCode(`const el = <ul>{items.map(item => item.name)}</ul>`)
       expect(result.diagnostics.filter(item => item.code === 'VOBS_C103')).toEqual([])
     })
 
-    it('正常列表没有任何诊断', () => {
+    it('a normal list produces no diagnostics', () => {
       const result = listCode(`const el = () => <ul>{items.map(item => <li key={item.id}>{item.name}</li>)}</ul>`)
       expect(result.code).toContain('insertList(')
       expect(result.diagnostics).toEqual([])
@@ -876,12 +876,12 @@ export const width = st(50, 'doc.width')
   })
 
   /*
-   * 诊断质量：一次只报第一条是最费时间的形态 —— 文件里有 5 处错误要构建 5 次
-   * 才能知道全貌。边界组件缺属性原来是直接 throw（连位置都没有），
-   * 于是非抛出版本的 compileWithSourceMap 也变成抛异常。
+   * Diagnostic quality: reporting only the first error at a time is the most time-wasting shape — with 5 errors in a file you
+   * build 5 times to see the whole picture. A boundary component missing a prop used to throw directly (without even a location),
+   * which turned the non-throwing compileWithSourceMap into a throwing API too.
    */
-  describe('诊断质量', () => {
-    it('compile() 一次列出同一文件里的全部错误', () => {
+  describe('diagnostic quality', () => {
+    it('compile() lists all errors in the same file at once', () => {
       const source = `const a = <div once={fn}>x</div>\nconst b = <Foo.Bar />`
       let message = ''
       try {
@@ -891,12 +891,12 @@ export const width = st(50, 'doc.width')
       }
 
       expect(message).toContain('"ce"')
-      expect(message).toContain('还有 1 处错误')
+      expect(message).toContain('more error(s) in the same file')
       expect(message).toContain('VOBS_C101')
       expect(message).toContain('src/Many.tsx:2')
     })
 
-    it('边界组件缺属性返回带位置的诊断，而不是抛异常', () => {
+    it('a boundary component missing a prop returns a located diagnostic instead of throwing', () => {
       const cases: readonly [string, string][] = [
         ['const a = <ErrorBoundary>hi</ErrorBoundary>', 'fallback'],
         ['const a = <AsyncBoundary>x</AsyncBoundary>', 'promise'],
@@ -914,80 +914,80 @@ export const width = st(50, 'doc.width')
       }
     })
 
-    it('codeFrame 的插入符按显示宽度对齐（tab 不再让 ^ 偏掉）', () => {
+    it('the codeFrame caret aligns by display width (tabs no longer skew the ^)', () => {
       const source = 'const a = <div>\n\t\t<div once={fn}>x</div>\n</div>'
       const diagnostic = compileWithSourceMap(source, { filename: 'src/Tab.tsx' })
         .diagnostics.find(item => item.code === 'VOBS_C102')
 
       const [codeLine, caretLine] = (diagnostic?.codeFrame ?? '').split('\n')
       expect(codeLine).toBeDefined()
-      // 展开 tab 后 ^ 必须落在 once 的起始列
+      // After tab expansion the ^ must land on once's start column
       const markerColumn = caretLine.indexOf('^')
       const onceColumn = codeLine.indexOf('once')
       expect(markerColumn).toBe(onceColumn)
     })
   })
 
-  it('小写成员表达式标签同样不被放行', () => {
+  it('lowercase member-expression tags are rejected too', () => {
     const result = compileWithSourceMap(`const el = <foo.bar />`)
     expect(result.diagnostics.find(item => item.code === 'VOBS_C101')).toBeDefined()
   })
 
-  it('Fragment 成员表达式形态仍受支持', () => {
+  it('the Fragment member-expression shape stays supported', () => {
     const result = compileWithSourceMap(`const el = <Vobs.Fragment><span>one</span></Vobs.Fragment>`)
 
     expect(result.diagnostics.filter(item => item.severity === 'error')).toHaveLength(0)
   })
 
-  it('诊断信息随 compileWithSourceMap 稳定返回（不改变产物结构）', () => {
+  it('diagnostics come back stably from compileWithSourceMap (output structure unchanged)', () => {
     const result = compileWithSourceMap(`const el = <Foo.Bar />`)
 
-    // 报诊断的同时产物仍可打印，便于 source map 配对与调试
+    // Diagnostics are reported while the output stays printable, for source map pairing and debugging
     expect(result.code).toContain('createElement("Foo.Bar")')
     expect(result.map).toBeDefined()
   })
 
-  describe('C232 根治：三元/&& 分支里的 keyed 列表路由 insertShow（2026-10-28）', () => {
-    it('cond ? list : null 编译为条件容器 + 容器内 insertList', () => {
+  describe('C232 root fix: keyed lists in ternary/&& branches route to insertShow (2026-10-28)', () => {
+    it('compiles cond ? list : null into a conditional container + in-container insertList', () => {
       const result = compile(`const el = <div>{open.value ? items.value.map(i => <span key={i}>{i}</span>) : null}</div>`)
       expect(result).toContain('insertShow')
       expect(result).toContain('insertList')
-      // 条件与列表分两层订阅：cond 只出现在 insertShow 的条件 getter 里
+      // Condition and list are two subscription layers: cond only appears in insertShow's condition getter
       expect(result).toMatch(/insertShow\([^)]*\(\) => open\.value/)
     })
 
-    it('cond && list 同样路由 insertShow（条件 = 左表达式）', () => {
+    it('routes cond && list to insertShow too (condition = the left expression)', () => {
       const result = compile(`const el = <ul>{open.value && items.value.map(i => <li key={i} />)}</ul>`)
       expect(result).toContain('insertShow')
       expect(result).toContain('insertList')
     })
 
-    it('列表在 false 分支时条件取反', () => {
+    it('negates the condition when the list sits in the false branch', () => {
       const result = compile(`const el = <div>{open.value ? null : items.value.map(i => <li key={i} />)}</div>`)
       expect(result).toContain('insertShow')
       expect(result).toContain('!open.value')
     })
 
-    it('嵌套条件链合并（cond ? (x ? list : null) : null）', () => {
+    it('merges nested condition chains (cond ? (x ? list : null) : null)', () => {
       const result = compile(`const el = <div>{open.value ? (ready.value ? items.value.map(i => <li key={i} />) : null) : null}</div>`)
       expect(result).toContain('insertShow')
       expect(result).toContain('insertList')
     })
 
-    it('混排形态（节点与 list 两支）保持多态插入，不路由 insertShow', () => {
+    it('keeps polymorphic insertion for mixed shapes (node and list branches), not routing insertShow', () => {
       const result = compile(`const el = <div>{open.value ? <b>x</b> : items.value.map(i => <li key={i} />)}</div>`)
       expect(result).not.toContain('insertShow')
       expect(result).toContain('insertDynamicValue')
     })
 
-    it('字符串 map（非 JSX 产出）不走 insertShow', () => {
+    it('a string map (non-JSX output) does not go through insertShow', () => {
       const result = compile(`const el = <div>{open.value ? items.value.map(i => i.name) : null}</div>`)
       expect(result).not.toContain('insertShow')
     })
   })
 
-  describe('C232 分析器与 insertShow 路由同构（2026-10-28）', () => {
-    it('简单形态不再报 C232（已被编译器路由）', () => {
+  describe('the C232 analyzer is isomorphic with the insertShow routing (2026-10-28)', () => {
+    it('simple shapes no longer report C232 (already routed by the compiler)', () => {
       const diagnostics = analyzeSource(
         `const el = <div>{open.value ? items.value.map(i => <span key={i} />) : null}</div>`,
         'src/Show.tsx'
@@ -995,7 +995,7 @@ export const width = st(50, 'doc.width')
       expect(diagnostics.filter(d => d.code === 'VOBS_C232')).toHaveLength(0)
     })
 
-    it('&& 形态不再报 C232', () => {
+    it('&& shapes no longer report C232', () => {
       const diagnostics = analyzeSource(
         `const el = <div>{open.value && items.value.map(i => <span key={i} />)}</div>`,
         'src/Show.tsx'
@@ -1003,7 +1003,7 @@ export const width = st(50, 'doc.width')
       expect(diagnostics.filter(d => d.code === 'VOBS_C232')).toHaveLength(0)
     })
 
-    it('混排形态仍报 C232（编译器无法安全改写）', () => {
+    it('mixed shapes still report C232 (the compiler cannot safely rewrite them)', () => {
       const diagnostics = analyzeSource(
         `const el = <div>{open.value ? <b>x</b> : items.value.map(i => <span key={i} />)}</div>`,
         'src/Show.tsx'
@@ -1012,8 +1012,8 @@ export const width = st(50, 'doc.width')
     })
   })
 
-  describe('C118 增强：props 属性直接赋局部变量 = run-once 快照（死穴 §4，2026-10-28）', () => {
-    it('const st = props.state 且 JSX 里直接用 → 报快照', () => {
+  describe('C118 enhancement: props property assigned straight to a local = run-once snapshot (deadly sin §4, 2026-10-28)', () => {
+    it('const st = props.state used directly in JSX → reports the snapshot', () => {
       const diagnostics = analyzeSource(
         `export function P(props){ const st = props.state; return <div>{st}</div> }`,
         'src/Facade.tsx'
@@ -1024,7 +1024,7 @@ export const width = st(50, 'doc.width')
       expect(hit?.fix).toContain('() => props.')
     })
 
-    it('getter 形态调用 {st()} 不报（正确写法）', () => {
+    it('getter-form call {st()} does not report (the correct form)', () => {
       const diagnostics = analyzeSource(
         `export function P(props){ const st = () => props.state; return <div>{st()}</div> }`,
         'src/Facade.tsx'
@@ -1032,7 +1032,7 @@ export const width = st(50, 'doc.width')
       expect(diagnostics.filter(d => d.code === 'VOBS_C118')).toHaveLength(0)
     })
 
-    it('存了但 JSX 里没用 → 不报', () => {
+    it('stored but unused in JSX → no report', () => {
       const diagnostics = analyzeSource(
         `export function P(props){ const st = props.state; return <div>ok</div> }`,
         'src/Facade.tsx'
@@ -1040,7 +1040,7 @@ export const width = st(50, 'doc.width')
       expect(diagnostics.filter(d => d.code === 'VOBS_C118')).toHaveLength(0)
     })
 
-    it('非 props 前缀的成员读取不受影响（如 config.state）', () => {
+    it('member reads without the props prefix are unaffected (e.g. config.state)', () => {
       const diagnostics = analyzeSource(
         `export function P(){ const st = config.state; return <div>{st}</div> }`,
         'src/Facade.tsx'
@@ -1108,60 +1108,60 @@ function findSourceLine(segments: MappingSegment[], codeLines: string[], needle:
 }
 
   /*
-   * SVG 命名空间继承。
+   * SVG namespace inheritance.
    *
-   * 只按标签名判定命名空间是行不通的：a / title / style / script 与 HTML 同名，
-   * 在 <svg> 里必须是 SVG 元素。光看名字会建出 HTML 锚点 —— 不渲染、也不报错
-   * （CHANGELOG 里自认的已知问题）。编译器知道祖先链，所以由它显式指定。
+   * Deciding the namespace by tag name alone cannot work: a / title / style / script share their names with HTML,
+   * and inside <svg> they must be SVG elements. Judging by name builds an HTML anchor — it renders nothing and reports
+   * nothing (a known issue the CHANGELOG admits to). The compiler knows the ancestor chain, so it specifies explicitly.
    */
-  describe('SVG 命名空间继承', () => {
-    it('SVG 里的 a / title 显式走 createSvgElement', () => {
+  describe('SVG namespace inheritance', () => {
+    it('a / title inside SVG go explicitly through createSvgElement', () => {
       const a = compileWithSourceMap(`const el = <svg><a href="/x">link</a></svg>`).code
       expect(a).toContain('createSvgElement("a")')
       const title = compileWithSourceMap(`const el = <svg><title>t</title></svg>`).code
       expect(title).toContain('createSvgElement("title")')
     })
 
-    it('隔一层也继承（<svg><g><a>）', () => {
+    it('inherits through one level (<svg><g><a>)', () => {
       expect(compileWithSourceMap(`const el = <svg><g><a href="/y">n</a></g></svg>`).code)
         .toContain('createSvgElement("a")')
     })
 
-    it('foreignObject 把子树切回 HTML', () => {
+    it('foreignObject switches the subtree back to HTML', () => {
       const code = compileWithSourceMap(`const el = <svg><foreignObject><a href="/z">h</a></foreignObject></svg>`).code
       expect(code).not.toContain('createSvgElement("a")')
     })
 
-    it('普通 HTML 里的 a 不受影响', () => {
+    it('a in ordinary HTML is unaffected', () => {
       expect(compileWithSourceMap(`const el = <div><a href="/w">h</a></div>`).code).not.toContain('createSvgElement')
     })
 
-    it('SVG 子树一律不做静态提升（模板用的是 HTML 解析器）', () => {
-      // <a> 本身是静态的，若提升成模板就会 clone 出 HTML 锚点
+    it('SVG subtrees never get static hoisting (templates use the HTML parser)', () => {
+      // <a> is itself static; hoisted into a template it would clone an HTML anchor
       expect(compileWithSourceMap(`const el = <svg><a href="/x">link</a></svg>`).code).not.toContain('createTemplate')
     })
   })
 
   /*
-   * `{...props}` 展开必须是响应式的。
+   * The `{...props}` spread must be reactive.
    *
-   * 原来只发射 spreadProps（创建时应用一次）：改了 props 不生效、删掉的键留在 DOM 上，
-   * 两者都不报错。现在发射 bindSpreadProps（每轮增量应用 + 移除消失的键）。
+   * It used to emit only spreadProps (applied once at creation): changing props had no effect and deleted keys stayed
+   * on the DOM, neither erroring. Now it emits bindSpreadProps (incremental application each round + removal of vanished keys).
    */
-  describe('{...props} 展开', () => {
-    it('发射 bindSpreadProps 而不是一次性的 spreadProps', () => {
+  describe('{...props} spread', () => {
+    it('emits bindSpreadProps instead of the one-shot spreadProps', () => {
       const code = compileWithSourceMap(`const el = <div {...props}>x</div>`).code
       expect(code).toContain('bindSpreadProps(')
       expect(code).not.toMatch(/[^d]spreadProps\(/)
     })
 
-    it('静态属性与展开共存时也走绑定', () => {
+    it('goes through binding when static props coexist with a spread', () => {
       const code = compileWithSourceMap(`const el = <div id="a" {...props}>x</div>`).code
       expect(code).toContain('bindSpreadProps(')
       expect(code).toContain('"a"')
     })
 
-    it('没有展开时不发射', () => {
+    it('emits nothing without a spread', () => {
       expect(compileWithSourceMap(`const el = <div id="a">x</div>`).code).not.toContain('bindSpreadProps')
     })
   })

@@ -14,7 +14,7 @@ describe('@vobs/layout', () => {
     window.innerHeight = 800
   })
 
-  it('默认插入 Kit header、menu 和内容插槽', () => {
+  it('inserts the default Kit header, menu and content slots', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitLayout, {
@@ -34,7 +34,7 @@ describe('@vobs/layout', () => {
     app.destroy()
   })
 
-  it('默认侧栏宽度交给 CSS，显式配置才写入内联变量', () => {
+  it('sidebar width stays with CSS by default; explicit config writes the inline variable', () => {
     const defaultContainer = document.createElement('main')
     const defaultApp = createVobs({
       render: () => createComponent(KitLayout, { menu: [{ key: '/home', label: 'Home' }] })
@@ -60,7 +60,7 @@ describe('@vobs/layout', () => {
     configuredApp.destroy()
   })
 
-  it('侧栏默认收起，显式设置后才默认展开', () => {
+  it('sidebar starts collapsed by default and expanded only when explicitly configured', () => {
     const defaultContainer = document.createElement('main')
     const defaultApp = createVobs({
       render: () => createComponent(KitLayout, {
@@ -90,7 +90,7 @@ describe('@vobs/layout', () => {
     expandedApp.destroy()
   })
 
-  it('显式 sidebarCollapsed 优先于默认展开配置', () => {
+  it('explicit sidebarCollapsed takes precedence over the default-expanded config', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitLayout, {
@@ -107,7 +107,7 @@ describe('@vobs/layout', () => {
     app.destroy()
   })
 
-  it('非受控状态可以通过默认 header 切换侧栏', async () => {
+  it('uncontrolled state can be toggled through the default header', async () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitLayout, {
@@ -127,7 +127,7 @@ describe('@vobs/layout', () => {
     app.destroy()
   })
 
-  it('窗口尺寸变化仍驱动移动端布局，但销毁后停止监听', async () => {
+  it('window resizes still drive the mobile layout, and listening stops after destroy', async () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitLayout, {
@@ -156,7 +156,7 @@ describe('@vobs/layout', () => {
     expect(root.classList.contains('vobs-kit-layout--mobile')).toBe(false)
   })
 
-  it('自定义 header 可以通过 KitLayout 上下文控制布局', async () => {
+  it('a custom header can control the layout through the KitLayout context', async () => {
     function CustomHeader() {
       const layout = useKitLayout()
       const button = createElement('button') as HTMLButtonElement
@@ -181,7 +181,7 @@ describe('@vobs/layout', () => {
     app.destroy()
   })
 
-  it('受控状态只通过 change 回调请求外部更新', async () => {
+  it('controlled state only requests external updates through the change callback', async () => {
     const collapsed = state(false)
     const changes: boolean[] = []
     const props = {
@@ -205,7 +205,7 @@ describe('@vobs/layout', () => {
     app.destroy()
   })
 
-  it('null 插槽可以关闭默认区域，显式 backdrop 支持关闭回调', async () => {
+  it('null slots turn off default regions; an explicit backdrop supports a close callback', async () => {
     const mobileOpen = state(true)
     let closed = 0
     const container = document.createElement('main')
@@ -233,7 +233,7 @@ describe('@vobs/layout', () => {
     void mobileOpen
   })
 
-  it('独立原语接受第三方节点、嵌套菜单、面包屑和 tabs', () => {
+  it('standalone primitives accept third-party nodes, nested menus, breadcrumb and tabs', () => {
     const container = document.createElement('main')
     const externalIcon = createElement('svg')
     const selected: string[] = []
@@ -269,7 +269,7 @@ describe('@vobs/layout', () => {
     app.destroy()
   })
 
-  it('KitSidebar 将 pin:"bottom" 菜单项分流到底部菜单区，激活态与普通项一致', () => {
+  it('KitSidebar routes pin:"bottom" items to the bottom menu region with activation identical to normal items', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitSidebar, {
@@ -291,12 +291,12 @@ describe('@vobs/layout', () => {
     expect(menus[1].classList.contains('vobs-kit-menu--bottom')).toBe(true)
     expect(menus[1].querySelector('[data-menu-key="/queue"]')).toBeTruthy()
 
-    // 激活态由同一 activeKey 机制驱动，与普通项样式一致
+    // Activation is driven by the same activeKey mechanism, styled like normal items
     expect(menus[1].querySelector('[data-menu-key="/queue"]')?.classList.contains('is-active')).toBe(true)
     expect(menus[1].querySelector('[data-menu-key="/queue"] a, [data-menu-key="/queue"] button')
       ?.getAttribute('aria-current')).toBe('page')
 
-    // 渲染顺序固定：普通菜单 → pin 菜单 → footer 插槽
+    // Fixed render order: normal menu → pinned menu → footer slot
     const sidebar = container.querySelector('.vobs-kit-sidebar') as HTMLElement
     const footer = sidebar.querySelector('.vobs-kit-sidebar__footer') as HTMLElement
     const sidebarChildren = Array.from(sidebar.children)
@@ -305,7 +305,7 @@ describe('@vobs/layout', () => {
     app.destroy()
   })
 
-  it('badgePill 渲染悬浮角标：0 不渲染、折叠态保留、支持字符串透传', () => {
+  it('badgePill renders the floating pill: 0 renders nothing, kept when collapsed, strings pass through', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitSidebar, {
@@ -323,13 +323,13 @@ describe('@vobs/layout', () => {
     expect(container.querySelector('[data-menu-key="/count"] .vobs-kit-menu__badge-pill')?.textContent).toBe('3')
     expect(container.querySelector('[data-menu-key="/text"] .vobs-kit-menu__badge-pill')?.textContent).toBe('99+')
 
-    // 折叠态：普通 badge 由 CSS 隐藏，悬浮角标保留（跟随图标居中位置）
+    // Collapsed: the plain badge is hidden by CSS while the floating pill stays (following the centered icon)
     expect(container.querySelector('.vobs-kit-sidebar')?.classList.contains('is-collapsed')).toBe(true)
     expect(container.querySelectorAll('.vobs-kit-menu__badge-pill').length).toBe(2)
     app.destroy()
   })
 
-  it('badgePill 函数形态随信号变化重建角标', async () => {
+  it('badgePill functional form rebuilds the pill as the signal changes', async () => {
     const count = state(0)
     const container = document.createElement('main')
     const app = createVobs({

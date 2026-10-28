@@ -1,15 +1,18 @@
 // @vitest-environment jsdom
 /*
- * 组件返回 `null` / `undefined` / `false` **不得让 App 崩溃**。
+ * A component returning `null` / `undefined` / `false` **must not crash the App**.
  *
- * 这是生产事故的根因（Labelune 2026-09-30 发版黑屏）：
- * `createComponent` 把渲染结果直接当作 `nodeOwners` 这个 **WeakMap 的 key**，
- * 而 `null` / `undefined` 不是合法 key → 抛 `Invalid value used as weak map key`。
- * 最贵的地方是**诊断信息**：App 挂载即崩、没有任何 JS 崩溃日志、splash 兜底也失效。
+ * This is the root cause of a production incident (Labelune 2026-09-30 release black
+ * screen): `createComponent` used the render result directly as a **WeakMap key** for
+ * `nodeOwners`, but `null` / `undefined` are not legal keys → throws
+ * `Invalid value used as weak map key`. The most expensive part was the **diagnostics**:
+ * the App crashed at mount, with no JS crash log at all, and even the splash fallback failed.
  *
- * 「组件顶层条件 return null」（`cond ? <X/> : null`、`cond && <X/>`）是合法 JSX 写法。
- * 修法：归一化成**空注释节点** —— 视觉为空（与返回 null 一致），但满足 `VobsNode` 契约，
- * 于是挂载 / HMR 刷新 / 节点替换 / 水合都不需要各自特判"空"分支。
+ * "Conditional return null at the top of a component" (`cond ? <X/> : null`,
+ * `cond && <X/>`) is a legal JSX form. Fix: normalize into an **empty comment node** —
+ * visually empty (identical to returning null) while satisfying the `VobsNode` contract,
+ * so mounting / HMR refresh / node replacement / hydration don't each need a special-case
+ * "empty" branch.
  */
 import { describe, expect, it } from 'vitest'
 import { scheduler, state } from '@vobs/reactivity'
@@ -28,8 +31,8 @@ function mount(render: () => VobsNode) {
   return { host, app, cleanup: () => { app.destroy(); host.remove() } }
 }
 
-describe('组件返回空值不再崩溃', () => {
-  it('顶层 return null → 不抛、渲染为空', () => {
+describe('component empty returns no longer crash', () => {
+  it('top-level return null → no throw, renders empty', () => {
     const Cond = (props: { on: boolean }): VobsNode =>
       (props.on ? createText('yes') : null) as unknown as VobsNode
     let view: ReturnType<typeof mount> | undefined
@@ -38,7 +41,7 @@ describe('组件返回空值不再崩溃', () => {
     view!.cleanup()
   })
 
-  it('返回 undefined → 不抛、渲染为空', () => {
+  it('return undefined → no throw, renders empty', () => {
     const Blank = (): VobsNode => undefined as unknown as VobsNode
     let view: ReturnType<typeof mount> | undefined
     expect(() => { view = mount(() => createComponent(Blank, {})) }).not.toThrow()
@@ -46,7 +49,7 @@ describe('组件返回空值不再崩溃', () => {
     view!.cleanup()
   })
 
-  it('返回 false（`cond && <X/>` 形态）→ 不抛、渲染为空', () => {
+  it('return false (the `cond && <X/>` form) → no throw, renders empty', () => {
     const Maybe = (props: { on: boolean }): VobsNode =>
       (props.on && createText('yes')) as unknown as VobsNode
     let view: ReturnType<typeof mount> | undefined
@@ -55,7 +58,7 @@ describe('组件返回空值不再崩溃', () => {
     view!.cleanup()
   })
 
-  it('cond 为真时正常渲染（没有把功能一起打死）', () => {
+  it('renders normally when cond is true (the feature wasn\'t killed along with the fix)', () => {
     const Cond = (props: { on: boolean }): VobsNode =>
       (props.on ? createText('yes') : null) as unknown as VobsNode
     const view = mount(() => createComponent(Cond, { on: true }))
@@ -63,7 +66,7 @@ describe('组件返回空值不再崩溃', () => {
     view.cleanup()
   })
 
-  it('返回 null 的组件**嵌在树中间**时，兄弟节点照常渲染', () => {
+  it('siblings render normally when a null-returning component is **nested mid-tree**', () => {
     const Blank = (): VobsNode => null as unknown as VobsNode
     const view = mount(() => {
       const wrap = document.createElement('div')
@@ -76,14 +79,16 @@ describe('组件返回空值不再崩溃', () => {
     view.cleanup()
   })
 
-  it('条件工厂在 null ↔ 节点之间切换（响应式）', () => {
+  it('conditional factory switches between null ↔ node (reactive)', () => {
     const on = state(false)
     /*
-     * 注意这里用的是 `createBlock`（条件工厂）而不是 `createComponent(..., { on: on.value })`。
-     * 后者是**违反 run-once 契约**的写法：组件体与渲染只执行一次，
-     * 在外层 render 里读信号不会订阅、也不会重跑（正是文档里 B 条那条纪律）。
-     * 结构性变化必须由条件工厂或绑定 effect 承担 —— 响应式来自 `insertDynamic`
-     * 驱动的工厂，`createBlock` 只是"每次都重新建"的工厂本身。
+     * Note this uses `createBlock` (the conditional factory), not
+     * `createComponent(..., { on: on.value })`. The latter **violates the run-once
+     * contract**: the component body and render execute only once, so reading the signal
+     * in the outer render neither subscribes nor re-runs (exactly the discipline of item
+     * B in the doc). Structural changes must be carried by a conditional factory or a
+     * binding effect — the reactivity comes from the factory driven by `insertDynamic`;
+     * `createBlock` is just "the factory that rebuilds every time".
      */
     const view = mount(() => {
       const wrap = document.createElement('div')
@@ -94,21 +99,21 @@ describe('组件返回空值不再崩溃', () => {
     expect(view.host.textContent).toBe('')
     on.value = true
     settle()
-    expect(view.host.textContent, '切到节点后没有渲染出来').toBe('shown')
+    expect(view.host.textContent, 'did not render after switching to the node').toBe('shown')
     on.value = false
     settle()
-    expect(view.host.textContent, '切回 null 后没有清空').toBe('')
+    expect(view.host.textContent, 'did not clear after switching back to null').toBe('')
     view.cleanup()
   })
 
-  it('返回 null 的组件销毁时不抛错（Owner 正常释放）', () => {
+  it('destroying a null-returning component does not throw (Owner released normally)', () => {
     const Blank = (): VobsNode => null as unknown as VobsNode
     const view = mount(() => createComponent(Blank, {}))
     expect(() => view.app.destroy()).not.toThrow()
     view.host.remove()
   })
 
-  it('连续多个返回 null 的组件并存', () => {
+  it('several null-returning components coexist', () => {
     const Blank = (): VobsNode => null as unknown as VobsNode
     const view = mount(() => {
       const wrap = document.createElement('div')

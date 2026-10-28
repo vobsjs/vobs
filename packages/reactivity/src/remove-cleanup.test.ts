@@ -1,19 +1,22 @@
 // @vitest-environment jsdom
 /*
- * `Owner.removeCleanup` —— 撤销一条已注册的清理。
+ * `Owner.removeCleanup` — un-register a registered cleanup.
  *
- * 存在的理由：把"同一个逻辑资源"的清理**替换**掉，而不是每次重建都追加一条。
- * 典型场景是 `ref`：同一个 ref 对象先后绑到不同节点时，旧注册会在销毁时
- * 把新值清成 null（见 runtime/src/ref.ts 的注释与 ref-cleanup.test.ts）。
+ * Reason to exist: **replace** the cleanup of "the same logical resource" instead of
+ * appending a new entry on every rebuild. The typical case is `ref`: when the same
+ * ref object is bound to different nodes in sequence, the stale registration would
+ * reset the new value to null on dispose (see the comments in runtime/src/ref.ts and
+ * ref-cleanup.test.ts).
  *
- * 本包此前已经因为"cleanups 只增不减"吃过一次亏（runtime 的事件重绑），
- * 所以这个 API 的语义是"真的从数组里去掉"，不是标记失效。
+ * This package was burned once before by "cleanups only grow" (the runtime's event
+ * rebinding), so this API's semantics is "really remove it from the array", not
+ * mark-as-stale.
  */
 import { describe, expect, it } from 'vitest'
 import { createOwner } from './owner'
 
 describe('Owner.removeCleanup', () => {
-  it('撤销后该清理不再执行', () => {
+  it('after removal the cleanup no longer runs', () => {
     const owner = createOwner()
     const ran: string[] = []
     const a = () => ran.push('a')
@@ -25,19 +28,19 @@ describe('Owner.removeCleanup', () => {
     expect(ran).toEqual(['b'])
   })
 
-  it('真的从数组里去掉（不是标记失效）', () => {
+  it('really removed from the array (not marked stale)', () => {
     const owner = createOwner()
     const before = owner.mark().cleanups
     const cleanups = [1, 2, 3].map(n => () => { void n })
     for (const c of cleanups) owner.onDispose(c)
     expect(owner.mark().cleanups - before).toBe(3)
     owner.removeCleanup(cleanups[1]!)
-    // 计数必须下降 —— 若只是标记失效，这里仍是 3
+    // the count must drop — if it were only marked stale, it would still be 3
     expect(owner.mark().cleanups - before).toBe(2)
     owner.dispose()
   })
 
-  it('替换语义：同 key 反复注册只留最后一条', () => {
+  it('replacement semantics: repeated registration of the same key keeps only the last entry', () => {
     const owner = createOwner()
     const ran: number[] = []
     const slot: { cleanup: (() => void) | null } = { cleanup: null }
@@ -47,13 +50,13 @@ describe('Owner.removeCleanup', () => {
       slot.cleanup = () => ran.push(i)
       owner.onDispose(slot.cleanup)
     }
-    // 50 次"重绑"后仍然只占 1 个槽
+    // after 50 "rebinds" only 1 slot is still occupied
     expect(owner.mark().cleanups - before).toBe(1)
     owner.dispose()
     expect(ran).toEqual([49])
   })
 
-  it('没注册过 / 重复撤销 / 已销毁的 Owner 上调用都是安全的', () => {
+  it('never-registered / repeated removal / disposed Owner calls are all safe', () => {
     const owner = createOwner()
     const c = () => { /* noop */ }
     expect(() => owner.removeCleanup(c)).not.toThrow()
@@ -64,7 +67,7 @@ describe('Owner.removeCleanup', () => {
     expect(() => owner.removeCleanup(c)).not.toThrow()
   })
 
-  it('不影响其它清理的执行顺序（仍是逆序）', () => {
+  it('does not affect the execution order of other cleanups (still reverse order)', () => {
     const owner = createOwner()
     const order: number[] = []
     const c1 = () => order.push(1)

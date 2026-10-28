@@ -1,18 +1,23 @@
 /*
- * `vobs api` —— 框架导出的可查询索引。
+ * `vobs api` — a queryable index of the framework's exports.
  *
- * ## 为什么需要它
+ * ## Why it is needed
  *
- * LLM 报错的大头是**猜错 API 形状**。这一轮里我自己栽过三次"能力已存在却不知道"
- * （差点重复实现 `inferStateDebugName`、差点把 `LayoutChildren` 做成破坏性变更、
- * 不知道 `vobs check` 全量扫描）—— 而我有**源码访问权**。与其让模型猜，不如给它查。
+ * The biggest share of LLM errors is **guessing API shapes wrong**. This round alone I
+ * stumbled three times over "the capability existed but I didn't know" (nearly
+ * re-implementing `inferStateDebugName`, nearly turning `LayoutChildren` into a breaking
+ * change, not knowing `vobs check` scans everything) — and I have **source access**.
+ * Rather than let the model guess, let it query.
  *
- * ## 要锁住的
+ * ## What is locked in
  *
- * 1. 索引来自**已构建的 `dist/*.d.ts`**（随包发布 → 与用户实际拿到的一致、版本准确）
- * 2. **未发布的内部包不进索引**（用户装不到它们，列出来只会误导）
- * 3. 按名与按包都能查
- * 4. 已知限制是**可见**的（kind 基本解析不出来，见 api.ts 的注释）——不假装支持
+ * 1. The index comes from the **built `dist/*.d.ts`** (shipped with the package → matches
+ *    what users actually get, versions accurate)
+ * 2. **Unpublished internal packages stay out of the index** (users cannot install them;
+ *    listing them only misleads)
+ * 3. Queryable both by name and by package
+ * 4. Known limitations remain **visible** (some kinds unresolvable; see api.ts comments) —
+ *    no pretending of support
  */
 import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
@@ -21,79 +26,81 @@ import { buildApiIndex } from './api'
 const root = process.cwd()
 const hasDist = existsSync(`${root}/packages/runtime/dist`)
 
-describe.skipIf(!hasDist)('vobs api 索引', () => {
+describe.skipIf(!hasDist)('vobs api index', () => {
   const index = buildApiIndex(root)
 
-  it('索引非空且覆盖多个包', () => {
+  it('the index is non-empty and covers multiple packages', () => {
     expect(index.length).toBeGreaterThan(200)
     expect(new Set(index.map(item => item.package)).size).toBeGreaterThan(10)
   })
 
-  it('**本轮落地的 API 都能查到**（漏一个就等于那条能力仍不可发现）', () => {
+  it('**every API landed this round is findable** (one miss means that capability stays undiscoverable)', () => {
     const names = new Set(index.map(item => item.name))
     for (const name of ['state', 'effect', 'untrack', 'on', 'Show', 'ClientOnly', 'onMount', 'onDestroy', 'applyClassList', 'parseNumber']) {
-      expect(names.has(name), `${name} 查不到 —— 能力仍不可发现`).toBe(true)
+      expect(names.has(name), `${name} not found — the capability is still undiscoverable`).toBe(true)
     }
   })
 
-  it('能查到某一个具体符号在哪个包（最常见的猜错）', () => {
+  it('can find which package a specific symbol lives in (the most common wrong guess)', () => {
     const entry = index.find(item => item.name === 'applyClassList')
     expect(entry?.package).toBe('@vobs/runtime')
   })
 
-  it('**未发布的内部包不进索引**（列出来只会误导）', () => {
+  it('**unpublished internal packages stay out of the index** (listing them only misleads)', () => {
     for (const pkg of ['dsh-plugin-vobs', 'dsh-plugin-vobs-console']) {
-      expect(index.some(item => item.package === pkg), `${pkg} 是 Git 安装的插件包，不该出现在 npm 索引里`).toBe(false)
+      expect(index.some(item => item.package === pkg), `${pkg} is a Git-installed plugin package; it must not appear in the npm index`).toBe(false)
     }
   })
 
-  it('同一个包 + 同名的导出只有一条（去重）', () => {
+  it('one entry per package + name pair (deduplicated)', () => {
     const keys = index.map(item => `${item.package}|${item.name}`)
-    expect(new Set(keys).size, '有重复项').toBe(keys.length)
+    expect(new Set(keys).size, 'duplicates found').toBe(keys.length)
   })
 
-  it('**种类解析覆盖率不能退回去** —— 曾经 1353/1355 全是 unknown', () => {
+  it('**kind-resolution coverage must not regress** — it was once 1353/1355 all unknown', () => {
     /*
-     * 演进：单遍 → 1353/1355 全 unknown；两遍法 → 196/1359（14%）；
-     * 补上**别名映射**与**跨包种类回退** → 10/1359（0.7%）。
+     * Evolution: single pass → 1353/1355 all unknown; two-pass → 196/1359 (14%);
+     * adding **alias mapping** and **cross-package kind fallback** → 10/1359 (0.7%).
      *
-     * 阈值定 0.9（当前 0.993）—— 守的是"那两条修法还在"，而不是精确值。
-     * 退回两遍法（0.86）或单遍（0.001）都会立刻红。
+     * The threshold is 0.9 (currently 0.993) — it guards "those two fixes still exist",
+     * not the exact value. Regressing to two-pass (0.86) or single-pass (0.001) turns red
+     * immediately.
      */
     const named = index.filter(item => item.kind !== 'unknown').length
     const ratio = named / index.length
-    expect(ratio, `种类解析率只有 ${Math.round(ratio * 100)}% —— 别名映射或跨包回退是不是被去掉了？`)
+    expect(ratio, `kind resolution rate is only ${Math.round(ratio * 100)}% — was the alias mapping or the cross-package fallback removed?`)
       .toBeGreaterThan(0.9)
   })
 
-  it('**跨包再导出**的名字能拿到种类 —— 这是 14% → 0.7% 的一半原因', () => {
+  it('**cross-package re-exported** names still get kinds — half of the 14% → 0.7% improvement', () => {
     /*
-     * `@vobs/vobs` 是一整行再导出列表（`export { AsyncBoundary, … }`），
-     * 而这些名字声明在**兄弟包**（@vobs/dom / @vobs/kit）的 dist 里。
-     * 按包收集的映射查不到 → 必须回退到全局同名声明。
+     * `@vobs/vobs` is one long re-export line (`export { AsyncBoundary, … }`), while those
+     * names are declared in **sibling packages** (@vobs/dom / @vobs/kit) dists. A
+     * per-package mapping cannot find them → must fall back to the global same-name map.
      */
     const entry = index.find(item => item.name === 'AsyncBoundary' && item.package === '@vobs/vobs')
-    expect(entry, 'AsyncBoundary 应在 @vobs/vobs 的索引里').toBeDefined()
-    expect(entry!.kind, '跨包再导出的名字不该是 unknown').not.toBe('unknown')
+    expect(entry, 'AsyncBoundary should be in the @vobs/vobs index').toBeDefined()
+    expect(entry!.kind, 'a cross-package re-exported name must not be unknown').not.toBe('unknown')
   })
 
-  it('**bundler 改名**（`index_X as X`）的名字也能拿到种类', () => {
+  it('**bundler-renamed** names (`index_X as X`) also get kinds', () => {
     /*
-     * 打包器会把声明改名为 `index_AlipaySdkConfig`，再 `export { index_… as AlipaySdkConfig }`。
-     * 导出名与声明名不同 → 必须靠别名映射走两步。
+     * The bundler renames the declaration to `index_AlipaySdkConfig`, then
+     * `export { index_… as AlipaySdkConfig }`. The export name differs from the declaration
+     * name → the alias mapping must bridge the two hops.
      */
     const entry = index.find(item => item.name === 'AlipaySdkConfig' && item.package === '@vobs/payment')
-    expect(entry, 'AlipaySdkConfig 应在 @vobs/payment 的索引里').toBeDefined()
-    expect(entry!.kind, '经别名导出的名字不该是 unknown').not.toBe('unknown')
+    expect(entry, 'AlipaySdkConfig should be in the @vobs/payment index').toBeDefined()
+    expect(entry!.kind, 'an alias-exported name must not be unknown').not.toBe('unknown')
   })
 
-  it('已知符号的种类正确（不是"解析出来但错了"）', () => {
+  it('known symbols have the correct kinds (not "resolved but wrong")', () => {
     const kinds = new Map(index.map(item => [item.name, item.kind]))
-    expect(kinds.get('state'), 'state 应该是函数').toBe('function')
-    expect(kinds.get('onMount'), 'onMount 应该是函数').toBe('function')
+    expect(kinds.get('state'), 'state should be a function').toBe('function')
+    expect(kinds.get('onMount'), 'onMount should be a function').toBe('function')
   })
 
-  it('每条都有包名与名字', () => {
+  it('every entry has a package name and a name', () => {
     for (const item of index) {
       expect(item.package.startsWith('@vobs/')).toBe(true)
       expect(item.name).toMatch(/^[A-Za-z_$][\w$]*$/u)

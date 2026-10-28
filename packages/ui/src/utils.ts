@@ -135,15 +135,20 @@ export function bindAttributeValue(
 }
 
 /**
- * 本层为每个 (node, event) 注册过的处理链。
+ * The listener chain registered per (node, event) in this layer.
  *
- * **为什么需要它**：runtime 的 `addEventListener` 每个 `(node, event)` 只保留一个槽
- * （后注册顶掉前一个，那是有意的设计）。而表单组件天然要注册**两个**：`bind` 的写回，
- * 以及用户传的 `onInput`/`onChange` —— 后者的 `listen` 会把前者的写回顶掉。
- * 实测（`Input`/`Textarea`/`Checkbox`/`Switch` 传 `bind`）输入后信号**永远不变、零报错**；
- * 全仓库唯一的 `bind` 测试又恰好落在不走这条路径的 Combobox 上，所以一直没被发现。
+ * **Why it's needed**: runtime's `addEventListener` keeps only one slot per
+ * `(node, event)` (a later registration replaces the earlier one — that's by
+ * design). Form components naturally need **two**: the `bind` write-back and
+ * the user-passed `onInput`/`onChange` — the latter's `listen` would clobber
+ * the former's write-back. Verified (on `Input`/`Textarea`/`Checkbox`/`Switch`
+ * with `bind`): after typing, the signal **never changed and there were zero
+ * errors**; the only `bind` test in the repo happened to live on Combobox,
+ * which doesn't go through this path, so it stayed hidden.
  *
- * 修法是在本层做组合，而不是改 runtime 的槽语义（那会破坏"重新绑定会替换旧监听"的既有行为）。
+ * The fix composes at this layer instead of changing runtime's slot semantics
+ * (that would break the existing "rebinding replaces the old listener"
+ * behavior).
  */
 const listenerChain = new WeakMap<Element, Map<string, (event: Event) => void>>()
 

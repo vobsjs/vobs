@@ -1,21 +1,24 @@
 import { getCurrentOwner, onDispose, type Owner } from '@vobs/reactivity'
 
 /**
- * 组件/作用域**卸载前**跑一次清理（与 `onMount` 配成一套）。
+ * Runs cleanup once **before** the component/scope unmounts (paired with `onMount`).
  *
- * 外部踩坑文档 D 条里反复提到"定时器/监听**没有正式的清理位置**，清理只能靠约定" ——
- * 那说的其实就是这个 API 的缺失。这里把它补成**标准名字**。
+ * External pitfall doc item D repeatedly said "timers/listeners **have no official
+ * cleanup location**; cleanup is by convention only" — that is precisely the absence
+ * of this API. This fills it in with a **standard name**.
  *
- * ## 与 `onDispose` 的关系（重要，别当成两个东西）
+ * ## Relationship with `onDispose` (important — not two things)
  *
- * **它们做的是同一件事** —— `onDestroy` 就是当前 Owner 上的清理注册。
- * `onDispose` 来自 `@vobs/reactivity`（`@vobs/vobs` 重导出了整个反应式层），
- * 能力一直都在；缺的是这个名字，以及"它该在哪用"的说明。
+ * **They do the same thing** — `onDestroy` is exactly the cleanup registration on the
+ * current Owner. `onDispose` comes from `@vobs/reactivity` (`@vobs/vobs` re-exports the
+ * whole reactivity layer); the capability was always there. What was missing is this
+ * name, and documentation about where it belongs.
  *
- * 之所以用 `onDestroy` 作为**面向生命周期**的名字：它与 `onMount` 成对，
- * 而 `onDispose` 更像"Owner 被销毁"的底层原语 —— 两者都能用，行为一致。
+ * `onDestroy` is used as the **lifecycle-facing** name because it pairs with `onMount`,
+ * while `onDispose` reads like the lower-level "Owner was disposed" primitive — either
+ * works, behavior is identical.
  *
- * ## 典型用法（D 条那个 hero 轮播）
+ * ## Typical usage (the hero carousel from item D)
  *
  * ```ts
  * let timer: ReturnType<typeof setInterval> | undefined
@@ -27,69 +30,78 @@ import { getCurrentOwner, onDispose, type Owner } from '@vobs/reactivity'
  * })
  * ```
  *
- * 注意 `onMount` 里创建的定时器**必须在 `onDestroy` 清掉**：`onMount` 的回调
- * 只在客户端跑（服务端没有 `document`），所以构建进程里不会留下定时器；
- * 但客户端卸载时不清就会泄漏。
+ * Note that timers created inside `onMount` **must be cleared in `onDestroy`**:
+ * the `onMount` callback only runs on the client (no `document` on the server), so the
+ * build process leaves no timers behind; but if the client never clears them on
+ * unmount, they leak.
  *
- * ## 语义
+ * ## Semantics
  *
- * - 在**当前 Owner** 上注册；组件卸载 / `app.destroy()` / 作用域释放时执行
- * - 与 `onDispose` 一样：清理**逆序**执行，且**单个清理抛错不会中断其余清理**
- *   （`owner.ts` 做了逐个隔离）
- * - 不在任何 Owner 下调用**抛出**（不静默丢弃 —— 那会让"清理没跑"变成最难查的泄漏）
+ * - Registers on the **current Owner**; runs on component unmount / `app.destroy()` /
+ *   scope disposal
+ * - Like `onDispose`: cleanups run in **reverse order**, and **one failing cleanup does
+ *   not stop the rest** (`owner.ts` isolates them one by one)
+ * - Calling outside any Owner **throws** (not silently dropped — that would turn
+ *   "cleanup never ran" into the hardest-to-trace leak)
  */
 export function onDestroy(callback: () => void): void {
   if (typeof callback !== 'function') {
-    throw new Error('Vobs: onDestroy 需要一个函数')
+    throw new Error('Vobs: onDestroy requires a function')
   }
   if (!getCurrentOwner()) {
     throw new Error(
-      'Vobs onDestroy: 当前不在任何组件/作用域内，清理不会被执行。'
-      + '请在组件体内或 effect/owner.run 里调用。'
+      'Vobs onDestroy: not currently inside any component/scope, so the cleanup would never run. '
+      + 'Call it inside a component body or within effect/owner.run.'
     )
   }
   onDispose(callback)
 }
 
 /**
- * 组件/作用域**挂载之后**跑一次。
+ * Runs once **after** the component/scope mounts.
  *
- * 为什么需要它：定时器、`matchMedia`、`localStorage`、量元素尺寸这些只能在客户端
- * 做的事，组件体里**没有一个安全的位置** —— 业务只能手写
- * `typeof window !== 'undefined'` 守卫，或者在组件体里直接调用
- * （于是 SSG/预渲染阶段就炸或泄漏）。这是生命周期能力的正式入口。
+ * Why it exists: timers, `matchMedia`, `localStorage`, measuring element sizes — the
+ * things that can only happen on the client — have **no safe place** in a component
+ * body; apps had to hand-write `typeof window !== 'undefined'` guards or call directly
+ * in the component body (and blow up or leak during SSG/prerender). This is the
+ * official entry point for lifecycle capabilities.
  *
- * 语义（与 run-once 一致，别按 React 的 `useEffect` 直觉理解）：
+ * Semantics (consistent with run-once; don't read it with React `useEffect` intuition):
  *
- * - 回调在**当前挂载同步过程结束之后**跑一次（用微任务），此时 DOM 已在文档中，
- *   所以可以量尺寸、focus、读 `matchMedia`
- * - 组件**在此之前就被卸载**时回调不会跑（检查 Owner）
- * - 不在任何 Owner 下调用时**立刻执行**（例如模块顶层或普通函数里）——
- *   不静默丢弃，因为"没跑"是最难查的那种失败
- * - 没有 `document`（Node 端 SSR）时**不执行**：预渲染阶段没有浏览器 API 可用
+ * - The callback runs once **after the current mount's synchronous work finishes**
+ *   (via microtask), at which point the DOM is in the document — so measuring,
+ *   focus, and `matchMedia` all work
+ * - If the component **was unmounted before then**, the callback does not run (Owner check)
+ * - Called outside any Owner, it **executes immediately** (e.g. module top level or a
+ *   plain function) — not silently dropped, because "didn't run" is the hardest
+ *   failure to trace
+ * - Without `document` (Node-side SSR) it **does not run**: no browser APIs are
+ *   available during prerender
  *
- * ⚠️ 如实说明边界：SSR 判定用的是「有没有 `document`」。若在 **jsdom 这类带 DOM 的环境里**
- * 做预渲染，回调仍会执行 —— 那种环境下"是不是预渲染"从运行时无法可靠区分。
- * 需要严格客户端守卫的场景，请在回调内部再判一次，或用 `@vobs/ssr` 的客户端分支。
+ * ⚠️ Honest boundary note: SSR detection is "is there a `document`". If you prerender
+ * **in a DOM-carrying environment like jsdom**, the callback still runs — in such an
+ * environment "is this prerender" cannot be reliably distinguished at runtime.
+ * For scenarios needing a strict client guard, re-check inside the callback or use
+ * the client branch of `@vobs/ssr`.
  *
- * 返回一个撤销函数：在回调执行前调用它，回调不会跑。
+ * Returns a cancel function: call it before the callback executes and it never runs.
  */
 export function onMount(callback: () => void): () => void {
   if (typeof callback !== 'function') {
-    throw new Error('Vobs: onMount 需要一个函数')
+    throw new Error('Vobs: onMount requires a function')
   }
   const owner: Owner | null = getCurrentOwner()
 
-  // 没有 Owner（模块顶层 / 普通函数）：立刻执行，不静默丢弃
+  // No Owner (module top level / plain function): execute immediately, not silently dropped
   if (!owner) {
     runIfClient(callback)
-    return () => { /* 已经跑过，无需撤销 */ }
+    return () => { /* already ran, nothing to cancel */ }
   }
 
   let cancelled = false
   queueMicrotask(() => {
     if (cancelled) return
-    // 组件在这之前被卸载 → 不执行（文档 D 条里"泄漏"的那一半）
+    // The component was unmounted before this → do not run (the "leak" half of doc item D)
     if (owner.disposed) return
     runIfClient(callback)
   })
@@ -99,8 +111,9 @@ export function onMount(callback: () => void): () => void {
 
 function runIfClient(callback: () => void): void {
   /*
-   * 没有 document 就是 Node 端（预渲染）—— 此时浏览器 API 不可用，
-   * 执行回调只会抛错或泄漏定时器。跳过是这里的正确行为。
+   * No document means Node side (prerender) — browser APIs are unavailable there,
+   * and running the callback would only throw or leak timers. Skipping is the
+   * correct behavior here.
    */
   if (typeof document === 'undefined') return
   callback()

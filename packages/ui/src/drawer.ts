@@ -66,11 +66,13 @@ export function Drawer(props: DrawerProps = {}): VobsNode {
   setAttribute(body, 'class', 'vui-drawer__body')
 
   /*
-   * 与 Dialog 同样的问题、同样的修法：声明了 `aria-modal="true"` 却没有焦点管理
-   * （focus trap 早就实现好并导出，只是没有组件用）。只在 modal 时陷阱；
-   * 不传 onEscape —— 下面 root 上的 Escape 监听已经在处理，两处都接会重复 emitClose。
+   * Same problem as Dialog, same fix: `aria-modal="true"` was declared without
+   * focus management (the focus trap was implemented and exported long ago,
+   * just never used by a component). Trap only when modal; no onEscape — the
+   * Escape listener on root below already handles it, and wiring both would
+   * emitClose twice.
    */
-  // createElement 返回 Element，但 DOM 渲染器产出的必然是 HTMLElement；trap 需要 .focus()。
+  // createElement returns Element, but the DOM renderer always produces an HTMLElement; the trap needs .focus().
   const trap = createFocusTrap(surface as HTMLElement)
   effect(() => {
     const open = readProp(props, 'open', false)

@@ -37,7 +37,7 @@ export interface EditorTabsProps extends VuiCommonProps {
   readonly closeIcon?: VuiChildren
   readonly actions?: VuiChildren
   readonly onChange?: (id: string, event: MouseEvent | KeyboardEvent) => void
-  /** 关闭按钮的可读标签（会带上标签页标题）。默认 Close <标题>，需要本地化时传入。 */
+  /** Readable label for close buttons (the tab title is appended). Defaults to Close <title>; pass one to localize. */
   readonly closeLabel?: (tabLabel: string) => string
   readonly onClose?: (id: string, event: MouseEvent) => void
 }
@@ -56,7 +56,7 @@ export function EditorTabs(props: EditorTabsProps = {}): VobsNode {
     'onClose'
   ])
   bindUserStyle(root, props)
-  // 行的容器此前没有任何角色 —— 行上有 role="tab"，屏幕阅读器却找不到它们所属的 tablist。
+  // The row container had no role at all before — rows carried role="tab" while screen readers couldn't find their tablist.
   setAttribute(root, 'role', 'tablist')
   insertDynamic(root, null, () => createEditorTabs(props, internalValue))
   if (hasProp(props, 'children')) mountSlot(root, props, 'children')
@@ -98,7 +98,7 @@ function createEditorTab(
   const root = createElement('span')
   setAttribute(root, 'class', `vui-editortab${active ? ' is-active' : ''}`)
   setAttribute(root, 'role', 'tab')
-  // 供方向键切换后定位新行（见 focusEditorTab）
+  // Lets arrow-key navigation locate the new row (see focusEditorTab)
   setAttribute(root, 'data-editor-tab-id', tab.id)
   setAttribute(root, 'aria-selected', active ? 'true' : 'false')
   setAttribute(root, 'tabindex', active ? '0' : '-1')
@@ -120,7 +120,7 @@ function createEditorTab(
     const close = createElement('button')
     setAttribute(close, 'class', 'close')
     setAttribute(close, 'type', 'button')
-    // 关闭按钮标签可本地化（默认 Close <标题>；原来写死英文）
+    // The close button label is localizable (default Close <title>; this used to be hardcoded English)
     const closeLabel = readProp<((tabLabel: string) => string) | undefined>(props, 'closeLabel', undefined)
     setAttribute(close, 'aria-label', closeLabel ? closeLabel(tab.label) : `Close ${tab.label}`)
     const closeIcon = tab.closeIcon ?? readProp<VuiChildren | undefined>(props, 'closeIcon', undefined)
@@ -151,13 +151,17 @@ function createEditorTab(
     const next = adjacentTab(tabs, tab.id, direction)
     if (next) {
       /*
-       * 焦点要跟着走。
+       * Focus must follow.
        *
-       * 原来这里只改选中、不移动焦点 —— 于是焦点停在旧行上，而旧行的 tabindex 因为选中变化
-       * 已经变成 -1：DOM 焦点与 aria-selected 分家，键盘用户下一步按方向键仍从旧位置出发。
+       * This used to only change selection without moving focus — so focus
+       * stayed on the old row whose tabindex had already become -1 due to the
+       * selection change: DOM focus and aria-selected split apart, and the
+       * keyboard user's next arrow key still started from the old position.
        *
-       * 容器必须在 **selectTab 之前**抓住：选中会触发标签行重建，届时这一行已从 DOM 摘掉，
-       * 之后再取 parentElement 得到的是 null（实测踩到：焦点落在游离节点上，等于没动）。
+       * The container must be captured **before selectTab**: selection triggers
+       * a rebuild of the tab row, after which this row has been removed from
+       * the DOM and parentElement returns null (hit in practice: focus landed
+       * on a detached node, i.e. nothing moved).
        */
       const container = root.parentElement
       selectTab(next.id, props, internalValue, keyboardEvent)
@@ -179,13 +183,16 @@ function selectTab(
 }
 
 /**
- * 把焦点移到目标标签行。
+ * Moves focus to the target tab row.
  *
- * 必须在选中触发的重渲染**之后**执行，并重新查一次节点：行的 `tabindex` 是按选中状态在创建时
- * 写死的，所以选中一变整条标签行会重建 —— 对重建前的节点 `focus()` 会被紧接着的刷新丢掉
- * （Tabs 那边实测踩过这个坑，这里同一套做法）。
+ * Must run **after** the selection-triggered rerender, and re-query the node:
+ * a row's `tabindex` is written at creation time based on the selected state,
+ * so a selection change rebuilds the whole tab row — calling focus() on the
+ * pre-rebuild node gets thrown away by the immediately following refresh
+ * (Tabs hit this pit in practice; the same approach is used here).
  *
- * 用属性比较而不是拼选择器：`tab.id` 是使用方给的，含引号时 `querySelector` 会直接抛异常。
+ * Compares attributes instead of building a selector: `tab.id` comes from the
+ * consumer, and `querySelector` throws outright when it contains quotes.
  */
 function focusEditorTab(container: Element, id: string): void {
   queueMicrotask(() => {

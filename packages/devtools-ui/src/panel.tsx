@@ -87,14 +87,16 @@ function readDevToolsSnapshotWithRouter(api: DevToolsAPI | null, router: Router 
 
 export function DevToolsPanel(props: DevToolsPanelProps = {}) {
   /*
-   * 先给自己的 owner 起一个 `DevTools*` 名字。
+   * Give this panel's own owner a `DevTools*` name first.
    *
-   * devtools 判定"这是调试台自己"的唯一依据就是祖先 owner 名字以 `DevTools` 开头
-   * （devtools/src/index.ts 的 isInternalOwnerId → debugComponentName(name).startsWith('DevTools')）。
-   * 面板从来没命名过，于是它下面那 19 个局部 `state()` 与副作用全被当成**应用数据**记录，
-   * 再喂回它自己的清单 —— 面板观测自己：空 devtools 上每来一次广播就 updates +1 / effects +1 /
-   * DOM +80（实测 6 轮 93→521 节点，50 条更新时单次刷新 546ms）。
-   * 命名之后它们全部被 devtools 视为内部，既不再显示也不再触发刷新。
+   * The only basis on which devtools identifies "the devtools itself" is an ancestor owner name
+   * starting with `DevTools` (isInternalOwnerId in devtools/src/index.ts →
+   * debugComponentName(name).startsWith('DevTools')). The panel was never named, so its 19 local
+   * `state()`s and side effects were all recorded as **app data** and fed back into its own
+   * listings — the panel observing itself: on an empty devtools, every broadcast bumped
+   * updates +1 / effects +1 / DOM +80 (measured: 6 rounds took nodes 93→521; a single refresh
+   * cost 546ms with 50 updates). After naming, devtools treats them all as internal: no longer
+   * displayed and no longer triggering refreshes.
    */
   const panelOwner = getCurrentOwner()
   if (panelOwner) setOwnerDebugName(panelOwner, 'DevToolsPanel')
@@ -161,8 +163,9 @@ export function DevToolsPanel(props: DevToolsPanelProps = {}) {
 }
 
 export function DevToolsToolbar(props: { readonly api: DevToolsAPI | null; readonly query: { value: string }; readonly maximized?: boolean; readonly onToggleMaximize?: () => void }): VobsNode {
-  // 同 DevToolsPanel/DevToolsWidget：devtools 只靠"祖先 owner 名字以 DevTools 开头"判定内部，
-  // 所以这个**公开导出**单独挂载时也要命名，否则它自己的 refreshCount 等信号会被当应用数据记录。
+  // Same as DevToolsPanel/DevToolsWidget: devtools identifies "internal" solely by ancestor
+  // owner names starting with DevTools, so this **public export** must also be named when
+  // mounted standalone — otherwise its own refreshCount etc. get recorded as app data.
   const toolbarOwner = getCurrentOwner()
   if (toolbarOwner) setOwnerDebugName(toolbarOwner, 'DevToolsToolbar')
 
@@ -1119,10 +1122,12 @@ function renderEffectRow(
   if (effect.lastUpdateId) appendText(row, `last update ${effect.lastUpdateId}`, 'vobs-devtools-code')
   if (effect.lastError) appendText(row, `${effect.lastError.name}: ${effect.lastError.message}`, 'vobs-devtools-error')
   /*
-   * 依赖边视图（元原则：运行时依赖图要有显式出口）。`effect.dependencies` 是
-   * devtools 内核按 `dependencyTracked/Untracked` 实时维护的**当前订阅集** ——
-   * 分支未走时依赖边不存在，所以这份清单随执行路径动态收缩扩张。
-   * 展开即见「这一刻实际连了哪几条边」，这正是文本里看不到的部分。
+   * Dependency-edge view (meta principle: the runtime dependency graph needs an explicit
+   * outlet). `effect.dependencies` is the **current subscription set** maintained live by the
+   * devtools core via `dependencyTracked/Untracked` — a dependency edge does not exist while a
+   * branch is not taken, so this list shrinks and grows dynamically with the execution path.
+   * Expanding shows "which edges are actually connected at this moment" — exactly the part the
+   * text cannot show.
    */
   const liveDependencies = effect.dependencies
     .map(id => signalsById.get(id))

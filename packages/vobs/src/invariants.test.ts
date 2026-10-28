@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 /*
- * vobs（应用层）核心不变量检查。
+ * Core invariant checks for vobs (the application layer).
  *
- *   I1 run-once      —— 组件函数必须**只执行一次**；状态变化不得让它重跑
- *   I2 生命周期      —— destroy 必须释放 owner/effect/插件清理；失败路径不得留下"半挂载"状态
- *   I4 编译期/运行期 —— 应用层与渲染器/owner 的契约一致
+ *   I1 run-once      — component functions must **execute exactly once**; state changes
+ *                      must never re-run them
+ *   I2 lifecycle     — destroy must release owner/effect/plugin cleanups; failure paths
+ *                      must not leave a "half-mounted" state
+ *   I4 compile/runtime — the application layer's contract with the renderer/owner holds
  *
- * 判据一律是可观察行为（组件体执行次数、effect 还跑不跑、DOM 结果）。
+ * Criteria are always observable behavior (component body execution count, whether
+ * effects still run, DOM results).
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { effect, state } from '@vobs/reactivity'
@@ -21,7 +24,7 @@ const flush = async (): Promise<void> => {
 
 let apps: Array<{ destroy(): void }> = []
 afterEach(() => {
-  for (const app of apps) { try { app.destroy() } catch { /* 已销毁 */ } }
+  for (const app of apps) { try { app.destroy() } catch { /* already destroyed */ } }
   apps = []
   document.body.innerHTML = ''
 })
@@ -32,8 +35,8 @@ function makeContainer(): HTMLElement {
   return el
 }
 
-describe('I1 · 组件函数只执行一次（run-once 是核心不变量）', () => {
-  it('状态变化不得让组件体重跑', async () => {
+describe('I1 · component functions execute exactly once (run-once is the core invariant)', () => {
+  it('state changes must not re-run the component body', async () => {
     let componentRuns = 0
     const counter = state(0)
 
@@ -56,11 +59,11 @@ describe('I1 · 组件函数只执行一次（run-once 是核心不变量）', (
     await flush()
     app.update()
 
-    // 组件体只执行一次；值的变化由绑定负责，不是靠重跑组件
+    // The component body executes once; value updates are handled by bindings, not by re-running the component
     expect(componentRuns).toBe(1)
   })
 
-  it('mount 之后重复 mount 不得让组件体再跑一次', () => {
+  it('mounting again after mount must not run the component body again', () => {
     let componentRuns = 0
     const app = createVobs({
       render: () => {
@@ -73,16 +76,17 @@ describe('I1 · 组件函数只执行一次（run-once 是核心不变量）', (
     const b = makeContainer()
     app.mount(a)
     expect(componentRuns).toBe(1)
-    app.mount(b)                 // 已挂载 → 应当 no-op
+    app.mount(b)                 // already mounted → should be a no-op
     expect(componentRuns).toBe(1)
   })
 })
 
-describe('I2 · destroy 必须释放 owner 与 effect', () => {
-  it('destroy 后组件内建立的 effect 不得再运行', async () => {
+describe('I2 · destroy must release owner and effects', () => {
+  it('effects created inside a component must not run after destroy', async () => {
     /*
-     * 用 `createComponent` 让 effect 建立在**组件自己的 owner** 下 —— 这才是真实形态
-     * （直接用 createVobs 的 render 不会建立组件 owner，那样测不到 destroy 的级联）。
+     * `createComponent` is used so the effect is created under the **component's own
+     * owner** — that is the real shape (createVobs' render alone does not create a
+     * component owner, which wouldn't exercise destroy's cascade).
      */
     const value = state(0)
     let componentRuns = 0
@@ -108,11 +112,11 @@ describe('I2 · destroy 必须释放 owner 与 effect', () => {
     const before = effectRuns
     value.value = 2
     await flush()
-    // 组件 owner 随 destroy 释放 → effect 必须解绑
+    // The component owner is disposed with destroy → the effect must be unbound
     expect(effectRuns).toBe(before)
   })
 
-  it('destroy 必须清空容器', () => {
+  it('destroy must clear the container', () => {
     const app = createVobs({ render: () => document.createElement('section') as never })
     apps.push(app)
     const container = makeContainer()
@@ -122,7 +126,7 @@ describe('I2 · destroy 必须释放 owner 与 effect', () => {
     expect(container.children.length).toBe(0)
   })
 
-  it('destroy 是幂等的，不重复跑清理', () => {
+  it('destroy is idempotent and does not run cleanups twice', () => {
     let cleans = 0
     const app = createVobs({ render: () => document.createElement('div') as never })
     apps.push(app)
@@ -133,18 +137,18 @@ describe('I2 · destroy 必须释放 owner 与 effect', () => {
     expect(cleans).toBe(1)
   })
 
-  it('插件清理在组件树释放之后执行（顺序契约）', () => {
+  it('plugin cleanups run after the component tree is released (ordering contract)', () => {
     const order: string[] = []
     const app = createVobs({ render: () => document.createElement('div') as never })
     apps.push(app)
     app.use({ name: 'p1', install: () => () => { order.push('plugin-cleanup') } })
     app.mount(makeContainer())
     app.destroy()
-    // 目前实现：先插件清理，再 rootOwner.dispose
+    // Current implementation: plugin cleanups first, then rootOwner.dispose
     expect(order).toEqual(['plugin-cleanup'])
   })
 
-  it('destroy 之后不得再 mount / update / use', () => {
+  it('after destroy, mount / update / use must all be rejected', () => {
     const app = createVobs({ render: () => document.createElement('div') as never })
     app.destroy()
     expect(() => app.mount(makeContainer())).toThrow()
@@ -153,8 +157,8 @@ describe('I2 · destroy 必须释放 owner 与 effect', () => {
   })
 })
 
-describe('I2 · 挂载失败路径不得留下半挂载状态', () => {
-  it('render 抛错后：app.destroyed 为真、容器被清空、重复 destroy 安全', () => {
+describe('I2 · failed mounts must not leave a half-mounted state', () => {
+  it('after render throws: app.destroyed is true, the container is cleared, repeated destroy is safe', () => {
     const app = createVobs({
       render: () => { throw new Error('render boom') }
     })
@@ -167,7 +171,7 @@ describe('I2 · 挂载失败路径不得留下半挂载状态', () => {
     expect(() => app.destroy()).not.toThrow()
   })
 
-  it('render 抛错后容器**不得**残留被渲染了一半的节点', () => {
+  it('after render throws the container must **not** retain half-rendered nodes', () => {
     const app = createVobs({
       render: () => {
         const el = document.createElement('div')

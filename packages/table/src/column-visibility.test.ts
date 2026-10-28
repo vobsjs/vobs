@@ -9,11 +9,15 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * 列的可见性只影响**显示**，不该改变数据语义。
+ * Column visibility only affects **display** and must not change data
+ * semantics.
  *
- * 原来 `resolvePage` 把 `visibleColumns(props)` 传给 `applyFiltersAndSort`：把某个可筛选列隐藏掉，
- * 它的筛选条件就静默不再生效 —— 实测把被筛选的那列隐藏后行数从 2 变回 3，而查询条件里明明还在。
- * 排序同理（按隐藏列排序会被静默忽略）。现在筛选/排序走全部列。
+ * `resolvePage` used to pass `visibleColumns(props)` to `applyFiltersAndSort`:
+ * hiding a filterable column silently stopped its filter from applying —
+ * verified that hiding the filtered column took the row count from 2 back to 3
+ * while the query condition was still right there. Same for sorting (sorting
+ * by a hidden column was silently ignored). Filter/sort now run over all
+ * columns.
  */
 interface Row { id: number; name: string; role: string }
 
@@ -40,26 +44,26 @@ async function mountTable(extra: Record<string, unknown> = {}) {
   return { host, bodyRows, cleanup: () => { app.destroy(); host.remove() } }
 }
 
-describe('KitDataTable 列可见性', () => {
-  it('隐藏被筛选的列后，筛选条件仍然生效', async () => {
+describe('KitDataTable column visibility', () => {
+  it('the filter still applies after hiding the filtered column', async () => {
     const visible = await mountTable({ filters: { name: 'Ad' } })
     expect(visible.bodyRows()).toHaveLength(1)
     expect(visible.bodyRows()[0]?.textContent).toContain('Ada')
     visible.cleanup()
 
-    // 把 name 列隐藏：行数不该变回 2（数据语义与显示无关）
+    // Hide the name column: the row count must not go back to 2 (data semantics are independent of display)
     const hidden = await mountTable({ filters: { name: 'Ad' }, visibleColumnIds: ['role'] })
     expect(hidden.bodyRows()).toHaveLength(1)
-    expect(hidden.bodyRows()[0]?.textContent).toContain('Admin')   // 只剩 role 单元格
+    expect(hidden.bodyRows()[0]?.textContent).toContain('Admin')   // only the role cell remains
     hidden.cleanup()
   })
 
-  it('按隐藏列排序时，顺序仍然生效', async () => {
+  it('sorting by a hidden column still takes effect', async () => {
     const { bodyRows, cleanup } = await mountTable({
       sort: { columnId: 'name', direction: 'desc' },
       visibleColumnIds: ['role']
     })
-    // 屏幕上看不到 name，但顺序必须按它排（Zoe > Lin > Ada）
+    // name is invisible on screen, but the order must follow it (Zoe > Lin > Ada)
     expect(bodyRows().map(row => row.textContent)).toEqual(['Viewer', 'Viewer', 'Admin'])
     cleanup()
   })

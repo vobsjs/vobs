@@ -8,9 +8,10 @@
  * render width, neither of which is reliably knowable, so it drifts as the
  * window resizes. Fixed indent is stable across any terminal size.
  *
- * ⚠️ 这里**只放品牌字形，不放版本号**。版本号曾以数学粗体常量 `𝘃𝟭.𝟬` 的形式写死在这里，
- * 而它就是 `--version` 的全部输出 —— 打印一个和 package.json 不符的版本比不打印更糟。
- * 真实版本统一由 `version.ts` 的 `cliVersion()` 提供。
+ * ⚠️ Only brand glyphs live here, **never the version number**. The version was once
+ * hard-coded here as the mathematical-bold constant `𝘃𝟭.𝟬`, and that was the entire
+ * `--version` output — printing a version that disagrees with package.json is worse than
+ * printing nothing. The real version is provided uniformly by `cliVersion()` in `version.ts`.
  */
 
 import { cliVersion } from './version.js'
@@ -34,7 +35,7 @@ export function showLogo(): void {
   console.log()
 }
 
-/** Show single-line version banner (used for --version)：真实版本号，不是品牌字形。 */
+/** Show single-line version banner (used for --version): the real version number, not brand glyphs. */
 export function showBanner(): void {
   console.log(`${INDENT}${BANNER_LINE1} v${cliVersion()}`)
 }

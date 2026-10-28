@@ -25,7 +25,7 @@ afterEach(() => {
 })
 
 describe('@vobs/http', () => {
-  it('构造 URL、合并 headers、序列化 JSON body 并解析响应', async () => {
+  it('builds the URL, merges headers, serializes the JSON body and parses the response', async () => {
     const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => new Response(
       JSON.stringify({ id: 1 }),
       { status: 201, headers: { 'content-type': 'application/json' } }
@@ -55,7 +55,7 @@ describe('@vobs/http', () => {
     expect(new Headers(init.headers).get('content-type')).toBe('application/json')
   })
 
-  it('toResourceFetcher 转发 AbortSignal 并解包 HTTPResponse.data', async () => {
+  it('toResourceFetcher forwards the AbortSignal and unwraps HTTPResponse.data', async () => {
     const controller = new AbortController()
     const response: HTTPResponse<{ id: number }> = {
       data: { id: 1 },
@@ -76,7 +76,7 @@ describe('@vobs/http', () => {
     expect(request).toHaveBeenCalledWith(controller.signal)
   })
 
-  it('请求拦截器正序执行，响应拦截器逆序执行', async () => {
+  it('request interceptors run in order, response interceptors in reverse', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', {
       headers: { 'content-type': 'application/json' }
     })))
@@ -103,7 +103,7 @@ describe('@vobs/http', () => {
     expect(calls).toEqual(['request-a', 'request-b', 'response-b', 'response-a'])
   })
 
-  it('非 2xx 响应抛出 HTTPError，并可由响应错误拦截器观察', async () => {
+  it('non-2xx responses throw HTTPError, observable by response error interceptors', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(
       JSON.stringify({ message: 'denied' }),
       { status: 403, statusText: 'Forbidden', headers: { 'content-type': 'application/json' } }
@@ -121,7 +121,7 @@ describe('@vobs/http', () => {
     expect((errors[0] as HTTPError).data).toEqual({ message: 'denied' })
   })
 
-  it('按条件重试服务端错误，并尊重 AbortController 取消', async () => {
+  it('retries server errors conditionally and honors AbortController cancellation', async () => {
     let attempts = 0
     const fetcher = vi.fn(async () => {
       attempts++
@@ -146,7 +146,7 @@ describe('@vobs/http', () => {
     await expect(request).rejects.toMatchObject({ name: 'AbortError' })
   })
 
-  it('超时会终止 adapter 并抛出 TimeoutError', async () => {
+  it('timeout aborts the adapter and throws TimeoutError', async () => {
     vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_, reject) => {
       const abort = () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
       if (init?.signal?.aborted) abort()
@@ -156,7 +156,7 @@ describe('@vobs/http', () => {
     await expect(createHTTPClient({ adapter: createFetchAdapter(), timeout: 5 }).get('/slow')).rejects.toBeInstanceOf(TimeoutError)
   })
 
-  it('可选请求去重只执行一次 adapter，并共享响应', async () => {
+  it('optional request dedupe runs the adapter once and shares the response', async () => {
     let resolve!: (response: Response) => void
     const adapter = vi.fn(() => new Promise<Response>(done => { resolve = done }))
     const client = createHTTPClient({ adapter })
@@ -174,7 +174,7 @@ describe('@vobs/http', () => {
     expect(adapter).toHaveBeenCalledTimes(1)
   })
 
-  it('Axios adapter 将 response.data 保持为 HTTPResponse<T>.data', async () => {
+  it('the Axios adapter keeps response.data as HTTPResponse<T>.data', async () => {
     const axiosRequest = vi.fn(async (config: { url: string; method: string; data?: unknown }) => ({
       data: { id: 1 },
       status: 200,
@@ -193,7 +193,7 @@ describe('@vobs/http', () => {
     }))
   })
 
-  it('自定义 Axios adapter 不会把已序列化的 params 再传给 Axios', async () => {
+  it('a custom Axios adapter does not pass already-serialized params to Axios again', async () => {
     const requestMock = vi.fn(async (_config: { url: string; params?: unknown }) => ({
       data: { ok: true },
       status: 200,
@@ -208,7 +208,7 @@ describe('@vobs/http', () => {
     expect(requestMock.mock.calls[0]?.[0]).not.toHaveProperty('params')
   })
 
-  it('默认客户端使用内置 Axios transport 并保留 Network debug 事件', async () => {
+  it('the default client uses the built-in Axios transport and keeps Network debug events', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { 'content-type': 'application/json' }
@@ -225,7 +225,7 @@ describe('@vobs/http', () => {
     expect(events.map(event => event.status)).toEqual(['loading', 'success'])
   })
 
-  it('内置 Axios transport 不会重复拼接 params，并遵守 GET 无 body', async () => {
+  it('the built-in Axios transport does not double-append params and sends GET without a body', async () => {
     let seenURL = ''
     let seenMethod = ''
     let seenBody: unknown
@@ -254,7 +254,7 @@ describe('@vobs/http', () => {
     expect(seenBody == null).toBe(true)
   })
 
-  it('Mock adapter 将普通返回值转换为成功 200 payload', async () => {
+  it('the Mock adapter converts plain return values into a successful 200 payload', async () => {
     const client = createHTTPClient({
       adapter: createMockAdapter(config => ({ method: config.method, url: config.url }))
     })
@@ -265,7 +265,7 @@ describe('@vobs/http', () => {
     })
   })
 
-  it('Mock adapter 保留字符串和 undefined payload，不强制 JSON 解析', async () => {
+  it('the Mock adapter keeps string and undefined payloads without forcing JSON parsing', async () => {
     const stringClient = createHTTPClient({ adapter: createMockAdapter(() => 'mocked') })
     const emptyClient = createHTTPClient({ adapter: createMockAdapter(() => undefined) })
 
@@ -273,7 +273,7 @@ describe('@vobs/http', () => {
     await expect(emptyClient.get('/mock-empty')).resolves.toMatchObject({ status: 200, data: undefined })
   })
 
-  it('默认 Axios transport 的 responseType response 返回原始 Response', async () => {
+  it("the default Axios transport's responseType response returns the raw Response", async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('raw body', {
       status: 201,
       statusText: 'Created',
@@ -290,7 +290,7 @@ describe('@vobs/http', () => {
     await expect((response.data as Response).text()).resolves.toBe('raw body')
   })
 
-  it('并发上限控制 adapter 同时执行数量', async () => {
+  it('the concurrency cap limits how many adapters execute simultaneously', async () => {
     const limiter = createConcurrencyLimiter(2)
     let active = 0
     let maximum = 0
@@ -306,7 +306,7 @@ describe('@vobs/http', () => {
     expect(maximum).toBe(2)
   })
 
-  it('SSE adapter 转发事件回调并支持关闭', () => {
+  it('the SSE adapter forwards event callbacks and supports closing', () => {
     class FakeEventSource {
       closed = false
       listeners = new Map<string, EventListener[]>()
@@ -330,7 +330,7 @@ describe('@vobs/http', () => {
     expect((client.source as unknown as FakeEventSource).closed).toBe(true)
   })
 
-  it('WebSocket adapter 支持连接、发送、事件监听和关闭', () => {
+  it('the WebSocket adapter supports connect, send, event listeners and close', () => {
     class FakeWebSocket {
       readyState = 0
       sent: unknown[] = []
@@ -363,7 +363,7 @@ describe('@vobs/http', () => {
     expect(client.state).toBe('closed')
   })
 
-  it('fetch adapter 报告可读响应流的下载进度', async () => {
+  it('the fetch adapter reports download progress of a readable response stream', async () => {
     const encoder = new TextEncoder()
     const chunks = [encoder.encode('{"ok":'), encoder.encode('true}')]
     let index = 0
@@ -384,7 +384,7 @@ describe('@vobs/http', () => {
     expect(progress).toEqual([6, 11])
   })
 
-  it('下载进度与 text 响应共用一次流读取', async () => {
+  it('download progress and the text response share a single stream read', async () => {
     const encoder = new TextEncoder()
     const chunks = [encoder.encode('hel'), encoder.encode('lo')]
     let index = 0
@@ -405,7 +405,7 @@ describe('@vobs/http', () => {
     expect(progress).toEqual([3, 5])
   })
 
-  it('XHR adapter 报告上传和下载进度', async () => {
+  it('the XHR adapter reports upload and download progress', async () => {
     class FakeXHR {
       static instance: FakeXHR
       readonly upload = { onprogress: (_event: ProgressEvent) => undefined }
@@ -442,7 +442,7 @@ describe('@vobs/http', () => {
     expect(FakeXHR.instance).toBeDefined()
   })
 
-  it('httpPlugin 将 HTTPClient 注入应用', () => {
+  it('httpPlugin injects the HTTPClient into the app', () => {
     const client = createHTTPClient()
     let injected: HTTPClient | undefined
     const app = createVobs({
@@ -462,7 +462,7 @@ describe('@vobs/http', () => {
     expect(injected).toBe(client)
   })
 
-  it('请求诊断事件保留显式路由和导航上下文', async () => {
+  it('request diagnostic events keep explicit route and navigation context', async () => {
     const events: import('./debug').HTTPDebugRequest[] = []
     const stop = subscribeHTTPDebug(event => events.push(event))
     const client = createHTTPClient({
@@ -479,7 +479,7 @@ describe('@vobs/http', () => {
     expect(events[1]).toMatchObject({ phase: 'end', status: 'success', context: { environment: 'client' } })
   })
 
-  it('重试诊断事件继承显式请求上下文', async () => {
+  it('retry diagnostic events inherit the explicit request context', async () => {
     let attempts = 0
     const events: import('./debug').HTTPDebugRequest[] = []
     const stop = subscribeHTTPDebug(event => events.push(event))

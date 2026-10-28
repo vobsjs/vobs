@@ -94,9 +94,10 @@ interface DictEntry extends DictQuery {
   controller: AbortController | null
   inFlight: Promise<DictItems> | null
   /**
-   * 最近一次失败的请求。非 null 时普通 `load()` 不再自动重发 —— 否则「读 error/loading
-   * 并在变化时调 load()」这种最常规的反应式消费者会以微任务速度自我重试、饿死事件循环。
-   * 显式重试：`load({ force: true })`，或先 `invalidate()`。
+   * The most recent failed request. Non-null, plain `load()` no longer re-fires automatically —
+   * otherwise the most common kind of reactive consumer ("read error/loading and call load() on
+   * change") would retry itself at microtask speed and starve the event loop.
+   * Explicit retry: `load({ force: true })`, or `invalidate()` first.
    */
   failure: Promise<DictItems> | null
   revision: number
@@ -150,12 +151,12 @@ export function createDict(options: DictOptions = {}): DictContext {
         entry.failure = null
       } else {
         if (isFresh(entry)) return Promise.resolve(entry.items.value)
-        // 失败后不自动重试：普通 load() 复用上一次的失败结果，直到显式 invalidate/force。
+        // No automatic retry after failure: a plain load() reuses the previous failure result until an explicit invalidate/force.
         if (entry.failure) return entry.failure
       }
       if (entry.inFlight) return entry.inFlight
       if (!options.loader) {
-        const loadError = new DictError('DICT_LOADER_MISSING', `Vobs Dict: ${entry.name} 未配置 loader`)
+        const loadError = new DictError('DICT_LOADER_MISSING', `Vobs Dict: no loader configured for ${entry.name}`)
         entry.error.value = loadError
         error.value = loadError
         report(loadError, entry.name)
@@ -181,7 +182,7 @@ export function createDict(options: DictOptions = {}): DictContext {
           if (disposed || revision !== entry.revision || isAbortError(reason)) return entry.items.value
           const loadError = reason instanceof DictError
             ? reason
-            : new DictError('DICT_LOAD_FAILED', `Vobs Dict: ${entry.name} 加载失败`, reason)
+            : new DictError('DICT_LOAD_FAILED', `Vobs Dict: failed to load ${entry.name}`, reason)
           entry.error.value = loadError
           error.value = loadError
           report(loadError, entry.name)
@@ -348,7 +349,7 @@ export function createDict(options: DictOptions = {}): DictContext {
   }
 
   function ensureActive(): void {
-    if (disposed) throw new DictError('DICT_CONTEXT_DISPOSED', 'Vobs Dict: 上下文已销毁')
+    if (disposed) throw new DictError('DICT_CONTEXT_DISPOSED', 'Vobs Dict: context has been disposed')
   }
 }
 
@@ -366,20 +367,20 @@ export function dictPlugin(options: DictPluginOptions = {}): VobsPlugin {
 
 export function useDict(): DictContext {
   const dict = inject(DICT_KEY)
-  if (!dict) throw new DictError('DICT_CONTEXT_MISSING', 'Vobs Dict: 找不到上下文，请安装 dictPlugin')
+  if (!dict) throw new DictError('DICT_CONTEXT_MISSING', 'Vobs Dict: context not found; install dictPlugin first')
   return dict
 }
 
 function validateName(name: string): DictName {
   if (typeof name !== 'string' || name.trim() === '') {
-    throw new DictError('INVALID_DICT_NAME', 'Vobs Dict: 字典名必须是非空字符串')
+    throw new DictError('INVALID_DICT_NAME', 'Vobs Dict: dictionary name must be a non-empty string')
   }
   return name
 }
 
 function validateStaleTime(value: number): number {
   if (!Number.isFinite(value) || value < 0) {
-    throw new DictError('INVALID_DICT_ITEMS', 'Vobs Dict: staleTime 必须是大于等于 0 的有限数字')
+    throw new DictError('INVALID_DICT_ITEMS', 'Vobs Dict: staleTime must be a finite number greater than or equal to 0')
   }
   return value
 }
@@ -391,12 +392,12 @@ function normalizeData(data: DictData): DictData {
 }
 
 function normalizeItems(items: unknown): DictItems {
-  if (!Array.isArray(items)) throw new DictError('INVALID_DICT_ITEMS', 'Vobs Dict: 字典项必须是数组')
+  if (!Array.isArray(items)) throw new DictError('INVALID_DICT_ITEMS', 'Vobs Dict: dictionary items must be an array')
   return Object.freeze(items.map((item, index) => {
     if (!item || typeof item !== 'object'
       || (typeof (item as DictItem).value !== 'string' && typeof (item as DictItem).value !== 'number')
       || typeof (item as DictItem).label !== 'string') {
-      throw new DictError('INVALID_DICT_ITEMS', `Vobs Dict: 第 ${index + 1} 个字典项必须包含 value 和 label`)
+      throw new DictError('INVALID_DICT_ITEMS', `Vobs Dict: dictionary item ${index + 1} must contain value and label`)
     }
     return Object.freeze({ ...item }) as DictItem
   }))
@@ -406,25 +407,25 @@ function parseDehydratedState(snapshot: unknown): DictDehydratedState {
   let value: unknown = snapshot
   if (typeof snapshot === 'string') {
     try { value = JSON.parse(snapshot) } catch {
-      throw new DictError('INVALID_DEHYDRATED_STATE', 'Vobs Dict: 初始状态不是有效 JSON')
+      throw new DictError('INVALID_DEHYDRATED_STATE', 'Vobs Dict: initial state is not valid JSON')
     }
   }
   if (!value || typeof value !== 'object') {
-    throw new DictError('INVALID_DEHYDRATED_STATE', 'Vobs Dict: 初始状态格式无效')
+    throw new DictError('INVALID_DEHYDRATED_STATE', 'Vobs Dict: initial state has an invalid format')
   }
   const candidate = value as Partial<DictDehydratedState>
   if (candidate.version !== 1 || !Array.isArray(candidate.entries)) {
-    throw new DictError('INVALID_DEHYDRATED_STATE', 'Vobs Dict: 初始状态版本或 entries 无效')
+    throw new DictError('INVALID_DEHYDRATED_STATE', 'Vobs Dict: initial state version or entries are invalid')
   }
   const seen = new Set<string>()
   const entries = candidate.entries.map(entry => {
     if (!entry || typeof entry !== 'object') {
-      throw new DictError('INVALID_DEHYDRATED_STATE', 'Vobs Dict: 初始状态条目无效')
+      throw new DictError('INVALID_DEHYDRATED_STATE', 'Vobs Dict: initial state entry is invalid')
     }
     const name = validateName((entry as Partial<DictDehydratedEntry>).name as string)
     const updatedAt = (entry as Partial<DictDehydratedEntry>).updatedAt
     if (seen.has(name) || typeof updatedAt !== 'number' || !Number.isFinite(updatedAt) || updatedAt < 0) {
-      throw new DictError('INVALID_DEHYDRATED_STATE', 'Vobs Dict: 初始状态条目字段无效')
+      throw new DictError('INVALID_DEHYDRATED_STATE', 'Vobs Dict: initial state entry fields are invalid')
     }
     seen.add(name)
     return Object.freeze({

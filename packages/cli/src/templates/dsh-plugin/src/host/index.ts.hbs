@@ -1,20 +1,22 @@
 /**
- * Host 半侧。
+ * Host half.
  *
- * DSH 的组合包在该 profile 的 cordis 树里插入一行，这一行指向本模块。
- * 客户端模块系统扫描**已启用的 Loader 条目**，读取本包的 `dsh.client` 声明，
- * 把 `exports['./client']`（lib/client.js）作为浏览器 bundle 提供给页面。
+ * DSH's bundle inserts one row into the profile's cordis tree, and that row points at this
+ * module. The client module system scans **enabled Loader entries**, reads this package's
+ * `dsh.client` declaration, and serves `exports['./client']` (lib/client.js) to the page
+ * as the browser bundle.
  *
- * 也就是说：Host 侧只负责「被挂载」，从而让客户端 bundle 进入启动图。
- * 要给 Agent 加工具、订阅 session/event、注册服务，才需要在这里写。
+ * In other words: the Host side only needs to "be mounted" so the client bundle enters the
+ * startup graph. Write here only when adding tools for agents, subscribing to
+ * sessions/events, or registering services.
  */
 
-/** cordis 插件名，用于调试命名空间；与 npm 包名无关。 */
+/** cordis plugin name, used for the debug namespace; unrelated to the npm package name. */
 export const name = '{{rowId}}'
 
-/** 需要先就绪的 Host 服务名。 */
+/** Host service names that must be ready first. */
 export const inject: readonly string[] = []
 
 export function apply(_ctx: unknown): void {
-  // 有意留空：默认插件的可观察行为全部发生在浏览器半侧。
+  // Intentionally empty: the default plugin's observable behavior happens entirely in the browser half.
 }

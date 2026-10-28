@@ -1,73 +1,80 @@
-# 静默失败清单（编译期合法、运行期错）
+# Silent failure list (legal at compile time, wrong at runtime)
 
-> 这份清单回答一个问题：**还有哪些 AI 常犯的错误，框架抓不住？**
+> This list answers one question: **which AI-typical mistakes can the framework still not catch?**
 >
-> 每一条都带「为什么不做的原因」—— 否则它看起来像忘了。
-> 可执行的版本在 `packages/compiler/src/ai-mistakes.test.ts`：那里的
-> `caughtBy: null` 条目就是这个文件的机器可读副本，覆盖率会打印出来。
+> Every entry carries "why it is not done" — otherwise it looks like an oversight.
+> The executable version lives in `packages/compiler/src/ai-mistakes.test.ts`: the
+> `caughtBy: null` entries there are the machine-readable copy of this file, and coverage is printed.
 
-## 为什么要维护这份清单
+## Why this list is maintained
 
-这一轮里「诊断存在但某条通道不可见」出现了**三次**，全是人肉发现的。
-而"**根本不存在诊断**"是更贵的一类：编译通过、类型通过、运行期偶发错。
+In one cycle, "a diagnostic exists but is invisible on some channel" happened **three times**, all found by hand.
+And "**no diagnostic exists at all**" is the costlier class: it compiles, it type-checks, and it fails
+intermittently at runtime.
 
-静默失败对 AI 写的代码尤其致命 —— 模型不会停下来自查，它只会继续写下一段。
+Silent failures are especially deadly for AI-written code — the model does not stop to double-check; it just
+keeps writing the next piece.
 
-## 当前状态（实测，2026-10-28）
+## Current status (measured, 2026-10-28)
 
 ```
-AI 错误语料覆盖率：13/13（100%）
-静默：0 条
+AI mistake corpus coverage: 13/13 (100%)
+Silent: 0 entries
 ```
 
-## 静默清零（2026-10-28）
+## Silent count zeroed (2026-10-28)
 
-最后一条静默 —— **组件体内提前 `return null` 做守卫** —— 已被 `VOBS_C107` 情况三收编：
+The last silent case — **an early `return null` guard inside a component body** — has been absorbed as case
+three of `VOBS_C107`:
 
 ```ts
 function P() {
-  if (loading.value) return null     // ❌ 挂载时固化 —— 之后永不切换（C107 报）
+  if (loading.value) return null     // ❌ frozen at mount — never switches afterwards (reported by C107)
   return <div>done</div>
 }
 ```
 
-当初「有意不做」的理由是「组件 / 渲染辅助函数不可区分」。收编靠的是**三重收窄**，
-把误报面压到与 C107 的 JSX 形态完全同构：
+The original "deliberately not done" reason was "components / render helpers are indistinguishable". The
+absorption relies on a **three-fold narrowing** that compresses the false-positive surface to exactly the same
+shape as C107's JSX form:
 
-1. **函数级判据**：宿主函数体内必须**另有含 JSX 的 return**（渲染函数）——
-   纯数据函数的空守卫（`T | null` 是正常空值建模）整个排除；
-2. **调用点豁免**（`isJsxOnlyCaller`，既有机制）：有名函数的调用点全部在 JSX 子树内
-   （`{renderRow(x)}`）→ 求值在响应式作用域，豁免；
-3. **保守边界**：匿名宿主、组件体同步调用、无调用点（跨文件）→ 照报 ——
-   宁可误报不可漏报，方向与 C107 的 JSX 形态一致。
+1. **Function-level criterion**: the host function body must **also contain another return carrying JSX** (a
+   render function) — empty guards in pure data functions (`T | null` is normal empty-value modeling) are
+   excluded entirely;
+2. **Call-site exemption** (`isJsxOnlyCaller`, an existing mechanism): if all call sites of a named function
+   sit inside JSX subtrees (`{renderRow(x)}`) → evaluation happens inside a reactive scope, exempt;
+3. **Conservative boundary**: anonymous hosts, synchronous calls in a component body, zero call sites
+   (cross-file) → still reported — rather a false positive than a miss, consistent in direction with C107's
+   JSX form.
 
-全仓实测 0 误报。**残余的已知误报面**：跨文件使用的渲染 helper（定义文件看不到
-调用点）—— 与 C107 JSX 形态同一边界，warning + 行内抑制兜底。
+Measured repo-wide: 0 false positives. **Residual known false-positive surface**: render helpers used
+cross-file (the defining file cannot see the call sites) — the same boundary as C107's JSX form; warning +
+inline suppression as the fallback.
 
-## 已从"静默"转为"有诊断"的（本轮的进展）
+## Moved from "silent" to "has a diagnostic" (this cycle's progress)
 
-| 形态 | 现在 |
+| Shape | Now |
 |---|---|
-| `const node = <X/>; return cond ? node : null` | `VOBS_C108`（`caughtBy` 已填） |
-| `ICONS[name.value]` 查表结果进 const | `VOBS_C118` 抓到"快照"那一半 |
-| 白名单 miss → 静默空白 | 静态抓不到；**运行时**点名（`@vobs/icon-core` 按名字去重警告） |
+| `const node = <X/>; return cond ? node : null` | `VOBS_C108` (`caughtBy` filled in) |
+| `ICONS[name.value]` lookup result stored in a const | `VOBS_C118` catches the "snapshot" half |
+| Whitelist miss → silent blank | Not catchable statically; **named at runtime** (`@vobs/icon-core` warns, deduplicated by name) |
 | `effect(async () => …)` | `VOBS_C106` |
-| `return cond ? <A/> : <B/>`（顶层） | `VOBS_C107` |
-| 数组原地修改（`list.value.push(2)`） | `VOBS_C233`（2026-10-28）—— 当年缺的**绑定分析**落地：只对名字绑定到 `state(...)` 的接收者报警，普通数组一个不报 |
-| `state(0)` 未传调试名 | `VOBS_C120`（2026-10-28）—— 排查 "(未命名信号)" 的成本从出错时前移到创建时 |
-| `if (信号) return null` 空守卫 | `VOBS_C107` 情况三（2026-10-28）—— 函数级收窄 + 调用点豁免，静默清零 |
+| `return cond ? <A/> : <B/>` (top level) | `VOBS_C107` |
+| In-place array mutation (`list.value.push(2)`) | `VOBS_C233` (2026-10-28) — the long-missing **binding analysis** landed: only receivers whose name is bound to `state(...)` warn; ordinary arrays report nothing |
+| `state(0)` without a debug name | `VOBS_C120` (2026-10-28) — the cost of hunting "(unnamed signal)" moves from failure time to creation time |
+| `if (signal) return null` empty guard | `VOBS_C107` case three (2026-10-28) — function-level narrowing + call-site exemption; silent count zeroed |
 
-## 判定标准（下次有人要加规则时按这个）
+## Admission criteria (apply this the next time someone wants to add a rule)
 
-一条静态规则够不够格进框架，看三点：
+For a static rule to deserve a place in the framework, check three things:
 
-1. **能不能静态判定**（判不了就别加 —— 见上面第 2 条）
-2. **误报代价**：`error` 会让正确代码的 CI 失败，那是不可接受的；
-   所以拿不准的一律 `warning`，而**真正的硬门禁交给运行时护栏**
-   （它按真实依赖集判定，跨函数精确）
-3. **有没有验证**：新规则必须① 跑全仓真实检查看误报，② 进
-   `ai-mistakes` 语料，③ 若给 fix 文案则进 `guide-verification`
-   （**按建议改写后必须零诊断**）
+1. **Can it be decided statically?** (if not, don't add it — see item 2 above)
+2. **Cost of false positives**: an `error` fails CI on correct code, which is unacceptable;
+   so when unsure, always `warning`, and **the real hard gate goes to the runtime guardrails**
+   (they judge against the real dependency set, precise across functions)
+3. **Is it verified?**: a new rule must ① run the repo-wide real check to look for false positives, ② enter
+   the `ai-mistakes` corpus, ③ if it ships fix text, enter `guide-verification`
+   (**rewriting per the suggestion must produce zero diagnostics**)
 
-第 3 条是这一轮用返工换来的：C108 的 fix 文案改了两轮，
-第一版会把用户从"崩"引到"界面不切换"（更隐蔽）。
+Item 3 was paid for with rework this cycle: C108's fix text went through two rounds;
+the first version would have led users from "crash" to "the UI never switches" (more deceptive).

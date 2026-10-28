@@ -7,25 +7,31 @@ import { describe, expect, it } from 'vitest'
 import { compile } from 'tailwindcss'
 
 /*
- * 这是**级联前提的结构校验，不是视觉验证**。
+ * This is **structural validation of the cascade precondition, not visual verification**.
  *
- * 机理（.artifacts/reports/tailwind.md blocker #2）：CSS 规范里**未分层的普通声明优先于
- * 任何分层声明**（优先于特异性），所以 `ui/src/styles/base.css` 里那条
- * `* { box-sizing: border-box; margin: 0; padding: 0; }` 如果不进层，就会压住本入口
- * `layer(utilities)` 的 `m-*` / `p-*`。修法有两半：① 入口显式声明层序、② reset 整体进 `base` 层。
+ * Mechanism (.artifacts/reports/tailwind.md blocker #2): per the CSS spec, **unlayered normal
+ * declarations outrank any layered declaration** (regardless of specificity), so the
+ * `* { box-sizing: border-box; margin: 0; padding: 0; }` in `ui/src/styles/base.css`, if left
+ * unlayered, would override this entry's `layer(utilities)` `m-*` / `p-*`. The fix has two
+ * halves: (1) the entry declares the layer order explicitly, (2) the reset goes into the
+ * `base` layer as a whole.
  *
- * ⚠️ **本文件证明的是"规则落在哪个层里"（结构），不是"浏览器里 margin 真的是 4px"（视觉）**：
- * jsdom 不应用外部样式表、更不做层叠/层序计算；`tailwindcss` 的 `compile()` 也只做编译期分层。
- * 真实视觉效果必须用真实浏览器核验（见 blocker #2 报告）。
+ * ⚠️ **What this file proves is "which layer a rule lands in" (structure), not "margin is
+ * really 4px in the browser" (visuals)**: jsdom does not apply external stylesheets, let alone
+ * perform cascade/layer-order computation; `tailwindcss`'s `compile()` only does compile-time
+ * layering. Real visual results must be verified in a real browser (see the blocker #2 report).
  *
- * 另一条实测结论（这半张施工图必须偏离原文，理由可咬）：
- * `@import "./theme.css" layer(base);` 会让 `compile()` **抛错**
- * "`@custom-variant` cannot be nested"（theme.css 里的 `@custom-variant dark (…)` 不能嵌套在
- * 任何 `@layer` 内）。而 theme.css 的产出也不会留在层外：`@custom-variant` 不产出任何 CSS，
- * `@theme inline` 不产出声明，`@theme`（非 inline）产出的变量被 Tailwind 放进 `@layer theme`（实测）。
- * 所以真正要守的是**性质**——"入口产物里不存在任何未分层的规则块"——而不是某个 import 的语法写法。
- * 下面第 3 条用编译产物断言这条性质：往 theme.css / styles.css 里直接补一条普通规则
- * （如 `* { margin: 0 }`）就会让用例变红（已实测）。
+ * Another measured finding (this half of the construction plan must deviate from the original
+ * text, with arguable reasons):
+ * `@import "./theme.css" layer(base);` makes `compile()` **throw**
+ * "`@custom-variant` cannot be nested" (the `@custom-variant dark (…)` in theme.css cannot be
+ * nested inside any `@layer`). And theme.css's output would not stay outside layers anyway:
+ * `@custom-variant` produces no CSS, `@theme inline` produces no declarations, and variables
+ * produced by `@theme` (non-inline) are placed by Tailwind into `@layer theme` (measured).
+ * So what really must be upheld is the **property** — "the entry output contains no unlayered
+ * rule block" — not the exact syntax of some import. Item 3 below asserts this property against
+ * the compiled output: adding a plain rule directly into theme.css / styles.css (e.g.
+ * `* { margin: 0 }`) turns the test red (measured).
  */
 const entriesDir = resolve(process.cwd(), 'packages/tailwind/src')
 const requireFromTailwind = createRequire(resolve(process.cwd(), 'packages/tailwind/package.json'))
@@ -46,12 +52,12 @@ async function buildEntry(entry: string, candidates: readonly string[]): Promise
   return compiler.build([...candidates])
 }
 
-/** 只留代码、剥掉注释 —— 本文件自己的说明里会引用 `@import` / `@layer` 字样，断言必须看代码。 */
+/** Keep code only, strip comments — this file's own prose references `@import` / `@layer`, so assertions must look at code. */
 function codeOnly(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, '')
 }
 
-/** 花括号配平（先剥注释）；返回 0 表示这段 CSS 的块都闭合了。 */
+/** Brace balance (comments stripped first); returning 0 means all blocks in this CSS chunk are closed. */
 function braceDepth(css: string): number {
   const stripped = codeOnly(css)
   let depth = 0
@@ -62,7 +68,7 @@ function braceDepth(css: string): number {
   return depth
 }
 
-/** 剥掉所有 `@layer …;` 语句与 `@layer …{ … }` 块，返回剩下的"未分层"内容。 */
+/** Strip all `@layer …;` statements and `@layer …{ … }` blocks; returns the remaining "unlayered" content. */
 function stripLayersAndComments(css: string): string {
   const kept: string[] = []
   let i = 0
@@ -76,7 +82,7 @@ function stripLayersAndComments(css: string): string {
     const semi = css.indexOf(';', open)
     const brace = css.indexOf('{', open)
     if (brace === -1 || (semi !== -1 && semi < brace)) {
-      i = semi + 1 // `@layer a, b;` 语句
+      i = semi + 1 // `@layer a, b;` statement
       continue
     }
     let depth = 0
@@ -88,55 +94,57 @@ function stripLayersAndComments(css: string): string {
         break
       }
     }
-    i = j // 整个 `@layer x { … }` 块被丢弃
+    i = j // the whole `@layer x { … }` block is dropped
   }
   return kept.join('').replace(/\/\*[\s\S]*?\*\//g, '').trim()
 }
 
-describe('@vobs/tailwind 层序（级联前提，非视觉验证）', () => {
-  it('入口声明完整的层序 theme, base, components, utilities（base 必须低于 utilities）', () => {
+describe('@vobs/tailwind layer order (cascade precondition, not visual verification)', () => {
+  it('entry declares the full layer order theme, base, components, utilities (base must rank below utilities)', () => {
     const source = codeOnly(readFileSync(resolve(entriesDir, 'styles.css'), 'utf8'))
     expect(source).toContain(LAYER_ORDER)
-    // @layer 语句是唯一允许出现在 @import 之前的规则；反过来会让 @import 失效
+    // the @layer statement is the only rule allowed before @import; the reverse invalidates @import
     expect(source.indexOf(LAYER_ORDER)).toBeLessThan(source.indexOf('@import'))
-    // utilities 是层序里的最后一项 = 优先级最高（这半条是 blocker #2 的根）
+    // utilities is the last item in the layer order = highest priority (this half is the root of blocker #2)
     expect(LAYER_ORDER.indexOf('base')).toBeLessThan(LAYER_ORDER.indexOf('utilities'))
   })
 
-  it('ui/src/styles 下每一份无 @import 的样式表都整体位于 @layer base 内', () => {
+  it('every stylesheet without @import under ui/src/styles sits entirely inside @layer base', () => {
     /*
-     * blocker #2 只点名了 base.css，但同一机理覆盖 @vobs/ui 的全部样式表：
-     * components/vui/toast/message 同样是**未分层的普通声明**，同样会压过 layer(utilities)。
-     * 这里按文件枚举（而不是只查 base.css），新增/漏包一份就变红。
+     * blocker #2 only named base.css, but the same mechanism covers every @vobs/ui stylesheet:
+     * components/vui/toast/message are likewise **unlayered normal declarations** and likewise
+     * outrank layer(utilities). Enumerate by file here (instead of only checking base.css) so
+     * that adding a file or missing one turns red.
      *
-     * `tokens.css` 被排除，理由是**它在层外才是对的**：它只定义自定义属性（`--*`），
-     * 而自定义属性的继承与层无关；且它必须能独立被 `@vobs/ui/tokens.css` 消费。
-     * `styles.css` 是聚合入口（只含 @import），不能也不该进层。
+     * `tokens.css` is excluded because **staying outside layers is correct for it**: it only
+     * defines custom properties (`--*`), and custom property inheritance is layer-independent;
+     * moreover it must remain independently consumable as `@vobs/ui/tokens.css`.
+     * `styles.css` is the aggregation entry (only @imports); it cannot and should not be layered.
      */
     for (const file of ['base.css', 'components.css', 'vui.css', 'toast.css', 'message.css']) {
       const css = codeOnly(readFileSync(resolve(process.cwd(), 'packages/ui/src/styles', file), 'utf8'))
       const open = css.indexOf('@layer base {')
-      expect(open, `${file} 必须整体位于 @layer base 内`).toBeGreaterThan(-1)
-      // CSS 禁止 @import 出现在 @layer 块内 —— 整份文件进层的前提就是"无 @import"
-      expect(css, `${file} 不能含 @import`).not.toContain('@import')
-      // 从 `@layer base {` 到文件末尾括号配平 = 整份文件都在层内（不是只包了一段）
-      expect(braceDepth(css.slice(open)), `${file} 的 @layer base 块未覆盖到文件末尾`).toBe(0)
-      // 层内不得再出现第二个层序声明/嵌套分层块，否则层归属不再是单层的
-      expect(css.slice(open).match(/@layer/g)?.length, `${file} 层内不应再有 @layer`).toBe(1)
+      expect(open, `${file} must sit entirely inside @layer base`).toBeGreaterThan(-1)
+      // CSS forbids @import inside an @layer block — a whole file can only be layered if it has no @import
+      expect(css, `${file} must not contain @import`).not.toContain('@import')
+      // brace balance from `@layer base {` to end of file = the whole file is inside the layer (not just one section)
+      expect(braceDepth(css.slice(open)), `${file}: the @layer base block does not extend to end of file`).toBe(0)
+      // no second layer-order statement / nested layer block may appear inside, otherwise layer membership is no longer single-layer
+      expect(css.slice(open).match(/@layer/g)?.length, `${file} should contain no further @layer inside`).toBe(1)
     }
-    // reset 这条必须在层内：留在层外的 `* { margin: 0 }` 会压住 layer(utilities) 的 m-*/p-*
+    // this reset must be in the layer: an unlayered `* { margin: 0 }` would outrank layer(utilities)'s m-*/p-*
     const baseCss = codeOnly(readFileSync(resolve(process.cwd(), 'packages/ui/src/styles/base.css'), 'utf8'))
     expect(baseCss.slice(baseCss.indexOf('@layer base {'))).toContain('* { box-sizing: border-box; margin: 0; padding: 0; }')
   })
 
-  it('入口编译产物里没有未分层的规则块（theme.css 保持未分层的安全前提）', async () => {
+  it('compiled entry output has no unlayered rule blocks (the safety precondition for keeping theme.css unlayered)', async () => {
     const output = await buildEntry('styles.css', ['flex', 'p-4', 'm-4', 'text-brand', 'dark:flex'])
-    // 层序语句必须真的落进产物，而不是只写在源码注释里
+    // the layer-order statement must actually land in the output, not just live in a source comment
     expect(output).toContain(LAYER_ORDER)
-    // 实用类必须落在 utilities 层里（layer 块内）
+    // utilities must land in the utilities layer (inside the layer block)
     expect(output).toContain('@layer utilities {')
     expect(output).toContain('.m-4')
-    // theme.css 的安全性来自"它不产出声明"：把已分层的块全剥掉后，产物应当什么都不剩
+    // theme.css is safe because "it produces no declarations": after stripping all layered blocks, nothing should remain
     expect(stripLayersAndComments(output)).toBe('')
   })
 })

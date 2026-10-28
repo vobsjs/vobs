@@ -3,14 +3,16 @@ import { describe, expect, it } from 'vitest'
 import { createJWTAuth } from './index'
 
 /*
- * dispose() 必须真的销毁底层的 auth。
+ * dispose() must actually destroy the underlying auth.
  *
- * `Object.assign(baseAuth, {...})` 改的就是 baseAuth 本身，于是 `baseAuth.dispose()` 是**自调用**：
- * `disposed = true` 刚写完，守卫立刻 return，原实现永远执行不到 → 底层 createAuth 永不销毁。
- * 实测（深读报告）：`app.destroy()` 之后 `login()` 仍成功、`hasPermission` 仍 true。
- * **而现有测试恰好只断言那个还抛错的 `getAccessToken()` → 假绿。**
+ * `Object.assign(baseAuth, {...})` mutates baseAuth itself, so `baseAuth.dispose()` was a
+ * **self-call**: `disposed = true` was just written, the guard returned immediately, and the
+ * original implementation was never reached → the underlying createAuth was never disposed.
+ * Measured (deep-read report): after `app.destroy()`, `login()` still succeeded and
+ * `hasPermission` stayed true. **And the existing tests happened to only assert
+ * `getAccessToken()`, which still throws → false green.**
  *
- * 这条测试盯的是"销毁之后底层上下文真的失效"：login 必须被拒。
+ * This test watches for "the underlying context is truly dead after disposal": login must be denied.
  */
 function makeAuth() {
   return createJWTAuth({
@@ -23,7 +25,7 @@ function makeAuth() {
 }
 
 describe('jwt-auth dispose', () => {
-  it('dispose() 之后 login() 必须失效（原来仍然成功）', async () => {
+  it('login() must fail after dispose() (previously it still succeeded)', async () => {
     const auth = makeAuth()
     await auth.login({} as never)
     expect(auth.accessToken.value).toBe('A')
@@ -32,13 +34,14 @@ describe('jwt-auth dispose', () => {
 
     await expect(auth.login({} as never)).rejects.toThrow()
     /*
-     * 这里**不**断言 session 被清空：销毁后 session 残留是 `@vobs/auth` 的**另一条**已记录缺陷
-     * （§12.3 #8「dispose() 不清 session.value」），不属于本次"dispose 空转"的修复范围。
-     * 不把第二条修偷偷塞进这一项。
+     * Deliberately **not** asserting that the session is cleared: a lingering session after disposal
+     * is a **separate** documented defect of `@vobs/auth` (§12.3 #8 "dispose() does not clear
+     * session.value") and is out of scope for this "dispose no-op" fix. Not smuggling a second fix
+     * into this test.
      */
   })
 
-  it('dispose() 幂等（重复调用不抛）', () => {
+  it('dispose() is idempotent (repeated calls do not throw)', () => {
     const auth = makeAuth()
     auth.dispose()
     expect(() => auth.dispose()).not.toThrow()

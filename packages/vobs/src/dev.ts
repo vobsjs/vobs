@@ -1,21 +1,28 @@
 /**
- * 开发期护栏 —— 把 vobs 里「静默失效」的两类写法变成结构化报错。
+ * Development guardrails — turn the two classes of "silently broken" patterns in
+ * vobs into structured errors.
  *
- * 为什么需要它：模型（和人）最容易在 vobs 上犯的错，恰恰是**不发声**的错。
- * 最典型的是 effect 自订阅 —— `effect(() => { count.value++ })` 会自己把自己
- * 重新调度，实测能连续重跑上百轮，期间不报错、不崩溃，只是变慢，最后被别的问题
- * 掩盖掉。AI 拿到这种反馈只会照错的写法再改一遍。
+ * Why this exists: the mistakes models (and humans) most easily make on vobs are
+ * precisely the ones that **fail silently**. The classic case is effect
+ * self-subscription — `effect(() => { count.value++ })` reschedules itself;
+ * in real measurements it kept re-running for hundreds of rounds without
+ * erroring or crashing, just getting slower, until it got buried under some
+ * other problem. Given that feedback, an AI just re-applies the same broken
+ * pattern.
  *
- * 产出的是框架里既有的 `VobsError`（`layer: 'constraint'`），不是另造一套形状 ——
- * 这样终端/DevTools/开发台面板都能复用 `formatVobsError` 与同一组字段：
- * `code` / `severity` / `fix` / `location` / `example`。
+ * The output is the framework's existing `VobsError` (`layer: 'constraint'`),
+ * not a new shape — so the terminal / DevTools / devtools panel can reuse
+ * `formatVobsError` and the same field set:
+ * `code` / `severity` / `fix` / `location` / `example`.
  *
- * 实现方式：**完全建立在 `@vobs/reactivity` 已有的 debug 钩子上**，不改热路径、
- * 不引入运行时开销（没人装 hooks 时 `hasDebugHooks()` 直接短路）。代价是护栏
- * 只能**报告**，不能中断 —— 钩子里的异常会被 `invokeDebug` 吞掉，这是刻意的
- * 保证（调试工具绝不改变应用行为）。
+ * Implementation: **built entirely on the existing debug hooks of
+ * `@vobs/reactivity`**, no hot-path changes, no runtime overhead
+ * (`hasDebugHooks()` short-circuits when nobody installed hooks). The tradeoff
+ * is that guardrails can only **report**, not interrupt — exceptions inside
+ * hooks are swallowed by `invokeDebug`, which is a deliberate guarantee
+ * (debug tooling must never change application behavior).
  *
- * 用法：
+ * Usage:
  * ```ts
  * import { installDevGuardrails } from '@vobs/vobs/dev'
  *
@@ -38,44 +45,48 @@ import {
 import { VobsError, formatVobsError, type VobsErrorLocation } from '@vobs/runtime/error'
 import { vobsC210Example, vobsC210Fix } from '@vobs/runtime'
 
-/** effect 写入了自己依赖的信号 —— 最常见的自订阅。 */
+/** An effect wrote to a signal it depends on — the most common self-subscription. */
 export const VOBS_C210 = 'VOBS_C210'
-/** 时间窗内同一个 effect 连跑次数异常 —— 跨 effect 互相触发的循环兜底。 */
+/** The same effect ran an abnormal number of times within the time window — a catch-all for cross-effect trigger loops. */
 export const VOBS_C211 = 'VOBS_C211'
 
-/** 一次护栏命中：结构化错误 + 该位置累计命中次数。 */
+/** One guardrail hit: the structured error plus the accumulated hit count for that location. */
 export interface GuardrailViolation {
   readonly error: VobsError
-  /** 同一位置第几次命中。首报为 1。 */
+  /** Which hit this is at the same location. First report is 1. */
   readonly count: number
 }
 
 export interface DevGuardrailOptions {
-  /** 每产生一条违规调用一次；同一位置合并计数时会重复调用，count 递增。 */
+  /** Called once per violation; merged counts at the same location call it again with an incremented count. */
   onViolation?: (violation: GuardrailViolation) => void
   /**
-   * 时间窗内同一个 effect 连跑超过这个次数即判定为循环。默认 50。
-   * 为什么用时间窗而不是 flush 边界：调度器可能每次写入都开一次刷新，循环会跨 flush，
-   * 按 flush 计数会漏；而真正的循环一定在极短时间内连跑很多次。
+   * If the same effect runs more than this many times within the time window, it is
+   * judged a loop. Default 50.
+   * Why a time window instead of flush boundaries: the scheduler may open a flush
+   * per write, so a loop can span flushes and flush-based counting would miss it;
+   * a real loop always runs many times in a very short span.
    */
   effectRerunLimit?: number
-  /** 连跑统计的时间窗（毫秒）。默认 100。 */
+  /** Time window (ms) for the re-run statistics. Default 100. */
   rerunWindowMs?: number
-  /** 是否同时用 `formatVobsError` 打到 console.error（默认 true）。 */
+  /** Whether to also log via `formatVobsError` to console.error (default true). */
   console?: boolean
-  /** 最多报告多少个不同位置（防循环把内存刷爆）。默认 50。 */
+  /** How many distinct locations to report at most (keeps a loop from exhausting memory). Default 50. */
   maxSites?: number
 }
 
 let active: (() => void) | null = null
 
 /**
- * 内部栈帧的函数名。**按函数名跳过而不是按目录跳过** —— 目录过滤会误伤用户自己的
- * 文件（项目里叫 `src/effect.ts` 很正常），而函数名是框架自己的实现细节。
+ * Internal stack frame function names. **Skip by function name, not by
+ * directory** — directory filtering would hit users' own files (a project can
+ * legitimately have `src/effect.ts`), whereas these names are the framework's
+ * own implementation details.
  */
 const INTERNAL_FRAMES = /^(?:captureLocation|effectCreated|effectRunStart|effectRunEnd|signalChanged|invokeDebug|trackDependency|effect|renderEffect|run)$/u
 
-/** 从 stack 里找第一个用户代码帧，转成框架统一的位置结构。 */
+/** Find the first user-code frame in the stack and convert it to the framework's unified location shape. */
 function captureLocation(): VobsErrorLocation | undefined {
   const stack = new Error().stack
   if (stack === undefined) return undefined
@@ -98,41 +109,46 @@ function captureLocation(): VobsErrorLocation | undefined {
 
 function signalLabel(signal: ReadableSignal<unknown>): string {
   const name = getSignalDebugName(signal)
-  return name === undefined ? '(未命名信号)' : `"${name}"`
+  return name === undefined ? '(unnamed signal)' : `"${name}"`
 }
 
 /**
- * 信号没有名字时，补一句**为什么**以及**怎么修**。
+ * When the signal has no name, add a line on **why** and **how to fix**.
  *
- * ## 实测出来的成因（不是推测）
+ * ## Measured causes (not speculation)
  *
- * 编译器的 `inferStateDebugName` 只在 `state` 是**直接从 `@vobs/reactivity` /
- * `@vobs/vobs` 引入**时才从变量名推断。实测四种形态：
+ * The compiler's `inferStateDebugName` only infers a name from the variable when
+ * `state` is **imported directly from `@vobs/reactivity` / `@vobs/vobs`**.
+ * Four shapes, measured:
  *
  * ```
- * 有名字   .tsx 直接 import
- * 有名字   .ts  直接 import          ← 与文件扩展名无关
- * 无名字   .ts  经自己的 barrel 再导出引入
- * 无名字   .tsx 经自己的 barrel 再导出引入
+ * named    .tsx direct import
+ * named    .ts  direct import          ← independent of file extension
+ * unnamed  .ts  imported via our own barrel re-export
+ * unnamed  .tsx imported via our own barrel re-export
  * ```
  *
- * 真凶是 **barrel 再导出**，不是「.ts 文件没被编译」（我最初的推测是错的）。
- * 识别 barrel 需要跨文件模块解析，而编译器的 transform 是**逐文件**的，做不到。
+ * The real culprit is **barrel re-export**, not ".ts files not being compiled"
+ * (my first hypothesis was wrong). Detecting barrels requires cross-file module
+ * resolution, and the compiler's transform is **per-file** — it cannot do that.
  *
- * ## 为什么要在这里说
+ * ## Why this is said here
  *
- * 看到 `(未命名信号)` 时不知道该改什么，只能手工回溯 —— 实测反馈里这是最贵的一环。
- * 而修法只是**一行 import 改动**（或显式传状态名），所以必须让报错本身讲出来。
+ * Seeing `(unnamed signal)` gives no clue what to change, only manual backtracking —
+ * in real feedback this was the most expensive step. The fix is a **one-line
+ * import change** (or passing the debug name explicitly), so the error itself
+ * must say it.
  */
 function unnamedSignalHint(signal: ReadableSignal<unknown>): string {
   if (getSignalDebugName(signal) !== undefined) return ""
-  return "\n  该信号没有名字 —— 常见原因：`state` 是经**自己的 barrel / 再导出**引入的"
-    + "（编译器只对直接从 `@vobs/reactivity` / `@vobs/vobs` 引入的 `state` 自动命名）。"
-    + "改成直接引入，或显式传名：`state(initial, \"entSync\")`。有了名字，这条报错会直接点名。"
+  return "\n  This signal has no name — common cause: `state` is imported through **your own barrel / re-export**"
+    + " (the compiler only auto-names `state` imported directly from `@vobs/reactivity` / `@vobs/vobs`)."
+    + " Import it directly, or pass the name explicitly: `state(initial, \"entSync\")`. With a name, this error points at it directly."
 }
 
 /**
- * 装上开发期护栏，返回卸载函数。重复调用幂等（返回同一个卸载函数）。
+ * Install the development guardrails and return the uninstall function.
+ * Repeated calls are idempotent (they return the same uninstall function).
  */
 export function installDevGuardrails(options: DevGuardrailOptions = {}): () => void {
   if (active !== null) return active
@@ -143,19 +159,20 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
   const rerunWindowMs = options.rerunWindowMs ?? 100
   const maxSites = options.maxSites ?? 50
 
-  /** 正在运行的 effect 栈（effect 可以嵌套）。 */
+  /** Stack of currently running effects (effects can nest). */
   const running: Effect[] = []
-  /** 每个 effect 在当前时间窗内的连跑次数。WeakMap：effect 被释放时不持有引用。 */
+  /** Per-effect run count inside the current time window. WeakMap: holds no reference once the effect is released. */
   const bursts = new WeakMap<Effect, { runs: number; startedAt: number }>()
   /**
-   * 每个 effect 的**创建位置**。
+   * Each effect's **creation location**.
    *
-   * 必须在 `effectCreated` 时抓一次并记住：重跑发生在调度器的微任务里，
-   * 那时候的调用栈根本没有用户代码 —— 每次重跑都现抓，同一个 effect 会报出
-   * 好几个不同位置，反而找不到源头。
+   * Must be captured once at `effectCreated` and remembered: re-runs happen in
+   * the scheduler's microtask, where the call stack contains no user code at
+   * all — capturing per re-run would report several different locations for
+   * the same effect, hiding the source.
    */
   const sites = new WeakMap<Effect, VobsErrorLocation | undefined>()
-  /** 同一个位置只留一条，之后只累加计数。 */
+  /** One entry per location; afterwards only the count accumulates. */
   const seen = new Map<string, GuardrailViolation>()
 
   const emit = (error: VobsError): void => {
@@ -180,7 +197,7 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
     ...previous,
 
     effectCreated(effect: Effect, owner: Owner | null): void {
-      // 唯一一次能拿到用户代码栈的时机
+      // The only moment where a user-code stack is available
       sites.set(effect, captureLocation())
       previous?.effectCreated?.(effect, owner)
     },
@@ -188,7 +205,8 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
     effectRunStart(effect: Effect): void {
       running.push(effect)
 
-      // 读侧兜底：依赖检测漏掉的（典型是两个 effect 互相触发）在这里现形
+      // Read-side catch-all: what dependency detection misses (typically two
+      // effects triggering each other) shows up here
       const now = Date.now()
       const burst = bursts.get(effect)
       if (burst === undefined || now - burst.startedAt > rerunWindowMs) {
@@ -201,12 +219,12 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
             severity: 'error',
             layer: 'constraint',
             location: sites.get(effect),
-            message: `同一个 effect 在 ${rerunWindowMs}ms 内连跑了 ${burst.runs} 次 —— 大概率是自订阅，或两个 effect 在互相触发`,
-            fix: '首选：显式声明依赖 `effect(on(deps, () => { … }))`（on 让回调里的读取不订阅）；'
-              + '由其它信号派生的值改用 memo，而不是「读 A 写 B」；'
-              + '兜底才是把写自己读过的信号用 untrack 包住。'
-              + '注意被调函数在**首个 await 之前**的代码也是同步执行的 —— '
-              + '「effect 里只调了个函数」不等于没依赖（编译期 VOBS_C106 会提示 async 回调）。',
+            message: `The same effect ran ${burst.runs} times within ${rerunWindowMs}ms — most likely self-subscription, or two effects triggering each other`,
+            fix: 'Preferred: declare dependencies explicitly with `effect(on(deps, () => { … }))` (on keeps reads inside the callback untracked); '
+              + 'use memo for values derived from other signals instead of "read A, write B"; '
+              + 'as a last resort wrap the write to a signal this effect reads in untrack.'
+              + 'Note that code in the called function **before the first await** also runs synchronously — '
+              + '"only calling a function" inside the effect does not mean no dependencies (compile-time VOBS_C106 flags async callbacks).',
             docs: 'https://github.com/vobsjs/vobs/blob/main/docs/dev-guardrails.md'
           }))
         }
@@ -226,7 +244,7 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
 
       const current = running[running.length - 1]
       if (current === undefined || current.disposed) return
-      // 这个 effect 现在就订着这个信号：这次写入会把它重新调度 → 自订阅
+      // This effect currently subscribes to this signal: the write will reschedule it → self-subscription
       if (!current.dependencies.has(signal as unknown as Dependency)) return
 
       const label = signalLabel(signal)
@@ -236,20 +254,24 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
         severity: 'error',
         layer: 'constraint',
         location: sites.get(current),
-        message: `effect 写入了它自己依赖的信号 ${label} —— 这次写入会把它重新调度，形成自订阅循环`
+        message: `Effect wrote to signal ${label} that it depends on — this write reschedules it, forming a self-subscription loop`
         + unnamedSignalHint(signal),
         /*
-         * fix 的顺序很要紧：**先教结构，再教补丁**。
+         * The fix order matters a lot: **teach the structure first, then the patch**.
          *
-         * 只教 `untrack(...)` 不够 —— 那是**局部补丁**：它让这次写入不再触发重跑，
-         * 但没有回答"这个 effect 为什么订阅了它"，而且是需要人记得的写法，不是结构。
+         * Teaching only `untrack(...)` is not enough — that is a **local patch**: it
+         * stops this write from triggering a re-run, but never answers "why does this
+         * effect subscribe to it", and it relies on a person remembering to write it —
+         * it is not structure.
          *
-         * 首选是 `on()`：显式声明依赖，回调在 untrack
-         * 作用域里跑，所以它调用的函数碰什么信号都不会反向订阅 —— **结构上写不出来**。
-         * 其次是改用派生值 / memo。
+         * Preferred is `on()`: explicit dependency declaration, the callback runs in an
+         * untrack scope, so any function it calls can touch any signal without
+         * reverse-subscribing — the mistake becomes **structurally impossible to write**.
+         * Second choice is switching to a derived value / memo.
          */
-        // 与静态规则（@vobs/compiler 的 analyze）**共用同一份文案** —— 此前两处各写一份，
-        // 1.8.5 只改了这里，静态规则那份还是旧文案，于是 vite 通道给出过时建议。
+        // Shares the **same copy** as the static rule (analyze in @vobs/compiler) —
+        // previously each side had its own text; 1.8.5 only updated this one, the
+        // static rule still had the old text, so the vite channel gave outdated advice.
         fix: vobsC210Fix(bare),
         example: vobsC210Example(bare),
         docs: 'https://github.com/vobsjs/vobs/blob/main/docs/dev-guardrails.md'
@@ -269,7 +291,7 @@ export function installDevGuardrails(options: DevGuardrailOptions = {}): () => v
   return uninstall
 }
 
-/** 当前是否已装护栏。 */
+/** Whether the guardrails are currently installed. */
 export function isDevGuardrailsInstalled(): boolean {
   return active !== null
 }

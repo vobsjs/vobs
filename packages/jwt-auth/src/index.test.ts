@@ -7,7 +7,7 @@ import { JWT_AUTH_KEY, createJWTAuth, jwtAuthPlugin, useJWTAuth } from './index'
 const user = { id: '42', roles: ['admin'], permissions: ['users:read'] }
 
 describe('@vobs/jwt-auth', () => {
-  it('通过用户 transport 登录并只在内存中保存 token', async () => {
+  it('logs in through the user transport and keeps the token in memory only', async () => {
     const transport = {
       login: vi.fn(async () => ({ accessToken: 'access-1', user })),
       refresh: vi.fn(async () => ({ accessToken: 'access-2' }))
@@ -20,7 +20,7 @@ describe('@vobs/jwt-auth', () => {
     auth.dispose()
   })
 
-  it('并发 refresh 只调用用户 transport 一次', async () => {
+  it('concurrent refreshes call the user transport only once', async () => {
     let resolve!: (value: { accessToken: string }) => void
     const transport = {
       login: vi.fn(async () => ({ accessToken: 'access-1', user })),
@@ -36,7 +36,7 @@ describe('@vobs/jwt-auth', () => {
     auth.dispose()
   })
 
-  it('refresh 失败时清空 session、token 并报告错误', async () => {
+  it('a failed refresh clears session and token and reports the error', async () => {
     const failure = new Error('expired refresh')
     const onAuthFailure = vi.fn()
     const auth = createJWTAuth({
@@ -54,7 +54,7 @@ describe('@vobs/jwt-auth', () => {
     auth.dispose()
   })
 
-  it('登出只调用用户回调并清理本地状态', async () => {
+  it('logout only calls the user callback and clears local state', async () => {
     const logout = vi.fn()
     const auth = createJWTAuth({
       transport: {
@@ -71,7 +71,7 @@ describe('@vobs/jwt-auth', () => {
     auth.dispose()
   })
 
-  it('插件只注入用户提供的 auth，未提供依赖时明确报错', () => {
+  it('plugin injects only the user-provided auth and errors clearly when dependencies are missing', () => {
     let authContext: unknown
     let jwtContext: unknown
     const app = createVobs({
@@ -90,7 +90,7 @@ describe('@vobs/jwt-auth', () => {
     app.mount(document.createElement('div'))
     expect(authContext).toBe(jwtContext)
     app.destroy()
-    expect(() => (jwtContext as ReturnType<typeof createJWTAuth>).getAccessToken()).toThrow('已销毁')
+    expect(() => (jwtContext as ReturnType<typeof createJWTAuth>).getAccessToken()).toThrow('disposed')
 
     const missing = createVobs({ render: () => { useJWTAuth(); return createText('') } })
     expect(() => missing.mount(document.createElement('div'))).toThrowError(

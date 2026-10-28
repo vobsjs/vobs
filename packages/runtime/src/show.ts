@@ -4,70 +4,78 @@ import { removeAttribute, setAttribute, setProperty } from './ops'
 
 export interface ShowProps {
   /**
-   * 条件。要响应式就传 getter / 信号读取表达式
-   * （编译器会把动态 props 自动转成 getter，所以 JSX 里写 `when={open.value}` 即可）。
+   * The condition. Pass a getter / signal read expression for reactivity
+   * (the compiler auto-converts dynamic props into getters, so `when={open.value}`
+   * in JSX is enough).
    */
   readonly when: unknown
   /**
-   * 要显示的内容。**必须是单个元素**（`<div>` / `<input>` / 组件返回的元素都行）——
-   * 因为"保留挂载 + 切可见性"必须有一个宿主元素来挂 `hidden`/`inert`，
-   * 而框架**不会替你插包裹层**（包裹层会改变 flex/grid 布局，是更隐蔽的坑）。
+   * The content to show. **Must be a single element** (`<div>` / `<input>` / an element
+   * returned by a component all work) — because "keep mounted + toggle visibility" needs
+   * a host element to carry `hidden`/`inert`, and the framework **will not insert a
+   * wrapper for you** (a wrapper changes flex/grid layout — a subtler trap).
    */
   readonly children?: VobsNode | (() => VobsNode | null | undefined)
-  /** 隐藏时额外挂上的类名（可选）。默认只用 `hidden` + `inert`。 */
+  /** Extra class name applied while hidden (optional). By default only `hidden` + `inert` are used. */
   readonly hiddenClass?: string
 }
 
 /**
- * 条件显示，**保留子树挂载状态**（不重建）。
+ * Conditional display that **keeps the subtree mounted** (no rebuild).
  *
- * ## 为什么需要它（外部踩坑文档 C 条，★★）
+ * ## Why it exists (external postmortem doc item C, ★★)
  *
- * `insertDynamic` 按引用比较（`next === current`）：条件表达式一变化就**重建子树**。
- * 后果是条件分支里的输入控件**每敲一个字符就丢焦点**、滚动位置与内部状态全丢。
+ * `insertDynamic` compares by reference (`next === current`): when the condition
+ * expression changes it **rebuilds the subtree**. The consequence is that input controls
+ * inside the conditional branch **lose focus on every keystroke**, and scroll position
+ * plus internal state are all lost.
  *
- * 文档给出的对策是「固定渲染 + 响应式 class 显隐」，但那是**人肉纪律** ——
- * 每个页面都要记得这么写。`Show` 把它变成一行：
+ * The doc's countermeasure is "always render + toggle visibility via a reactive class",
+ * but that is **human discipline** — every page must remember to write it that way.
+ * `Show` makes it one line:
  *
  * ```tsx
  * <Show when={open.value} hiddenClass="is-hidden">
- *   <input />        {/* 条件怎么变，这个 input 都不会被重建，焦点与状态保持 *\/}
+ *   <input />        {/* however the condition changes, this input is never rebuilt; focus and state persist *\/}
  * </Show>
  * ```
  *
- * 与 `{cond ? <A/> : <B/>}` 的分工：
- * - 要**保留状态**（输入框、滚动位置、内部子系统）→ 用 `Show`
- * - 要**真正卸载**（省内存、必须销毁副作用）→ 用 JSX 条件表达式（编译期生成条件工厂）
+ * Division of labor with `{cond ? <A/> : <B/>}`:
+ * - want to **preserve state** (inputs, scroll position, internal subsystems) → use `Show`
+ * - want a **real unmount** (save memory, side effects must be destroyed) → use a JSX
+ *   conditional expression (the compiler generates a conditional factory)
  *
- * ## 隐藏时同时挂 `inert`
+ * ## `inert` is set alongside `hidden`
  *
- * 只设 `hidden` 在部分场景下元素仍可被 Tab 到（详见 `@vobs/layout` 的同类处理）。
- * `inert` 把子树移出**焦点顺序与无障碍树**。旧浏览器不支持时 `inert=""` 只是个
- * 无害的未知属性，`hidden` 仍在兜底。
+ * With `hidden` alone the element can still be Tab-reachable in some scenarios
+ * (see `@vobs/layout` for the same treatment). `inert` removes the subtree from the
+ * **focus order and the accessibility tree**. In old browsers without support,
+ * `inert=""` is just a harmless unknown attribute; `hidden` still backstops.
  *
- * ## 边界
+ * ## Boundary
  *
- * 子节点不是单个元素（文本 / fragment / 多个节点）时**抛出并说明原因** ——
- * 不静默退化成"卸载"（那会让用户以为状态保住了，实际每变化一次就重建，
- * 正是 C 条那个 bug 的形态）。需要保留状态就请把内容包在一个元素里。
+ * When the child is not a single element (text / fragment / multiple nodes) it
+ * **throws and explains why** — it does not silently degrade to "unmount" (that would
+ * make the user believe state was preserved while in fact everything rebuilds on each
+ * change — exactly the shape of bug C). To preserve state, wrap the content in one element.
  */
 export function Show(props: ShowProps): VobsNode {
   /*
-   * 用 `unknown` 承接再判空：`props.children` 的声明类型不含 `false`，
-   * 但运行时 `cond && <X/>` 这类写法确实会给出 `false` ——
-   * 直接比较会被 TS 判成"类型不可达"（与 `createComponent` 同一处坑）。
+   * Receive as `unknown` then null-check: the declared type of `props.children` excludes
+   * `false`, but at runtime forms like `cond && <X/>` do yield `false` —
+   * comparing directly makes TS call it "unreachable" (same pitfall as `createComponent`).
    */
   const resolved: unknown = typeof props.children === 'function' ? props.children() : props.children
   if (resolved === null || resolved === undefined || resolved === false) {
-    throw new Error('Vobs Show: children 不能为空 —— 它需要一个宿主元素来挂 hidden/inert。')
+    throw new Error('Vobs Show: children cannot be empty — it needs a host element to carry hidden/inert.')
   }
   const node = resolved as VobsNode
   if (isVobsFragment(node) || (node as Element).nodeType !== 1) {
     throw new Error(
-      'Vobs Show: children 必须是单个元素。'
-      + '「保留挂载 + 切可见性」需要宿主元素，而框架不会替你插包裹层（会改布局）。'
-      + '请把内容包进一个元素，例如 <Show when={…}><div>…</div></Show>；'
-      + '若确实需要卸载语义，请改用 JSX 条件表达式 {cond ? <A/> : <B/>}。'
+      'Vobs Show: children must be a single element. '
+      + '"Keep mounted + toggle visibility" needs a host element, and the framework will not insert a wrapper for you (it would change layout). '
+      + 'Wrap the content in an element, e.g. <Show when={…}><div>…</div></Show>; '
+      + 'if you truly need unmount semantics, use a JSX conditional expression {cond ? <A/> : <B/>} instead.'
     )
   }
   const element = node as Element
@@ -75,9 +83,9 @@ export function Show(props: ShowProps): VobsNode {
   effect(() => {
     const visible = Boolean(readMaybeGetter(props.when))
     /*
-     * 可见性切换只碰这三个东西：`hidden`、`inert`、可选类名。
-     * 不读任何信号（`when` 的读取在 effect 内、由调用方提供的 getter 完成），
-     * 所以不会自我订阅。
+     * Visibility toggling touches exactly three things: `hidden`, `inert`, and the
+     * optional class name. It reads no signal inside itself (the `when` read happens
+     * inside the effect, via the caller-provided getter), so it cannot self-subscribe.
      */
     setProperty(element, 'hidden', !visible)
     if (visible) removeAttribute(element, 'inert')
@@ -92,7 +100,7 @@ function readMaybeGetter<T>(value: T | (() => T)): T {
   return typeof value === 'function' ? (value as () => T)() : value
 }
 
-/** 按需增删一个类名（不影响作者写在 `class` 里的其它类）。 */
+/** Add or remove one class name as needed (leaves the other classes authored in `class` untouched). */
 function applyExtraClass(element: Element, className: string, on: boolean): void {
   const names = element.getAttribute('class')?.split(/\s+/u).filter(Boolean) ?? []
   if (on) {

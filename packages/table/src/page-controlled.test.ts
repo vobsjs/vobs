@@ -9,16 +9,24 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * 静态数字 `page` 是**受控**语义：页码恒为它，作者不采纳回调就不动。
+ * A static number `page` is **controlled** semantics: the page stays at that
+ * number and doesn't move unless the author adopts the callback.
  *
- * 深读报告把这条写成"静默失效：静态数字 page 冻结分页，显示 page2 而 emit 是 page1"。
- * **我复现后判定不是 bug**：实测静态 `page: 2` + `pageSize: 4` + 9 行时渲染第 2 页；
- * 点"下一页"发出 `{page: 3, pageSize: 4, ...}`（发出的完全是用户意图），而渲染**仍停在第 2 页** ——
- * 这正是受控组件的定义：组件报告意图，作者决定是否把新值传回来。
- * （与 `sort: null` 那条同源：报告的"静默失效"框架在 table 上多数不成立。）
+ * A deep-read report wrote this up as "silent failure: a static number page
+ * freezes pagination, showing page 2 while emitting page 1". **After
+ * reproducing, I judged it not a bug**: verified that static `page: 2` +
+ * `pageSize: 4` + 9 rows renders page 2; clicking "next" emits
+ * `{page: 3, pageSize: 4, ...}` (emitting exactly the user's intent) while the
+ * render **still stays on page 2** — which is the definition of a controlled
+ * component: the component reports intent, the author decides whether to pass
+ * the new value back.
+ * (Same root as the `sort: null` item: the report's "silent failure" frame
+ * mostly doesn't hold for the table.)
  *
- * 真正缺的是**文档**：类型写成 `page?: number | Signal<number>`，却没说明"数字 = 受控固定页"。
- * 这里把契约钉住，免得以后有人把它当 bug"修"成非受控。
+ * What was actually missing is **documentation**: the type says
+ * `page?: number | Signal<number>` without explaining "a number = controlled
+ * fixed page". This pins the contract so nobody later "fixes" it into
+ * uncontrolled behavior.
  */
 interface Row { id: number; name: string }
 
@@ -40,22 +48,22 @@ function mountTable(extra: Record<string, unknown>) {
   return { host, queries, bodyText, next, cleanup: () => { app.destroy(); host.remove() } }
 }
 
-describe('KitDataTable 页码受控语义', () => {
-  it('静态数字 page：渲染停在该页，回调只报告用户意图', async () => {
+describe('KitDataTable controlled page semantics', () => {
+  it('static number page: rendering stays on that page and the callback only reports user intent', async () => {
     const { queries, bodyText, next, cleanup } = mountTable({ page: 2 })
     await settle()
     expect(bodyText()).toBe('n5,n6,n7,n8')
 
     next()?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
     await settle()
-    // 组件把用户意图如实报出去……
+    // The component faithfully reports the user's intent…
     expect(queries).toEqual([{ page: 3, pageSize: 4, sort: null, filters: {} }])
-    // ……但显示仍然跟随作者给的 page（受控）
+    // …but the display still follows the author-provided page (controlled)
     expect(bodyText()).toBe('n5,n6,n7,n8')
     cleanup()
   })
 
-  it('传 Signal 时作者采纳回调，翻页才真的动', async () => {
+  it('with a Signal adopted by the callback, paging actually moves', async () => {
     const page = state(2)
     const queries: DataTableQuery[] = []
     const host = document.createElement('main')

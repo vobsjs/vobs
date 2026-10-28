@@ -6,29 +6,32 @@ import { createComponent, createVobs, setRenderer } from '@vobs/vobs'
 import { createTheme, ThemeBoundary, themePlugin, useTheme, type ThemeContext } from './index'
 
 /*
- * scoped 主题的 `setBrand` 漏了 `untrack` → 在 effect 内调用是**自订阅**。
+ * The scoped theme's `setBrand` was missing `untrack` → calling it inside an effect is
+ * **self-subscription**.
  *
- * 实测形态：ThemeBoundary 子树里的组件 effect 调 `useTheme().setBrand(...)`
- * → 框架护栏报 VOBS_C210，并真的抛 "响应式更新超过 100 轮"（runs=101）。
+ * Measured shape: a component effect inside a ThemeBoundary subtree calling
+ * `useTheme().setBrand(...)` → the framework guard reports VOBS_C210 and really throws "reactive
+ * updates exceeded 100 rounds" (runs=101).
  *
- * 根主题的实现（`index.ts:202-224`）早就把读取放进了 `untrack`，**scoped 那份漏了**
- * —— 同一份逻辑写两遍的典型后果。
+ * The root theme implementation (`index.ts:202-224`) had long put its reads inside `untrack`;
+ * **the scoped copy was missing it** — the classic consequence of writing the same logic twice.
  *
- * 测法：把 ThemeBoundary 挂进真实 app，在子组件里用 `useTheme()` 拿到**scoped** 上下文。
+ * Test approach: mount ThemeBoundary into a real app and capture the **scoped** context in a child
+ * component via `useTheme()`.
  */
 setRenderer(createDOMRenderer())
 
 let apps: Array<{ destroy(): void }> = []
 let stops: Array<{ dispose(): void }> = []
 afterEach(() => {
-  for (const s of stops) { try { s.dispose() } catch { /* 已清理 */ } }
+  for (const s of stops) { try { s.dispose() } catch { /* already cleaned up */ } }
   stops = []
-  for (const app of apps) { try { app.destroy() } catch { /* 已清理 */ } }
+  for (const app of apps) { try { app.destroy() } catch { /* already cleaned up */ } }
   apps = []
   document.body.innerHTML = ''
 })
 
-/** 把 ThemeBoundary 挂起来，并在子树里捕获 scoped 上下文。 */
+/** Mount a ThemeBoundary and capture the scoped context inside the subtree. */
 function mountScoped(): ThemeContext {
   const captured: ThemeContext[] = []
   const Child = () => {
@@ -42,12 +45,12 @@ function mountScoped(): ThemeContext {
   apps.push(app)
   app.mount(document.body.appendChild(document.createElement('div')))
   const scoped = captured[0]
-  if (!scoped) throw new Error('未捕获到 scoped 主题上下文')
+  if (!scoped) throw new Error('failed to capture the scoped theme context')
   return scoped
 }
 
-describe('scoped 主题的 setBrand 不得自订阅', () => {
-  it('在 effect 内调用 setBrand 不会撞上 100 轮循环保护', () => {
+describe('the scoped-theme setBrand must not self-subscribe', () => {
+  it('calling setBrand inside an effect does not hit the 100-round loop guard', () => {
     const scoped = mountScoped()
     let runs = 0
     let thrown: unknown
@@ -55,7 +58,7 @@ describe('scoped 主题的 setBrand 不得自订阅', () => {
     try {
       const stop = effect(() => {
         runs += 1
-        // 在 effect 内改品牌色 —— "运行时切换品牌色"的常见写法
+        // Change the brand color inside an effect — the common "switch brand color at runtime" pattern
         scoped.setBrand({ primary: `#${String(runs).padStart(6, '0')}` })
       })
       stops.push(stop)
@@ -63,18 +66,18 @@ describe('scoped 主题的 setBrand 不得自订阅', () => {
       thrown = error
     }
 
-    // 修复前：runs 会一路涨到 101 并抛 "Vobs: 响应式更新超过 100 轮，可能存在循环依赖"
+    // Before the fix: runs climbed to 101 and threw "Vobs: reactive updates exceeded 100 rounds, a circular dependency may exist"
     expect(thrown).toBeUndefined()
     expect(runs).toBeLessThan(10)
   })
 
-  it('setBrand 之后 brand.value 确实更新（不是靠 untrack 把它弄丢）', () => {
+  it('brand.value really updates after setBrand (not lost via untrack)', () => {
     const scoped = mountScoped()
     scoped.setBrand({ primary: '#123456' })
     expect(scoped.brand.value.primary).toBe('#123456')
   })
 
-  it('连续 setBrand 收敛：每次都基于当前值合并', () => {
+  it('consecutive setBrand calls converge: each merges on top of the current value', () => {
     const scoped = mountScoped()
     scoped.setBrand({ primary: '#111111' })
     scoped.setBrand({ secondary: '#222222' })
@@ -82,15 +85,15 @@ describe('scoped 主题的 setBrand 不得自订阅', () => {
     expect(scoped.brand.value.secondary).toBe('#222222')
   })
 
-  it('scoped setBrand 不污染父主题', () => {
+  it('scoped setBrand does not pollute the parent theme', () => {
     const scoped = mountScoped()
-    const parent = useTheme /* 仅用于类型引用，占位 */ as unknown as undefined
+    const parent = useTheme /* type reference only, placeholder */ as unknown as undefined
     void parent
     scoped.setBrand({ primary: '#abcdef' })
     expect(scoped.brand.value.primary).toBe('#abcdef')
   })
 
-  it('对照：根主题的 setBrand 在 effect 内本来就不自订阅（已修过的那个）', () => {
+  it('control: the root-theme setBrand never self-subscribed inside effects (the one already fixed)', () => {
     const app = createTheme({ defaultMode: 'light' })
     let runs = 0
     let thrown: unknown

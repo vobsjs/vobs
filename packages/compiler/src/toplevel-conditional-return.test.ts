@@ -1,17 +1,17 @@
 /*
- * `VOBS_C104`：组件顶层**裸条件 `return`**。
+ * `VOBS_C104`: a **bare conditional `return`** at the top level of a component.
  *
- * 为什么值得一条编译错误：组件是 run-once 的 —— 函数体只执行一次，`cond` 在挂载那一刻定死，
- * 之后信号变化**不会**再执行这个 `return`，界面永远不会切换。而它与
- * 「JSX 子节点里的 `{cond ? <A/> : <B/>}`」（编译期生成响应式条件工厂）**长得极像**，
- * 靠人眼区分极难 —— 文档里这是"中招最多"的一条（总数/预览/进度/选中项全中过）。
+ * Why it deserves a compile diagnostic: components are run-once — the function body executes once and `cond` is pinned at mount time,
+ * and later signal changes **never** re-run this `return`, so the UI never switches. And it looks
+ * **extremely similar** to `{cond ? <A/> : <B/>}` at a JSX child position (a compiler-generated reactive conditional factory),
+ * making them very hard to tell apart by eye — in the docs this is the "most hit" rule (totals/preview/progress/selection all hit it).
  *
- * 更贵的一次事故（Labelune 发版黑屏）：`return cond ? <JSX/> : null` 的 `null` 分支
- * 曾被当成 WeakMap 的 key 直接抛错，App 挂载即崩且无崩溃日志。
- * 运行时已修（空值归一化成空注释节点），但**语义仍然是错的** —— 不切换。
+ * A costlier incident (Labelune release black screen): the `null` branch of `return cond ? <JSX/> : null`
+ * was once used as a WeakMap key and threw directly; the app crashed on mount with no crash log.
+ * The runtime has been fixed (empty values normalize into an empty comment node), but the **semantics are still wrong** — no switching.
  *
- * 判据：只在"函数体直接 return 三元、且有一支是 null/undefined/false"时报；
- * 子节点位置的条件、两支都是节点、嵌套函数内部都不该报。
+ * Test: report only when "the function body directly returns a ternary and one branch is null/undefined/false";
+ * conditions at child positions, both branches being nodes, and nested-function internals must not be reported.
  */
 import { describe, expect, it } from 'vitest'
 import { compileWithSourceMap } from './index'
@@ -20,48 +20,48 @@ const c104 = (source: string): Array<{ code: string; message: string; fix?: stri
   compileWithSourceMap(source, { filename: 'case.tsx' })
     .diagnostics.filter(d => d.code === 'VOBS_C104')
 
-describe('VOBS_C104 顶层条件 return', () => {
-  it('`return cond ? <JSX/> : null` 报错，并点出会返回 null', () => {
+describe('VOBS_C104 top-level conditional return', () => {
+  it('`return cond ? <JSX/> : null` is reported, pointing out the null return', () => {
     const found = c104('export const A = (p: { on: boolean }) => {\n  return p.on ? <div>yes</div> : null\n}')
     expect(found).toHaveLength(1)
     expect(found[0]!.message).toContain('null')
     expect(found[0]!.message).toContain('run-once')
-    expect(found[0]!.fix).toContain('JSX 子节点')
+    expect(found[0]!.fix).toContain('JSX child position')
   })
 
-  it('`return cond && <JSX/>` 报错（false 分支）', () => {
+  it('`return cond && <JSX/>` is reported (the false branch)', () => {
     const found = c104('export const B = (p: { on: boolean }) => {\n  return p.on && <div>yes</div>\n}')
     expect(found).toHaveLength(1)
     expect(found[0]!.message).toContain('false')
   })
 
-  it('`return cond ? <A/> : undefined` 报错', () => {
+  it('`return cond ? <A/> : undefined` is reported', () => {
     const found = c104('export const C = (p: { on: boolean }) => {\n  return p.on ? <b>y</b> : undefined\n}')
     expect(found).toHaveLength(1)
     expect(found[0]!.message).toContain('undefined')
   })
 
-  it('JSX 子节点里的条件**不该**报（那是编译期生成的响应式条件工厂）', () => {
+  it('a condition at a JSX child position must **not** be reported (that is the compiler-generated reactive conditional factory)', () => {
     expect(c104('export const D = (p: { on: boolean }) => {\n  return <div>{p.on ? <b>y</b> : <i>n</i>}</div>\n}')).toEqual([])
   })
 
-  it('两支都是节点**不该**报（语义上仍不切换，但不涉及空值这条判断）', () => {
+  it('both branches being nodes must **not** be reported (semantically still frozen, but outside this empty-value test)', () => {
     expect(c104('export const E = (p: { on: boolean }) => {\n  return p.on ? <b>y</b> : <i>n</i>\n}')).toEqual([])
   })
 
-  it('嵌套函数内部的 return **不该**报（不是组件本体的 return）', () => {
+  it("a return inside a nested function must **not** be reported (not the component body's return)", () => {
     expect(c104('export const F = () => {\n  const pick = (on: boolean) => (on ? 1 : null)\n  return <div>{pick(true)}</div>\n}')).toEqual([])
   })
 
-  it('`.map` 回调里返回 null **不该**报（列表项的常见合法写法）', () => {
+  it('returning null inside a `.map` callback must **not** be reported (a common legitimate list-item shape)', () => {
     expect(c104('export const G = (p: { xs: number[] }) => {\n  return <ul>{p.xs.map(x => (x > 0 ? <li>{x}</li> : null))}</ul>\n}')).toEqual([])
   })
 
-  it('无条件的 return **不该**报', () => {
+  it('an unconditional return must **not** be reported', () => {
     expect(c104('export const H = () => {\n  return <div>plain</div>\n}')).toEqual([])
   })
 
-  it('顶层 return 的定位指向那个三元表达式（行号可用）', () => {
+  it("the top-level return's location points at the ternary expression (usable line number)", () => {
     const result = compileWithSourceMap(
       'export const I = (p: { on: boolean }) => {\n  return p.on ? <div>yes</div> : null\n}',
       { filename: 'loc.tsx' }
@@ -71,13 +71,13 @@ describe('VOBS_C104 顶层条件 return', () => {
     expect(found!.location.line).toBe(2)
     expect(found!.location.file).toBe('loc.tsx')
     /*
-     * 1.8.1 起是 **warning** 而不是 error。
+     * Since 1.8.1 this is a **warning**, not an error.
      *
-     * 理由：这条规则的立论依赖"这个函数是组件"—— 而静态分析**判不出来**
-     * （一个返回 JSX 的箭头函数既可能是组件、也可能是渲染期调用的辅助函数）。
-     * 真项目升级反馈：18 处命中里约 16 处是纯数据函数误报，而 error 直接挡构建。
-     * 收窄（只认渲染节点）之后剩下的仍是启发式，所以不该有挡构建的强度 ——
-     * 与 C105 同一处理。真正会坏的东西由运行时护栏（check:runtime）精确抓到。
+     * Reason: this rule's argument depends on "this function is a component" — and static analysis **cannot tell**,
+     * (an arrow function returning JSX may be a component or a helper invoked during rendering).
+     * Real-project upgrade feedback: about 16 of 18 hits were pure-data-function false positives, and an error blocks builds outright.
+     * Even after narrowing (only render nodes), what remains is still heuristic, so it must not carry build-blocking strength —
+     * the same treatment as C105. What actually breaks is caught precisely by the runtime guardrails (check:runtime).
      */
     expect(found!.severity).toBe('warning')
   })

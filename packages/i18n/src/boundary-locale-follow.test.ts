@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 /*
- * 不传 `locale` 的 `I18nBoundary` 必须**跟随父级**语言。
+ * An `I18nBoundary` without a `locale` prop must **follow the parent's** locale.
  *
- * 原来 `defaultLocale: props.locale ?? parent.locale.value` 只在**创建那一刻读一次** ——
- * 之后父级 `setLocale('zh-CN')`，边界子树里的文案仍是旧语言（对比 `messages` 早就有同步 effect）。
- * 而不传 `locale` 的边界恰恰就是"我想继承父级"的那种用法。
+ * `defaultLocale: props.locale ?? parent.locale.value` used to be read **only once, at creation** —
+ * after the parent called `setLocale('zh-CN')`, the copy in the boundary subtree stayed in the old
+ * language (in contrast to `messages`, which already had a sync effect). And a boundary without a
+ * `locale` prop is precisely the "I want to inherit from the parent" usage.
  *
- * 反向也要锁住：边界内**显式** `setLocale` 之后必须**停止跟随** ——
- * 那是它的显式决定，不能被父级随时覆盖。
+ * The reverse must be locked too: after an **explicit** `setLocale` inside the boundary it must
+ * **stop following** — that's its explicit decision and must not be overwritten by the parent at
+ * any time.
  */
 import { describe, expect, it } from 'vitest'
 import { scheduler } from '@vobs/reactivity'
@@ -15,7 +17,7 @@ import { bindText, createComponent, createText, createVobs } from '@vobs/vobs'
 import type { VobsNode } from '@vobs/vobs'
 import { createI18n, I18nBoundary, i18nPlugin, useI18n, type I18nContext } from './index'
 
-// effect/信号写入是异步调度的：断言前必须 flush，否则看到的是上一帧
+// effect/signal writes are scheduled asynchronously: flush before asserting, otherwise you see the previous frame
 const settle = (): void => { scheduler.flush() }
 
 const Inner = (): VobsNode => {
@@ -25,7 +27,7 @@ const Inner = (): VobsNode => {
   return text
 }
 
-/** 不传 `locale`：边界应当继承并跟随父级。 */
+/** No `locale` prop: the boundary should inherit and follow the parent. */
 function mountInheriting(i18n: I18nContext) {
   const container = document.createElement('main')
   let seen: I18nContext | undefined
@@ -45,8 +47,8 @@ function makeI18n(): I18nContext {
   })
 }
 
-describe('I18nBoundary 不传 locale 时跟随父级', () => {
-  it('父级 setLocale 之后，边界子树里的文案跟着变', () => {
+describe('I18nBoundary follows the parent when no locale is passed', () => {
+  it('after the parent setLocale, the copy in the boundary subtree follows', () => {
     const i18n = makeI18n()
     const view = mountInheriting(i18n)
     expect(view.container.textContent).toBe('Hello')
@@ -54,7 +56,7 @@ describe('I18nBoundary 不传 locale 时跟随父级', () => {
     i18n.setLocale('zh-CN')
 
     settle()
-    expect(view.container.textContent, '父级切语言后边界没有跟随').toBe('你好')
+    expect(view.container.textContent, 'the boundary did not follow the parent locale switch').toBe('你好')
 
     i18n.setLocale('en-US')
 
@@ -65,9 +67,9 @@ describe('I18nBoundary 不传 locale 时跟随父级', () => {
     i18n.dispose()
   })
 
-  it('创建时不传 locale，初始语言取自父级当前值', () => {
+  it('when created without a locale, the initial locale comes from the current parent value', () => {
     const i18n = makeI18n()
-    i18n.setLocale('zh-CN')            // 先切，再挂载
+    i18n.setLocale('zh-CN')            // Switch first, then mount
     const view = mountInheriting(i18n)
     expect(view.container.textContent).toBe('你好')
 
@@ -75,30 +77,32 @@ describe('I18nBoundary 不传 locale 时跟随父级', () => {
     i18n.dispose()
   })
 
-  it('边界内显式 setLocale 之后停止跟随父级', () => {
+  it('after an explicit setLocale inside the boundary, it stops following the parent', () => {
     const i18n = makeI18n()
     const view = mountInheriting(i18n)
     expect(view.container.textContent).toBe('Hello')
 
-    view.local().setLocale('zh-CN')     // 边界的显式决定
+    view.local().setLocale('zh-CN')     // The boundary's explicit decision
 
     settle()
     expect(view.container.textContent).toBe('你好')
 
-    i18n.setLocale('en-US')             // 父级再切：不该覆盖边界的选择
+    i18n.setLocale('en-US')             // The parent switches again: it must not override the boundary's choice
     settle()
     /*
-     * 同时断言**机制**与展示：只断言文字会漏掉"本地 locale 被写脏、只是没人重渲染"这种情况
-     * （突变验证时正是如此：文字没变，但 local.locale 已被父级写成 en-US）。
+     * Assert both the **mechanism** and the display: asserting only the text would miss the case
+     * "the local locale was dirtied but nothing re-rendered" (exactly what happened during mutation
+     * verification: the text was unchanged, but local.locale had already been written to en-US by
+     * the parent).
      */
-    expect(view.local().locale.value, '父级把边界内的 locale 信号写脏了').toBe('zh-CN')
-    expect(view.container.textContent, '父级覆盖了边界内的显式选择').toBe('你好')
+    expect(view.local().locale.value, 'the parent dirtied the boundary locale signal').toBe('zh-CN')
+    expect(view.container.textContent, 'the parent overrode the explicit boundary choice').toBe('你好')
 
     view.app.destroy()
     i18n.dispose()
   })
 
-  it('传了 locale 的边界不跟随父级（本地覆盖语义不变）', () => {
+  it('a boundary with an explicit locale does not follow the parent (local-override semantics unchanged)', () => {
     const i18n = makeI18n()
     const container = document.createElement('main')
     const app = createVobs({
@@ -120,7 +124,7 @@ describe('I18nBoundary 不传 locale 时跟随父级', () => {
     i18n.dispose()
   })
 
-  it('父级 setLocale 不会打死边界（不产生 100 轮循环）', () => {
+  it('a parent setLocale does not kill the boundary (no 100-round loop)', () => {
     const i18n = makeI18n()
     const view = mountInheriting(i18n)
     expect(() => {

@@ -30,10 +30,14 @@ export function KitResourcePage<Row = Record<string, unknown>>(
     'resource', 'columns', 'title', 'description', 'actions', 'toolbar', 'tableProps', 'table',
     'requiredPermission', 'requiredRole', 'unauthorized', 'auth', 'router', 'i18n', 'theme',
     /*
-     * 下面这三个是**框架自己的诊断属性**（devtools/测试会读），由本组件那个 effect 写。
-     * 原来没列在这里 → 通用属性通道也会写它们（作者 props 里同名的 data-* 会跟进来），
-     * 于是同一个属性有两个写入者：先被真实值覆盖、等别的 prop 变化时"复活"成作者的值。
-     * 与 ui 的 role 被吞是同一类问题 —— 保留给框架，通道不许碰。
+     * The three below are **the framework's own diagnostic attributes**
+     * (devtools/tests read them), written by this component's effect.
+     * They used to be missing from this list → the generic-attribute channel
+     * also wrote them (author `data-*` props with the same names came along),
+     * so one attribute had two writers: overwritten by the real value first,
+     * then "resurrected" to the author's value whenever another prop changed.
+     * Same class of problem as ui's swallowed role — reserved for the
+     * framework, the channel must not touch them.
      */
     'data-vobs-auth', 'data-vobs-route', 'data-vobs-theme'
   ])
@@ -44,16 +48,24 @@ export function KitResourcePage<Row = Record<string, unknown>>(
     setAttribute(root, 'data-vobs-theme', theme.resolvedMode.value)
   })
   /*
-   * 判定结论用**普通 signal** 承载，只在结论变化时写入。
+   * Carry the verdict in a **plain signal**, written only when the verdict
+   * changes.
    *
-   * 原来工厂直接调 `isAllowed(props, auth)`（它读 `auth.session.value`）—— 于是 token 刷新这种
-   * 权限完全没变的日常操作也会把 KitPage + KitDataTable 整个重建（实测表格从第 2 页弹回第 1 页）。
+   * The factory used to call `isAllowed(props, auth)` directly (which reads
+   * `auth.session.value`) — so routine operations that don't change
+   * permissions at all, like token refresh, rebuilt the whole
+   * KitPage + KitDataTable (verified: the table jumped from page 2 back to
+   * page 1).
    *
-   * 我先试过 `memo` 挡，**实测无效**：探针证明 vobs 的 memo 是"标脏即传播"（memo.ts:93-97），
-   * 重算在取值时惰性发生且**不做值比较**，所以"派生布尔值相等就不通知"在这套语义下不成立。
-   * signal 相反：写入 `Object.is` 相等的值**不通知**（同一探针验证过）。所以用 signal。
+   * I first tried a `memo` guard, **verified ineffective**: probes showed vobs
+   * memo is "mark dirty and propagate" (memo.ts:93-97); recomputation happens
+   * lazily at read time and **does no value comparison**, so "equal derived
+   * boolean → don't notify" doesn't hold under those semantics. A signal is
+   * the opposite: writing an `Object.is`-equal value **doesn't notify**
+   * (verified with the same probe). So use a signal.
    *
-   * （memo 那条是框架级行为，要改得动它的传播模型 —— 已记入待办，不在本次范围。）
+   * (The memo behavior is framework-level; changing it means touching its
+   * propagation model — recorded in the backlog, out of scope here.)
    */
   const allowed = state(isAllowed(props, auth), 'allowed')
   effect(() => { allowed.value = isAllowed(props, auth) })
@@ -103,8 +115,9 @@ function createTableProps<Row>(
 }
 
 function translate(i18n: I18nContext, key: string, fallback: string): string {
-  // 原来只能靠 `value === key` 猜"是不是缺 key" —— 译文**恰好等于 key** 时会被误判成缺失、
-  // 被 fallback 顶掉。i18n 现在提供同步的 `has(key)`，直接问就行。
+  // The only way to detect a missing key used to be `value === key` guessing — a
+  // translation **exactly equal to the key** was misjudged as missing and
+  // clobbered by the fallback. i18n now provides a synchronous `has(key)`; just ask.
   return i18n.has(key) ? i18n.t(key) : fallback
 }
 

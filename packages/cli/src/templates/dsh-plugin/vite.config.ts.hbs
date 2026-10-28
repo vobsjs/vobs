@@ -4,10 +4,10 @@ import { dshBundle } from '@vobs/dsh/vite'
 
 export default defineConfig({
   plugins: [
-    // 把 TSX 编译成细粒度 DOM 绑定
+    // Compile TSX into fine-grained DOM bindings
     vobsPlugin(),
-    // 把产物包成 DSH 的 window.__ModuleLoader__ factory，
-    // 并在这里挡住「拆了 chunk / 出了独立 asset / 格式不是 cjs」三类错误。
+    // Wrap the bundle into DSH's window.__ModuleLoader__ factory,
+    // and reject three failure classes here: split chunks / standalone assets / non-cjs format.
     dshBundle({ entry: 'src/client/index.tsx' })
   ]
 })

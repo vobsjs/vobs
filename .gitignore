@@ -4,14 +4,12 @@ dist/
 **/dist/
 coverage/
 .artifacts/
-# vobs check --write 的产出（开发台面板读它显示「项目」页）
+# Output of vobs check --write (the DevKit panel reads it to show the "Project" page)
 .vobs/
 **/.vobs/
 .vite/
 *.log
 *.tsbuildinfo
-# 作者本机的样式同步工具（从仓库外的 ../UIStyle 设计源拷贝），不随仓库分发；
-# 因此 package.json 里不再挂着它的 npm script —— 那对新克隆必然失败。
 scripts/sync-uistyle.mjs
 docs/
 !docs/

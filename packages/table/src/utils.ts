@@ -28,13 +28,17 @@ export function bindCommonAttributes(root: Element, props: object, skip: readonl
   const ignored = new Set([...skip, 'class', 'className', 'style', 'children'])
   effect(() => {
     /*
-     * 用 `for...in` 而不是 `Object.keys`：props 袋**可以**继承自另一个对象。
+     * `for...in` instead of `Object.keys`: the props bag **may** inherit from
+     * another object.
      *
-     * kit 的 `createTableProps`（resource-page.ts:64）就是 `Object.create(tableProps)` 再补几个
-     * 自有属性 —— 于是作者写在 `tableProps` 里的 id / role / aria- 与 data- 属性全在**原型**上，
-     * `Object.keys` 看不到，被静默丢弃（实测三者都是 null，而直接调 KitDataTable 就正常）。
-     * 反过来在 kit 那边摊平会更糟：`loading`/`empty` 是 getter，摊平会当场求值、把 i18n
-     * 兜底文案冻结住。所以修在消费侧。
+     * kit's `createTableProps` (resource-page.ts:64) is exactly
+     * `Object.create(tableProps)` plus a few own properties — so the id / role
+     * / aria- / data- attributes the author wrote in `tableProps` all live on
+     * **the prototype**, invisible to `Object.keys` and silently dropped
+     * (verified: all three were null while calling KitDataTable directly
+     * worked). Flattening on the kit side would be worse: `loading`/`empty`
+     * are getters, and flattening evaluates them on the spot, freezing the
+     * i18n fallback copy. So the fix lives on the consumer side.
      */
     for (const name in props) {
       if (ignored.has(name) || name.startsWith('on')) continue

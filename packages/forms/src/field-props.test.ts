@@ -3,11 +3,12 @@ import { createDOMRenderer, createVobs, setRenderer } from '@vobs/vobs'
 import { Field, useForm } from './index'
 
 /*
- * `Field` 的默认输入分支此前**不透传任何 props** —— `extra` 只在 `component` 分支展开，
- * 于是 `<Field name="password" type="password" placeholder="…">` 渲染出 `type="text"` 的明文框、
- * placeholder 也消失，两者都**静默**（无警告、无测试覆盖）。
- * 同一份源码里 component 分支全透传、默认分支全不透，README 也读不出差别。
- * 修法：把透传集合提到函数顶部，两个分支共用。
+ * The default input branch of `Field` previously **passed through no props at all** — `extra`
+ * was only spread in the `component` branch, so `<Field name="password" type="password"
+ * placeholder="…">` rendered a plain-text `type="text"` box and the placeholder vanished, both
+ * **silently** (no warning, no test coverage). In the same file the component branch passed
+ * everything through and the default branch passed nothing; the README gave no hint of the
+ * difference. Fix: hoist the passthrough set to the top of the function, shared by both branches.
  */
 function mountField(props: Record<string, unknown>, values: Record<string, unknown> = {}) {
   setRenderer(createDOMRenderer())
@@ -18,17 +19,17 @@ function mountField(props: Record<string, unknown>, values: Record<string, unkno
   return { app, form, container }
 }
 
-describe('Field 默认输入透传 props', () => {
-  it('type="password" 不再被静默换成明文 text', () => {
+describe('Field default-input passthrough props', () => {
+  it('type="password" is no longer silently swapped to plain-text', () => {
     const { app, form, container } = mountField({ name: 'password', type: 'password' })
     const input = container.querySelector('input') as HTMLInputElement
     expect(input.getAttribute('type')).toBe('password')
-    // 修复前这里是 'text'（HTML 默认值）+ placeholder 缺失
+    // before the fix this was 'text' (the HTML default) + a missing placeholder
     app.destroy()
     form.dispose()
   })
 
-  it('placeholder / autocomplete / inputmode / required 都透传', () => {
+  it('placeholder / autocomplete / inputmode / required are all passed through', () => {
     const { app, form, container } = mountField({
       name: 'email',
       type: 'email',
@@ -46,7 +47,7 @@ describe('Field 默认输入透传 props', () => {
     form.dispose()
   })
 
-  it('值为 undefined 的 props 不落成属性（不产生 required="undefined"）', () => {
+  it('props whose value is undefined do not become attributes (no required="undefined")', () => {
     const { app, form, container } = mountField({ name: 'nick', placeholder: undefined, type: 'text' })
     const input = container.querySelector('input') as HTMLInputElement
     expect(input.hasAttribute('placeholder')).toBe(false)
@@ -55,7 +56,7 @@ describe('Field 默认输入透传 props', () => {
     form.dispose()
   })
 
-  it('aria-* 与 data-* 也透传（可访问性标签不再丢失）', () => {
+  it('aria-* and data-* are passed through too (accessibility labels no longer lost)', () => {
     const { app, form, container } = mountField({
       name: 'phone',
       'aria-label': '手机号',
@@ -68,20 +69,20 @@ describe('Field 默认输入透传 props', () => {
     form.dispose()
   })
 
-  it('框架消费的 5 个字段不会漏成属性', () => {
+  it('the 5 framework-consumed fields do not leak into attributes', () => {
     const { app, form, container } = mountField({ name: 'title', label: '标题', type: 'text' })
     const input = container.querySelector('input') as HTMLInputElement
     for (const leaked of ['form', 'label', 'children', 'component', 'name']) {
-      expect(input.hasAttribute(leaked), `${leaked} 不应落到 input 属性上`).toBe(false)
+      expect(input.hasAttribute(leaked), `${leaked} must not land as an input attribute`).toBe(false)
     }
-    // label 仍走 <label> 元素、name 仍只落在 wrapper 的 data-vobs-field 上
+    // label still goes through the <label> element; name still lands only on the wrapper's data-vobs-field
     expect(container.querySelector('label')?.textContent).toBe('标题')
     expect(container.querySelector('[data-vobs-field]')?.getAttribute('data-vobs-field')).toBe('title')
     app.destroy()
     form.dispose()
   })
 
-  it('field 值为 null/undefined 时输入框是空串而不是字面量 "undefined"', () => {
+  it('when the field value is null/undefined the input is an empty string, not the literal "undefined"', () => {
     setRenderer(createDOMRenderer())
     const form = useForm<{ nickname: string | undefined }>({ nickname: undefined })
     const container = document.createElement('div')
@@ -89,13 +90,13 @@ describe('Field 默认输入透传 props', () => {
     app.mount(container)
 
     const input = container.querySelector('input') as HTMLInputElement
-    // 修复前这里是 'undefined'（绑定层 bind.ts 已防过一次的坑，Field 自己绕过去又踩了）
+    // before the fix this was 'undefined' (a pit the binding layer bind.ts had already guarded once; Field walked around it and stepped on it again)
     expect(input.value).toBe('')
     app.destroy()
     form.dispose()
   })
 
-  it('透传的 type 不破坏双向绑定', () => {
+  it('a passthrough type does not break two-way binding', () => {
     const { app, form, container } = mountField({ name: 'password', type: 'password' })
     const input = container.querySelector('input') as HTMLInputElement
     input.value = 's3cret'

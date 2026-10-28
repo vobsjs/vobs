@@ -19,17 +19,17 @@ import {
 import type { VuiChildren, VuiCommonProps } from './types'
 
 export interface FormFieldProps extends VuiCommonProps {
-  /** 字段名；required 时自动追加 * */
+  /** Field name; a * is appended automatically when required. */
   readonly label?: string
   readonly required?: boolean
-  /** 校验错误（出现时整体进入错误态，优先于 hint 显示） */
+  /** Validation error (switches the whole field into the error state and takes precedence over hint). */
   readonly error?: VuiChildren
-  /** 补充提示（无 error 时显示） */
+  /** Supplementary hint (shown when there is no error). */
   readonly hint?: VuiChildren
   readonly children?: VuiChildren
 }
 
-/** 表单字段壳：标签 + 控件 + 错误/提示（布局原语，不含交互） */
+/** Form field shell: label + control + error/hint (layout primitive, no interaction). */
 export function FormField(props: FormFieldProps = {}): VobsNode {
   const root = createElement('div')
   bindClassList(root, props, () => [

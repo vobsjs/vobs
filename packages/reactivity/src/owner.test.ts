@@ -2,15 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { createOwner, onDispose, runWithOwner } from './owner'
 
 /*
- * 级联销毁的隔离性。
+ * Isolation of cascading disposal.
  *
- * 子 Owner 的 cleanup 抛错时，原来 `dispose()` 里是裸调 `child.dispose()` ——
- * 一个子级抛错就让**兄弟 Owner 全不销毁、父自身的 cleanup 也不跑**
- * （实测：父 cleanup 未执行、第二个子 owner 仍存活）。
- * 那是资源泄漏（effect 不解绑、监听不移除），而且完全没有提示。
+ * When a child Owner's cleanup threw, `dispose()` used to call `child.dispose()`
+ * bare — one child throwing meant **no sibling Owner got disposed and the parent's
+ * own cleanups never ran** (reproduced: parent cleanup not executed, second child
+ * owner still alive). That is a resource leak (effects stay bound, listeners stay
+ * attached), with no hint at all.
  */
-describe('Owner 级联销毁', () => {
-  it('子级 cleanup 抛错不阻断兄弟与父自身的清理', () => {
+describe('Owner cascading disposal', () => {
+  it('a child cleanup throwing does not block sibling and parent cleanups', () => {
     const parent = createOwner()
     const done: string[] = []
 
@@ -28,13 +29,13 @@ describe('Owner 级联销毁', () => {
       })
     })
 
-    // 错误照旧抛出来（不吞），但清理必须走完
+    // the error is still thrown (not swallowed), but the cleanups must all run
     expect(() => parent.dispose()).toThrow('boom from first child')
     expect(done).toContain('second')
     expect(done).toContain('parent')
   })
 
-  it('多个子级都抛错时抛第一个，且不跳过任何清理', () => {
+  it('when multiple children throw, the first error is thrown and no cleanup is skipped', () => {
     const parent = createOwner()
     const done: string[] = []
 
@@ -54,7 +55,7 @@ describe('Owner 级联销毁', () => {
     expect(done).toContain('parent')
   })
 
-  it('disposeSince 同样隔离子级错误', () => {
+  it('disposeSince isolates child errors the same way', () => {
     const owner = createOwner()
     const done: string[] = []
     let mark!: ReturnType<typeof owner.mark>
@@ -72,7 +73,7 @@ describe('Owner 级联销毁', () => {
     expect(done).toContain('after-mark')
   })
 
-  it('父 Owner 后续仍然可用（disposed 标记与 children 已清空）', () => {
+  it('the parent Owner remains usable afterwards (disposed flag set and children cleared)', () => {
     const parent = createOwner()
     runWithOwner(parent, () => {
       const child = createOwner()
@@ -82,7 +83,7 @@ describe('Owner 级联销毁', () => {
     })
 
     expect(() => parent.dispose()).toThrow('boom')
-    // 再次 dispose 直接返回，不重复跑清理
+    // a second dispose returns immediately without re-running cleanups
     expect(() => parent.dispose()).not.toThrow()
     expect(parent.disposed).toBe(true)
   })

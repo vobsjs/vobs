@@ -78,7 +78,7 @@ export interface StoragePluginOptions extends StorageOptions {
 interface Envelope {
   readonly __vobsStorage: true
   readonly version: number
-  /** JSON 丢掉 undefined/函数/Symbol 值后这个键会消失，所以是可选的。 */
+  /** Optional because JSON drops undefined/function/Symbol values, so this key disappears. */
   readonly value?: unknown
 }
 
@@ -145,7 +145,7 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
       } catch (error) {
         const storageError = new StorageError(
           'SERIALIZATION_FAILED',
-          `Vobs Storage: 无法序列化键 ${normalizedKey}`,
+          `Vobs Storage: failed to serialize key ${normalizedKey}`,
           normalizedKey,
           error
         )
@@ -221,9 +221,10 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
   }
 
   /**
-   * `persist` 只对**读取路径**（`get`）为真：迁移后把这个键升到当前版本写回盘上，是既有契约
-   * （README「reads of older data run through migrate and are persisted back」）。
-   * 外部事件路径传 `false`，理由见 `decodeExternal`。
+   * `persist` is only true on the **read path** (`get`): after migration the key is upgraded to the
+   * current version and written back to disk, which is the existing contract
+   * (README: "reads of older data run through migrate and are persisted back").
+   * The external-event path passes `false`; see `decodeExternal` for why.
    */
   function decode<T>(key: string, raw: string, persist: boolean): T | null {
     let parsed: unknown
@@ -246,7 +247,7 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
     } catch (error) {
       const storageError = new StorageError(
         'MIGRATION_FAILED',
-        `Vobs Storage: 键 ${key} 迁移失败`,
+        `Vobs Storage: failed to migrate key ${key}`,
         key,
         error
       )
@@ -256,18 +257,23 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
   }
 
   /**
-   * 别的标签页写完后发来的 `newValue`：解析信封后跑**同一套**迁移，把当前版本的值交给订阅者。
+   * `newValue` arrives from another tab's write: parse the envelope and run the **same** migration,
+   * handing subscribers the value at the current version.
    *
-   * 原来这里只做 JSON.parse + 解包（不复用 `decode`），于是同一份旧数据出现两个形状：
-   * 外部事件把 `{old:1}` 塞给订阅者，本页 `get('k')` 却给 `{migrated:{old:1}}` ——
-   * 同一个键、同一个上下文，订阅者拿到的结构却和读取不一致；而订阅者通常不会（也不该）
-   * 因为收到事件就再 `get()` 一次，于是"版本化信封 + migrate"在跨标签页这条路上直接失效。
+   * This used to only do JSON.parse + unwrap (not reusing `decode`), so the same old data appeared
+   * in two shapes: the external event handed subscribers `{old:1}` while `get('k')` on this page
+   * returned `{migrated:{old:1}}` — same key, same context, but the structure subscribers received
+   * diverged from reads; and subscribers typically won't (and shouldn't) call `get()` again just
+   * because an event arrived, so "versioned envelope + migrate" simply broke on the cross-tab path.
    *
-   * 这里**不回写存储**，与读取路径刻意不同：
-   *   ① 事件路径是**通知**不是读取，回写就是报告里点名的"读路径写副作用"；
-   *   ② 在 storage 事件处理器里写同一个键，会在**别的标签页**再触发一次 storage 事件，
-   *      两个标签页互写即形成跨标签页写风暴/自激循环（配额也白烧）。
-   * 盘上仍是旧信封，下一次真实 `get()` 会照既有契约迁移并回写（`decode(key, raw, true)`）。
+   * Deliberately does **not** write back to storage, unlike the read path:
+   *   ① The event path is a **notification**, not a read; writing back would be the "write side
+   *      effect on the read path" called out in the report.
+   *   ② Writing the same key inside a storage event handler triggers another storage event on the
+   *      **other tabs**, so two tabs writing to each other forms a cross-tab write storm / feedback
+   *      loop (and burns quota for nothing).
+   * The old envelope stays on disk; the next real `get()` migrates and writes back per the existing
+   * contract (`decode(key, raw, true)`).
    */
   function decodeExternal(key: string, raw: string): unknown | null {
     return decode(key, raw, false)
@@ -276,7 +282,7 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
   function handleCorrupt(key: string, cause: unknown): void {
     const storageError = new StorageError(
       'CORRUPT_DATA',
-      `Vobs Storage: 键 ${key} 的数据已损坏`,
+      `Vobs Storage: data for key ${key} is corrupt`,
       key,
       cause
     )
@@ -290,16 +296,19 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
     } catch (error) {
       if (isQuotaError(error)) {
         /*
-         * 配额/容量错误 ≠ 后端不可用：盘还在、读得到、腾出空间后还能写。
+         * A quota/capacity error ≠ backend unavailable: the disk is still there, reads still work,
+         * and writes succeed again once space is freed.
          *
-         * 原来这里和"后端真的挂了"走同一条路（`backend = fallback; kind = 'memory'`），于是
-         * 一次 QuotaExceededError 就造成四个后果：①盘上原有数据 get 变 null；②这次写入静默
-         * 落到内存却照常 emit（订阅者以为已持久化）；③配额恢复后写入永不落盘；④跨标签页
-         * storage 事件因 storageArea 不再匹配而全部失效。现在如实报告并抛出，由调用方决定。
+         * This used to take the same path as "backend is truly dead" (`backend = fallback; kind =
+         * 'memory'`), so a single QuotaExceededError caused four problems: ① existing data on disk
+         * read back as null via get; ② the failed write silently landed in memory but still emitted
+         * (subscribers believed it was persisted); ③ after quota recovered, writes never touched
+         * disk again; ④ cross-tab storage events all stopped matching because storageArea no longer
+         * matched. Now we report honestly and throw; the caller decides.
          */
         const quotaError = new StorageError(
           'QUOTA_EXCEEDED',
-          `Vobs Storage: 键 ${key} 写入超出存储配额`,
+          `Vobs Storage: writing key ${key} exceeded the storage quota`,
           key,
           error
         )
@@ -309,7 +318,7 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
       if (backend === fallback) {
         const storageError = new StorageError(
           'STORAGE_UNAVAILABLE',
-          'Vobs Storage: 存储不可用',
+          'Vobs Storage: storage is unavailable',
           key,
           error
         )
@@ -318,7 +327,7 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
       }
       const storageError = new StorageError(
         'STORAGE_UNAVAILABLE',
-        'Vobs Storage: 存储不可用，已切换到内存 fallback',
+        'Vobs Storage: storage is unavailable, switched to the in-memory fallback',
         key,
         error
       )
@@ -343,7 +352,7 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
       try {
         listener(change)
       } catch {
-        // 订阅者错误不能阻止其他订阅者接收变化。
+        // A subscriber's error must not prevent other subscribers from receiving the change.
       }
     }
   }
@@ -352,12 +361,12 @@ export function createStorage(options: StorageOptions = {}): StorageContext {
     try {
       options.onError?.(error)
     } catch {
-      // 错误回调不能覆盖存储操作的原始结果。
+      // An error callback must not override the original result of the storage operation.
     }
   }
 
   function ensureActive(): void {
-    if (disposed) throw new Error('Vobs Storage: 已销毁的上下文不能继续使用')
+    if (disposed) throw new Error('Vobs Storage: cannot use a disposed context')
   }
 
   function toPhysicalKey(key: string): string {
@@ -379,7 +388,7 @@ export function storagePlugin(options: StoragePluginOptions = {}): VobsPlugin {
 
 export function useStorage(): StorageContext {
   const storage = inject(STORAGE_KEY)
-  if (!storage) throw new StorageError('STORAGE_UNAVAILABLE', 'Vobs Storage: 找不到上下文，请安装 storagePlugin')
+  if (!storage) throw new StorageError('STORAGE_UNAVAILABLE', 'Vobs Storage: context not found; install storagePlugin first')
   return storage
 }
 
@@ -391,9 +400,10 @@ function resolveStorage(input: StorageLike | StorageType | undefined): {
   if (input && typeof input !== 'string') return { backend: input, kind: 'custom', browserStorage: false }
   const type = input ?? 'local'
   if (type === 'memory') {
-    // 每个上下文各自一份：原来返回的是模块级 memoryStorage 单例，于是两个
-    // createStorage({ storage: 'memory' }) **共享数据** —— SSR 多请求之间互相串数据
-    // （与 resource 默认客户端单例同族）。要显式共享就传导出的 memoryStorage。
+    // One instance per context: this used to return the module-level memoryStorage singleton, so two
+    // createStorage({ storage: 'memory' }) calls **shared data** — requests leaked into each other
+    // across SSR multi-request runs (same family as resource's default client-side singleton).
+    // To share explicitly, pass the exported memoryStorage.
     return { backend: createMemoryStorage(), kind: 'memory', browserStorage: false }
   }
   const backend = getBrowserStorage(type)
@@ -401,9 +411,10 @@ function resolveStorage(input: StorageLike | StorageType | undefined): {
 }
 
 /**
- * 配额/容量类错误：后端仍然可用，只是这次写不下。绝不能当成"存储不可用"而永久降级到内存。
- * 识别依据是 Web 标准的 QuotaExceededError（DOMException code 22）与 Firefox 的
- * NS_ERROR_DOM_QUOTA_REACHED（code 1014），外加一条窄消息兜底。
+ * Quota/capacity errors: the backend is still usable, it just couldn't fit this write. Never treat
+ * these as "storage unavailable" and permanently degrade to memory. Detection is based on the Web
+ * standard QuotaExceededError (DOMException code 22) and Firefox's NS_ERROR_DOM_QUOTA_REACHED
+ * (code 1014), plus one narrow message fallback.
  */
 function isQuotaError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
@@ -423,9 +434,10 @@ function getBrowserStorage(type: Exclude<StorageType, 'memory'>): StorageLike | 
 }
 
 function isEnvelope(value: unknown): value is Envelope {
-  // 不再要求 `'value' in value`：JSON 会**丢掉** undefined/函数/Symbol 值，于是
-  // `set(key, undefined)` 落盘的信封没有 value 键。原来那种记录会被当成"没有信封的历史值"，
-  // 结果 `get` 把信封对象本身 `{ __vobsStorage: true, version: 1 }` 当数据返回。
+  // No longer requires `'value' in value`: JSON **drops** undefined/function/Symbol values, so the
+  // envelope persisted by `set(key, undefined)` has no value key. The old check treated that record
+  // as "a historical value without an envelope", so `get` returned the envelope object itself
+  // `{ __vobsStorage: true, version: 1 }` as data.
   return Boolean(value)
     && typeof value === 'object'
     && value !== null
@@ -434,13 +446,13 @@ function isEnvelope(value: unknown): value is Envelope {
 }
 
 function validateKey(key: string): string {
-  if (typeof key !== 'string' || !key.trim()) throw new Error('Vobs Storage: key 不能为空')
+  if (typeof key !== 'string' || !key.trim()) throw new Error('Vobs Storage: key must not be empty')
   return key
 }
 
 function validateVersion(version: number): number {
   if (!Number.isInteger(version) || version < 0) {
-    throw new Error('Vobs Storage: version 必须是大于等于 0 的整数')
+    throw new Error('Vobs Storage: version must be an integer greater than or equal to 0')
   }
   return version
 }

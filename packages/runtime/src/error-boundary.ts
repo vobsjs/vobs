@@ -8,7 +8,8 @@ export type ErrorBoundaryFallback = (
 ) => ReturnType<NodeFactory>
 
 /**
- * 子节点双形态：JSX 属性经编译器编译为惰性 getter（工厂），手写对象字面量可直接传节点。
+ * Two child shapes: JSX props are compiled by the compiler into lazy getters (factories),
+ * while hand-written object literals may pass nodes directly.
  */
 export type ErrorBoundaryChildren = NodeFactory | VobsNode
 

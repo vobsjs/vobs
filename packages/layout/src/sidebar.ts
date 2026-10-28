@@ -74,8 +74,10 @@ function createDefaultMenu(props: KitSidebarProps): VobsNode | null {
     ?? readProp<readonly KitMenuItem[]>(props, 'menu', [])
   if (items.length === 0 && hasProp(props, 'children')) return null
 
-  // pin:'bottom' 的项分流到底部菜单区（渲染顺序固定：普通菜单 → pin 菜单 → footer 插槽）；
-  // 两组菜单共用 activeKey/onSelect/collapsed，激活与折叠行为与普通项完全一致
+  // pin:'bottom' items are routed to the bottom menu region (fixed render
+  // order: normal menu → pinned menu → footer slot); both menu groups share
+  // activeKey/onSelect/collapsed, so activation and collapse behave exactly
+  // like normal items
   const mainItems = items.filter(item => item.pin !== 'bottom')
   const bottomItems = items.filter(item => item.pin === 'bottom')
   const createMenu = (menuItems: readonly KitMenuItem[], className?: string): VobsNode =>

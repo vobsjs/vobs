@@ -70,12 +70,13 @@ export function createVobsError(options: VobsErrorOptions): VobsError {
 }
 
 /**
- * 结构化识别（不依赖 `instanceof`）。
+ * Structured recognition (does not rely on `instanceof`).
  *
- * **不能要求 `layer` 也齐全** —— 原来要求 code + message + layer 三者都是字符串，
- * 于是调用方递一个 `{ code, message }` 就会被判为「不是 VobsError」，掉进最后的
- * `String(value)` 兜底，输出 `[object Object]`：诊断系统自己把诊断丢了。
- * layer 缺失在下面构造时会补上默认值，没有理由在识别阶段就否掉。
+ * **We must not require `layer` to be present as well** — it used to require code + message +
+ * layer to all be strings, so a caller passing `{ code, message }` was judged "not a VobsError",
+ * fell into the final `String(value)` fallback, and printed `[object Object]`: the diagnostic
+ * system lost its own diagnostics. A missing layer gets a default value filled in at
+ * construction below; there is no reason to reject it at the recognition stage.
  */
 export function isVobsError(value: unknown): value is VobsError {
   return value instanceof VobsError
@@ -85,10 +86,11 @@ export function isVobsError(value: unknown): value is VobsError {
 }
 
 /**
- * 别的打包副本造的 VobsError。
+ * A VobsError created by another bundled copy.
  *
- * tsup `splitting: false` 让 error.ts 同时进 `dist/index.js` 与 `dist/error.js`，
- * 两份类互不 `instanceof`。字段齐全，只是身份不同 —— 识别出来复制成本地实例。
+ * tsup `splitting: false` puts error.ts into both `dist/index.js` and `dist/error.js`,
+ * and the two classes are not `instanceof` each other. All fields are there, only identity
+ * differs — recognize it and copy it into a local instance.
  */
 function isForeignVobsError(value: unknown): value is Error & VobsErrorOptions {
   return value instanceof Error
@@ -96,7 +98,7 @@ function isForeignVobsError(value: unknown): value is Error & VobsErrorOptions {
     && typeof (value as { code?: unknown }).code === 'string'
 }
 
-/** 兜底取消息：至少要能读出对象上的 message，别再输出 `[object Object]`。 */
+/** Fallback message extraction: at least read the object's `message`; never print `[object Object]` again. */
 function describeUnknown(value: unknown): string {
   if (value === null || value === undefined) return String(value)
   if (typeof value === 'string') return value
@@ -112,7 +114,7 @@ function describeUnknown(value: unknown): string {
   return String(value)
 }
 
-/** 把任意来源的「类 VobsError」字段复制成本地实例。 */
+/** Copy the fields of a "VobsError-like" value from any source into a local instance. */
 function adoptVobsError(
   value: VobsErrorOptions & { cause?: unknown },
   defaults: VobsErrorDefaults
@@ -134,10 +136,10 @@ function adoptVobsError(
 
 /** Convert thrown strings and third-party errors without losing their message. */
 export function normalizeVobsError(value: unknown, defaults: VobsErrorDefaults = {}): VobsError {
-  // 本地实例：原样返回，保持同一性与已有 stack
+  // Local instance: return as-is, preserving identity and the existing stack
   if (value instanceof VobsError) return value
 
-  // 别的副本造的：复制成本地实例，下游 instanceof 才成立
+  // Created by another copy: adopt into a local instance so downstream instanceof holds
   if (isForeignVobsError(value)) return adoptVobsError(value, defaults)
 
   if (value instanceof Error) {
@@ -152,9 +154,10 @@ export function normalizeVobsError(value: unknown, defaults: VobsErrorDefaults =
     if (code) {
       defineErrorMetadata(value, 'code', code)
       /*
-       * 冻结 / 不可扩展的第三方 Error 上挂不上元数据。原来这里静默吞掉，
-       * 于是 normalize 的结果 code 是 undefined（打印成 VOBS_UNKNOWN）。
-       * 挂不上就复制成本地实例，别把 code 丢了。
+       * Metadata cannot be attached to frozen / non-extensible third-party Errors. This
+       * used to be swallowed silently, so normalize's result had code === undefined
+       * (printed as VOBS_UNKNOWN). If it can't be attached, adopt into a local instance
+       * instead of dropping the code.
        */
       if ((value as { code?: unknown }).code !== code) {
         return new VobsError({
@@ -181,7 +184,7 @@ export function normalizeVobsError(value: unknown, defaults: VobsErrorDefaults =
     return value as VobsError
   }
 
-  // 结构化对象（可能缺 layer，甚至缺 severity）：补齐后构造成本地 VobsError
+  // Structured object (may lack layer, even severity): fill defaults and construct a local VobsError
   if (isVobsError(value)) return adoptVobsError(value as VobsErrorOptions, defaults)
 
   return new VobsError({
@@ -199,8 +202,9 @@ function defineErrorMetadata(target: Error, key: string, value: unknown): void {
   try {
     Object.defineProperty(target, key, { configurable: true, enumerable: false, value, writable: true })
   } catch {
-    // 冻结 / 不可扩展的第三方 Error：元数据挂不上。调用方会用「写完再读回」判断
-    // 是否成功，失败时改成复制成本地实例，而不是静默丢掉 code。
+    // Frozen / non-extensible third-party Error: metadata cannot be attached. The caller
+    // detects success by "write then read back", and on failure adopts into a local
+    // instance instead of silently dropping the code.
   }
 }
 

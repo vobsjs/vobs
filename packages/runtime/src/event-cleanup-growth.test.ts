@@ -9,20 +9,22 @@ setRenderer(createDOMRenderer())
 const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 
 /*
- * `Owner.cleanups` 是**只 push 的数组**（reactivity/src/owner.ts:57,84）。
- * 事件重绑此前在**每次** `addEventListener` 里无条件 `owner.onDispose(...)`，
- * 于是换一次 handler 就多一条永不执行的清理项，旧 handler 闭包被一并扣住。
+ * `Owner.cleanups` is a **push-only array** (reactivity/src/owner.ts:57,84).
+ * Event rebinding used to unconditionally call `owner.onDispose(...)` on **every**
+ * `addEventListener`, so each handler swap added a cleanup entry that never executes,
+ * with the old handler closure held captive.
  *
- * 实测（.artifacts/reports/runtime.supplement.md 缺点 4 与既有报告缺点 1，两轮独立复现）：
- * 500 次替换 → `cleanups.length === 500`；一轮 `{...props}` 换 onClick → 202。
- * 组件 effect 每次重跑都会重绑事件，所以这是热路径上的**无界增长**
- * （长寿命页面里等价于内存泄漏）。
+ * Measured (.artifacts/reports/runtime.supplement.md drawback 4 and the earlier report's
+ * drawback 1, two independent reproductions):
+ * 500 replacements → `cleanups.length === 500`; one round of `{...props}` swapping onClick → 202.
+ * Component effects rebind events on every re-run, so this is **unbounded growth** on the
+ * hot path (equivalent to a memory leak on long-lived pages).
  *
- * 判据用 `owner.mark()` 前后的 cleanups 计数差 —— `mark()` 是 Owner 公开接口，
- * 不依赖 `cleanups` 是私有字段。
+ * The criterion uses the cleanups count difference around `owner.mark()` — `mark()` is a
+ * public Owner API, not depending on `cleanups` being a private field.
  */
-describe('事件重绑不会让 Owner.cleanups 无界增长', () => {
-  it('同一 (node,event) 换 200 次 handler，清理槽只涨 1', () => {
+describe('event rebinding must not make Owner.cleanups grow without bound', () => {
+  it('swapping the handler 200 times for the same (node,event) grows the cleanup slots by only 1', () => {
     const owner = createOwner()
     const el = createElement('button')
     owner.run(() => {
@@ -31,12 +33,12 @@ describe('事件重绑不会让 Owner.cleanups 无界增长', () => {
         addEventListener(el, 'click', () => { void index })
       }
       const after = owner.mark().cleanups
-      // 修复前这里是 200
+      // Before the fix this was 200
       expect(after - before).toBe(1)
     })
   })
 
-  it('不同事件名各占一个槽（不是共用）', () => {
+  it('different event names each occupy one slot (not shared)', () => {
     const owner = createOwner()
     const el = createElement('button')
     owner.run(() => {
@@ -48,7 +50,7 @@ describe('事件重绑不会让 Owner.cleanups 无界增长', () => {
     })
   })
 
-  it('同一事件名在不同节点上各占一个槽', () => {
+  it('the same event name on different nodes each occupies one slot', () => {
     const owner = createOwner()
     const a = createElement('button')
     const b = createElement('button')
@@ -56,19 +58,20 @@ describe('事件重绑不会让 Owner.cleanups 无界增长', () => {
       const before = owner.mark().cleanups
       addEventListener(a, 'click', () => {})
       addEventListener(b, 'click', () => {})
-      // 同一事件名但节点不同：必须各占一槽（用 per-node 数字 id 拼 key 就是为了这个）
+      // Same event name but different nodes: must each occupy a slot (that's what the
+      // per-node numeric id in the key is for)
       expect(owner.mark().cleanups - before).toBe(2)
     })
   })
 
-  it('{...props} 反复重绑 onClick 200 轮，清理槽不随重绑增长', async () => {
+  it('{...props} rebinding onClick 200 rounds doesn\'t grow the cleanup slots', async () => {
     const owner = createOwner()
     let handler = (): void => {}
     await owner.run(async () => {
       const el = createElement('button')
       const before = owner.mark().cleanups
       bindSpreadProps(el, () => ({ onClick: handler }))
-      // 建立一次之后的基线：含绑定自己的 effect 清理 + 事件槽各 1
+      // Baseline after establishment: the binding's own effect cleanup + one event slot each
       const baseline = owner.mark().cleanups
 
       for (let index = 0; index < 200; index += 1) {
@@ -77,15 +80,15 @@ describe('事件重绑不会让 Owner.cleanups 无界增长', () => {
       }
 
       const after = owner.mark().cleanups
-      // 判据是"重绑 200 轮**没有增长**"（而不是某个绝对数）：
-      // 修复前每轮各 +1 → 这里会是 202 级别的差；现在必须为 0。
+      // The criterion is "200 rebind rounds **added nothing**" (not some absolute number):
+      // before the fix each round added +1 → the difference would be ~202; now it must be 0.
       expect(after - baseline).toBe(0)
-      // 且建立阶段只多了一小段固定开销（effect 清理 + 事件槽），不是 200
+      // And establishment added only a small fixed overhead (effect cleanup + event slots), not 200
       expect(baseline - before).toBeLessThanOrEqual(3)
     })
   })
 
-  it('Owner 销毁时仍能摘掉**最新**那个监听（槽没被换绑弄失效）', () => {
+  it('Owner disposal still detaches the **latest** listener (the slot wasn\'t invalidated by rebinding)', () => {
     const owner = createOwner()
     const el = createElement('button')
     const hits: string[] = []
@@ -98,11 +101,12 @@ describe('事件重绑不会让 Owner.cleanups 无界增长', () => {
 
     owner.dispose()
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    // 销毁后必须彻底解绑 —— 槽里存的要是最新 handle，不能指向已摘掉的旧 handle
+    // After disposal everything must be fully detached — the slot must store the latest
+    // handle, not point at an already-detached old handle
     expect(hits).toEqual(['new'])
   })
 
-  it('removeEventListener 之后再重新挂，仍然只占一个槽', () => {
+  it('re-attaching after removeEventListener still occupies only one slot', () => {
     const owner = createOwner()
     const el = createElement('button')
     owner.run(() => {
@@ -111,12 +115,12 @@ describe('事件重绑不会让 Owner.cleanups 无界增长', () => {
       addEventListener(el, 'click', first)
       removeEventListener(el, 'click', first)
       addEventListener(el, 'click', () => {})
-      // 摘掉再挂：槽被覆盖，不再新增
+      // Detach then attach: the slot is overwritten, nothing added
       expect(owner.mark().cleanups - before).toBe(1)
     })
   })
 
-  it('setStaticProps 的事件不占清理槽（静态事件不走 addEventListener）', () => {
+  it('setStaticProps events occupy no cleanup slot (static events don\'t go through addEventListener)', () => {
     const owner = createOwner()
     const el = createElement('button')
     owner.run(() => {

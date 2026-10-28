@@ -42,10 +42,12 @@ export interface I18nOptions {
   readonly timeZone?: string
   readonly formatters?: Record<string, I18nFormatter>
   /**
-   * 找不到 key 时的回调。**行为不变**（仍然返回 key 本身），只是给一个可观测出口。
+   * Callback for a missing key. **Behavior unchanged** (still returns the key itself); this just
+   * provides an observable hook.
    *
-   * 原来缺 key 是**完全静默**的：下游没有任何办法区分"缺 key"与"译文恰好等于 key"，
-   * `@vobs/kit` 只能写成 `value === key ? fallback : value`（`kit/src/resource-page.ts`）。
+   * A missing key used to be **completely silent**: downstream code had no way to distinguish
+   * "missing key" from "the translation happens to equal the key", so `@vobs/kit` had to write
+   * `value === key ? fallback : value` (`kit/src/resource-page.ts`).
    */
   readonly onMissingKey?: (key: string, locale: Locale) => void
 }
@@ -63,11 +65,12 @@ export interface I18nContext {
   isLocaleLoaded(locale: Locale): boolean
   t(key: string, params?: Record<string, unknown>): string
   /**
-   * 这个 key 在当前 locale（或 fallback locale）下**有没有译文**。
+   * Whether the key **has a translation** in the current locale (or the fallback locale).
    *
-   * 存在的理由是 `t()` 在缺 key 时返回 key 本身，调用方无法区分"缺 key"与"译文恰好等于 key" ——
-   * `@vobs/kit` 只能写成 `value === key ? fallback : value`（`kit/src/resource-page.ts` 的 `translate`）。
-   * 有了它就能直接问，不用再比较字符串。
+   * The reason it exists: `t()` returns the key itself when the key is missing, so callers cannot
+   * distinguish "missing key" from "the translation happens to equal the key" — `@vobs/kit` had to
+   * write `value === key ? fallback : value` (`translate` in `kit/src/resource-page.ts`).
+   * With this, callers can just ask instead of comparing strings.
    */
   has(key: string): boolean
   formatDate(
@@ -181,7 +184,7 @@ export function createI18n(options: I18nOptions): I18nContext {
       const pending = pendingLoads.get(normalizedLocale)
       if (pending) return pending
       const source = loader ?? options.localeLoaders?.[normalizedLocale]
-      if (!source) return Promise.reject(new Error(`Vobs I18n: locale ${normalizedLocale} 没有可用的 loader`))
+      if (!source) return Promise.reject(new Error(`Vobs I18n: no loader available for locale ${normalizedLocale}`))
       const task = Promise.resolve()
         .then(() => source())
         .then(nextMessages => {
@@ -205,7 +208,8 @@ export function createI18n(options: I18nOptions): I18nContext {
       const allMessages = messages.value
       const template = findMessage(allMessages, locale.value, fallbackLocale, key)
       if (template === undefined) {
-        // 返回 key 本身（行为不变）；这里只提供可观测出口，观察者抛错不影响 t() 的结果
+        // Return the key itself (behavior unchanged); this only offers an observable hook — an
+        // observer throwing does not affect t()'s result
         try {
           options.onMissingKey?.(key, locale.value)
         } catch {
@@ -219,8 +223,9 @@ export function createI18n(options: I18nOptions): I18nContext {
     has(key: string): boolean {
       ensureActive()
       if (!key) return false
-      // 与 t() 用的是同一套查找（当前 locale → 主语言 → fallback locale → 主语言），
-      // 所以 `has(key)` 为真时 `t(key)` 一定拿到真译文，假的可能是"译文恰好等于 key"。
+      // Uses the exact same lookup as t() (current locale → primary language → fallback locale →
+      // its primary language), so when has(key) is true, t(key) definitely gets a real translation;
+      // a false negative would only mean "the translation happens to equal the key".
       return findMessage(messages.value, locale.value, fallbackLocale, key) !== undefined
     },
 
@@ -244,7 +249,7 @@ export function createI18n(options: I18nOptions): I18nContext {
     formatCurrency(value, currency, currencyOptions): string {
       ensureActive()
       if (!Number.isFinite(value)) return ''
-      if (!currency) throw new Error('Vobs I18n: currency 不能为空')
+      if (!currency) throw new Error('Vobs I18n: currency must not be empty')
       return numberFormatter(locale.value, {
         ...currencyOptions,
         style: 'currency',
@@ -269,9 +274,10 @@ export function createI18n(options: I18nOptions): I18nContext {
       const formatter = relativeTimeFormatter(locale.value)
       for (const [unit, milliseconds] of units) {
         /*
-         * 用**截断**而不是四舍五入来挑单位：`Math.round` 会把 90 分钟算成 "2 hours ago"
-         * （1.5 → 2），而正确语义是"取最大的、其数量至少为 1 的单位" → 90 分钟就是 "1 hour ago"。
-         * 截断同时保证不会因为进位而选到过大的单位。
+         * Pick the unit by **truncation** instead of rounding: `Math.round` turns 90 minutes into
+         * "2 hours ago" (1.5 → 2), while the correct semantics is "take the largest unit whose
+         * amount is at least 1" → 90 minutes is "1 hour ago". Truncation also guarantees we never
+         * pick a too-large unit via carry.
          */
         const amount = Math.trunc(difference / milliseconds)
         if (Math.abs(amount) >= 1) {
@@ -283,19 +289,22 @@ export function createI18n(options: I18nOptions): I18nContext {
 
     registerFormatter(name: string, formatter: I18nFormatter): () => void {
       ensureActive()
-      if (!name) throw new Error('Vobs I18n: formatter 名称不能为空')
+      if (!name) throw new Error('Vobs I18n: formatter name must not be empty')
       const previous = formatters.get(name)
       formatters.set(name, formatter)
       return () => {
         /*
-         * 只在"自己那次注册**仍然是当前值**"时才回滚。
+         * Roll back only when "our own registration **is still the current value**".
          *
-         * 原来无条件恢复注册时捕获的 previous，于是同名注册两次后：
-         * 注销 A 的句柄会把后来者 B **删掉**；再注销 B 的句柄又把 A **塞回来** ——
-         * 一个 `() => void` 能做到"卸不干净 + 复活旧的"。
+         * The old code unconditionally restored the `previous` captured at registration time, so
+         * after two same-name registrations: unregistering A's handle **deleted** the later B;
+         * unregistering B's handle then **brought A back** — a single `() => void` could achieve
+         * "never fully unregisters + resurrects the old one".
          *
-         * 加上身份判断后是干净的栈式语义：被后来者顶掉的那次注册，其句柄变成 no-op
-         * （它确实没生效过）；后来者注销时把前一个恢复回来是正确的；同一句柄重复调用也幂等。
+         * With the identity check it's a clean stack discipline: a registration displaced by a
+         * later one gets a no-op handle (it indeed never took effect); when the later one
+         * unregisters, restoring the previous one is correct; and calling the same handle twice is
+         * idempotent.
          */
         if (formatters.get(name) !== formatter) return
         if (previous) formatters.set(name, previous)
@@ -321,7 +330,7 @@ export function createI18n(options: I18nOptions): I18nContext {
   return context
 
   function ensureActive(): void {
-    if (disposed) throw new Error('Vobs I18n: 已销毁的上下文不能继续使用')
+    if (disposed) throw new Error('Vobs I18n: cannot use a disposed context')
   }
 }
 
@@ -331,14 +340,14 @@ function parseDehydratedState(snapshot: unknown): I18nDehydratedState {
     try {
       value = JSON.parse(snapshot)
     } catch {
-      throw new Error('Vobs I18n: 初始状态不是有效 JSON')
+      throw new Error('Vobs I18n: initial state is not valid JSON')
     }
   }
-  if (!value || typeof value !== 'object') throw new Error('Vobs I18n: 初始状态格式无效')
+  if (!value || typeof value !== 'object') throw new Error('Vobs I18n: initial state has an invalid format')
   const candidate = value as Partial<I18nDehydratedState>
   if (candidate.version !== 1 || typeof candidate.locale !== 'string'
     || !candidate.messages || typeof candidate.messages !== 'object') {
-    throw new Error('Vobs I18n: 初始状态版本或字段无效')
+    throw new Error('Vobs I18n: initial state version or fields are invalid')
   }
   return {
     version: 1,
@@ -369,7 +378,7 @@ export function i18nPlugin(options: I18nPluginOptions = {}): VobsPlugin {
 
 export function useI18n(): I18nContext {
   const i18n = inject(I18N_KEY)
-  if (!i18n) throw new Error('Vobs I18n: 找不到上下文，请安装 i18nPlugin')
+  if (!i18n) throw new Error('Vobs I18n: context not found; install i18nPlugin first')
   return i18n
 }
 
@@ -381,30 +390,35 @@ export function I18nBoundary(props: I18nBoundaryProps = {}): VobsNode {
     messages: parent.messages.value,
     fallbackLocale: parent.fallbackLocale,
     timeZone: parent.timeZone,
-    // 自定义 formatter 与 locale 加载器原来**完全没有继承**：前者让 `{name, shout}` 这类占位符
-    // 静默退化成 `String(value)`。这里在创建时把父上下文当前那一份传下去（之后父级新注册的
-    // formatter 仍不会出现在已挂载的边界里 —— 那是下一步的事）。
+    // Custom formatters and locale loaders were **not inherited at all**: the former silently
+    // degraded placeholders like `{name, shout}` to `String(value)`. Here the parent context's
+    // current set is passed down at creation time (formatters the parent registers later still
+    // won't appear in an already-mounted boundary — that's a next step).
     formatters: Object.fromEntries(internals.formatters),
     localeLoaders: internals.localeLoaders
   })
   provide(I18N_KEY, local)
 
   /*
-   * `locale` 默认**跟随父级**。
+   * `locale` **follows the parent** by default.
    *
-   * 原来 `defaultLocale: props.locale ?? parent.locale.value` 只在**创建那一刻读一次**，
-   * 之后父级 `setLocale('zh-CN')` 边界里永远看不到（对比下面的 `messages` 有同步 effect）。
-   * 后果：外层切语言，`I18nBoundary` 子树里的文案仍是旧语言 ——
-   * 而不传 `locale` 的边界恰恰就是想继承父级的那种用法。
+   * `defaultLocale: props.locale ?? parent.locale.value` used to read the parent **only once, at
+   * creation**, so after the parent called `setLocale('zh-CN')` the boundary never saw it
+   * (contrast the `messages` sync effect below). Consequence: the outer app switches language but
+   * the copy inside the `I18nBoundary` subtree stays in the old language — and a boundary without
+   * an explicit `locale` is precisely the "inherit from parent" usage.
    *
-   * 用 `following` 而不是"每次都写"：客户端在边界内自己调 `setLocale` 之后要**停止跟随**
-   * （那是它的显式决定），否则用户的选择会被父级随时覆盖。
+   * `following` instead of "write every time": once the client calls `setLocale` itself inside the
+   * boundary it must **stop following** (that's its explicit decision), otherwise the user's
+   * choice would be overwritten by the parent at any moment.
    *
-   * ⚠️ 对**本地**信号的读取必须 `untrack`：这个 effect 的职责是"把父级的值搬过来"，
-   * 只该依赖 `parent.locale`。若顺手读 `local.locale.value` 来判等，那次读取就建立订阅，
-   * 紧接着的写入又把它重新调度 —— **自订阅**。这是 `vobs check` 抓出来的
-   * （`VOBS_C210`）：我原先以为 `!following` 守卫挡住了它，其实守卫只让**首次**不写，
-   * 读取照样建立了依赖。判等移进 untrack 后语义不变、依赖图干净。
+   * ⚠️ Reads of the **local** signal must be `untrack`: this effect's job is "bring the parent's
+   * value over", so it should only depend on `parent.locale`. If it casually reads
+   * `local.locale.value` for the equality check, that read creates a subscription, and the write
+   * right after reschedules it — **self-subscription**. This was caught by `vobs check`
+   * (`VOBS_C210`): I originally believed the `!following` guard blocked it, but the guard only
+   * skips the **first** write; the read still created the dependency. Moving the equality check
+   * inside untrack keeps the semantics and cleans the dependency graph.
    */
   let following = props.locale === undefined
   effect(() => {
@@ -414,7 +428,7 @@ export function I18nBoundary(props: I18nBoundaryProps = {}): VobsNode {
       if (local.locale.value !== parentLocale) local.locale.value = parentLocale
     })
   })
-  // 边界内显式设置语言 = 停止跟随
+  // An explicit setLocale inside the boundary = stop following
   const setLocalLocale = local.setLocale
   local.setLocale = (nextLocale: Locale): void => {
     following = false
@@ -422,9 +436,12 @@ export function I18nBoundary(props: I18nBoundaryProps = {}): VobsNode {
   }
 
   /*
-   * messages 原来是创建时的**死快照**：父级 `setMessages`/`loadLocale` 之后边界里永远看不到。
-   * 让本地 messages 跟着父走，只增量补齐父级新出现的语言（保留子上下文自己 load 的内容）。
-   * 读本地值必须 untrack：否则「读自己 + 写自己」会自订阅成死循环。
+   * `messages` used to be a **dead snapshot** taken at creation: after the parent's
+   * `setMessages`/`loadLocale`, the boundary never saw the updates. Make the local messages follow
+   * the parent, only incrementally adding languages newly appearing on the parent (keeping what
+   * the child context loaded itself).
+   * Reading the local value must be untracked: otherwise "read self + write self" self-subscribes
+   * into an infinite loop.
    */
   effect(() => {
     const parentMessages = parent.messages.value
@@ -448,8 +465,9 @@ export function I18nBoundary(props: I18nBoundaryProps = {}): VobsNode {
 }
 
 /**
- * 边界要继承、但不属于公开 API 的东西（formatters / localeLoaders）。
- * 用内部符号挂在上下文上，外部上下文（自定义 I18nContext 实现）拿不到就退回空集合。
+ * What the boundary inherits but that is not public API (formatters / localeLoaders).
+ * Attached to the context via an internal symbol; external contexts (custom I18nContext
+ * implementations) fall back to empty collections when they can't provide it.
  */
 const I18N_INTERNALS = Symbol('vobs.i18n.internals')
 
@@ -505,10 +523,12 @@ function interpolate(
   return template.replace(/\{([\w.-]+)(?:,\s*([\w-]+)(?:,\s*([^}]+))?)?\}/g,
     (match, key: string, formatter?: string, argument?: string) => {
       /*
-       * 只认**自有属性**：原来用 `key in params`（沿原型链）→ 空 params 下 `{constructor}`
-       * 渲染出 `function Object() { [native code] }`，`{toString}`/`{__proto__}` 同理。
-       * 值本身是 undefined/null 时视同"没给这个参数"，占位符原样留在文案里
-       * （与缺 key 的处理一致，而不是静默渲染成字面量 "undefined"/"null"）。
+       * Only **own properties** count: the old `key in params` walked the prototype chain, so with
+       * empty params `{constructor}` rendered as `function Object() { [native code] }`, and
+       * `{toString}`/`{__proto__}` behaved the same. When the value itself is undefined/null it is
+       * treated as "this parameter was not given" and the placeholder stays in the copy
+       * (consistent with the missing-key handling, instead of silently rendering the literals
+       * "undefined"/"null").
        */
       if (!Object.prototype.hasOwnProperty.call(params, key)) return match
       const value = params[key]
@@ -522,8 +542,10 @@ function interpolate(
         return formatTemporal(value, input => context.formatRelativeTime(input))
       }
       /*
-       * 非数字值原来**静默吐空串**（`Number('abc')` → NaN → formatNumber 返回 ''），整段文案悄悄缺一块。
-       * 宁可把原值显示出来让人看见 —— 与"缺 key 时返回 key 本身"同一取向（可见 > 静默丢失）。
+       * Non-numeric values used to **silently produce an empty string** (`Number('abc')` → NaN →
+       * formatNumber returns ''), quietly leaving a hole in the copy. Better to show the original
+       * value so someone notices — same orientation as "return the key itself when missing"
+       * (visible > silently lost).
        */
       if (formatter === 'number') return formatNumeric(value, numeric => context.formatNumber(numeric))
       if (formatter === 'currency') return formatNumeric(value, numeric => context.formatCurrency(numeric, argument ?? 'USD'))
@@ -533,13 +555,13 @@ function interpolate(
     })
 }
 
-/** 日期/相对时间类格式化：解析不出日期就原样显示（与 formatNumeric 同一取向）。 */
+/** Date/relative-time formatting: display the value as-is when it can't be parsed as a date (same orientation as formatNumeric). */
 function formatTemporal(value: unknown, format: (input: Date | number) => string): string {
   const date = toDate(value)
   return date ? format(date) : String(value ?? '')
 }
 
-/** 数字类格式化：能转成有限数字就走 Intl，否则原样显示（见 interpolate 里的理由）。 */
+/** Numeric formatting: run through Intl when convertible to a finite number, otherwise display as-is (see the rationale in interpolate). */
 function formatNumeric(value: unknown, format: (numeric: number) => string): string {
   const numeric = typeof value === 'number'
     ? value
@@ -550,9 +572,10 @@ function formatNumeric(value: unknown, format: (numeric: number) => string): str
 }
 
 function toDate(value: Date | number | string | unknown): Date | undefined {  /*
-   * ISO 字符串是 JSON 载荷里最常见的时间形态（`{"createdAt":"2024-01-15T00:00:00Z"}`），
-   * 原来这里只认 Date/number → `formatDate('2024-01-15T00:00:00Z')` **静默吐空串**
-   * （`if (!date) return ''`），调用方只看到"没有日期"。现在解析合法字符串，非法仍返回 undefined。
+   * ISO strings are the most common time form in JSON payloads (`{"createdAt":"2024-01-15T00:00:00Z"}`);
+   * the old code only accepted Date/number → `formatDate('2024-01-15T00:00:00Z')` **silently
+   * returned an empty string** (`if (!date) return ''`), and callers just saw "no date". Valid
+   * strings are now parsed; invalid ones still return undefined.
    */
   let date: Date | undefined
   if (value instanceof Date) date = new Date(value.getTime())
@@ -576,18 +599,18 @@ function withTimeZone(options: Intl.DateTimeFormatOptions, timeZone: string | un
 }
 
 function validateLocale(locale: Locale): Locale {
-  if (typeof locale !== 'string' || !locale.trim()) throw new Error('Vobs I18n: locale 不能为空')
+  if (typeof locale !== 'string' || !locale.trim()) throw new Error('Vobs I18n: locale must not be empty')
   return locale
 }
 
 function validateMessages(value: Messages): Messages {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Vobs I18n: messages 必须是对象')
+    throw new Error('Vobs I18n: messages must be an object')
   }
   for (const [key, message] of Object.entries(value)) {
     if (typeof message === 'string') continue
     if (!message || typeof message !== 'object' || Array.isArray(message)) {
-      throw new Error(`Vobs I18n: 翻译字段 ${key} 的值无效`)
+      throw new Error(`Vobs I18n: invalid value for translation entry ${key}`)
     }
     validateMessages(message)
   }
@@ -596,7 +619,7 @@ function validateMessages(value: Messages): Messages {
 
 function validateLocaleMessages(value: LocaleMessages): LocaleMessages {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Vobs I18n: locale messages 必须是对象')
+    throw new Error('Vobs I18n: locale messages must be an object')
   }
   for (const [locale, messages] of Object.entries(value)) {
     validateLocale(locale)
@@ -607,10 +630,12 @@ function validateLocaleMessages(value: LocaleMessages): LocaleMessages {
 
 function mergeMessages(parent: Messages | undefined, next: Messages): Messages {
   /*
-   * 用 **null 原型**累加：`merged['__proto__'] = value` 在普通对象上不是"写键"而是**设置原型**，
-   * 于是 `{"__proto__":{"injected":"PWNED"}}` 这种载荷（locale 文件、服务端下发的翻译）会让合并结果
-   * 凭空多出任意键 —— 实测 `t('injected')` 返回攻击者指定的 'PWNED'（而不是 key 本身）。
-   * null 原型上 `__proto__` 只是一个普通键；`Object.assign` 也不会触发原型 setter。
+   * Accumulate on a **null prototype**: on a plain object, `merged['__proto__'] = value` is not a
+   * key write but **sets the prototype**, so a payload like `{"__proto__":{"injected":"PWNED"}}`
+   * (locale files, server-delivered translations) would make the merged result sprout arbitrary
+   * keys — measured: `t('injected')` returned the attacker-specified 'PWNED' (instead of the key
+   * itself). On a null prototype `__proto__` is just an ordinary key; `Object.assign` also never
+   * triggers the prototype setter.
    */
   const merged = Object.assign(Object.create(null) as Record<string, MessageValue>, parent ?? {})
   for (const [key, value] of Object.entries(next)) {
@@ -627,10 +652,11 @@ function isMessages(value: MessageValue | undefined): value is Messages {
 }
 
 /*
- * Intl 格式化器构造很贵：实测 `new Intl.DateTimeFormat(...).format()` ≈94.6µs，
- * 复用实例 ≈1.84µs（≈50×）。5 处格式化方法原来每次都新建（201/210/217/241/245）。
- * 这里按 (locale, options) 缓存实例；options 组合来自调用方、理论上无界，
- * 所以缓存有硬上限，超过就整体清空（简单、确定、无淘汰记账）。
+ * Intl formatter construction is expensive: measured `new Intl.DateTimeFormat(...).format()` at
+ * ≈94.6µs vs ≈1.84µs reusing an instance (≈50×). The 5 formatting methods used to construct a new
+ * one every call (201/210/217/241/245). Instances are cached by (locale, options); the options
+ * combinations come from callers and are theoretically unbounded, so the cache has a hard cap —
+ * past it, clear everything (simple, deterministic, no eviction bookkeeping).
  */
 const INTL_CACHE_LIMIT = 100
 const dateFormatters = new Map<string, Intl.DateTimeFormat>()
@@ -647,7 +673,7 @@ function cachedIntl<T>(cache: Map<string, T>, key: string, create: () => T): T {
   return formatter
 }
 
-/** 稳定的 options → key：键名排序 + 逐值 JSON，避免 `{a,b}` 与 `{b,a}` 被当成两套 options。 */
+/** Stable options → key: sort key names + JSON per value, so `{a,b}` and `{b,a}` aren't treated as two different option sets. */
 function optionsCacheKey(options: object | undefined): string {
   if (!options) return ''
   const entries = Object.entries(options).filter(([, value]) => value !== undefined)

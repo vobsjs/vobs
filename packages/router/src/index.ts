@@ -105,7 +105,7 @@ export class NavigationCancelledError extends Error {
   readonly code = 'NAVIGATION_CANCELLED'
 
   constructor() {
-    super('Vobs Router: 导航已被更新的导航取消')
+    super('Vobs Router: navigation was cancelled by a newer navigation')
     this.name = 'NavigationCancelledError'
   }
 }
@@ -114,14 +114,14 @@ export class NavigationRedirectError extends Error {
   readonly code = 'NAVIGATION_REDIRECT_LIMIT'
 
   constructor() {
-    super('Vobs Router: 导航重定向超过最大次数')
+    super('Vobs Router: navigation redirects exceeded the maximum count')
     this.name = 'NavigationRedirectError'
   }
 }
 
 export interface RouterHistory {
   readonly location: string
-  /** 当前 history 条目携带的导航 state（push/replace 时写入，popstate/初始启动时回读）。 */
+  /** Navigation state carried by the current history entry (written on push/replace, read back on popstate/initial start). */
   readonly state?: unknown
   push(path: string, state?: unknown): void
   replace(path: string, state?: unknown): void
@@ -244,13 +244,15 @@ export interface RouterDevToolsAPI {
 
 export interface Router {
   /**
-   * **只读**。运行时它就是内部那个可写信号（框架自己要写它），但对外只暴露读接口 ——
-   * 原来类型是 `Signal<RouteLocation>`，实测 `router.currentRoute.value = {...}` 能直接把
-   * 路由改成任意地址（地址栏不同步、守卫不跑、视图不更新，静默不一致）。
+   * **Read-only**. At runtime it is the internal writable signal (the framework itself writes it),
+   * but only a read interface is exposed — the original type was `Signal<RouteLocation>`, and
+   * `router.currentRoute.value = {...}` measurably rewrote the route to an arbitrary address
+   * (address bar out of sync, guards not run, view not updated — silent inconsistency).
    *
-   * 说明：这只挡类型层面的误用（`.set(...)` 与 `value =` 在 TS 里报错），**运行时**仍不是
-   * 真冻结 —— 真要冻结得包一层代理，那会改变对象身份（有人拿引用做比较就会坏）。
-   * 权衡后选低风险的那种。
+   * Note: this only blocks type-level misuse (`.set(...)` and `value =` error in TS); it is **not**
+   * a runtime freeze — a real freeze would require wrapping in a proxy, which changes object
+   * identity (anyone comparing by reference would break). Weighing the options, the low-risk one
+   * was chosen.
    */
   readonly currentRoute: ReadableSignal<RouteLocation>
   readonly history: RouterHistory
@@ -266,7 +268,7 @@ export interface Router {
 
 export interface RouterViewProps {
   readonly router?: Router
-  /** 加载占位：JSX 属性经编译器编译为惰性 getter，手写对象字面量可传节点或工厂。 */
+  /** Loading placeholder: JSX props are compiled by the compiler into lazy getters; a hand-written object literal may pass a node or a factory. */
   readonly loading?: VobsNode | (() => VobsNode | null | undefined)
   readonly notFound?: (route: RouteLocation) => VobsNode | null | undefined
   readonly error?: (error: Error, retry: () => void) => VobsNode | null | undefined
@@ -327,7 +329,7 @@ export function createMemoryHistory(initial = '/'): RouterHistory {
 
 export function createBrowserHistory(base = ''): RouterHistory {
   if (typeof window === 'undefined') {
-    throw new Error('Vobs Router: createBrowserHistory 需要浏览器环境')
+    throw new Error('Vobs Router: createBrowserHistory requires a browser environment')
   }
 
   const normalizedBase = normalizeBase(base)
@@ -370,17 +372,19 @@ export function createBrowserHistory(base = ''): RouterHistory {
 
 export function createHashHistory(): RouterHistory {
   if (typeof window === 'undefined') {
-    throw new Error('Vobs Router: createHashHistory 需要浏览器环境')
+    throw new Error('Vobs Router: createHashHistory requires a browser environment')
   }
 
   const listeners = new Set<(path: string, state: unknown) => void>()
-  // hash 模式：路由路径整体挂在 URL # 后面（如 /users?tab=all → #/users?tab=all）；
-  // hash 为空视为根路径。服务端只服务 index.html，刷新/直达不产生额外请求。
+  // Hash mode: the route path hangs entirely after the URL's # (e.g. /users?tab=all → #/users?tab=all);
+  // an empty hash counts as the root path. The server only serves index.html, so refreshes/direct
+  // visits produce no extra requests.
   const readHashLocation = (): string =>
     normalizeHistoryPath(window.location.hash.replace(/^#/, '') || '/')
-  // pushState/replaceState 不触发 hashchange（与 browserHistory 的 popstate 语义对齐）；
-  // 手动改 URL、前进/后退、点击锚点均触发 hashchange，单监听即可覆盖，
-  // state 经 window.history.state 回读（pushState 写入，history 遍历时浏览器自动恢复）。
+  // pushState/replaceState do not fire hashchange (aligned with browserHistory's popstate semantics);
+  // manual URL edits, forward/back, and anchor clicks all fire hashchange, so a single listener covers
+  // everything. State is read back via window.history.state (written by pushState, restored
+  // automatically by the browser when traversing history).
   const onHashChange = (): void => {
     notifyListeners(listeners, readHashLocation(), window.history.state)
   }
@@ -422,7 +426,8 @@ export function createRouter(options: RouterOptions): Router {
   const history = options.history ?? defaultHistory()
   const routerDebugId = createRouterDebugId()
   matchers.sort(compareMatchers)
-  // debug 名：C210/C211 等守卫告警会引用它；没有名字的信号报错时只显示「未命名信号」，无法定位
+  // debug name: guards like C210/C211 reference it in their warnings; an unnamed signal only shows
+  // "(unnamed signal)" in errors, which cannot be located
   const currentRoute = state<RouteLocation>(resolvePath(history.location), 'router.currentRoute')
   const lazyStates = new Map<RouteRecord, LazyState>()
   const guards: NavigationGuard[] = []
@@ -431,17 +436,20 @@ export function createRouter(options: RouterOptions): Router {
   const errors: RouteErrorTrace[] = []
   const dataLoaders = new Map<string, { kind: RouterDataRequestKind; route: string; task: () => unknown | PromiseLike<unknown> }>()
   /**
-   * 每次导航的中止器：导航序号推进时（被抢占、或 destroy）立刻中止更早的导航。
+   * Abort controller per navigation: when the navigation id advances (preempted, or destroy),
+   * all earlier navigations are aborted immediately.
    *
-   * 解决的是「守卫/loader 永不 resolve 时 `push` 永远不 settle」：
-   * 原来导航在 `await guard(...)` 上无限期挂着 —— 抢占只是把 id 推进一格，
-   * 并不会放弃那次 await，于是那个 promise 永远悬着（navigationState 也跟着卡在 loading）。
+   * Solves "`push` never settles when a guard/loader never resolves":
+   * navigations used to hang indefinitely on `await guard(...)` — preemption only advanced the id
+   * by one and never abandoned that await, so the promise hung forever (and navigationState stayed
+   * stuck on loading with it).
    *
-   * 中止走的是既有契约：以 NavigationCancelledError 拒绝，与守卫取消/被抢占一致。
+   * Aborting follows the existing contract: rejects with NavigationCancelledError, consistent with
+   * guard cancellation/preemption.
    */
   const navigationAborts = new Map<number, () => void>()
 
-  /** 推进导航序号，并中止所有更早的导航。 */
+  /** Advance the navigation id, and abort all earlier navigations. */
   function beginNavigation(): number {
     const id = ++navigationId
     for (const [olderId, abort] of [...navigationAborts]) {
@@ -492,18 +500,20 @@ export function createRouter(options: RouterOptions): Router {
   }
 
 /**
- * 给公开导航 API 返回的 promise 挂一个**内部**空 catch。
+ * Attach an **internal** empty catch to the promise returned by the public navigation APIs.
  *
- * 为什么需要：被抢占的导航会以 `NavigationCancelledError` 拒绝（这是锁在测试里的契约），
- * 而最常见的调用写法是 `void router.push(...)`（playground 里到处是）—— 于是每次快速点击
- * 都会刷出一条 unhandledRejection，而它表达的只是"这次被后一次导航顶掉了"。
+ * Why it is needed: a preempted navigation rejects with `NavigationCancelledError` (a contract
+ * pinned in tests), and the most common call form is `void router.push(...)` (all over the
+ * playground) — so every fast click flushed an unhandledRejection that only meant "this navigation
+ * was superseded by a later one".
  *
- * 为什么不是"改成 resolve(false)"：那会改掉公开契约（测试显式断言 rejects），风险更大。
- * 挂空 catch 只影响"没人接"这个场景：返回的仍是**同一个** promise 的派生链，
- * `await push()` 依然会抛，调用方行为完全不变。
+ * Why not "change it to resolve(false)": that would change the public contract (tests explicitly
+ * assert rejects) and is riskier. The empty catch only affects the "nobody attached" scenario: the
+ * returned value is still a chain derived from the **same** promise, `await push()` still throws,
+ * and caller behavior is completely unchanged.
  */
 function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
-  pending.catch(() => { /* 调用方不关心"被顶掉"时不该被判 unhandledRejection */ })
+  pending.catch(() => { /* callers that do not care about being superseded must not be flagged unhandledRejection */ })
   return pending
 }
   async function navigate(
@@ -515,22 +525,25 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
     ensureActive()
     const from = currentRoute.value
     let target = resolve(to)
-    // popstate 回读的 state 保存在 history 条目上，不在目标描述里，这里回填。
+    // The state read back on popstate lives on the history entry, not in the target description; backfill it here.
     if (fromHistory && historyState !== undefined) target = { ...target, state: historyState }
     /*
-     * 同一个地址：直接返回，**不 ++navigationId**。
+     * Same address: return directly, **without ++navigationId**.
      *
-     * 原来这句排在 `++navigationId` 之后，于是 `push(当前地址)` 会白白把 id 推进一格，
-     * 把正在飞的导航当成"被抢占"杀掉（`ensureNavigationIsCurrent` 就是靠 id 比较判断抢占）。
-     * 顺带也不再改 navigationState —— 原来会把它置成 idle，可能覆盖另一个在飞导航的 loading。
+     * This line used to sit after `++navigationId`, so `push(current address)` would advance the id
+     * for nothing, killing the in-flight navigation as if it had been preempted
+     * (`ensureNavigationIsCurrent` decides preemption by comparing ids).
+     * It also no longer touches navigationState — that used to reset it to idle, which could
+     * overwrite another in-flight navigation's loading.
      */
     if (target.fullPath === from.fullPath && !fromHistory) return from
 
     const id = beginNavigation()
     /*
-     * 抢占/destroy 时用来打断"正在 await 守卫或 loader"的那次等待。
-     * 挂一个空 catch：它只在被中止时拒绝，而中止一定意味着有更晚的导航在跑，
-     * 不接的话会变成 unhandledRejection（同一个坑第 2 项刚修过）。
+     * Used to break the "currently awaiting a guard or loader" wait on preemption/destroy.
+     * An empty catch is attached: it only rejects when aborted, and an abort always means a later
+     * navigation is running — unattached, it would become an unhandledRejection (the same pit,
+     * second occurrence, just fixed).
      */
     let abortNavigation: ((reason: unknown) => void) | undefined
     const aborted = new Promise<never>((_, reject) => { abortNavigation = reject })
@@ -572,8 +585,10 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
         }
 
         /*
-         * 守卫要求重定向 → **先别加载这个目标的数据**：它马上会被放弃，加载是白干活。
-         * 原来这段重定向处理排在 loader 循环之后，实测两个目标的 loader 都会跑一遍。
+         * The guard demands a redirect → **do not load this target's data yet**: it is about to be
+         * abandoned, so loading would be wasted work.
+         * The redirect handling used to sit after the loader loop; measured, both targets' loaders
+         * all ran once.
          */        if (redirect !== undefined) {
           if (redirectCount >= 10) {
             const error = new NavigationRedirectError()
@@ -590,11 +605,12 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
 
         for (const record of target.matched) {
           if (!record.loader) continue
-          // 上一 loader 期间被新导航抢占时立即取消，跳过剩余 loader。
+          // Cancel immediately when preempted by a new navigation during the previous loader, skipping the remaining loaders.
           ensureNavigationIsCurrent(id)
           /*
-           * loader 本身没有 signal，无法真正取消；但导航**不该等它**：
-           * 被抢占时立刻收敛，迟到完成的那次由后面的 ensureNavigationIsCurrent 丢弃。
+           * The loader itself has no signal and cannot be truly cancelled, but the navigation
+           * **must not wait for it**: it settles immediately when preempted, and the late
+           * completion is discarded by the ensureNavigationIsCurrent further down.
            */
           await Promise.race([
             trackDataRequest(
@@ -607,7 +623,8 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
           ])
         }
 
-        // loader 完成后、提交前必须重新校验：飞行期间被抢占的导航不允许覆盖 currentRoute 与 history。
+        // Must re-validate after loaders complete and before committing: a navigation preempted
+        // mid-flight must not overwrite currentRoute or history.
         ensureNavigationIsCurrent(id)
 
 
@@ -627,12 +644,15 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
         recordNavigation({ id, from: from.fullPath, to: target.fullPath, status: 'cancelled', source, startedAt, endedAt: now(), duration: now() - startedAt })
         terminalRecorded = true
         /*
-         * 这里继续 `throw reason` —— 被抢占会以 NavigationCancelledError 拒绝，**这是锁在
-         * 测试里的契约**（index.test.ts:258 / :298 显式断言 rejects），不能改成返回 false。
+         * Keep `throw reason` here — preemption rejects with NavigationCancelledError, **a contract
+         * pinned in tests** (index.test.ts:258 / :298 explicitly assert rejects); it cannot be
+         * changed to return false.
          *
-         * 但"公开 API 的 promise 没人接就被判 unhandledRejection"是真问题：playground 里
-         * 到处是 `void router.push(...)`。解决方式是**不改契约**，而在公开边界挂一个内部
-         * no-op catch（见 push/replace）—— 调用方 await 仍然拿得到拒绝，不 await 也不再刷屏。
+         * But "the public API's promise being flagged unhandledRejection when nobody attaches" was
+         * a real problem: the playground is full of `void router.push(...)`. The fix is **not to
+         * change the contract** but to attach an internal no-op catch at the public boundary (see
+         * push/replace) — callers awaiting still get the rejection; callers not awaiting no longer
+         * flood the console.
          */
       } else if (!terminalRecorded) {
         const error = toError(reason)
@@ -818,11 +838,13 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
         if (index >= 0) guards.splice(index, 1)
       }
       /*
-       * 绑到当前 Owner：在组件里注册的守卫会随组件卸载自动摘掉。
+       * Bind to the current Owner: guards registered inside a component are automatically removed
+       * when the component unmounts.
        *
-       * 原来只 push 进 guards 数组 —— 于是"组件卸载后守卫照旧执行"（深读实测）：
-       * 守卫里读路由状态、发起请求、做鉴权跳转，都会在一个已经不存在的组件的名义下发生。
-       * 返回的 off() 仍然可用（重复调用是幂等的）。
+       * The original code only pushed into the guards array — so "guards kept running after their
+       * component unmounted" (measured in the deep read): reading route state, issuing requests, and
+       * performing auth redirects all happened in the name of a component that no longer existed.
+       * The returned off() remains usable (repeated calls are idempotent).
        */
       getCurrentOwner()?.onDispose(off)
       return off
@@ -881,14 +903,17 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
       runFetcher: (key, task) => trackDataRequest('fetcher', key, task, { trigger: 'manual' }),
       reportError,
       /*
-       * 无参 = **重新校验当前路由**的数据，而不是"把所有历史路由的 loader 全部重放"。
+       * No argument = **revalidate the current route's** data, not "replay every historical route's
+       * loaders".
        *
-       * 原来 `route === undefined` 时没有路由过滤，于是访问过 5 个路由之后再调一次
-       * `revalidate()`，会给 5 个路由各发一轮请求 —— 其中大多数早已不在屏幕上。
-       * 名字与典型用法（数据改完刷新当前页）都指向"当前路由"；显式传 route 时行为不变。
+       * Originally there was no route filter when `route === undefined`, so after visiting 5 routes,
+       * calling `revalidate()` once fired a fresh round of requests for all 5 — most of them long
+       * gone from the screen. Both the name and the typical usage ("refresh the current page after
+       * data changed") point at the current route; passing a route explicitly behaves unchanged.
        *
-       * 代价：「全部重放」这个能力不再可达。全仓库唯一的调用点是测试里的
-       * `router.devtools.revalidate()`（且只有一条路由），没有真实调用方依赖它。
+       * Cost: the "replay everything" capability is no longer reachable. The only call site in the
+       * repo is `router.devtools.revalidate()` in tests (with a single route); no real caller
+       * depended on it.
        */
       revalidate: async (route) => {
         const target = route ?? currentRoute.value.fullPath
@@ -907,8 +932,9 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
     destroy(): void {
       if (destroyed) return
       destroyed = true
-      // 用 beginNavigation：destroy 也要**中止**在飞的导航（守卫/loader 挂着时能收敛），
-      // 原来只 `navigationId++`，于是那次 await 永远悬着、push 永不 settle。
+      // Use beginNavigation: destroy must also **abort** in-flight navigations (so they settle while
+      // guards/loaders are pending) — it used to only do `navigationId++`, leaving that await hanging
+      // forever and push never settling.
       beginNavigation()
       stopHistory()
       guards.length = 0
@@ -916,7 +942,7 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
       lazyStates.clear()
       errors.length = 0
       dataRequestContexts.clear()
-      // dataLoaders 装着每个路由的 loader 任务闭包 —— 销毁后没人再用它，留着只是拖住引用。
+      // dataLoaders holds each route's loader task closures — nobody uses them after destroy; keeping them only pins references.
       dataLoaders.clear()
       currentRoute.dispose()
       viewRevision.dispose()
@@ -952,7 +978,7 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
   }
 
   function ensureActive(): void {
-    if (destroyed) throw new Error('Vobs Router: 已销毁的 Router 不能继续使用')
+    if (destroyed) throw new Error('Vobs Router: a destroyed Router cannot be used any further')
   }
 
   function ensureNavigationIsCurrent(id: number): void {
@@ -964,34 +990,37 @@ function guardUnhandled<T>(pending: Promise<T>): Promise<T> {
 
 export function RouterView(props: RouterViewProps = {}): VobsNode {
   const router = props.router ?? inject(ROUTER_KEY)
-  if (!router) throw new Error('Vobs Router: RouterView 找不到 Router，请安装 routerPlugin')
+  if (!router) throw new Error('Vobs Router: RouterView could not find a Router, install routerPlugin')
 
   return createFragment((parent, anchor) => {
     let routeRetry: () => void = () => undefined
     insertBoundary(parent, anchor, {
       /*
-       * 整棵树按 fullPath 重置 —— **这是承重的，别"顺手优化"掉**。
+       * The whole tree resets by fullPath — **this is load-bearing, do not "tidy" it away**.
        *
-       * 组件体只执行一次（run-once），体里读的路由状态（`router.currentRoute.value.path`、
-       * `query.*`）本来会冻在首次渲染的值上。每次 fullPath 变化都重挂视图子树，正是让这些
-       * 读取重新求值的原因。深读里 playground 那条 C118（`const activeKey = route.value.path…`）
-       * "运行时不失效"，靠的就是这里。
+       * Component bodies execute once (run-once); route state read inside the body
+       * (`router.currentRoute.value.path`, `query.*`) would otherwise freeze at the first render's
+       * values. Remounting the view subtree on every fullPath change is exactly what makes those
+       * reads re-evaluate. The playground's C118 case (`const activeKey = route.value.path…`)
+       * staying correct at runtime relies on this.
        *
-       * 代价：仅 query 变化（分页/筛选，`?page=1 → 2`）也会重挂页面组件，组件内 state、
-       * 滚动位置、未提交的草稿全丢。
+       * Cost: query-only changes (pagination/filters, `?page=1 → 2`) also remount the page
+       * component, losing in-component state, scroll position, and uncommitted drafts.
        *
-       * 为什么不改成按 path 或 matched record 做 key：那会让"体里读 query"的代码静默变陈旧
-       * （path 读刷新、query 读不刷新的不一致模型），比现在更糟。要真正解决，得先补上
-       * **路由派生值的 selector/memo helper**（目前 router 没有任何这类 helper），
-       * 让应用不必依赖重挂 —— 那是功能级改动，不是这里能顺手做的。
+       * Why not key by path or matched record instead: that would let "body reads query" code go
+       * silently stale (an inconsistent model where path reads refresh but query reads do not) —
+       * worse than today. A real fix requires adding a **selector/memo helper for route-derived
+       * values** (the router currently has no such helper) so apps need not rely on remounting —
+       * that is a feature-level change, not something to slip in here.
        */
       resetKey: () => router.currentRoute.value.fullPath,
       onRetry: () => routeRetry(),
       fallback: (error, retry) => {
         router.devtools.reportError('render', error, router.currentRoute.value.fullPath)
-        // 提供了 error 兜底时完全尊重其返回值（含显式 null）；
-        // 未提供时渲染内置错误界面（含重试），不再静默渲染空白页——
-        // 子 effect 抛错（如弹窗条件 children 内层裸读可空信号）会把整页换成空白
+        // When an error fallback is provided, its return value is fully respected (including explicit null);
+        // without one, render the built-in error UI (with retry) instead of silently rendering a blank page —
+        // a child effect throwing (e.g. inner bare reads of a nullable signal inside conditional children)
+        // used to swap the whole page for blankness
         if (props.error !== undefined) return props.error(error, () => { void retry() })
         return createRouteErrorFallback(error, () => { void retry() })
       },
@@ -1004,7 +1033,7 @@ export function RouterView(props: RouterViewProps = {}): VobsNode {
       }
       if (view.status === 'not-found') return props.notFound?.(route) ?? null
       if (view.status === 'error') {
-        throw view.error ?? new Error('路由组件加载失败')
+        throw view.error ?? new Error('route component failed to load')
       }
       if (!view.component) return null
       let node = createComponent(view.component, {
@@ -1027,21 +1056,22 @@ export function RouterView(props: RouterViewProps = {}): VobsNode {
 
 export function useRouter(): Router {
   const router = inject(ROUTER_KEY)
-  if (!router) throw new Error('Vobs Router: useRouter 找不到 Router，请安装 routerPlugin')
+  if (!router) throw new Error('Vobs Router: useRouter could not find a Router, install routerPlugin')
   return router
 }
 
-/** 路由错误默认兜底界面：类名 .vobs-route-error 供应用覆盖样式；重试重新渲染当前路由 */
+/** Default fallback UI for route errors: the .vobs-route-error class lets apps override styles; retry re-renders the current route */
 function createRouteErrorFallback(error: Error, retry: () => void): VobsNode {
-  // 全部走渲染器中立 API：SSR 预渲染时路由组件渲染错误同样会触发 fallback，
-  // 直接操作 DOM API（style/append/addEventListener）在 Node 下会崩溃并掩盖原始错误。
+  // Everything goes through renderer-neutral APIs: during SSR prerendering, route component render
+  // errors trigger this fallback too, and direct DOM manipulation (style/append/addEventListener)
+  // would crash in Node and mask the original error.
   const box = createElement('div')
   setAttribute(box, 'class', 'vobs-route-error')
   setAttribute(box, 'style', 'padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:12px;font-family:system-ui, -apple-system, sans-serif;color:#5a5f6a')
 
   const title = createElement('div')
   setAttribute(title, 'style', 'font-size:16px;font-weight:600;color:#1c1c1e')
-  insertBefore(title, createText('页面渲染出错'), null)
+  insertBefore(title, createText('Page failed to render'), null)
 
   const message = createElement('code')
   setAttribute(message, 'style', 'font-size:12px;max-width:520px;word-break:break-word;opacity:0.75')
@@ -1050,7 +1080,7 @@ function createRouteErrorFallback(error: Error, retry: () => void): VobsNode {
   const button = createElement('button')
   setAttribute(button, 'type', 'button')
   setAttribute(button, 'style', 'padding:6px 20px;font-size:13px;cursor:pointer')
-  insertBefore(button, createText('重试'), null)
+  insertBefore(button, createText('Retry'), null)
   addEventListener(button, 'click', retry)
 
   insertBefore(box, title, null)
@@ -1063,14 +1093,15 @@ export function useRoute(): ReadableSignal<RouteLocation> {
   return useRouter().currentRoute
 }
 
-/* ---------------- 启动开关（2026-10-28，Finora 死穴「URL 开关参数」的标准件） ---------------- */
+/* ---------------- Launch flags (2026-10-28, the standard part for Finora's "URL switch params" pit) ---------------- */
 
 /**
- * 模块加载时捕获一次的启动开关集合。
+ * Launch flags captured once at module load time.
  *
- * `?cloud` / `?shell=cockpit` 这类**应用级开关**的正确读取方式：模块加载时捕获一次，
- * SPA 内跳转不重读——路由切换会改写 URL，运行时重读 `location.search` 会让开关漂移
- * 回落（踩坑实证）。history 形态（`/?cloud`）与 hash 形态（`/#/path?cloud`）都识别。
+ * The correct way to read **app-level switches** like `?cloud` / `?shell=cockpit`: capture once at
+ * module load and never re-read during SPA navigation — route changes rewrite the URL, and re-reading
+ * `location.search` at runtime makes the flags drift back off (empirically hit). Both history form
+ * (`/?cloud`) and hash form (`/#/path?cloud`) are recognized.
  */
 const launchFlags: ReadonlySet<string> = ((): ReadonlySet<string> => {
   if (typeof window === 'undefined') return new Set<string>()
@@ -1084,12 +1115,12 @@ const launchFlags: ReadonlySet<string> = ((): ReadonlySet<string> => {
   return flags
 })()
 
-/** 是否带启动开关（应用生命周期内不变；见 launchFlags 的捕获语义）。 */
+/** Whether a launch flag is present (constant for the app's lifetime; see launchFlags' capture semantics). */
 export function hasLaunchFlag(name: string): boolean {
   return launchFlags.has(name)
 }
 
-/** 读取启动开关的值；无该开关返回 null（布尔开关用 hasLaunchFlag）。 */
+/** Reads a launch flag's value; returns null when the flag is absent (boolean flags use hasLaunchFlag). */
 export function readLaunchQuery(name: string): string | null {
   if (typeof window === 'undefined') return null
   const hashQuery = window.location.hash.includes('?')
@@ -1205,7 +1236,7 @@ function normalizeRoutes(routes: readonly RouteRecord[]): RouteMatcher[] {
       } else if (normalized.component) {
         matchers.push(createMatcher(normalized, chain, meta, order++, debugId))
       } else if (normalized.path === undefined) {
-        throw new Error(`Vobs Router: 第 ${index + 1} 个路由缺少 path 或 children`)
+        throw new Error(`Vobs Router: route ${index + 1} is missing path or children`)
       }
     })
   }
@@ -1233,8 +1264,8 @@ function createMatcher(record: RouteRecord, chain: readonly RouteRecord[], meta:
     }
     if (segment.startsWith(':')) {
       const key = segment.slice(1)
-      if (!key) throw new Error(`Vobs Router: 路由 ${path} 的参数名不能为空`)
-      if (keys.includes(key)) throw new Error(`Vobs Router: 路由 ${path} 存在重复参数 ${key}`)
+      if (!key) throw new Error(`Vobs Router: route ${path} has an empty parameter name`)
+      if (keys.includes(key)) throw new Error(`Vobs Router: route ${path} has a duplicate parameter ${key}`)
       keys.push(key)
       score += 1
       return '([^/]+)'
@@ -1283,10 +1314,10 @@ function normalizeTarget(target: RouteLocationRaw, matchers: readonly RouteMatch
   let path = target.path
   if (!path && target.name) {
     const matcher = matchers.find(candidate => candidate.record.name === target.name)
-    if (!matcher) throw new Error(`Vobs Router: 找不到名为 ${target.name} 的路由`)
+    if (!matcher) throw new Error(`Vobs Router: no route named ${target.name} found`)
     path = fillRouteParams(matcher.record.path ?? '/', target.params ?? {})
   }
-  if (!path) throw new Error('Vobs Router: 导航目标必须提供 path 或 name')
+  if (!path) throw new Error('Vobs Router: navigation target must provide a path or a name')
 
   const parsed = parseTargetString(path)
   const filledPath = fillRouteParams(parsed.path, target.params ?? {})
@@ -1299,16 +1330,17 @@ function fillRouteParams(path: string, params: Record<string, unknown>): string 
   return path.replace(/:([A-Za-z0-9_]+)|\*/g, (token, key: string | undefined) => {
     const value = key ? params[key] : params.pathMatch
     /*
-     * 缺参数**不能再静默降级**。
+     * Missing params **must not silently degrade any more**.
      *
-     * 原来这里是 `return token` —— 于是 `push({ name: 'user' })` 会"成功"落到
-     * `/users/:id`：地址栏里是字面量 `:id`、`params.id` 也是 `':id'`。不报错、结果错，
-     * 页面还渲染得出来，只是数据不对 —— 这类静默错比直接抛错难查得多。
+     * This used to `return token` — so `push({ name: 'user' })` would "successfully" land on
+     * `/users/:id`: the address bar showed the literal `:id` and `params.id` was the string ':id'.
+     * No error, wrong result; the page even rendered, just with wrong data — this class of silent
+     * error is far harder to diagnose than a direct throw.
      */
     if (value === undefined || value === null) {
-      const name = key ? `"${key}"` : '"pathMatch"（通配段）'
-      throw new Error(`Vobs Router: 目标路径 "${path}" 需要参数 ${name}，但没有提供 —— `
-        + `继续下去会得到字面量地址 "${token}"。请在 push/replace 时补上，或改用别的路由。`)
+      const name = key ? `"${key}"` : '"pathMatch" (wildcard segment)'
+      throw new Error(`Vobs Router: target path "${path}" requires the parameter ${name} but none was provided — `
+        + `continuing would produce the literal address "${token}". Supply it in push/replace, or use a different route.`)
     }
     return encodeURIComponent(String(value))
   })
@@ -1416,7 +1448,7 @@ function isRouteComponentDefinition(value: unknown): value is RouteComponentDefi
 async function loadRouteComponent(loader: LazyRouteComponent): Promise<RouteComponent> {
   const module = await loader.load()
   const component = typeof module === 'function' ? module : module.default
-  if (typeof component !== 'function') throw new Error('Vobs Router: 懒加载模块没有默认组件导出')
+  if (typeof component !== 'function') throw new Error('Vobs Router: lazy module has no default component export')
   return component
 }
 

@@ -1,56 +1,62 @@
 // @vitest-environment jsdom
 /*
- * `on()` —— 显式声明 effect 依赖（真实项目 2026-10-02 踩坑 3）。
+ * `on()` — declare effect dependencies explicitly (real-project pitfall #3, 2026-10-02).
  *
- * ## 要锁住的缺陷形态
+ * ## Defect shape being pinned
  *
- * `effect` 的依赖是**自动收集**的，而**「effect 只调了个函数」不等于没依赖**：
- * 被调函数在**首个 await 之前**的代码同步执行，所以它读/写的信号全算在 effect 头上。
+ * `effect` dependencies are **auto-collected**, and **"the effect merely calls a
+ * function" does not mean it has no dependencies**: code in the called function
+ * before its **first await** runs synchronously, so every signal it reads/writes
+ * is attributed to the effect.
  *
  * ```ts
  * effect(() => { if (session.value) void sync() })
- * //   sync() 首个 await 前：读 entSync.value.syncing（守卫）+ 写 entSync.set(...)
- * //   → effect 订阅了 ent.sync → 写它又触发 effect → 无限重同步（C210 + C211）
+ * //   sync() before its first await: reads entSync.value.syncing (guard) + writes entSync.set(...)
+ * //   → the effect subscribes to ent.sync → writing it re-triggers the effect → infinite resync (C210 + C211)
  * ```
  *
- * `untrack` 能治，但靠人记得；`on()` 让它**结构上写不出来**。
+ * `untrack` fixes it but relies on people remembering; `on()` makes it
+ * **structurally impossible to get wrong**.
  *
- * ## 语义对齐 SolidJS 的 `on()`
+ * ## Semantics aligned with SolidJS's `on()`
  *
- * 只在声明的依赖变化时触发；回调体内的读取**不建立订阅**。
+ * Fires only when the declared dependencies change; reads inside the callback
+ * body **establish no subscriptions**.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { effect, on, scheduler, state, untrack } from './index'
 
 const settle = (): void => { scheduler.flush() }
 
-/** 复现踩坑 3 里的 async 同步函数：首个 await 之前读 + 写同一个信号。 */
+/** Reproduces the async-then-sync function from pitfall #3: reads + writes the same signal before the first await. */
 function makeSyncLikeFn(entSync: ReturnType<typeof state<{ syncing: boolean }>>) {
   const calls: number[] = []
   return {
     calls,
-    // async 函数：首个 await 之前的代码是同步执行的 —— 这正是坑的机制
+    // async function: code before the first await runs synchronously — exactly the mechanism of the pitfall
     async run(): Promise<void> {
-      if (entSync.value.syncing) return      // ← 守卫读（在 effect 追踪作用域内！）
-      entSync.value = { syncing: true }      // ← 状态机写（触发自己）
+      if (entSync.value.syncing) return      // ← guard read (inside the effect's tracking scope!)
+      entSync.value = { syncing: true }      // ← state-machine write (triggers itself)
       calls.push(1)
       await Promise.resolve()
-      entSync.value = { syncing: false }     // ← 完成后再写一次
+      entSync.value = { syncing: false }     // ← written again after completion
     }
   }
 }
 
-describe('on()：让「effect 调用 async 函数」不再自订阅', () => {
-  it('**裸 effect 确实会订阅被调函数读的信号**（确定性复现，不触发循环）', () => {
+describe('on(): calling an async function from an effect no longer self-subscribes', () => {
+  it('**a bare effect does subscribe to signals read by the called function** (deterministic reproduction, no loop triggered)', () => {
     /*
-     * 这里**刻意不写 async**：让裸 effect 真的进入"写自己依赖的信号"的循环，
-     * 会与调度器的微任务交织，测试挂住 57 秒 —— 挂测试比没测试更糟。
-     * 所以只验证机制的**第一环**：effect 调一个函数，那个函数读的信号会成为
-     * effect 的依赖。踩坑 3 就是这一环 + "那个函数还写了同一个信号"。
+     * Deliberately **not async** here: letting the bare effect actually enter the
+     * "writes a signal it depends on" loop interleaves with the scheduler's
+     * microtasks and hung the test for 57 seconds — a hanging test is worse than
+     * no test. So only the **first link** of the mechanism is verified: the effect
+     * calls a function, and the signals that function reads become the effect's
+     * dependencies. Pitfall #3 is this link + "the function also writes the same signal".
      */
     const noise = state(0)
     function readInsideCalledFunction(): number {
-      return noise.value        // ← 读取发生在被调函数里，但仍在 effect 追踪作用域内
+      return noise.value        // ← the read happens inside the called function, but still within the effect's tracking scope
     }
 
     let runs = 0
@@ -62,11 +68,11 @@ describe('on()：让「effect 调用 async 函数」不再自订阅', () => {
     settle()
     expect(
       runs,
-      'effect 没有订阅被调函数读的信号 —— 那踩坑 3 的机制就不成立，on() 也就没必要'
+      'the effect did not subscribe to the signal read by the called function — the pitfall #3 mechanism would not hold and on() would be unnecessary'
     ).toBe(2)
     stop.dispose()
   })
-  it('用 on() 之后：写 async 函数碰过的信号**不再**触发 effect', () => {
+  it('with on(): writing signals touched by the async function **no longer** triggers the effect', () => {
     const session = state<string | null>('s1')
     const entSync = state({ syncing: false })
     const fn = makeSyncLikeFn(entSync)
@@ -78,22 +84,22 @@ describe('on()：让「effect 调用 async 函数」不再自订阅', () => {
     }))
     settle()
     const afterFirst = runs
-    expect(afterFirst, 'on() 的首次求值应该调用一次').toBe(1)
+    expect(afterFirst, 'the first evaluation of on() should call the callback once').toBe(1)
 
-    // 写 entSync —— 裸 effect 会因此重跑；on() 只订阅 session，所以不该重跑
+    // write entSync — a bare effect would re-run because of this; on() only subscribes to session, so it must not re-run
     entSync.value = { syncing: false }
     settle()
     entSync.value = { syncing: true }
     settle()
     expect(
       runs,
-      'entSync 变化触发了 effect —— on() 没有把回调放进 untrack 作用域'
+      'an entSync change triggered the effect — on() did not run the callback inside an untrack scope'
     ).toBe(afterFirst)
 
     stop.dispose()
   })
 
-  it('依赖本身变化时**照常**触发（on() 不是把一切都静音）', () => {
+  it('fires **as usual** when the dependency itself changes (on() does not mute everything)', () => {
     const session = state('s1')
     const seen: string[] = []
     const stop = effect(on(session, value => { seen.push(value) }))
@@ -102,11 +108,11 @@ describe('on()：让「effect 调用 async 函数」不再自订阅', () => {
     settle()
     session.value = 's3'
     settle()
-    expect(seen, 'on() 把依赖变化也吞掉了').toEqual(['s1', 's2', 's3'])
+    expect(seen, 'on() swallowed the dependency change too').toEqual(['s1', 's2', 's3'])
     stop.dispose()
   })
 
-  it('previous 是上一次的依赖值（首次为 undefined）', () => {
+  it('previous is the previous dependency value (undefined on the first run)', () => {
     const count = state(1)
     const pairs: Array<[number, number | undefined]> = []
     const stop = effect(on(count, (value, previous) => { pairs.push([value, previous]) }))
@@ -119,21 +125,22 @@ describe('on()：让「effect 调用 async 函数」不再自订阅', () => {
     stop.dispose()
   })
 
-  it('defer: true 时首次只记录、不调用（Solid 的语义）', () => {
+  it('with defer: true the first evaluation only records and does not call (Solid\'s semantics)', () => {
     const count = state(1)
     const seen: number[] = []
     const stop = effect(on(count, value => { seen.push(value) }, { defer: true }))
     settle()
-    expect(seen, 'defer 没生效，首次就调用了').toEqual([])
+    expect(seen, 'defer did not take effect; the callback was called on the first evaluation').toEqual([])
     count.value = 2
     settle()
     expect(seen).toEqual([2])
     stop.dispose()
   })
 
-  it('持久化首触守卫：defer 下预置存档不会被首触的空值删除（Finora 死穴 §10 回归）', () => {
-    // 场景：顶层 effect(on) 做持久化，首触时依赖恒为初值（null）→ 无 defer 时
-    // 回调当场执行 removeItem 分支，把上次会话存的键删掉（2026-10-25 实证）。
+  it('persistence first-touch guard: with defer, a pre-seeded store entry is not deleted by the first touch\'s null value (Finora pitfall §10 regression)', () => {
+    // Scenario: a top-level effect(on) does persistence; on first touch the dependency is still the
+    // initial value (null) → without defer the callback immediately runs the removeItem branch,
+    // deleting the key saved by the previous session (observed 2026-10-25).
     const store: Record<string, string> = { 'finora.tabs.active': 'ledger-1' }
     const activeTab = state<string | null>(null)
     const stop = effect(on(activeTab, value => {
@@ -141,21 +148,21 @@ describe('on()：让「effect 调用 async 函数」不再自订阅', () => {
       else store['finora.tabs.active'] = value
     }, { defer: true }))
     settle()
-    // 首触只记录不调用 → 预置存档原样保留
+    // first touch only records without calling → the pre-seeded entry is preserved intact
     expect(store['finora.tabs.active']).toBe('ledger-1')
 
     activeTab.value = 'ledger-2'
     settle()
     expect(store['finora.tabs.active']).toBe('ledger-2')
 
-    // 显式变化到 null 仍走删除分支（真实变化，不是首触假象）
+    // an explicit change to null still takes the delete branch (a real change, not a first-touch artifact)
     activeTab.value = null
     settle()
     expect(store['finora.tabs.active']).toBeUndefined()
     stop.dispose()
   })
 
-  it('依赖数组：任一变化都触发，且值是数组', () => {
+  it('dependency array: any change fires, and the value is an array', () => {
     const a = state(1)
     const b = state(10)
     const seen: number[][] = []
@@ -169,25 +176,25 @@ describe('on()：让「effect 调用 async 函数」不再自订阅', () => {
     stop.dispose()
   })
 
-  it('取值函数形式：可以传派生的显式来源', () => {
+  it('getter function form: an explicit derived source can be passed', () => {
     const list = state([1, 2, 3])
     const seen: number[] = []
     const stop = effect(on(() => list.value.length, length => { seen.push(length) }))
     settle()
     list.value = [1, 2]
     settle()
-    // 长度没变（3 → 2 变了）
+    // the length did not change (3 → 2 did change)
     expect(seen).toEqual([3, 2])
     stop.dispose()
   })
 
-  it('回调里的读取不订阅（与 async 无关的通用价值）', () => {
+  it('reads inside the callback do not subscribe (general value, independent of async)', () => {
     const trigger = state(0)
     const noise = state(0)
     let runs = 0
     const stop = effect(on(trigger, () => {
       runs++
-      void noise.value          // 裸 effect 会订阅 noise；on() 不该
+      void noise.value          // a bare effect would subscribe to noise; on() must not
     }))
     settle()
     const afterFirst = runs
@@ -195,33 +202,33 @@ describe('on()：让「effect 调用 async 函数」不再自订阅', () => {
     settle()
     noise.value = 2
     settle()
-    expect(runs, 'noise 被订阅了').toBe(afterFirst)
+    expect(runs, 'noise got subscribed').toBe(afterFirst)
     trigger.value = 1
     settle()
-    expect(runs, 'trigger 变化没触发').toBe(afterFirst + 1)
+    expect(runs, 'a trigger change did not fire').toBe(afterFirst + 1)
     stop.dispose()
   })
 
-  it('传普通值（不是信号/数组/函数）→ 抛出并说明后果', () => {
+  it('passing a plain value (not a signal/array/function) → throws and explains the consequence', () => {
     expect(() => effect(on(42 as never, () => undefined)))
-      .toThrowError(/信号/u)
+      .toThrowError(/signal/u)
   })
 
-  it('回调返回的清理函数被透出（effect 的 cleanup 契约不变）', () => {
+  it('the cleanup returned by the callback is passed through (the effect cleanup contract is unchanged)', () => {
     const trigger = state(0)
     const cleaned = vi.fn()
     const stop = effect(on(trigger, () => cleaned))
     settle()
     trigger.value = 1
     settle()
-    // 上一次的 cleanup 应在重跑前被调用
+    // the previous cleanup should have been called before the re-run
     expect(cleaned).toHaveBeenCalled()
     stop.dispose()
   })
 })
 
-describe('on() 与 untrack 的关系（不是替代品）', () => {
-  it('untrack 把整段都关掉；on() 保留声明的依赖', () => {
+describe('on() vs untrack (not a replacement)', () => {
+  it('untrack turns everything off; on() keeps the declared dependencies', () => {
     const dep = state(0)
     let untrackedRuns = 0
     let onRuns = 0
@@ -232,8 +239,8 @@ describe('on() 与 untrack 的关系（不是替代品）', () => {
     dep.value = 1
     settle()
 
-    expect(untrackedRuns, 'untrack 连依赖都不订阅').toBe(1)
-    expect(onRuns, 'on() 应该跟随依赖').toBe(2)
+    expect(untrackedRuns, 'untrack does not even subscribe to the dependency').toBe(1)
+    expect(onRuns, 'on() should follow the dependency').toBe(2)
     stopA.dispose(); stopB.dispose()
   })
 })

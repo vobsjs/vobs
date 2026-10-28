@@ -14,16 +14,18 @@ export interface ProvideOptions {
 export interface VobsPlugin {
   name: string
   /**
-   * 元信息。**不参与任何判断** —— 唯一被用到的地方是「同名插件被跳过」时把它印进诊断，
-   * 让人看得出被跳过的是哪个版本。别指望它做兼容性检查。
+   * Metadata. **Not used in any decision** — the only place it is consumed is the
+   * "same-name plugin skipped" diagnostic, to show which version got skipped.
+   * Don't expect it to do compatibility checks.
    */
   version?: string
-  /** 依赖：安装本插件前会先自动安装它们（按名字去重，检测循环）。 */
+  /** Dependencies: installed automatically before this plugin (deduplicated by name, cycles detected). */
   requires?: readonly VobsPlugin[]
   /**
-   * **仅声明**：框架不会自动安装它们，也不做任何校验 —— `requires` 才是"必须且自动安装"。
-   * 与 `version` 同属元信息，留给工具/诊断使用（`app.test.ts` 有一条测试锁住
-   * 「声明 optional 不会安装它」这个语义）。
+   * **Declaration only**: the framework neither installs them automatically nor validates —
+   * `requires` is the "required and auto-installed" variant. Like `version`, this is
+   * metadata for tools/diagnostics (`app.test.ts` has a test locking the
+   * "declared optional is not installed" semantics).
    */
   optional?: readonly VobsPlugin[]
   install?: (ctx: VobsContext) => void | (() => void)
@@ -79,25 +81,27 @@ export function createVobs<
   }
 ): VobsApp<NodeType>
 export function createVobs(
-  // 不带 renderer 时走 DOM 默认渲染器，节点类型就是 DOM 的 Node
-  // （原来这里标成 `VobsApp<any>`，于是 app.mount 的参数类型直接塌成 any）
+  // Without a renderer, the default DOM renderer is used and the node type is DOM's Node
+  // (this used to be annotated `VobsApp<any>`, which collapsed app.mount's parameter type to any)
   config: VobsConfig<Node, Text, Element, Comment> & { renderer?: undefined }
 ): VobsApp<Node>
 export function createVobs(
   config: VobsConfig<any, any, any, any>
 ): VobsApp<any> {
-  if (!config.render) throw new Error('createVobs: render 不能为空')
+  if (!config.render) throw new Error('createVobs: render cannot be empty')
 
   const renderer = config.renderer ?? createDOMRenderer()
   const rootOwner: Owner = createOwner()
   /*
-   * `setRenderer` 是**进程级单例**（runtime/src/ops.ts）：应用挂载时装上自己的渲染器，
-   * 销毁时**必须还原挂载前的那一份**。原来只装不还，于是：
-   * - 一次 `renderToString`（内部 mount → destroy）之后，全局渲染器永久停在 SSR 渲染器上 ——
-   *   同进程后续任何 `createElement` 都返回纯数据对象（没有 tagName），对真实 DOM 节点做
-   *   属性操作也会抛错；
-   * - 水合失败后停在"正在认领 DOM"的那一份上（hydration.ts 只在成功路径把 hydrating 置回
-   *   false），级联抛错。
+   * `setRenderer` is a **process-level singleton** (runtime/src/ops.ts): the app
+   * installs its own renderer on mount, and on destroy it **must restore the one
+   * installed before mount**. It used to install without restoring, so:
+   * - after a single `renderToString` (which mounts then destroys internally), the
+   *   global renderer stayed stuck on the SSR renderer permanently — any later
+   *   `createElement` in the same process returned plain data objects (no tagName),
+   *   and property operations on real DOM nodes threw;
+   * - after a failed hydration it stayed on the "claiming DOM" one (hydration.ts only
+   *   resets hydrating to false on the success path), cascading errors.
    */
   let previousRenderer: typeof renderer | undefined
   let rendererInstalled = false
@@ -119,7 +123,7 @@ export function createVobs(
   const cleanups: Array<() => void> = []
   const errorHandlers = new Set<(error: unknown) => void>()
   const installed = new Set<string>()
-  /** 名字 → 插件对象：用于「同名但不同对象」的诊断（`installed` 只记名字）。 */
+  /** name → plugin object: powers the "same name, different object" diagnostic (`installed` only records names). */
   const installedPlugins = new Map<string, VobsPlugin>()
   const installing = new Set<string>()
   let mounted = false
@@ -148,7 +152,7 @@ export function createVobs(
     injectRequired<T>(key: InjectionKey<T>, description?: string): T {
       const value = injectFromOwner(rootOwner, key)
       if (value === undefined) {
-        throw new Error(`Vobs: 找不到必需注入项${description ? ` ${description}` : ''}`)
+        throw new Error(`Vobs: required injection not found${description ? ` ${description}` : ''}`)
       }
       return value
     },
@@ -170,7 +174,7 @@ export function createVobs(
       try {
         handler(error)
       } catch {
-        // 错误处理器不能覆盖触发它的原始错误。
+        // An error handler must not override the original error that triggered it.
       }
     }
   }
@@ -179,22 +183,24 @@ export function createVobs(
     const already = installedPlugins.get(plugin.name)
     if (already !== undefined) {
       /*
-       * 按**名字**去重：同名插件第二次不会被安装。
+       * Deduplicate by **name**: a second plugin with the same name is not installed.
        *
-       * 但"换个对象却同名"是很容易踩的坑（两个包都叫 router、同名插件被重新创建一次），
-       * 结果是第二个**永不安装且毫无提示**。所以这里说一声。
-       * 注意不能改成按对象身份去重 —— 那会让「同一个插件 use 两次」重复安装，破坏现有语义。
+       * But "a different object with the same name" is an easy trap to hit (two packages
+       * both named router, a same-name plugin re-created once), and the second one
+       * **never installs and says nothing**. So we say something.
+       * Note this must not switch to deduplicating by object identity — that would
+       * install the same plugin twice on `use`, breaking existing semantics.
        */
       if (already !== plugin) {
-        const before = already.version ? `（版本 ${already.version}）` : ''
-        const now = plugin.version ? `（版本 ${plugin.version}）` : ''
-        console.warn(`[vobs] 插件 "${plugin.name}" 已安装${before}，本次传入的是另一个对象${now}，已跳过。`
-          + ' 同名插件只会安装一次 —— 若这是两个不同的插件，请给它们不同的 name。')
+        const before = already.version ? ` (version ${already.version})` : ''
+        const now = plugin.version ? ` (version ${plugin.version})` : ''
+        console.warn(`[vobs] Plugin "${plugin.name}" was already installed${before}; this call passed a different object${now} and was skipped.`
+          + ' A same-name plugin is only installed once — if these are two different plugins, give them different names.')
       }
       return
     }
     if (installing.has(plugin.name)) {
-      throw new Error(`Vobs: 插件依赖存在循环：${plugin.name}`)
+      throw new Error(`Vobs: plugin dependency cycle: ${plugin.name}`)
     }
 
     installing.add(plugin.name)
@@ -202,18 +208,19 @@ export function createVobs(
       for (const dependency of plugin.requires ?? []) installPlugin(dependency)
       const cleanup = plugin.install?.(context)
       /*
-       * install 的返回值必须是清理函数，或什么都不返回。
+       * install's return value must be a cleanup function, or nothing at all.
        *
-       * 原来直接把返回值 push 进 cleanups：`install: async () => …` 返回的 Promise 会被当成
-       * 清理函数 —— 安装"成功"、初始化却没做完，直到 **destroy 时才以
-       * `TypeError: cleanups[index] is not a function` 爆出来**，那时现场早没了。
-       * 现在在安装期就拒绝，错误出现在它该出现的地方。
+       * The return value used to be pushed straight into cleanups: a Promise returned by
+       * `install: async () => …` would be treated as a cleanup function — installation
+       * "succeeded" while initialization never finished, and it only exploded **at
+       * destroy time with `TypeError: cleanups[index] is not a function`**, long after
+       * the scene was gone. Now it is rejected at install time, where the error belongs.
        */
       if (cleanup !== undefined && cleanup !== null) {
         if (typeof cleanup !== 'function') {
           const isThenable = typeof (cleanup as { then?: unknown }).then === 'function'
-          const kind = isThenable ? 'Promise（install 不能是 async）' : typeof cleanup
-          throw new Error(`Vobs: 插件 "${plugin.name}" 的 install 必须同步返回清理函数或不返回，收到 ${kind}`)
+          const kind = isThenable ? 'Promise (install cannot be async)' : typeof cleanup
+          throw new Error(`Vobs: install of plugin "${plugin.name}" must synchronously return a cleanup function or return nothing; received ${kind}`)
         }
         cleanups.push(cleanup)
       }
@@ -249,19 +256,20 @@ export function createVobs(
       }
     }
 
-    // 挂载失败与 destroy 都走这里：全局渲染器必须回到本应用挂载前的那一份。
+    // Both failed mounts and destroy go through here: the global renderer must return to
+    // the one installed before this app mounted.
     restoreRenderer()
     return firstError
   }
 
   function start(target: string | any, hydrating: boolean): void {
-    if (destroyed) throw new Error('Vobs: 已销毁的应用不能挂载')
+    if (destroyed) throw new Error('Vobs: a destroyed app cannot be mounted')
     if (mounted) return
 
     container = typeof target === 'string' ? document.querySelector(target) : target
-    if (!container) throw new Error(`mount: 目标不存在: ${target}`)
+    if (!container) throw new Error(`mount: target not found: ${target}`)
     if (hydrating && !renderer.beginHydration) {
-      throw new Error('Vobs: 当前渲染器不支持 Hydration')
+      throw new Error('Vobs: the current renderer does not support hydration')
     }
 
     installRenderer()
@@ -290,7 +298,7 @@ export function createVobs(
     },
 
     use(plugin: VobsPlugin): VobsApp<any> {
-      if (destroyed) throw new Error('Vobs: 已销毁的应用不能安装插件')
+      if (destroyed) throw new Error('Vobs: a destroyed app cannot install plugins')
       installPlugin(plugin)
       return app
     },
@@ -304,7 +312,7 @@ export function createVobs(
     },
 
     update(): void {
-      if (destroyed) throw new Error('Vobs: 已销毁的应用不能更新')
+      if (destroyed) throw new Error('Vobs: a destroyed app cannot update')
       try {
         scheduler.flush()
       } catch (error) {

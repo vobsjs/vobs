@@ -69,8 +69,9 @@ export type UploadErrorCode =
   | 'FILE_TOO_LARGE'
   | 'UPLOAD_FAILED'
   /**
-   * 响应解析/映射失败 —— 与 `UPLOAD_FAILED`（传输失败）**必须分开**：
-   * 走到这一步说明服务端已经收到并可能已落库，盲目重传在默认 POST 下等于重复写入。
+   * Response parse/mapping failure — **must stay separate** from `UPLOAD_FAILED` (transfer
+   * failure): reaching this point means the server has already received and possibly stored the
+   * upload; blindly retrying under the default POST equals a duplicate write.
    */
   | 'UPLOAD_RESPONSE_INVALID'
 
@@ -86,7 +87,7 @@ export class UploadError extends Error {
   }
 }
 
-// 应用注入键不携带调用方的 Result 泛型，useUpload<T>() 在读取时恢复该类型。
+// The app injection key does not carry the caller's Result generic; useUpload<T>() restores it on read.
 export const UPLOAD_KEY: InjectionKey<UploadContext<any>> = createInjectionKey<UploadContext<any>>('vobs.upload')
 
 export function createUpload<Result = unknown>(options: UploadOptions<Result>): UploadContext<Result> {
@@ -108,10 +109,10 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
       validateFile(file)
       const id = taskOptions.id ?? options.idFactory?.() ?? `upload-${++nextId}`
       if (typeof id !== 'string' || id.trim() === '') {
-        throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: task id 必须是非空字符串')
+        throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: task id must be a non-empty string')
       }
       if (tasks.value.some(task => task.id === id)) {
-        throw new UploadError('INVALID_UPLOAD_OPTIONS', `Vobs Upload: 已存在任务 ${id}`)
+        throw new UploadError('INVALID_UPLOAD_OPTIONS', `Vobs Upload: task ${id} already exists`)
       }
       const task = createTask(file, id, taskOptions)
       createdTasks.add(task)
@@ -132,10 +133,11 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
       ))
       tasks.value = Object.freeze(retained)
       /*
-       * 清掉的行必须**同时**从 createdTasks 里摘掉并销毁信号。
+       * Cleared rows must **also** be removed from createdTasks and have their signals disposed.
        *
-       * 原来只缩短公开数组：已完成的任务对象、它的 4 个信号、以及 `File` 引用会一直被
-       * `createdTasks` 强引用到 `dispose()` —— 长期开着的上传面板等于单调泄漏（报告 upload high）。
+       * The original code only shrank the public array: completed task objects, their 4 signals,
+       * and the `File` reference stayed strongly referenced by `createdTasks` until `dispose()` —
+       * a long-lived upload panel was a monotonic leak (report upload high).
        */
       const retainedSet = new Set<UploadTask<Result>>(retained)
       for (const task of createdTasks) {
@@ -149,11 +151,12 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
       if (disposed) return
       disposed = true
       /*
-       * 取消**所有创建过的任务**，而不是只遍历公开的 `tasks.value`。
+       * Cancel **every created task**, not just whatever the public `tasks.value` holds.
        *
-       * `tasks` 是公开可写的 Signal：调用方（或任何拿到上下文的代码）把它写成 `[]` 之后，
-       * 原来 dispose 就一个都取消不到 —— 在途上传继续跑，`await task.promise` **永久挂起**
-       * （报告探针 G：HUNG、status 卡在 uploading）。createdTasks 才是"在途任务"的真相来源。
+       * `tasks` is a publicly writable Signal: once the caller (or any code holding the context)
+       * writes it to `[]`, the original dispose could not cancel a single one — in-flight uploads
+       * kept running and `await task.promise` **hung forever** (report probe G: HUNG, status
+       * stuck at uploading). createdTasks is the source of truth for "tasks in flight".
        */
       for (const task of createdTasks) {
         task.cancel()
@@ -172,7 +175,7 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
   function createTask(file: UploadFile, id: string, taskOptions: UploadTaskOptions<Result>): InternalUploadTask<Result> {
     const progress = state(0, 'progress')
     const status = state<UploadStatus>('pending', 'status')
-    // 类型收窄成 UploadError：调用方要靠 `.code` 区分"能不能安全重传"（见 UPLOAD_RESPONSE_INVALID）
+    // Narrowed to UploadError: callers rely on `.code` to tell "safe to retry or not" (see UPLOAD_RESPONSE_INVALID)
     const error = state<UploadError | null>(null, 'error')
     const result = state<Result | null>(null, 'result')
     let controller: AbortController | undefined
@@ -255,14 +258,15 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
           mapped = await mapper(response.data, task)
         } catch (reason) {
           /*
-           * 请求**已经成功**，失败的只是我们这侧的响应解析。必须与传输失败分开报：
-           * 两者都归成 UPLOAD_FAILED 的话，调用方/重试 UI 分不清"能不能安全重传" ——
-           * 而默认 POST 非幂等，服务端已落库时的重传就是静默重复写入。
+           * The request **already succeeded**; only our side's response parsing failed. Must be
+           * reported separately from transfer failure: if both collapsed into UPLOAD_FAILED, the
+           * caller/retry UI could not tell "safe to retry or not" — and the default POST is not
+           * idempotent, so retrying after the server has stored the file is a silent duplicate write.
            */
           if (reason instanceof UploadError) throw reason
           throw new UploadError(
             'UPLOAD_RESPONSE_INVALID',
-            `Vobs Upload: ${fileName(file, id)} 的响应解析失败（文件可能已被服务端接收，不要盲目重传）`,
+            `Vobs Upload: failed to parse the response for ${fileName(file, id)} (the file may already have been received by the server; do not blindly retry)`,
             reason
           )
         }
@@ -276,7 +280,7 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
         if (status.value === 'cancelled' || isAbortError(reason) || disposed) return
         const uploadError = reason instanceof UploadError
           ? reason
-          : new UploadError('UPLOAD_FAILED', `Vobs Upload: ${fileName(file, id)} 上传失败`, reason)
+          : new UploadError('UPLOAD_FAILED', `Vobs Upload: ${fileName(file, id)} upload failed`, reason)
         error.value = uploadError
         status.value = 'error'
         settle?.(null)
@@ -296,7 +300,7 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
 
   function createFormData(file: UploadFile, id: string, taskOptions: UploadTaskOptions<Result>): FormData {
     if (typeof FormData === 'undefined') {
-      throw new UploadError('UPLOAD_UNAVAILABLE', 'Vobs Upload: 当前环境没有可用的 FormData')
+      throw new UploadError('UPLOAD_UNAVAILABLE', 'Vobs Upload: no FormData available in the current environment')
     }
     const form = new FormData()
     form.append(taskOptions.fieldName ?? fieldName, file, taskOptions.fileName ?? fileName(file, id))
@@ -329,18 +333,18 @@ export function createUpload<Result = unknown>(options: UploadOptions<Result>): 
 
   function validateFile(file: UploadFile): void {
     if (!isUploadFile(file)) {
-      throw new UploadError('INVALID_FILE', 'Vobs Upload: file 必须是 Blob 或 File')
+      throw new UploadError('INVALID_FILE', 'Vobs Upload: file must be a Blob or File')
     }
     if (options.maxFileSize !== undefined && file.size > options.maxFileSize) {
-      throw new UploadError('FILE_TOO_LARGE', `Vobs Upload: 文件大小超过 ${options.maxFileSize} 字节限制`)
+      throw new UploadError('FILE_TOO_LARGE', `Vobs Upload: file size exceeds the ${options.maxFileSize}-byte limit`)
     }
     if (!matchesAccept(file, options.accept)) {
-      throw new UploadError('FILE_TYPE_UNSUPPORTED', `Vobs Upload: 不支持文件类型 ${file.type || fileName(file, 'file')}`)
+      throw new UploadError('FILE_TYPE_UNSUPPORTED', `Vobs Upload: unsupported file type ${file.type || fileName(file, 'file')}`)
     }
   }
 
   function ensureActive(): void {
-    if (disposed) throw new UploadError('UPLOAD_CONTEXT_DISPOSED', 'Vobs Upload: 上下文已销毁')
+    if (disposed) throw new UploadError('UPLOAD_CONTEXT_DISPOSED', 'Vobs Upload: context has been disposed')
   }
 }
 
@@ -364,31 +368,31 @@ export function uploadPlugin<Result = unknown>(options: UploadPluginOptions<Resu
 
 export function useUpload<Result = unknown>(): UploadContext<Result> {
   const upload = inject(UPLOAD_KEY)
-  if (!upload) throw new UploadError('UPLOAD_CONTEXT_MISSING', 'Vobs Upload: 找不到上下文，请安装 uploadPlugin')
+  if (!upload) throw new UploadError('UPLOAD_CONTEXT_MISSING', 'Vobs Upload: context not found; install uploadPlugin first')
   return upload as UploadContext<Result>
 }
 
 function validateOptions<Result>(options: UploadOptions<Result>): void {
   if (!options || typeof options !== 'object' || !options.http || typeof options.http.request !== 'function') {
-    throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: 必须提供 HTTPClient')
+    throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: an HTTPClient is required')
   }
   if (!options.url || typeof options.url !== 'string') {
-    throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: url 必须是非空字符串')
+    throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: url must be a non-empty string')
   }
   if (options.method !== undefined && !['POST', 'PUT', 'PATCH'].includes(options.method)) {
-    throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: method 只能是 POST、PUT 或 PATCH')
+    throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: method must be POST, PUT, or PATCH')
   }
   if (options.maxFileSize !== undefined && (!Number.isFinite(options.maxFileSize) || options.maxFileSize < 0)) {
-    throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: maxFileSize 必须是大于等于 0 的有限数字')
+    throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: maxFileSize must be a finite number greater than or equal to 0')
   }
   if (options.concurrency !== undefined && (!Number.isInteger(options.concurrency) || options.concurrency <= 0)) {
-    throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: concurrency 必须是正整数')
+    throw new UploadError('INVALID_UPLOAD_OPTIONS', 'Vobs Upload: concurrency must be a positive integer')
   }
 }
 
 function requireHTTP(client: HTTPClient | undefined): HTTPClient {
   if (client) return client
-  throw new UploadError('UPLOAD_CONTEXT_MISSING', 'Vobs Upload: 找不到 HTTPClient，请安装 httpPlugin 或传入 http')
+  throw new UploadError('UPLOAD_CONTEXT_MISSING', 'Vobs Upload: HTTPClient not found; install httpPlugin or pass http')
 }
 
 function matchesAccept(file: UploadFile, accept: UploadOptions['accept']): boolean {

@@ -9,14 +9,17 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * 越界页收敛。
+ * Out-of-range page clamping.
  *
- * `resolvePaginationState` 与 `resolvePage` 原来都直接用 `query.page`：作者（或内部状态）
- * 传一个超出范围的页码时，`pageCount` 算出来是 2 而 `slice` 是空的 —— 摘要显示 "5/2"、
- * 表格显示 "No data"，一个**假空态**（数据明明有，只是页码越界）。
- * `goToPage` 那边本来就有 clamp，只有"从外面传进来的页"漏了。
+ * `resolvePaginationState` and `resolvePage` both used `query.page` directly:
+ * when the author (or internal state) passed an out-of-range page, `pageCount`
+ * computed to 2 while the `slice` was empty — the summary showed "5/2" and the
+ * table showed "No data": a **fake empty state** (data exists; the page number
+ * is just out of range). `goToPage` already clamped; only "pages passed in
+ * from the outside" leaked.
  *
- * 只收敛渲染用的页号：emit 出去的 query 仍是作者给的值，对外契约不变。
+ * Only the page number used for rendering is clamped: the emitted query keeps
+ * the author's value and the external contract is unchanged.
  */
 interface Row { id: number; name: string }
 
@@ -37,26 +40,26 @@ async function mountTable(rows: Row[], extra: Record<string, unknown> = {}) {
   }
 }
 
-describe('KitDataTable 越界页', () => {
+describe('KitDataTable out-of-range pages', () => {
   const rows: Row[] = [{ id: 1, name: 'A' }, { id: 2, name: 'B' }, { id: 3, name: 'C' }]
 
-  it('页码越界时渲染最后一页的行，而不是假空态', async () => {
+  it('renders the last page's rows when the page number is out of range, instead of a fake empty state', async () => {
     const { host, bodyRows, cleanup } = await mountTable(rows, { pageSize: 2, page: 5 })
 
-    // pageSize=2、3 行 → 2 页；越界的第 5 页应落到第 2 页（只剩 1 行）
+    // pageSize=2 with 3 rows → 2 pages; the out-of-range page 5 should land on page 2 (1 row left)
     expect(bodyRows()).toHaveLength(1)
     expect(bodyRows()[0]?.textContent).toContain('C')
     expect(host.textContent).not.toContain('No data')
     cleanup()
   })
 
-  it('正常范围内的页码不受影响', async () => {
+  it('page numbers within range are unaffected', async () => {
     const { bodyRows, cleanup } = await mountTable(rows, { pageSize: 2, page: 1 })
     expect(bodyRows().map(row => row.textContent)).toEqual(['A', 'B'])
     cleanup()
   })
 
-  it('数据变少导致当前页越界时会自动收敛', async () => {
+  it('clamps automatically when shrinking data pushes the current page out of range', async () => {
     const data = state<Row[]>([{ id: 1, name: 'A' }, { id: 2, name: 'B' }, { id: 3, name: 'C' }])
     const host = document.createElement('main')
     document.body.appendChild(host)
@@ -68,7 +71,7 @@ describe('KitDataTable 越界页', () => {
     await settle()
     expect(host.querySelectorAll('tbody tr')[0]?.textContent).toContain('C')
 
-    // 数据只剩 1 行 → 只剩 1 页，第 3 页必须收敛到第 1 页而不是空表
+    // Only 1 row left → only 1 page; page 3 must clamp to page 1 rather than an empty table
     data.value = [{ id: 1, name: 'A' }]
     await settle()
     const bodyRows = [...host.querySelectorAll<HTMLElement>('tbody tr')]

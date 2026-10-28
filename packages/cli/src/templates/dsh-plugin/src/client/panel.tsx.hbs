@@ -1,8 +1,9 @@
 import { state } from '@vobs/vobs'
 
 /**
- * 面板主体。整个函数**只执行一次** —— 下面每个 `{…}` 都会被编译成独立的
- * DOM binding effect，更新只触碰变化的那个文本节点，不会有组件重渲染。
+ * Panel body. The whole function **executes exactly once** — each `{…}` below is compiled
+ * into its own DOM binding effect; updates only touch the one text node that changed, and
+ * no component ever re-renders.
  */
 export function Panel() {
   const count = state(0)
@@ -11,13 +12,13 @@ export function Panel() {
     <div class="panel">
       <header class="panel__head">
         <span class="panel__brand">{{displayName}}</span>
-        <span class="panel__tag">vobs 渲染</span>
+        <span class="panel__tag">rendered by vobs</span>
       </header>
 
       <div class="panel__body">
         <p class="panel__hint">
-          改 <code>src/client/panel.tsx</code> 就能看到界面变化；
-          <code>vobs dsh dev</code> 可以在不装进 DSH 的情况下预览。
+          Edit <code>src/client/panel.tsx</code> and watch the UI change;
+          <code>vobs dsh dev</code> previews it without installing into DSH.
         </p>
 
         <div class="panel__row">

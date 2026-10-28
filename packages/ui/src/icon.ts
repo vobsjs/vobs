@@ -19,8 +19,9 @@ export interface IconProps extends VuiCommonProps, VobsIconProps {
 
 export function Icon(props: IconProps = {}): VobsNode {
   const root = createSvgIconNode(() => {
-    // 读取注册表版本号：registerIcon 后已挂载的 Icon 自动补渲染，
-    // 支持异步/按需注册（如 Iconify 集合、在线加载）。
+    // Read the registry version: Icons already mounted get re-rendered after
+    // registerIcon, supporting async/on-demand registration (Iconify sets,
+    // online loading, etc.).
     registryVersion.value
     const definition = resolveIcon(
       readProp<IconDefinition | string | undefined>(props, 'icon', undefined)
@@ -30,7 +31,7 @@ export function Icon(props: IconProps = {}): VobsNode {
       if (hasProp(props, 'children')) return undefined
       const requested = readProp<IconDefinition | string | undefined>(props, 'icon', undefined)
         ?? readProp<string | undefined>(props, 'name', undefined)
-      console.warn(`Vobs UI: 未注册的图标 "${String(requested)}"，已渲染为空。请先 registerIcon 或改用已注册的名称。`)
+      console.warn(`Vobs UI: unregistered icon "${String(requested)}"; rendered empty. Register it with registerIcon first or use a registered name.`)
       return undefined
     }
     return iconDefinitionToSvg(definition)
@@ -108,7 +109,7 @@ const iconRegistry = new Map<string, IconDefinition>(
   Object.entries(VUI_ICON_PATHS).map(([name, path]) => [name, { name, path }])
 )
 
-/** 注册表版本号：registerIcon/注销时递增，驱动已挂载 Icon 的 effect 重取定义。 */
+/** Registry version: bumped on registerIcon/unregister so mounted Icons' effects re-fetch their definition. */
 const registryVersion = state(0, 'vui.iconRegistry.version')
 
 export { VUI_ICON_PATHS }

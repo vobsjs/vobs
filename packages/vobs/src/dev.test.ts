@@ -8,7 +8,7 @@ import {
   type GuardrailViolation
 } from './dev'
 
-/** 让调度器把挂起的微任务跑完。 */
+/** Let the scheduler finish its pending microtasks. */
 const settle = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0))
 
 const locationKey = (violation: GuardrailViolation): string => {
@@ -34,16 +34,18 @@ afterEach(() => {
 })
 describe('installDevGuardrails', () => {
 
-  it('信号没有名字时，报错里说明**成因与修法**（实测：barrel 再导出）', async () => {
+  it('when the signal has no name, the error explains **the cause and the fix** (measured: barrel re-export)', async () => {
     /*
-     * 实测四种形态：直接从 @vobs/reactivity / @vobs/vobs 引入时，编译器会从变量名
-     * 推断 debugName；经**自己的 barrel 再导出**引入时不会 —— 于是报错显示
-     * (未命名信号)，而使用者不知道该改什么（实测反馈里这是最贵的一环）。
-     * 所以提示必须把原因与一行修法讲出来。
+     * Four shapes, measured: importing directly from @vobs/reactivity / @vobs/vobs lets
+     * the compiler infer the debugName from the variable name; importing through
+     * **our own barrel re-export** does not — so the error shows (unnamed signal)
+     * and the user has no idea what to change (in real feedback this was the most
+     * expensive step). So the hint must state the cause and a one-line fix.
      */
     start()
-    const count = state(0)                       // 刻意不传 debugName
-    // 用**收敛**的写法（与既有测试同）：无限循环会留下未处理的错误，干扰其它测试
+    const count = state(0)                       // deliberately no debugName
+    // Use the **converging** form (same as the existing tests): an infinite loop leaves
+    // unhandled errors that interfere with other tests
     effect(() => {
       const current = count.value
       if (current < 1) count.value = current + 1
@@ -51,11 +53,11 @@ describe('installDevGuardrails', () => {
     await settle()
     const violation = collected.find(item => item.error.code === VOBS_C210)
     expect(violation).toBeDefined()
-    expect(violation!.error.message).toContain('未命名信号')
-    expect(violation!.error.message, '缺"为什么没名字"的说明').toContain('barrel')
-    expect(violation!.error.message, '缺一行可执行的修法').toContain('state(initial')
+    expect(violation!.error.message).toContain('unnamed signal')
+    expect(violation!.error.message, 'missing the "why it has no name" explanation').toContain('barrel')
+    expect(violation!.error.message, 'missing a one-line actionable fix').toContain('state(initial')
   })
-  it('抓到 effect 自订阅，产出结构化 VobsError（码 / 层 / 修复建议 / 位置）', async () => {
+  it('catches effect self-subscription and produces a structured VobsError (code / layer / fix / location)', async () => {
     start()
     const count = state(0, 'count')
 
@@ -72,14 +74,15 @@ describe('installDevGuardrails', () => {
     expect(violation?.error.layer).toBe('constraint')
     expect(violation?.error.message).toContain('"count"')
     /*
-     * 1.8.5 起 fix 的顺序是「先教结构，再教补丁」：
-     * 首选 on()（显式声明依赖，回调在 untrack 作用域里跑），untrack 降为兜底。
-     * 所以 example 示范的是 on()，而 fix 文本里仍然有 untrack（作为兜底）。
+     * Since 1.8.5 the fix order is "teach the structure first, then the patch":
+     * on() is preferred (explicit dependency declaration, callback runs in an untrack
+     * scope), and untrack is demoted to a last resort. So the example demonstrates on(),
+     * while the fix text still contains untrack (as the fallback).
      */
     expect(violation?.error.fix).toContain('untrack')
-    expect(violation?.error.fix, 'fix 应该先给结构解 on()').toContain('on(')
+    expect(violation?.error.fix, 'the fix should offer the structural on() first').toContain('on(')
     expect(violation?.error.example).toContain('on(')
-    // 位置指向用户调用处（本测试文件），而不是护栏内部或框架源码
+    // The location points at the user call site (this test file), not inside the guardrail or framework source
     expect(violation?.error.location?.line).toBeGreaterThan(0)
     expect(violation?.error.location?.file).toContain('dev.test.ts')
     expect(violation?.error.location?.file).not.toContain('node_modules')
@@ -87,7 +90,7 @@ describe('installDevGuardrails', () => {
     eff.dispose()
   })
 
-  it('用 untrack 包住写入的正确写法不报 —— 负向对照', async () => {
+  it('the correct form — wrapping the write in untrack — does not report (negative control)', async () => {
     start()
     const count = state(0, 'count')
 
@@ -100,12 +103,12 @@ describe('installDevGuardrails', () => {
 
     expect(collected).toEqual([])
     expect(count.value).toBe(1)
-    // 没有建立订阅，所以只跑了一次
+    // No subscription was established, so it only ran once
     expect(eff.dependencies.size).toBe(0)
     eff.dispose()
   })
 
-  it('未命名信号也能报出来，不是静默跳过', async () => {
+  it('unnamed signals are reported too, not silently skipped', async () => {
     start()
     const anonymous = state(0)
 
@@ -115,11 +118,11 @@ describe('installDevGuardrails', () => {
     })
     await settle()
 
-    expect(collected.find(item => item.error.code === VOBS_C210)?.error.message).toContain('未命名信号')
+    expect(collected.find(item => item.error.code === VOBS_C210)?.error.message).toContain('unnamed signal')
     eff.dispose()
   })
 
-  it('卸载后不再报告', async () => {
+  it('no longer reports after uninstall', async () => {
     start()
     uninstall?.()
     uninstall = undefined
@@ -136,7 +139,7 @@ describe('installDevGuardrails', () => {
     eff.dispose()
   })
 
-  it('重复安装是幂等的', () => {
+  it('repeated installs are idempotent', () => {
     const first = installDevGuardrails({ console: false })
     uninstall = first
     const second = installDevGuardrails({ console: false })
@@ -144,7 +147,7 @@ describe('installDevGuardrails', () => {
     expect(isDevGuardrailsInstalled()).toBe(true)
   })
 
-  it('同一位置只留一条 error 对象，只累加计数', async () => {
+  it('the same location keeps a single error object and only accumulates the count', async () => {
     start()
     const count = state(0, 'count')
 
@@ -155,17 +158,17 @@ describe('installDevGuardrails', () => {
     await settle()
 
     const matched = collected.filter(item => item.error.code === VOBS_C210)
-    expect(matched.length).toBeGreaterThan(1) // 每次命中都回调
-    expect(new Set(matched.map(locationKey)).size).toBe(1) // 但只有一个位置
-    expect(matched.at(-1)?.count).toBe(3) // 最后一次回调的计数是累计值
-    expect(matched[0]?.count).toBe(1) // 早先那几条是快照，不该被改写
-    // 合并时复用同一个 error 实例，调用方按引用去重即可
+    expect(matched.length).toBeGreaterThan(1) // every hit notifies
+    expect(new Set(matched.map(locationKey)).size).toBe(1) // but there is only one location
+    expect(matched.at(-1)?.count).toBe(3) // the last notification carries the accumulated count
+    expect(matched[0]?.count).toBe(1) // the earlier entries are snapshots and must not be rewritten
+    // Merging reuses the same error instance; callers can deduplicate by reference
     expect(matched[0]?.error).toBe(matched.at(-1)?.error)
     eff.dispose()
   })
 
-  it('时间窗内连跑超限时报循环风暴（跨 effect 互相触发的兜底）', async () => {
-    // 这两个 effect 都不写自己的依赖，所以 C210 抓不到 —— 靠 C211 兜底
+  it('reports a loop storm when re-runs exceed the limit within the time window (the cross-effect catch-all)', async () => {
+    // Neither effect writes its own dependency, so C210 cannot catch them — C211 is the catch-all
     start({ effectRerunLimit: 8, rerunWindowMs: 2000 })
     const a = state(0, 'a')
     const b = state(0, 'b')
@@ -192,14 +195,14 @@ describe('installDevGuardrails', () => {
     const storm = collected.find(item => item.error.code === VOBS_C211)
     expect(storm).toBeDefined()
     expect(storm?.error.layer).toBe('constraint')
-    expect(storm?.error.message).toContain('连跑')
+    expect(storm?.error.message).toContain('ran')
     expect(storm?.error.fix).toContain('untrack')
     expect(collected.some(item => item.error.code === VOBS_C210)).toBe(false)
     first.dispose()
     second.dispose()
   })
 
-  it('console: false 时不打 console，默认用 formatVobsError 打', async () => {
+  it('with console: false nothing is logged; by default it logs via formatVobsError', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     start({ console: false })
@@ -222,7 +225,7 @@ describe('installDevGuardrails', () => {
     })
     await settle()
     expect(spy).toHaveBeenCalled()
-    // 复用框架的格式化器（开发环境布局：Code / Location / Fix）
+    // Reuses the framework formatter (development layout: Code / Location / Fix)
     const printed = String(spy.mock.calls[0]?.[0])
     expect(printed).toContain(VOBS_C210)
     expect(printed).toContain('Fix:')
@@ -230,7 +233,7 @@ describe('installDevGuardrails', () => {
     spy.mockRestore()
   })
 
-  it('maxSites 之后不再新增位置', async () => {
+  it('after maxSites no new locations are added', async () => {
     start({ maxSites: 1 })
     const one = state(0, 'one')
     const two = state(0, 'two')

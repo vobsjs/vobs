@@ -1,32 +1,36 @@
 /**
- * 数字输入的**解析契约**（外部踩坑文档 #7 / 优化建议 #7）。
+ * The **parsing contract** for numeric input (external pitfall doc #7 / optimization suggestion #7).
  *
- * ## 为什么需要它
+ * ## Why it exists
  *
- * `Number('') === 0` —— 用户把输入框清空的瞬间，值被当成 `0` 写进信号。
- * 在「比例锁定 / 联动计算」这类链路里，`0` 会经除法变成 `Infinity`，
- * 再把兄弟维度一并清零：**清一个输入框，旁边几个也跟着归零**。
- * 这不是框架的 bug（`Number` 是 JS 语义），但框架可以给出正确的默认路径。
+ * `Number('') === 0` — the instant the user clears the input box, the value is written into the
+ * signal as `0`. In chains like "ratio locking / linked calculation", `0` turns into `Infinity`
+ * through division and then zeroes the sibling dimensions too: **clearing one input box zeroes
+ * several neighboring ones as well**. This is not a framework bug (`Number` is JS semantics),
+ * but the framework can provide the correct default path.
  *
- * ## 契约
+ * ## The contract
  *
- * 数字语义的输入**一律走 `parseNumber`**：
- * - 空串 → **不提交**（保持原值）
- * - 非法（`'abc'` / `'1.2.3'` / `'--'`）→ **不提交**
- * - 超界（`min` / `max`）→ **不提交**（不是静默钳制 —— 钳制会让用户输入 `999` 时
- *   框里显示 `100` 而光标位置错乱，且用户不知道自己被改了）
- * - 只有**合法的有限数字**才提交
+ * Inputs with numeric semantics **always go through `parseNumber`**:
+ * - empty string → **not committed** (previous value kept)
+ * - invalid (`'abc'` / `'1.2.3'` / `'--'`) → **not committed**
+ * - out of bounds (`min` / `max`) → **not committed** (not silently clamped — clamping makes the
+ *   box show `100` while the user typed `999`, with a scrambled cursor, and the user never
+ *   learns their input was altered)
+ * - only **valid finite numbers** are committed
  *
- * 调用方拿 `reason` 决定要不要给反馈（例如把输入框标红 / 显示"请输入数字"）。
+ * Callers use `reason` to decide whether to give feedback (e.g. mark the box red / show
+ * "Please enter a number").
  *
- * ## 为什么"不提交"而不是"提交 0"或"钳制"
+ * ## Why "not committed" instead of "commit 0" or "clamp"
  *
- * `0` 会污染联动链（见上）；钳制会掩盖用户的真实输入。
- * 「保持原值不提交」是唯一不会产生**错误数据**的选择 ——
- * 界面上的空框由输入框自己表现，信号仍持有最后一次有效值。
+ * `0` pollutes the linked chain (see above); clamping masks the user's real input.
+ * "Keep the previous value, do not commit" is the only choice that never produces **wrong
+ * data** — the empty box on screen is represented by the input itself, and the signal still
+ * holds the last valid value.
  */
 
-/** 解析失败的类别 —— 调用方据此决定提示文案。 */
+/** Categories of parse failure — callers pick their feedback copy based on this. */
 export type NumberParseFailure = 'empty' | 'invalid' | 'below-min' | 'above-max' | 'not-integer'
 
 export type NumberParseResult =
@@ -34,36 +38,36 @@ export type NumberParseResult =
   | { readonly ok: false; readonly reason: NumberParseFailure }
 
 export interface ParseNumberOptions {
-  /** 下界（含）。 */
+  /** Lower bound (inclusive). */
   readonly min?: number
-  /** 上界（含）。 */
+  /** Upper bound (inclusive). */
   readonly max?: number
-  /** 只接受整数。 */
+  /** Integers only. */
   readonly integer?: boolean
-  /** 允许前导 `+` / 小数点结尾等中间态（默认允许 `'1.'`，因为用户正在输入）。 */
+  /** Allow intermediate states like a leading `+` / trailing dot (default allows `'1.'`, since the user is still typing). */
   readonly allowTrailingDot?: boolean
 }
 
 /**
- * 把输入框文本解析成数字。**不抛错**，用返回值表达结果。
+ * Parse input text into a number. **Never throws**; the result is expressed by the return value.
  *
  * ```ts
  * const parsed = parseNumber(input.value, { min: 0, max: 100 })
  * if (parsed.ok) ratio.value = parsed.value
- * // 否则保持原值，需要时用 parsed.reason 给用户反馈
+ * // otherwise keep the previous value; use parsed.reason to give feedback when needed
  * ```
  */
 export function parseNumber(text: string, options: ParseNumberOptions = {}): NumberParseResult {
   if (typeof text !== 'string') return { ok: false, reason: 'invalid' }
   const trimmed = text.trim()
-  // 空串（含纯空白）不提交 —— 这是这个函数存在的**首要**理由
+  // an empty string (pure whitespace included) is not committed — the **primary** reason this function exists
   if (trimmed === '') return { ok: false, reason: 'empty' }
 
   /*
-   * 不用 `Number()` 做判定：它太宽松 ——
-   * `Number('0x10')` = 16、`Number('1e3')` = 1000、`Number(' 12 ')` = 12、
-   * `Number('Infinity')` = Infinity。对"用户正在输入的框"这些都不是期望行为。
-   * 用显式形态匹配，只接受十进制数字。
+   * Do not use `Number()` for validation: it is far too lenient —
+   * `Number('0x10')` = 16, `Number('1e3')` = 1000, `Number(' 12 ')` = 12,
+   * `Number('Infinity')` = Infinity. None of these is the expected behavior for "a box the user
+   * is typing into". Use an explicit shape match; accept decimal digits only.
    */
   const allowTrailingDot = options.allowTrailingDot ?? true
   const pattern = allowTrailingDot
@@ -72,7 +76,7 @@ export function parseNumber(text: string, options: ParseNumberOptions = {}): Num
   if (!pattern.test(trimmed)) return { ok: false, reason: 'invalid' }
 
   const value = Number(trimmed)
-  // 形态合法仍可能是 Infinity（超长数字），必须挡住
+  // even a shape-valid value can still be Infinity (overlong digits); it must be blocked
   if (!Number.isFinite(value)) return { ok: false, reason: 'invalid' }
 
   if (options.integer === true && !Number.isInteger(value)) {
@@ -87,13 +91,13 @@ export function parseNumber(text: string, options: ParseNumberOptions = {}): Num
   return { ok: true, value }
 }
 
-/** 解析失败时给用户看的中文说明（调用方也可自己写文案）。 */
+/** User-facing copy for parse failures (callers may also write their own). */
 export function describeNumberParseFailure(reason: NumberParseFailure): string {
   switch (reason) {
-    case 'empty': return '请输入数字'
-    case 'invalid': return '请输入有效数字'
-    case 'not-integer': return '请输入整数'
-    case 'below-min': return '数值过小'
-    case 'above-max': return '数值过大'
+    case 'empty': return 'Please enter a number'
+    case 'invalid': return 'Please enter a valid number'
+    case 'not-integer': return 'Please enter an integer'
+    case 'below-min': return 'Value is too small'
+    case 'above-max': return 'Value is too large'
   }
 }

@@ -22,7 +22,7 @@ export interface DshOptions {
   port?: number
 }
 
-/** 平台内置模块：这些 `require` 出现在产物里是正常的。 */
+/** Platform built-in modules: `require` calls for these in the bundle are expected. */
 const PLATFORM_MODULES = ['react', 'react-dom']
 
 const vobsVersion = (): string => {
@@ -36,7 +36,7 @@ const vobsVersion = (): string => {
   }
 }
 
-/** 去掉 scope，得到 cordis 行 id 与目录名都可用的标识。 */
+/** Strip the scope, producing an identifier usable as both the cordis row id and a directory name. */
 function toRowId(packageName: string): string {
   return packageName.replace(/^@[^/]+\//u, '')
 }
@@ -45,20 +45,20 @@ function toRowId(packageName: string): string {
 
 async function dshInitCommand(target: string | undefined, options: DshOptions): Promise<void> {
   const name = target ?? ((await p.text({
-    message: '插件包名（npm 包名，小写）:',
+    message: 'Plugin package name (npm name, lowercase):',
     placeholder: 'dsh-plugin-my-panel',
-    validate: value => (/^[a-z0-9][a-z0-9._~-]*$/u.test(value) ? undefined : '必须是合法的 npm 包名')
+    validate: value => (/^[a-z0-9][a-z0-9._~-]*$/u.test(value) ? undefined : 'must be a valid npm package name')
   })) as string)
 
   if (p.isCancel(name)) {
-    p.cancel('已取消')
+    p.cancel('Cancelled')
     return
   }
 
   const packageManager =
     options.pm ??
     ((await p.select({
-      message: '包管理器:',
+      message: 'Package manager:',
       options: [
         { value: 'pnpm', label: 'pnpm' },
         { value: 'npm', label: 'npm' }
@@ -66,7 +66,7 @@ async function dshInitCommand(target: string | undefined, options: DshOptions): 
     })) as PackageManager)
 
   if (p.isCancel(packageManager)) {
-    p.cancel('已取消')
+    p.cancel('Cancelled')
     return
   }
 
@@ -78,85 +78,87 @@ async function dshInitCommand(target: string | undefined, options: DshOptions): 
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 
-  logger.step(`创建 DSH 插件项目 ${name} …`)
+  logger.step(`Creating DSH plugin project ${name} …`)
   await scaffoldProject(
     targetDir,
     { packageName: name, rowId, displayName, vobsVersion: vobsVersion() },
     'dsh-plugin'
   )
 
-  // 单独写 .gitignore：模板里的点文件在打包时容易丢，而且这里的规则有一条很关键 ——
-  // lib/ 是产物，**必须提交**（DSH 安装时不构建）。
+  // .gitignore is written separately: dotfiles in templates are easy to lose during
+  // packaging, and one rule here is critical — lib/ is build output and **must be
+  // committed** (DSH does not build at install time).
   ensureDir(targetDir)
   writeFileSync(
     resolve(targetDir, '.gitignore'),
-    ['node_modules/', '*.log', '*.tsbuildinfo', '', '# lib/ 是构建产物，必须提交：DSH 安装时不会构建你的包。', ''].join('\n'),
+    ['node_modules/', '*.log', '*.tsbuildinfo', '', '# lib/ is build output and must be committed: DSH does not build your package at install time.', ''].join('\n'),
     'utf8'
   )
-  logger.success('项目已生成')
+  logger.success('Project generated')
 
-  logger.step('安装依赖 …')
+  logger.step('Installing dependencies …')
   try {
     installDependencies(targetDir, packageManager)
-    logger.success('依赖已安装')
+    logger.success('Dependencies installed')
   } catch {
-    logger.warn(`依赖安装失败，请手动执行 ${packageManager} install`)
+    logger.warn(`Dependency installation failed; run ${packageManager} install manually`)
   }
 
-  logger.step('下一步')
+  logger.step('Next steps')
   console.log(`
   cd ${name}
-  ${packageManager} run dev     # 本地预览，不用装进 DSH
-  ${packageManager} run build   # 产出 lib/{index,client}.js
+  ${packageManager} run dev     # local preview, no need to install into DSH
+  ${packageManager} run build   # produces lib/{index,client}.js
 
-  # 提交产物并打 tag 之后，在 DSH 插件页填：
-  github:<owner>/<repo>#v0.1.0&path:/<本包在仓库中的路径>
+  # After committing the build output and tagging, fill in on the DSH plugin page:
+  github:<owner>/<repo>#v0.1.0&path:/<this package's path within the repo>
 `)
 }
 
 /* ----------------------------------------------------------------- build */
 
 /**
- * 构建 DSH 插件产物。
+ * Build the DSH plugin artifacts.
  *
- * 一个可安装的插件包有**两半**：Host 侧（cordis 插件，ESM）与 Client 侧
- * （浏览器 bundle）。项目的 vite.config 只负责 Client（`dshBundle()` 会把产物
- * 落到 package.json 声明的位置），Host 这一半由本命令补上 ——
- * 否则 `exports["."]` 指向的文件根本不存在，装进 DSH 必然失败。
+ * An installable plugin package has **two halves**: the Host side (a cordis plugin, ESM)
+ * and the Client side (a browser bundle). The project's vite.config only covers the Client
+ * (`dshBundle()` writes its output to the location declared in package.json); the Host half
+ * is produced by this command — otherwise the file `exports["."]` points at does not exist
+ * and installing into DSH is guaranteed to fail.
  */
 async function dshBuildCommand(): Promise<void> {
   const projectDir = process.cwd()
   const configFile = resolve(projectDir, 'vite.config.ts')
   if (!existsSync(configFile)) {
-    logger.error('当前目录没有 vite.config.ts，请在插件项目根目录运行。')
+    logger.error('No vite.config.ts in the current directory; run this from the plugin project root.')
     process.exitCode = 1
     return
   }
 
   const manifest = readManifest(projectDir)
   if (manifest === undefined) {
-    logger.error('读不到 package.json。')
+    logger.error('Cannot read package.json.')
     process.exitCode = 1
     return
   }
 
   const hostEntry = resolveExport(manifest, '.')
   if (hostEntry === undefined) {
-    logger.error('package.json 的 exports 里没有 "."，DSH 加载不到 Host 侧插件。')
+    logger.error('No "." in package.json exports; DSH will not be able to load the Host-side plugin.')
     process.exitCode = 1
     return
   }
 
   const { build } = await import('vite')
 
-  logger.info('构建客户端产物 …')
+  logger.info('Building client bundle …')
   await build({ configFile, mode: 'production' })
 
-  logger.info('构建 Host 产物 …')
+  logger.info('Building Host bundle …')
   const hostTarget = resolve(projectDir, hostEntry.replace(/^\.\//u, ''))
   const hostEntrySource = resolve(projectDir, 'src', 'host', 'index.ts')
   if (!existsSync(hostEntrySource)) {
-    logger.warn(`没有找到 ${hostEntrySource}，跳过 Host 构建。`)
+    logger.warn(`${hostEntrySource} not found; skipping the Host build.`)
     return
   }
   await build({
@@ -177,12 +179,12 @@ async function dshBuildCommand(): Promise<void> {
     }
   })
 
-  logger.success('构建完成 → 客户端与 Host 产物都已就位')
+  logger.success('Build complete → both the client and Host artifacts are in place')
 }
 
 /* ------------------------------------------------------------------ dev */
 
-/** 从 exports 字段里取出一个子路径，兼容字符串与一层条件对象两种写法。 */
+/** Extract a subpath from the exports field, accepting both the string form and a one-level conditions object. */
 export function resolveExport(manifest: Record<string, unknown>, key: string): string | undefined {
   const exportsField = (manifest.exports ?? {}) as Record<string, unknown>
   const entry = exportsField[key]
@@ -197,14 +199,15 @@ export function resolveExport(manifest: Record<string, unknown>, key: string): s
   return undefined
 }
 
-/** 生成预览页。纯函数，便于单测。 */
+/** Generate the preview page. Pure function, for unit testing. */
 export function buildPreviewHtml(options: { packageName: string; title?: string }): string {
-  // 包名会被嵌进 <script> 里：JSON 序列化不会转义 `/`，所以必须自己把 `<` 干掉，
-  // 否则一个含 </script> 的包名就能突破标签。
+  // The package name gets embedded in a <script>: JSON serialization does not escape `/`,
+  // so `<` must be stripped by hand — otherwise a package name containing </script>
+  // could break out of the tag.
   const name = JSON.stringify(options.packageName).replace(/</gu, '\\u003c')
   const title = (options.title ?? options.packageName).replace(/[<>&]/gu, '')
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -213,7 +216,7 @@ export function buildPreviewHtml(options: { packageName: string; title?: string 
 <body>
 <div id="root"></div>
 
-<!-- 1. 先装垫片：必须在插件 bundle 之前，捕获它的 factory 注册 -->
+<!-- 1. Install the shim first: it must precede the plugin bundle to capture its factory registrations -->
 <script>
   window.__VOBS_DSH_PREVIEW__ = { factories: new Map() };
   window.__ModuleLoader__ = {
@@ -221,10 +224,10 @@ export function buildPreviewHtml(options: { packageName: string; title?: string 
   };
 </script>
 
-<!-- 2. 插件产物：它只注册 factory，不产生副作用 -->
+<!-- 2. Plugin bundle: it only registers its factory, producing no side effects -->
 <script src="/client.js"></script>
 
-<!-- 3. 启动预览外壳 -->
+<!-- 3. Boot the preview shell -->
 <script type="module">
   import { startPreview } from '/preview.js';
   window.__VOBS_PREVIEW__ = startPreview({
@@ -233,7 +236,7 @@ export function buildPreviewHtml(options: { packageName: string; title?: string 
   });
 </script>
 
-<!-- 4. 重建后自动刷新；?static=1 关掉长连接，便于无头截图与 CI 断言 -->
+<!-- 4. Auto-reload after rebuilds; ?static=1 disables the long connection, for headless screenshots and CI assertions -->
 <script>
   if (!location.search.includes('static')) {
     new EventSource('/events').addEventListener('reload', function () { location.reload(); });
@@ -245,8 +248,9 @@ export function buildPreviewHtml(options: { packageName: string; title?: string 
 }
 
 /**
- * vite 的构建监听器。只声明本命令用到的两个成员 ——
- * `vite` 没有把 rollup 的 `RollupWatcher` 再导出，为一个 dev 命令引入 rollup 类型不划算。
+ * Vite's build watcher. Only the two members this command uses are declared —
+ * `vite` does not re-export rollup's `RollupWatcher`, and pulling in rollup types for one
+ * dev command is not worth it.
  */
 interface BuildWatcher {
   on(event: 'event', handler: (event: { code?: string; error?: { message?: string } }) => void): void
@@ -257,12 +261,12 @@ async function dshDevCommand(options: DshOptions): Promise<void> {
   const projectDir = process.cwd()
   const manifest = readManifest(projectDir)
   if (manifest === undefined) {
-    logger.error('当前目录没有可读的 package.json。')
+    logger.error('No readable package.json in the current directory.')
     process.exitCode = 1
     return
   }
   if (readManifest(projectDir)?.dsh === undefined) {
-    logger.error('这不是一个 DSH 插件项目（package.json 里没有 dsh 字段）。')
+    logger.error('This is not a DSH plugin project (no dsh field in package.json).')
     process.exitCode = 1
     return
   }
@@ -270,22 +274,23 @@ async function dshDevCommand(options: DshOptions): Promise<void> {
   const packageName = typeof manifest.name === 'string' ? manifest.name : 'dsh-plugin'
   const clientEntry = resolveExport(manifest, './client')
   if (clientEntry === undefined) {
-    logger.error('package.json 的 exports 里没有 "./client"，页面拿不到客户端 bundle。')
+    logger.error('No "./client" in package.json exports; the page cannot get the client bundle.')
     process.exitCode = 1
     return
   }
   const clientFile = resolve(projectDir, clientEntry.replace(/^\.\//u, ''))
 
-  // 预览运行时从**项目自己**的 node_modules 解析：项目才是声明 @vobs/dsh 的那一方。
+  // The preview runtime is resolved from **the project's own** node_modules: the project
+  // is the party that declares @vobs/dsh.
   let previewFile: string | undefined
   try {
     const projectRequire = createRequire(join(projectDir, 'package.json'))
     let packageRoot: string | undefined
     try {
-      // 首选：包导出了 ./package.json（@vobs/dsh 有）。
+      // Preferred: the package exports ./package.json (@vobs/dsh does).
       packageRoot = dirname(projectRequire.resolve('@vobs/dsh/package.json'))
     } catch {
-      // 回退：解析主入口（dist/index.js 或 dist/index.cjs），再回到包根。
+      // Fallback: resolve the main entry (dist/index.js or dist/index.cjs), then walk back to the package root.
       packageRoot = dirname(dirname(projectRequire.resolve('@vobs/dsh')))
     }
     const candidate = join(packageRoot, 'dist', 'preview.js')
@@ -294,7 +299,7 @@ async function dshDevCommand(options: DshOptions): Promise<void> {
     previewFile = undefined
   }
   if (previewFile === undefined) {
-    logger.error('项目里找不到 @vobs/dsh 的预览运行时。先安装依赖：pnpm add -D @vobs/dsh')
+    logger.error('Could not find the @vobs/dsh preview runtime in the project. Install dependencies first: pnpm add -D @vobs/dsh')
     process.exitCode = 1
     return
   }
@@ -305,8 +310,8 @@ async function dshDevCommand(options: DshOptions): Promise<void> {
     for (const client of clients) client.write(`event: ${event}\ndata: 1\n\n`)
   }
 
-  /* 先构建一次，再进监听模式 */
-  logger.info('构建产物 …')
+  /* Build once, then enter watch mode */
+  logger.info('Building artifacts …')
   const { build } = await import('vite')
   const configFile = resolve(projectDir, 'vite.config.ts')
   let buildError: string | undefined
@@ -322,10 +327,10 @@ async function dshDevCommand(options: DshOptions): Promise<void> {
     watcher.on('event', event => {
       if (event.code === 'END') {
         buildError = undefined
-        logger.success('重新构建完成')
+        logger.success('Rebuild complete')
         broadcast('reload')
       } else if (event.code === 'ERROR') {
-        buildError = event.error?.message ?? '构建失败'
+        buildError = event.error?.message ?? 'build failed'
         logger.error(buildError)
       }
     })
@@ -333,7 +338,7 @@ async function dshDevCommand(options: DshOptions): Promise<void> {
       void watcher.close().then(() => process.exit(0))
     })
   } catch (error) {
-    logger.error(`构建失败：${error instanceof Error ? error.message : String(error)}`)
+    logger.error(`Build failed: ${error instanceof Error ? error.message : String(error)}`)
     process.exitCode = 1
     return
   }
@@ -369,7 +374,7 @@ async function dshDevCommand(options: DshOptions): Promise<void> {
     if (url === '/client.js') {
       if (!existsSync(clientFile)) {
         response.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' })
-        response.end(`还没有产物：${clientEntry}\n${buildError ?? ''}`)
+        response.end(`No build output yet: ${clientEntry}\n${buildError ?? ''}`)
         return
       }
       void readFile(clientFile).then(body => send(body, 'text/javascript; charset=utf-8'))
@@ -384,8 +389,8 @@ async function dshDevCommand(options: DshOptions): Promise<void> {
     server.listen(port, '127.0.0.1', resolveListen)
   })
 
-  logger.success(`预览已就绪：http://127.0.0.1:${port}/`)
-  console.log('\n  改代码会自动重建并刷新页面；Ctrl+C 退出。\n')
+  logger.success(`Preview ready: http://127.0.0.1:${port}/`)
+  console.log('\n  Editing code triggers an automatic rebuild and page refresh; Ctrl+C to quit.\n')
 }
 
 /* ----------------------------------------------------------------- check */
@@ -396,7 +401,7 @@ interface CheckResult {
   passed: string[]
 }
 
-/** 读取并解析 package.json。 */
+/** Read and parse package.json. */
 function readManifest(dir: string): Record<string, unknown> | undefined {
   try {
     return JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8')) as Record<string, unknown>
@@ -406,60 +411,62 @@ function readManifest(dir: string): Record<string, unknown> | undefined {
 }
 
 /**
- * 装前一致性校验：把「装进 DSH 之后才发现坏」的问题提前到本地。
+ * Pre-install consistency check: moves "discover it's broken after installing into DSH"
+ * forward to local time.
  *
- * 检查项全部来自 DSH 的客户端插件契约与 pnpm 的 Git 子目录安装约束。
+ * Every check item comes from DSH's client-plugin contract and pnpm's Git subdirectory
+ * installation constraints.
  */
 export function collectIssues(dir: string): CheckResult {
   const result: CheckResult = { errors: [], warnings: [], passed: [] }
   const manifest = readManifest(dir)
 
   if (manifest === undefined) {
-    result.errors.push('读不到 package.json（JSON 语法错误或文件缺失）')
+    result.errors.push('Cannot read package.json (JSON syntax error or missing file)')
     return result
   }
 
   const name = typeof manifest.name === 'string' ? manifest.name : ''
-  if (name === '') result.errors.push('package.json 缺少 name')
-  else result.passed.push(`包名 ${name}`)
+  if (name === '') result.errors.push('package.json is missing name')
+  else result.passed.push(`package name ${name}`)
 
   const dsh = (manifest.dsh ?? {}) as Record<string, unknown>
   const bundle = (dsh.bundle ?? {}) as Record<string, unknown>
   const client = (dsh.client ?? {}) as Record<string, unknown>
 
   if (typeof bundle.patch !== 'string') {
-    result.errors.push('缺少 dsh.bundle.patch —— DSH 不会把这个包当作组合包（bundle）')
+    result.errors.push('dsh.bundle.patch is missing — DSH will not treat this package as a bundle')
   } else {
     const patchPath = resolve(dir, bundle.patch.replace(/^\.\//u, ''))
     if (!existsSync(patchPath)) {
-      result.errors.push(`dsh.bundle.patch 指向的 ${bundle.patch} 不存在`)
+      result.errors.push(`dsh.bundle.patch points at ${bundle.patch}, which does not exist`)
     } else {
       const text = readFileSync(patchPath, 'utf8')
-      if (!text.includes('insert:')) result.errors.push('cordis.patch.yml 里没有 insert: 段落，插件行不会进组合树')
+      if (!text.includes('insert:')) result.errors.push('no insert: section in cordis.patch.yml; the plugin row will not enter the bundle tree')
       else if (name !== '' && !text.includes(name)) {
-        result.warnings.push(`cordis.patch.yml 里没有出现包名 ${name}，确认 insert 的 name 写对了`)
-      } else result.passed.push('cordis.patch.yml 会插入本包的行')
+        result.warnings.push(`the package name ${name} does not appear in cordis.patch.yml; verify the insert name is correct`)
+      } else result.passed.push('cordis.patch.yml inserts this package\'s row')
     }
   }
 
   if (client.platform !== 'web') {
-    result.errors.push("dsh.client.platform 必须是 'web' —— 否则 DSH 不会给页面提供客户端 bundle")
+    result.errors.push("dsh.client.platform must be 'web' — otherwise DSH will not serve the client bundle to the page")
   } else result.passed.push('dsh.client.platform = web')
 
   const exportsField = (manifest.exports ?? {}) as Record<string, string>
   const hostEntry = exportsField['.']
   const clientEntry = exportsField['./client']
-  if (typeof hostEntry !== 'string') result.errors.push('exports["."] 未声明 —— DSH 加载不到 Host 侧插件')
+  if (typeof hostEntry !== 'string') result.errors.push('exports["."] is not declared — DSH cannot load the Host-side plugin')
   else if (!existsSync(resolve(dir, hostEntry.replace(/^\.\//u, '')))) {
-    result.errors.push(`exports["."] 指向的 ${hostEntry} 不存在，先构建`)
-  } else result.passed.push('Host 入口存在')
+    result.errors.push(`exports["."] points at ${hostEntry}, which does not exist; build first`)
+  } else result.passed.push('Host entry exists')
 
-  if (typeof clientEntry !== 'string') result.errors.push('exports["./client"] 未声明 —— 页面拿不到客户端 bundle')
+  if (typeof clientEntry !== 'string') result.errors.push('exports["./client"] is not declared — the page cannot get the client bundle')
 
   const scripts = (manifest.scripts ?? {}) as Record<string, string>
   if (scripts.prepare !== undefined || scripts.postinstall !== undefined) {
-    result.errors.push('声明了 prepare / postinstall —— DSH 安装时不构建，产物必须预先提交')
-  } else result.passed.push('没有安装期生命周期钩子')
+    result.errors.push('prepare / postinstall declared — DSH does not build at install time; build output must be committed in advance')
+  } else result.passed.push('no install-time lifecycle hooks')
 
   const dependencyText = JSON.stringify({
     dependencies: manifest.dependencies,
@@ -467,31 +474,31 @@ export function collectIssues(dir: string): CheckResult {
     devDependencies: manifest.devDependencies
   })
   if (dependencyText.includes('workspace:')) {
-    result.errors.push('依赖里出现了 workspace: 协议 —— GitHub 子目录直装时解析不了')
-  } else result.passed.push('没有 workspace: 协议依赖')
+    result.errors.push('the workspace: protocol appears in dependencies — it cannot be resolved by a direct GitHub subdirectory install')
+  } else result.passed.push('no workspace: protocol dependencies')
 
   if (typeof clientEntry === 'string') {
     const clientPath = resolve(dir, clientEntry.replace(/^\.\//u, ''))
     if (!existsSync(clientPath)) {
-      result.errors.push(`客户端产物 ${clientEntry} 不存在，先运行构建`)
+      result.errors.push(`client bundle ${clientEntry} does not exist; run the build first`)
     } else {
       const code = readFileSync(clientPath, 'utf8')
       const loads = (code.match(/__ModuleLoader__\.load\(/gu) ?? []).length
-      if (loads !== 1) result.errors.push(`客户端产物里 __ModuleLoader__.load 出现 ${loads} 次，应为 1 次（先构建）`)
-      else result.passed.push('产物形态是 DSH 客户端模块协议')
+      if (loads !== 1) result.errors.push(`__ModuleLoader__.load appears ${loads} times in the client bundle; expected 1 (build first)`)
+      else result.passed.push('bundle shape matches the DSH client module protocol')
 
-      if (code.includes('import(')) result.errors.push('客户端产物里有动态 import()，DSH 只支持自包含 chunk')
+      if (code.includes('import(')) result.errors.push('dynamic import() found in the client bundle; DSH only supports self-contained chunks')
 
       const requires = [...code.matchAll(/require\((['"])([^'"]+)\1\)/gu)].map(match => match[2] ?? '')
       const foreign = requires.filter(id => !PLATFORM_MODULES.includes(id) && !id.startsWith('@deepseek-ai/'))
       if (foreign.length > 0) {
-        result.errors.push(`产物 require 了非平台模块：${[...new Set(foreign)].join(', ')} —— 依赖没有被打进产物`)
+        result.errors.push(`the bundle requires non-platform modules: ${[...new Set(foreign)].join(', ')} — dependencies were not bundled in`)
       } else if (requires.length > 0) {
-        result.passed.push(`产物只 require 平台模块（${[...new Set(requires)].join(', ')}）`)
+        result.passed.push(`the bundle only requires platform modules (${[...new Set(requires)].join(', ')})`)
       }
 
       if (name !== '' && !code.includes(`"${name}"`) && !code.includes(`'${name}'`)) {
-        result.warnings.push(`产物里的模块 id 与包名 ${name} 不一致，检查 dshBundle({ id })`)
+        result.warnings.push(`the module id in the bundle does not match the package name ${name}; check dshBundle({ id })`)
       }
     }
   }
@@ -503,22 +510,22 @@ function dshCheckCommand(): void {
   const dir = process.cwd()
   const result = collectIssues(dir)
 
-  logger.step('DSH 插件装前校验')
+  logger.step('DSH plugin pre-install check')
   for (const item of result.passed) console.log(`  ✔ ${item}`)
   for (const item of result.warnings) console.log(`  ⚠ ${item}`)
   for (const item of result.errors) console.log(`  ✖ ${item}`)
 
   if (result.errors.length > 0) {
-    logger.error(`${result.errors.length} 项不通过，装进 DSH 后不会正常工作。`)
+    logger.error(`${result.errors.length} check(s) failed; the plugin will not work after installation into DSH.`)
     process.exitCode = 1
     return
   }
-  logger.success(`全部通过（${result.passed.length} 项${result.warnings.length > 0 ? `，${result.warnings.length} 条警告` : ''}）`)
+  logger.success(`All checks passed (${result.passed.length} items${result.warnings.length > 0 ? `, ${result.warnings.length} warning(s)` : ''})`)
 }
 
 /* --------------------------------------------------------------- install */
 
-/** 读取 pnpm 版本；拿不到就返回 undefined。 */
+/** Read the pnpm version; returns undefined when unavailable. */
 function readPnpmVersion(): string | undefined {
   try {
     return execSync('pnpm --version', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
@@ -532,13 +539,13 @@ const majorOf = (version: string | undefined): number => {
   return Number.isFinite(major) ? major : 0
 }
 
-/** 组装安装 spec。 */
+/** Assemble the install spec. */
 export function buildInstallSpec(options: DshOptions): { spec?: string; error?: string } {
   if (options.spec !== undefined) return { spec: options.spec }
 
   if (options.from !== undefined) {
     const target = resolve(options.from)
-    if (!existsSync(target)) return { error: `--from 指向的路径不存在：${target}` }
+    if (!existsSync(target)) return { error: `the --from path does not exist: ${target}` }
     return { spec: target }
   }
 
@@ -548,16 +555,18 @@ export function buildInstallSpec(options: DshOptions): { spec?: string; error?: 
     return { spec: `github:${options.repo}${ref}${sub}` }
   }
 
-  return { error: '需要 --spec、--from 或 --repo 之一来指定安装来源。' }
+  return { error: 'one of --spec, --from, or --repo is required to specify the install source.' }
 }
 
 /**
- * 在 Windows 上调用 dsh 的引号策略。
+ * Quoting policy when invoking dsh on Windows.
  *
- * `.cmd` 无法被 CreateProcess 直接执行（EINVAL），必须走 shell；而 shell 会把
- * 裸传参数原样拼接，`github:owner/repo#tag&path:/sub` 里的 `&` 就变成命令分隔符 ——
- * 实测会**静默地把 spec 截断成 `#tag`**，然后装上 monorepo 根而不是目标子包。
- * 所以含特殊字符的参数必须自己加引号。
+ * A `.cmd` file cannot be executed directly by CreateProcess (EINVAL), so it must go
+ * through a shell; the shell concatenates bare arguments verbatim, so the `&` in
+ * `github:owner/repo#tag&path:/sub` becomes a command separator —
+ * measured: it **silently truncates the spec at `#tag`**, then installs the monorepo root
+ * instead of the target subpackage. Arguments containing special characters must therefore
+ * be quoted by hand.
  */
 const CMD_NEEDS_QUOTE = /[\s&|<>^()"']/u
 
@@ -565,7 +574,7 @@ function quoteForCmd(part: string): string {
   return CMD_NEEDS_QUOTE.test(part) ? `"${part.replace(/"/gu, '""')}"` : part
 }
 
-/** 组装一条给 shell 执行的命令行（仅供 Windows 使用）。 */
+/** Assemble a command line for shell execution (Windows only). */
 export function buildShellCommand(exe: string, args: readonly string[]): string {
   return [exe, ...args].map(quoteForCmd).join(' ')
 }
@@ -590,7 +599,7 @@ function dshInstallCommand(options: DshOptions): void {
   const { spec, error } = buildInstallSpec(options)
 
   if (spec === undefined) {
-    logger.error(error ?? '未知错误')
+    logger.error(error ?? 'unknown error')
     process.exitCode = 1
     return
   }
@@ -600,46 +609,46 @@ function dshInstallCommand(options: DshOptions): void {
 
   if (usesSubpath && pnpmVersion !== undefined && majorOf(pnpmVersion) < 11) {
     logger.warn(
-      `检测到 pnpm ${pnpmVersion}：11 以下不支持 git 子目录语法（#…&path:），` +
-        '会静默装成仓库根而不是你想要的子包。DSH 内置的 pnpm 11 不受影响 —— 建议改用 DSH 插件页安装。'
+      `Detected pnpm ${pnpmVersion}: below 11 the git subdirectory syntax (#…&path:) is unsupported, ` +
+        'and it silently installs the repo root instead of the subpackage you want. The pnpm 11 bundled with DSH is unaffected — prefer installing from the DSH plugin page.'
     )
   }
 
   if (usesSubpath && process.platform === 'win32') {
-    logger.info('Windows：会通过 cmd /d /s /c 执行，避免 & 被当成命令分隔符。')
+    logger.info('Windows: the command runs through cmd /d /s /c so that & is not treated as a command separator.')
   }
 
-  logger.step(`安装到 profile「${profile}」`)
+  logger.step(`Installing into profile "${profile}"`)
   console.log(`  spec: ${spec}`)
 
   if (!isAbsolute(spec) && !spec.startsWith('github:') && !spec.startsWith('git+') && !spec.startsWith('http')) {
-    logger.warn('这个 spec 既不是绝对路径也不是 git/URL，确认没有写错。')
+    logger.warn('this spec is neither an absolute path nor git/URL; double-check it.')
   }
 
   const status = spawnDsh(['plugin', '--profile', profile, 'add', spec], options.dry === true)
   if (options.dry === true) {
-    logger.info('dry run：以上命令没有执行。')
+    logger.info('dry run: the command above was not executed.')
     return
   }
   if (status !== 0) {
-    logger.error(`安装失败（退出码 ${status}）。诊断日志在 ~/.dsh/profiles/${profile}/.plugin-manager/logs/`)
+    logger.error(`Install failed (exit code ${status}). Diagnostic logs are in ~/.dsh/profiles/${profile}/.plugin-manager/logs/`)
     process.exitCode = status
     return
   }
-  logger.success('安装完成 —— 完全退出 DSH 再打开即可生效')
+  logger.success('Install complete — fully quit DSH and reopen it to take effect')
 }
 
 /* ------------------------------------------------------------- dispatcher */
 
 const ACTIONS: Record<string, string> = {
-  init: '创建一个 DSH 插件项目',
-  dev: '本地预览（浏览器里看面板，不用装进 DSH）',
-  build: '构建 lib/{index,client}.js',
-  check: '装前一致性校验',
-  install: '把插件装进 DSH profile'
+  init: 'create a DSH plugin project',
+  dev: 'local preview (see the panel in a browser, no need to install into DSH)',
+  build: 'build lib/{index,client}.js',
+  check: 'pre-install consistency check',
+  install: 'install the plugin into a DSH profile'
 }
 
-/** `vobs dsh <action> [target]` 的分发入口。 */
+/** Dispatcher for `vobs dsh <action> [target]`. */
 export async function dshCommand(
   action: string | undefined,
   target: string | undefined,
@@ -663,10 +672,10 @@ export async function dshCommand(
       dshInstallCommand(options)
       return
     default:
-      // 不带子命令时只列用法（这是最自然的「我该用什么」入口），
-      // 真正写错子命令时才报错。
-      if (action !== undefined && action !== '') logger.error(`未知子命令: ${action}`)
-      console.log('\n  可用子命令：')
+      // Without a subcommand, only list usage (the most natural "what do I use" entry);
+      // an actually-wrong subcommand is what produces the error.
+      if (action !== undefined && action !== '') logger.error(`Unknown subcommand: ${action}`)
+      console.log('\n  Available subcommands:')
       for (const [name, description] of Object.entries(ACTIONS)) {
         console.log(`    vobs dsh ${name.padEnd(8)} ${description}`)
       }

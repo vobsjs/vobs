@@ -5,7 +5,7 @@ import { createDOMRenderer, createVobs, setRenderer, state } from '@vobs/vobs'
 describe('@vobs/icon-core', () => {
   beforeEach(() => setRenderer(createDOMRenderer()))
 
-  it('创建可直接放入 Vobs icon 插槽的 SVG 图标组件', () => {
+  it('creates an SVG icon component that drops straight into a Vobs icon slot', () => {
     const Camera = createSvgIcon({
       name: 'camera',
       body: '<path d="M4 7h4l2-2h4l2 2h4v12H4z"/>',
@@ -25,7 +25,7 @@ describe('@vobs/icon-core', () => {
     app.destroy()
   })
 
-  it('响应动态尺寸、ARIA 和图标定义', () => {
+  it('reacts to dynamic size, ARIA and icon definition changes', () => {
     const size = state<number | undefined>(16)
     const label = state('Camera')
     const Camera = createSvgIcon({ name: 'camera', body: '<path d="M1"/>' })
@@ -45,11 +45,13 @@ describe('@vobs/icon-core', () => {
   })
 
   /*
-   * 作者传的 aria-label 原来被组件自己删掉：`:122` 由 managedAttributes 写入后，
-   * `:129` 又用 `ariaLabel === undefined ? title : undefined` 把它清成 undefined。
-   * 实测 `Camera({'aria-label':'Foo'})` 得到 aria-label=null —— 既不隐藏也没有名字。
+   * The author-provided aria-label used to be deleted by the component itself:
+   * `:122` wrote it via managedAttributes, then `:129` cleared it back to
+   * undefined with `ariaLabel === undefined ? title : undefined`.
+   * Verified: `Camera({'aria-label':'Foo'})` produced aria-label=null —
+   * neither hidden nor named.
    */
-  it('尊重作者传入的 aria-label（不再被自己删掉）', () => {
+  it('respects the author-provided aria-label (no longer deleted by itself)', () => {
     const Camera = createSvgIcon({ name: 'camera', body: '<path d="M1"/>' })
     const container = document.createElement('main')
     const app = createVobs({ render: () => Camera({ 'aria-label': 'Foo' }) })
@@ -61,7 +63,7 @@ describe('@vobs/icon-core', () => {
     app.destroy()
   })
 
-  it('没给任何名字时才退回 aria-hidden', () => {
+  it('falls back to aria-hidden only when no name is given at all', () => {
     const Camera = createSvgIcon({ name: 'camera', body: '<path d="M1"/>' })
     const container = document.createElement('main')
     const app = createVobs({ render: () => Camera({}) })

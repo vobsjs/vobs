@@ -3,43 +3,46 @@ import { describe, expect, it, vi } from 'vitest'
 import { useForm } from './index'
 
 /*
- * schema 里写错字段名，原来被**静默丢弃**。
+ * A misspelled field name in the schema was originally **silently dropped**.
  *
- * `applyAllErrors` 只遍历表单自己的 `names`（form.ts 里那个 `for (const name of names)`），
- * 只有 `__form` 被特判。于是 `schema.validate` 返回 `{ phone: '手机号必填' }`、而表单字段是
- * `name` 时：那条错误**根本不参与聚合**，`validateAll()` 返回 `{}`、`hasErrors` 为 false、
- * `submit()` 直接 valid:true 并真的执行提交 —— 拼错一个字段名不会有任何征兆。
+ * `applyAllErrors` only iterated the form's own `names` (the `for (const name of names)` in
+ * form.ts), with only `__form` special-cased. So when `schema.validate` returned
+ * `{ phone: '手机号必填' }` while the form field is `name`: that error **never joined the
+ * aggregation**, `validateAll()` returned `{}`, `hasErrors` was false, and `submit()` went
+ * straight to valid:true and actually submitted — a misspelled field name gave no sign at all.
  *
- * 现在的修法是**警告**（而不是抛错）：schema 作为"超集"是合法用法，抛错会把那些用法一并打死。
- * 注意这条只让问题**可见**，"提交仍会放行"这半边**没有修**，下面的断言如实反映现状。
+ * The current fix is a **warning** (not a throw): schema as a "superset" is a legitimate usage,
+ * and throwing would kill those usages too.
+ * Note this only makes the problem **visible**; the "submit still passes" half is **not fixed**,
+ * and the assertions below reflect the status quo faithfully.
  */
-describe('forms schema 字段名写错', () => {
-  it('返回表单里没有的字段名时给出可操作的警告', async () => {
+describe('forms schema misspelled field name', () => {
+  it('gives an actionable warning when it returns field names absent from the form', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     /*
-     * 注意：字段名拼错在**类型层面**本来就会被拒绝（schema 的返回类型是
-     * `Partial<Record<FormErrorName<…>, string>>`）。所以能走到这个运行时警告的，是
-     * 宽松/无类型的 schema —— 比如共享一份通用校验器映射，或者 JS 调用方。
-     * 这里用 cast 明确表示"这是运行时场景"。
+     * Note: a misspelled field name is already rejected **at the type level** (the schema's
+     * return type is `Partial<Record<FormErrorName<…>, string>>`). What can actually reach this
+     * runtime warning is a loose/untyped schema — e.g. a shared generic validator map, or JS
+     * callers. The cast here explicitly means "this is a runtime scenario".
      */
     const schema = { validate: () => ({ phone: '手机号必填' }) } as unknown as NonNullable<
       Parameters<typeof useForm<{ name: string }>>[1]
     >['schema']
     const form = useForm({ name: 'Alice' }, { schema })
 
-    expect(form.validateAll()).toEqual({})          // 这条错误确实不参与聚合
+    expect(form.validateAll()).toEqual({})          // this error indeed does not join the aggregation
     expect(form.hasErrors.value).toBe(false)
-    // 如实记录：提交仍然被放行 —— 本次没有改这个行为，只是让它不再无声
+    // recorded faithfully: submit is still allowed — this behavior was not changed here, only made no longer silent
     await expect(form.submit()).resolves.toMatchObject({ valid: true })
 
     expect(warn).toHaveBeenCalledTimes(1)
     const message = String(warn.mock.calls[0]?.[0])
     expect(message).toContain('phone')
-    expect(message).toContain('name')               // 提示里带上合法字段名，方便对照
+    expect(message).toContain('name')               // the hint lists the valid field names for easy comparison
     warn.mockRestore()
   })
 
-  it('字段名正确时不吵', () => {
+  it('stays quiet when the field name is correct', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const form = useForm({ name: 'Alice' }, {
       schema: { validate: () => ({ name: '至少 2 个字符' }) }

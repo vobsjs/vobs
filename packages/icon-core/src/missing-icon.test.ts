@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 /*
- * 图标查表 miss **不能静默**（外部踩坑文档 H 条：lucide 图标白名单静默空白）。
+ * Icon lookup misses must **not be silent** (external postmortem doc item H:
+ * lucide icon whitelist silently rendered blank).
  *
- * 机制：应用侧「名字 → 图标定义」查表 miss 时返回空，渲染成空 `<span>`，不报错 ——
- * 于是新增页面用了没登记的图标时，界面上只是"那里没有东西"，靠人眼发现。
- * 文档记的是已经踩过三次变体（keyboard / upload-cloud / triangle-alert，
- * 以及 `ICONS` / `FAVORITES` 双清单混淆）。
+ * Mechanism: when the app-side "name → icon definition" lookup misses it
+ * returns empty, renders an empty `<span>`, no error — so when a new page used
+ * an unregistered icon, the UI just showed "nothing there" and someone had to
+ * spot it by eye. The doc records three hit variants already (keyboard /
+ * upload-cloud / triangle-alert, plus the `ICONS` / `FAVORITES` dual-list confusion).
  *
- * 框架修不了应用的白名单（查表在应用侧），但能**把 miss 这件事说出来** ——
- * 这就是本文件锁的行为。
+ * The framework can't fix the app's whitelist (the lookup lives on the app
+ * side), but it can **speak up about the miss** — that's the behavior this
+ * file locks in.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { scheduler } from '@vobs/reactivity'
@@ -18,8 +21,8 @@ import { createSvgIconNode, type SvgIconDefinition } from './index'
 setRenderer(createDOMRenderer())
 const settle = (): void => { scheduler.flush() }
 
-describe('图标缺失时的可观测性', () => {
-  it('definition 为 undefined + 提供了名字 → 警告并报出名字', () => {
+describe('missing icon observability', () => {
+  it('undefined definition + name provided → warns and reports the name', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       const host = document.createElement('main')
@@ -30,17 +33,17 @@ describe('图标缺失时的可观测性', () => {
       app.mount(host)
       settle()
 
-      expect(host.querySelector('span')?.innerHTML).toBe('')   // 仍然是空（不改变渲染语义）
+      expect(host.querySelector('span')?.innerHTML).toBe('')   // still empty (render semantics unchanged)
       const calls = warn.mock.calls.map(call => String(call[0])).join('\n')
-      expect(calls, '缺失图标没有发出任何提示（这就是 H 条的静默空白）').toContain('keyboard')
-      expect(calls).toContain('没有定义')
+      expect(calls, 'missing icon produced no message at all (the silent blank from doc item H)').toContain('keyboard')
+      expect(calls).toContain('has no definition')
       app.destroy(); host.remove()
     } finally {
       warn.mockRestore()
     }
   })
 
-  it('没有名字时也给一条通用警告（仍然不静默）', () => {
+  it('still emits a generic warning without a name (never silent)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       const host = document.createElement('main')
@@ -48,14 +51,14 @@ describe('图标缺失时的可观测性', () => {
       const app = createVobs({ render: () => createSvgIconNode(undefined as never) })
       app.mount(host)
       settle()
-      expect(warn.mock.calls.length, '完全无声').toBeGreaterThan(0)
+      expect(warn.mock.calls.length, 'completely silent').toBeGreaterThan(0)
       app.destroy(); host.remove()
     } finally {
       warn.mockRestore()
     }
   })
 
-  it('同一个缺失名字只警告一次（effect 重跑不刷屏）', () => {
+  it('warns only once per missing name (effect re-runs don\'t spam)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       for (let i = 0; i < 3; i++) {
@@ -71,13 +74,13 @@ describe('图标缺失时的可观测性', () => {
       const aboutUpload = warn.mock.calls
         .map(call => String(call[0]))
         .filter(text => text.includes('upload-cloud'))
-      expect(aboutUpload, '同一个缺失名字被重复警告').toHaveLength(1)
+      expect(aboutUpload, 'the same missing name was warned repeatedly').toHaveLength(1)
     } finally {
       warn.mockRestore()
     }
   })
 
-  it('定义存在时**不**警告（正常路径不受影响）', () => {
+  it('does **not** warn when a definition exists (normal path unaffected)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       const pen: SvgIconDefinition = { name: 'pen', body: '<path d="M4 4 L20 20" />' }
@@ -86,15 +89,15 @@ describe('图标缺失时的可观测性', () => {
       const app = createVobs({ render: () => createSvgIconNode(pen) })
       app.mount(host)
       settle()
-      expect(host.querySelector('svg'), '正常图标没渲染出来').not.toBeNull()
-      expect(warn, `正常路径发出了警告: ${warn.mock.calls.map(c => String(c[0])).join(' | ')}`).not.toHaveBeenCalled()
+      expect(host.querySelector('svg'), 'the normal icon did not render').not.toBeNull()
+      expect(warn, `normal path emitted warnings: ${warn.mock.calls.map(c => String(c[0])).join(' | ')}`).not.toHaveBeenCalled()
       app.destroy(); host.remove()
     } finally {
       warn.mockRestore()
     }
   })
 
-  it('有定义时 data-icon-name 照常带上（既有行为不变）', () => {
+  it('with a definition, data-icon-name is still attached (existing behavior unchanged)', () => {
     const pen: SvgIconDefinition = { name: 'pen', body: '<path d="M4 4 L20 20" />' }
     const host = document.createElement('main')
     document.body.appendChild(host)

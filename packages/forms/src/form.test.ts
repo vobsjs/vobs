@@ -17,7 +17,7 @@ async function nextMicrotask(): Promise<void> {
 }
 
 describe('@vobs/forms', () => {
-  it('字段独立更新，并维护 dirty、touched 和 values', async () => {
+  it('fields update independently, maintaining dirty, touched, and values', async () => {
     const form = useForm({ name: '', email: '' })
     const name = form.field('name')
     const email = form.field('email')
@@ -50,7 +50,7 @@ describe('@vobs/forms', () => {
     form.dispose()
   })
 
-  it('同步校验支持多规则、跨字段校验和全量错误', () => {
+  it('sync validation supports multiple rules, cross-field validation, and aggregate errors', () => {
     const form = useForm({ name: '', password: 'a', confirm: 'b' }, {
       validators: {
         name: [rules.required, rules.minLength(2)],
@@ -58,16 +58,16 @@ describe('@vobs/forms', () => {
       }
     })
 
-    expect(form.validateField('name')).toBe('必填')
-    expect(form.field('name').error.value).toBe('必填')
+    expect(form.validateField('name')).toBe('Required')
+    expect(form.field('name').error.value).toBe('Required')
     expect(form.validateField('confirm')).toBe('两次密码不一致')
-    expect(form.validateAll()).toEqual({ name: '必填', confirm: '两次密码不一致' })
+    expect(form.validateAll()).toEqual({ name: 'Required', confirm: '两次密码不一致' })
     expect(form.hasErrors.value).toBe(true)
     expect(form.getErrorFields()).toEqual(['name', 'confirm'])
     form.dispose()
   })
 
-  it('异步校验只提交最新一次结果', async () => {
+  it('async validation commits only the latest result', async () => {
     const resolvers: Array<(message: string | null) => void> = []
     const form = useForm({ email: '' }, {
       validators: {
@@ -95,7 +95,7 @@ describe('@vobs/forms', () => {
     form.dispose()
   })
 
-  it('按照 blur 触发校验，并支持服务端错误回填后自动清除', () => {
+  it('validates on blur and auto-clears after server error backfill', () => {
     const form = useForm({ email: '' }, {
       validateOn: 'blur',
       validators: { email: rules.email }
@@ -105,7 +105,7 @@ describe('@vobs/forms', () => {
     email.set('invalid')
     expect(email.error.value).toBeNull()
     email.markTouched()
-    expect(email.error.value).toBe('邮箱格式错误')
+    expect(email.error.value).toBe('Invalid email format')
 
     form.setServerErrors({ email: '邮箱已被注册' })
     expect(email.error.value).toBe('邮箱已被注册')
@@ -114,7 +114,7 @@ describe('@vobs/forms', () => {
     form.dispose()
   })
 
-  it('提交前全量校验，成功提交，并忽略并发提交', async () => {
+  it('validates everything before submit, submits on success, and ignores concurrent submits', async () => {
     const submit = vi.fn(async (values: Readonly<{ name: string }>) => values.name)
     const form = useForm({ name: '' }, {
       validators: { name: rules.required },
@@ -122,7 +122,7 @@ describe('@vobs/forms', () => {
     })
 
     const invalid = await form.submit()
-    expect(invalid).toEqual({ valid: false, errors: { name: '必填' } })
+    expect(invalid).toEqual({ valid: false, errors: { name: 'Required' } })
     expect(submit).not.toHaveBeenCalled()
 
     form.field('name').set('Alice')
@@ -135,7 +135,7 @@ describe('@vobs/forms', () => {
     form.dispose()
   })
 
-  it('schema 适配器可以返回异步字段错误', async () => {
+  it('the schema adapter can return async field errors', async () => {
     const form = useForm({ name: 'x' }, {
       schema: {
         validate: async values => values.name.length < 2 ? { name: '至少 2 个字符' } : {}
@@ -147,7 +147,7 @@ describe('@vobs/forms', () => {
     form.dispose()
   })
 
-  it('schema 抛出的表单级错误会参与错误聚合和提交判定', () => {
+  it('form-level errors thrown by the schema join error aggregation and the submit decision', () => {
     const form = useForm({ name: 'Alice' }, {
       schema: {
         validate: () => { throw new Error('整表校验失败') }
@@ -163,7 +163,7 @@ describe('@vobs/forms', () => {
     form.dispose()
   })
 
-  it('重置字段和表单会取消过期校验状态', () => {
+  it('resetting fields and the form cancels stale validation state', () => {
     const form = useForm({ name: '' })
     const name = form.field('name')
     name.set('Alice')
@@ -180,7 +180,7 @@ describe('@vobs/forms', () => {
     form.dispose()
   })
 
-  it('字段和表单 reset 会把传入值设为新的 dirty 基线', () => {
+  it('field and form reset set the passed value as the new dirty baseline', () => {
     const form = useForm({ name: '' })
     const name = form.field('name')
 
@@ -199,7 +199,7 @@ describe('@vobs/forms', () => {
     form.dispose()
   })
 
-  it('formsPlugin 向应用插件提供 FormsClient', () => {
+  it('formsPlugin provides FormsClient to the app plugin context', () => {
     const client: FormsClient = {
       createForm<T extends object>(initialValues: T, options?: FormOptions<T>) {
         return useForm(initialValues, options)
@@ -223,14 +223,14 @@ describe('@vobs/forms', () => {
     app.destroy()
   })
 
-  it('支持动态字段增删，并同步字段集合、值和错误聚合', () => {
+  it('supports dynamic field add/remove, syncing the field set, values, and error aggregation', () => {
     const form = useForm({ name: '' })
     const fields = form.addField('phone', '', { validators: rules.required })
 
     expect(form.fieldNames.value).toEqual(new Set(['name', 'phone']))
     expect((form.values as Readonly<Record<string, unknown>>).phone).toBe('')
-    expect(fields.validate()).toBe('必填')
-    expect(form.errors.value).toEqual({ phone: '必填' })
+    expect(fields.validate()).toBe('Required')
+    expect(form.errors.value).toEqual({ phone: 'Required' })
 
     expect(form.removeField('phone')).toBe(true)
     expect(form.removeField('phone')).toBe(false)
@@ -240,7 +240,7 @@ describe('@vobs/forms', () => {
     form.dispose()
   })
 
-  it('异步校验支持防抖，并在新校验开始时取消旧 AbortSignal', async () => {
+  it('async validation supports debouncing and aborts the old AbortSignal when a new validation starts', async () => {
     vi.useFakeTimers()
     try {
       const signals: AbortSignal[] = []
@@ -272,7 +272,7 @@ describe('@vobs/forms', () => {
     }
   })
 
-  it('新一轮异步校验会 abort 旧校验，并只保留最新结果', async () => {
+  it('a new async validation run aborts the old one and keeps only the latest result', async () => {
     const signals: AbortSignal[] = []
     const resolvers: Array<(message: string | null) => void> = []
     const form = useForm({ email: '' }, {
@@ -296,7 +296,7 @@ describe('@vobs/forms', () => {
     form.dispose()
   })
 
-  it('官方 Field 提供默认输入、label、错误显示和双向值绑定', async () => {
+  it('the official Field provides a default input, label, error display, and two-way value binding', async () => {
     setRenderer(createDOMRenderer())
     const form = useForm({ name: '' }, { validateOn: 'blur', validators: { name: rules.required } })
     const container = document.createElement('div')
@@ -315,7 +315,7 @@ describe('@vobs/forms', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     input.dispatchEvent(new Event('blur', { bubbles: true }))
     await nextMicrotask()
-    expect(container.querySelector('[data-vobs-field-error]')?.textContent).toBe('必填')
+    expect(container.querySelector('[data-vobs-field-error]')?.textContent).toBe('Required')
     app.destroy()
     form.dispose()
   })

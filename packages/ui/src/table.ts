@@ -29,13 +29,13 @@ export type TableState = 'ok' | 'loading' | 'empty' | 'error'
 export interface TableColumn<Row = Record<string, unknown>> {
   readonly id: string
   readonly label: string
-  /** 表头节点（可选）：节点或返回节点的函数——走动态插入并随信号响应。
-   *  用途：表头全选框等表头控件；提供 head 时 label 不渲染 */
+  /** Header node (optional): a node or a function returning one — inserted dynamically and reactive to signals.
+   *  Use: header controls like select-all checkboxes; when head is provided, label is not rendered. */
   readonly head?: VuiChildren | (() => VuiChildren)
   readonly key?: keyof Row
   readonly render?: (row: Row, index: number) => VuiChildren
   readonly align?: TableAlign
-  /** 列宽（数字按 px，字符串原样透传，如 '18%'） */
+  /** Column width (number as px; strings pass through as-is, e.g. '18%'). */
   readonly width?: number | string
 }
 
@@ -46,17 +46,17 @@ export interface TableProps<Row = Record<string, unknown>> extends VuiCommonProp
   readonly empty?: VuiChildren
   readonly rowKey?: (row: Row, index: number) => unknown
   readonly onRowClick?: (row: Row, index: number) => void
-  /** 数据态：ok（默认）/ loading（骨架屏）/ empty / error；缺省按 rows 派生 */
+  /** Data state: ok (default) / loading (skeleton) / empty / error; derived from rows when absent. */
   readonly state?: TableState
-  /** loading 态骨架行数（默认 5） */
+  /** Number of skeleton rows in the loading state (default 5). */
   readonly loadingRows?: number
-  /** error 态的说明内容（缺省「数据加载失败」） */
+  /** Description content for the error state (defaults to "Failed to load data"). */
   readonly error?: VuiChildren
-  /** error 态重试回调（传入后错误区出现重试按钮） */
+  /** Retry callback for the error state (a retry button appears in the error area when provided). */
   readonly onRetry?: () => void
-  /** 行选中/高亮判定：命中的行带 data-active="true" */
+  /** Row selection/highlight predicate: matching rows carry data-active="true". */
   readonly rowActive?: (row: Row, index: number) => boolean
-  /** 统一行高（数字按 px） */
+  /** Uniform row height (number as px). */
   readonly rowHeight?: number
 }
 
@@ -148,8 +148,8 @@ function createTableHead<Row>(props: TableProps<Row>): VobsNode {
       if (head === undefined) {
         insertBefore(cell, createText(column.label), null)
       } else {
-        // 表头节点：动态插入（随信号响应——全选框勾选态等）；纯文本列不受影响。
-        // resolveSlot 把 VuiChildren（字符串/数字/数组/节点）归一为可挂载节点
+        // Header node: inserted dynamically (reactive to signals — select-all checked state etc.); plain text columns unaffected.
+        // resolveSlot normalizes VuiChildren (strings/numbers/arrays/nodes) into a mountable node
         insertDynamic(cell, null, () => resolveSlot(typeof head === 'function' ? head() : head))
       }
       insertBefore(row, cell, null)
@@ -192,7 +192,7 @@ function createSkeletonRows<Row>(props: TableProps<Row>, columnCount: number): V
         const cell = createElement('td')
         const bar = createElement('span')
         setAttribute(bar, 'class', 'vui-table__skeleton')
-        // 骨架宽度做逐行错位，视觉上更接近「加载中」而不是一排等宽灰块
+        // Skeleton widths are staggered per row/cell so it reads as "loading" rather than a row of equal gray blocks
         setAttribute(bar, 'style', `width:${50 + ((index * 7 + ci * 13) % 40)}%`)
         insertBefore(cell, bar, null)
         insertBefore(row, cell, null)
@@ -211,14 +211,14 @@ function createErrorRow<Row>(props: TableProps<Row>, columnCount: number): VobsN
   if (hasProp(props, 'error')) {
     insertDynamic(wrap, null, () => resolveSlot(Reflect.get(props, 'error')))
   } else {
-    insertBefore(wrap, createText('数据加载失败'), null)
+    insertBefore(wrap, createText('Failed to load data'), null)
   }
   const onRetry = readProp<(() => void) | undefined>(props, 'onRetry', undefined)
   if (onRetry) {
     const button = createElement('button')
     setAttribute(button, 'type', 'button')
     setAttribute(button, 'class', 'vui-table__retry')
-    insertBefore(button, createText('重试'), null)
+    insertBefore(button, createText('Retry'), null)
     addEventListener(button, 'click', () => onRetry())
     insertBefore(wrap, button, null)
   }

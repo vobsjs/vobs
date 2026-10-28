@@ -150,17 +150,17 @@ export function createNotification(options: NotificationOptionsConfig = {}): Not
 
   function createEntry(input: NotificationInput): Notification {
     if (!input || typeof input !== 'object' || typeof input.content !== 'string' || input.content.trim() === '') {
-      throw new NotificationError('INVALID_NOTIFICATION', 'Vobs Notification: content 必须是非空字符串')
+      throw new NotificationError('INVALID_NOTIFICATION', 'Vobs Notification: content must be a non-empty string')
     }
     if (input.type !== undefined && !isNotificationType(input.type)) {
-      throw new NotificationError('INVALID_NOTIFICATION', `Vobs Notification: 不支持通知类型 ${String(input.type)}`)
+      throw new NotificationError('INVALID_NOTIFICATION', `Vobs Notification: unsupported notification type ${String(input.type)}`)
     }
     if (input.title !== undefined && typeof input.title !== 'string') {
-      throw new NotificationError('INVALID_NOTIFICATION', 'Vobs Notification: title 必须是字符串')
+      throw new NotificationError('INVALID_NOTIFICATION', 'Vobs Notification: title must be a string')
     }
     const notificationId = input.id ?? options.idFactory?.() ?? `notification-${++id}`
     if (typeof notificationId !== 'string' || notificationId.trim() === '') {
-      throw new NotificationError('INVALID_NOTIFICATION', 'Vobs Notification: id 必须是非空字符串')
+      throw new NotificationError('INVALID_NOTIFICATION', 'Vobs Notification: id must be a non-empty string')
     }
     return Object.freeze({
       id: notificationId,
@@ -193,7 +193,7 @@ export function createNotification(options: NotificationOptionsConfig = {}): Not
 
   function ensureActive(): void {
     if (disposed) {
-      throw new NotificationError('NOTIFICATION_CONTEXT_DISPOSED', 'Vobs Notification: 上下文已销毁')
+      throw new NotificationError('NOTIFICATION_CONTEXT_DISPOSED', 'Vobs Notification: context has been disposed')
     }
   }
 }
@@ -213,16 +213,16 @@ export function notificationPlugin(options: NotificationPluginOptions = {}): Vob
 export function useNotification(): NotificationContext {
   const notification = inject(NOTIFICATION_KEY)
   if (!notification) {
-    throw new NotificationError('NOTIFICATION_CONTEXT_MISSING', 'Vobs Notification: 找不到上下文，请安装 notificationPlugin')
+    throw new NotificationError('NOTIFICATION_CONTEXT_MISSING', 'Vobs Notification: context not found; install notificationPlugin first')
   }
   return notification
 }
 
-/* ---------- Message（顶部居中轻提示）：独立队列，与 toast 互不混流 ---------- */
+/* ---------- Message (top-center lightweight notice): separate queue, never mixed with toasts ---------- */
 
 export const MESSAGE_KEY: InjectionKey<NotificationContext> = createInjectionKey<NotificationContext>('vobs.message')
 
-/** 单条消息的点击回调与图标偏好通过 data 传给 MessageHost（复用 Notification 的 data 通道） */
+/** Per-message click callback and icon preference are passed to MessageHost via data (reusing Notification's data channel) */
 export interface MessageData {
   readonly onClick?: () => void
   readonly icon?: string | false
@@ -231,15 +231,15 @@ export interface MessageData {
 export interface MessageInput {
   readonly content: string
   readonly type?: NotificationType
-  /** 自动关闭毫秒数（缺省用全局默认；0 = 不自动关闭） */
+  /** Auto-close delay in ms (defaults to the global default; 0 = never auto-close) */
   readonly duration?: number
-  /** 去重 key：同 key 新消息顶替旧的（旧的以 replaced 原因触发 onClose） */
+  /** Dedupe key: a new message with the same key supersedes the old one (the old one fires onClose with reason replaced) */
   readonly key?: string
-  /** 点击整条消息 */
+  /** Click on the whole message */
   readonly onClick?: () => void
-  /** 自定义图标名（如 'lucide:loader'）；false 强制隐藏（宿主开了图标也不显示） */
+  /** Custom icon name (e.g. 'lucide:loader'); false forces hiding (not shown even if the host enables icons) */
   readonly icon?: string | false
-  /** 关闭回调：reason 含 timeout（自动关闭）/ replaced（被同 key 顶替）/ cleared / disposed */
+  /** Close callback: reason is timeout (auto-close) / replaced (superseded by the same key) / cleared / disposed */
   readonly onClose?: (notification: Notification, reason: NotificationDismissReason) => void
 }
 
@@ -257,9 +257,9 @@ export interface MessageApi {
 }
 
 export interface MessagePluginOptions {
-  /** 全局默认自动关闭毫秒数（默认 3000；0 = 不自动关闭） */
+  /** Global default auto-close delay in ms (3000 by default; 0 = never auto-close) */
   readonly defaultDuration?: number
-  /** 同时最多条数（默认 3，超出挤掉最早的） */
+  /** Max simultaneous messages (3 by default; the earliest is evicted when exceeded) */
   readonly maxCount?: number
   readonly now?: () => number
   readonly idFactory?: () => string
@@ -286,7 +286,7 @@ export function messagePlugin(options: MessagePluginOptions = {}): VobsPlugin {
 export function useMessage(): MessageApi {
   const context = inject(MESSAGE_KEY)
   if (!context) {
-    throw new NotificationError('NOTIFICATION_CONTEXT_MISSING', 'Vobs Message: 找不到上下文，请安装 messagePlugin')
+    throw new NotificationError('NOTIFICATION_CONTEXT_MISSING', 'Vobs Message: context not found; install messagePlugin first')
   }
   const open = (input: MessageInput): string => context.notify({
     id: input.key,
@@ -310,14 +310,14 @@ export function useMessage(): MessageApi {
 
 function validateDuration(value: number): number {
   if (!Number.isFinite(value) || value < 0) {
-    throw new NotificationError('INVALID_DURATION', 'Vobs Notification: duration 必须是大于等于 0 的有限数字')
+    throw new NotificationError('INVALID_DURATION', 'Vobs Notification: duration must be a finite number greater than or equal to 0')
   }
   return value
 }
 
 function validateMaxNotifications(value: number): number {
   if (value !== Infinity && (!Number.isInteger(value) || value <= 0)) {
-    throw new NotificationError('INVALID_MAX_NOTIFICATIONS', 'Vobs Notification: maxNotifications 必须是正整数或 Infinity')
+    throw new NotificationError('INVALID_MAX_NOTIFICATIONS', 'Vobs Notification: maxNotifications must be a positive integer or Infinity')
   }
   return value
 }

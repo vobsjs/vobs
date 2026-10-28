@@ -1,4 +1,4 @@
-// Vite 插件：集成 Vobs 编译器
+// Vite plugin: integrates the Vobs compiler
 
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -7,32 +7,35 @@ import { analyzeSource, compileWithSourceMap, createI18nExtractor, describeDiagn
 import { VobsError, formatVobsError, type VobsErrorLocation, type VobsErrorOptions } from '@vobs/runtime/error'
 import { compileHtmlComponent } from './html-component.ts'
 
-/** 虚拟模块 id（`\0` 前缀是 rollup 的惯例，避免被当成真实文件解析）。 */
+/** Virtual module id (the `\0` prefix is a rollup convention to keep it from being resolved as a real file). */
 const GUARDRAILS_ID = '\0virtual:vobs-dev-guardrails'
-/** 浏览器里的 URL 形式：vite 把 `\0` 编码成 `__x00__`。 */
+/** URL form inside the browser: vite encodes `\0` as `__x00__`. */
 const GUARDRAILS_URL = '/@id/__x00__virtual:vobs-dev-guardrails'
-/** Agent 快照探针虚拟模块（形态与 guardrails 一致）。 */
+/** Agent snapshot probe virtual module (same shape as guardrails). */
 const AGENT_STATE_ID = '\0virtual:vobs-agent-state-probe'
 const AGENT_STATE_URL = '/@id/__x00__virtual:vobs-agent-state-probe'
-/** 护栏违规上报端点。 */
+/** Guardrail violation reporting endpoint. */
 const VIOLATION_ENDPOINT = '/__vobs/violation'
-/** Agent 自验通道端点：浏览器上报运行时快照（POST），Agent / CLI 查询（GET，`?live=1` 精确到此刻）。 */
+/** Agent self-verification channel endpoint: the browser posts runtime snapshots; Agent / CLI query (GET, `?live=1` for "right now"). */
 const AGENT_STATE_ENDPOINT = '/__vobs/agent-state'
-/** live 查询的请求序号（vite WS 广播 → 浏览器回传按 id 配对）。 */
+/** Request sequence number for live queries (vite WS broadcast → browser responds matched by id). */
 let liveQuerySeq = 0
 
 /**
- * Windows 路径分隔符 → POSIX。
+ * Windows path separators → POSIX.
  *
- * 这不是样式偏好，而是**接口约定**：Vite/Rollup 的模块 id 一律用正斜杠，
- * 所以 `resolveId` 返回什么形态，`load` 随后收到的就是那个形态的**规范化结果**——
- * 返回 `path.resolve(...)` 的原始串（Windows 上是反斜杠），`load` 拿正斜杠 id 查
- * `htmlModules.has(id)` 就永远不命中，裸 HTML 落到 `vite:import-analysis` 被当 JS
- * 解析并抛 `Failed to parse source for import analysis`，整个 HTML 组件功能在
- * Windows 上失效。
+ * This is not a style preference but an **interface contract**: Vite/Rollup module ids
+ * always use forward slashes, so whatever shape `resolveId` returns is the
+ * **normalized** shape `load` subsequently receives — return the raw string of
+ * `path.resolve(...)` (backslashes on Windows) and `load`'s forward-slash id lookup in
+ * `htmlModules.has(id)` never hits; bare HTML then falls through to
+ * `vite:import-analysis`, gets parsed as JS and throws
+ * `Failed to parse source for import analysis`, breaking the entire HTML component
+ * feature on Windows.
  *
- * 只把反斜杠换成斜杠，不做 `resolve`/`realpath` 之类的规范化，
- * 以免改变大小写或消解符号链接（那会让 `htmlModules` 与实际 `readFile` 的目标不一致）。
+ * Only backslashes are replaced with slashes — no `resolve`/`realpath`-style
+ * normalization, to avoid changing case or resolving symlinks (which would desync
+ * `htmlModules` from the actual `readFile` target).
  */
 function toPosixPath(value: string): string {
   return value.replace(/\\/gu, '/')
@@ -43,31 +46,38 @@ export interface VobsVitePluginOptions {
   compiler?: CompileOptions
   hmr?: boolean
   /**
-   * 模块级状态 HMR 保鲜（默认开启，仅 dev 生效）。开启后：
-   * - 模块顶层 state() 声明编译为 hmrStateRef(...)，热更新重执行模块时复用既有信号，
-   *   消除"新旧两份模块实例、两份状态"导致的编辑不生效/页面半边失灵；
-   * - 声明了模块级 state 的 .ts 文件（store 类模块）也纳入 HMR 处理。
+   * Module-level state HMR freshness (on by default, dev only). When on:
+   * - module-top-level state() declarations compile to hmrStateRef(...); hot updates
+   *   re-execute the module but reuse the existing signals, eliminating the "two module
+   *   instances, two copies of state" problem that caused edits not applying / half the
+   *   page going dead;
+   * - .ts files declaring module-level state (store-like modules) are also included in
+   *   HMR handling.
    */
   hmrState?: boolean
   extractI18n?: (key: string, filename: string) => void
   html?: boolean | { readonly extensions?: readonly string[] }
   /**
-   * 开发期护栏（默认开启，仅 dev 生效）。开启后在页面里自动装上
-   * `@vobs/vobs/dev` 的 `installDevGuardrails()`，并把违规回传到 dev server
-   * 打印在终端 —— 这样 AI 读终端就能看到「effect 自订阅」这类静默错误的明确报错。
+   * Development guardrails (on by default, dev only). When on, the page automatically
+   * gets `installDevGuardrails()` from `@vobs/vobs/dev`, and violations are sent back to
+   * the dev server and printed in the terminal — so an AI reading the terminal sees an
+   * explicit error for silent failures like "effect self-subscription".
    *
-   * 页面里没装 `@vobs/vobs` 时自动跳过，只在控制台留一句提示。
+   * Skipped automatically when the page does not have `@vobs/vobs` installed; leaves a
+   * single console hint.
    */
   devGuardrails?: boolean
   /**
-   * Agent 运行时快照通道（默认开启，仅 dev 生效）。开启后页面侧探针会订阅
-   * `window.__VOBS_DEVTOOLS__` 的事件流，节流（100ms）POST 一份运行时快照到
-   * `GET /__vobs__/agent-state` —— Agent 生成代码后无需等人触发，curl 一下就能
-   * 拿到「每个 effect 的当前订阅集 / 最近更新触发链 / 护栏判定」。
+   * Agent runtime snapshot channel (on by default, dev only). When on, the page-side
+   * probe subscribes to the `window.__VOBS_DEVTOOLS__` event stream and POSTs a runtime
+   * snapshot (throttled to 100ms) to `GET /__vobs__/agent-state` — after generating code,
+   * an Agent needs no human to trigger anything; one curl returns "each effect's current
+   * subscription set / most recent update trigger chain / guardrail verdicts".
    *
-   * 通道复用 devGuardrails 的既有模式（虚拟模块探针 + POST 中间件），不新开
-   * WebSocket、不要求 Agent 维持长连接。与 devtools 内核解耦：探针只消费
-   * 全局 API（`window.__VOBS_DEVTOOLS__`），devtools 不感知这个通道。
+   * The channel reuses devGuardrails' existing pattern (virtual module probe + POST
+   * middleware), opening no new WebSocket and requiring no long-lived Agent connection.
+   * Decoupled from the devtools core: the probe only consumes the global API
+   * (`window.__VOBS_DEVTOOLS__`), and devtools knows nothing about this channel.
    */
   agentState?: boolean
 }
@@ -79,37 +89,41 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
   const agentStateEnabled = options.agentState ?? true
   let productionBuild = false
   let hmrStateEnabled = (options.hmr ?? true) && (options.hmrState ?? true)
-  /** 项目根（`configResolved` 里取）—— 用于把绝对模块 id 归一成仓库相对路径。 */
+  /** Project root (taken in `configResolved`) — used to normalize absolute module ids to repo-relative paths. */
   let projectRoot = ''
 
-  /** dev 且未关闭时才装护栏。 */
+  /** Install guardrails only in dev and when not disabled. */
   const guardrailsActive = (): boolean => !productionBuild && guardrailsEnabled
-  /** dev 且未关闭时才装 Agent 快照探针。 */
+  /** Install the Agent snapshot probe only in dev and when not disabled. */
   const agentStateActive = (): boolean => !productionBuild && agentStateEnabled
 
   /**
-   * 传给编译器的**稳定**源名：项目相对 + POSIX 分隔符。
+   * The **stable** source name passed to the compiler: project-relative + POSIX separators.
    *
-   * ## 为什么不能直接用绝对 `id`
+   * ## Why the absolute `id` cannot be used directly
    *
-   * 编译器会把源名写进产物的调试元数据（`resolveComponent(Comp, "<源名>", "Comp")`）。
-   * 用绝对路径会有两个后果：
+   * The compiler writes the source name into the output's debug metadata
+   * (`resolveComponent(Comp, "<source name>", "Comp")`). Absolute paths cause two problems:
    *
-   * 1. **构建产物不可复现**：Windows 上得到 `C:/Users/…`、Linux 上得到 `/home/runner/…`
-   *    —— 同一份源码在不同平台产出不同字节。仓库的 CI 用
-   *    `pnpm run build:dsh && git diff --exit-code` 校验"产物与源码同步"，
-   *    于是**在 Windows 构建的产物永远无法通过 Linux 的校验**（实测差 ~100 字节）。
-   * 2. **泄漏开发者机器路径**：这些路径随包发布出去，对使用者毫无意义。
+   * 1. **Build output is not reproducible**: Windows yields `C:/Users/…`, Linux yields
+   *    `/home/runner/…` — the same source produces different bytes per platform. The
+   *    repo's CI validates "output in sync with source" via
+   *    `pnpm run build:dsh && git diff --exit-code`, so **artifacts built on Windows can
+   *    never pass validation on Linux** (measured ~100 bytes of difference).
+   * 2. **Leaks developer machine paths**: these paths ship with the package and mean
+   *    nothing to consumers.
    *
-   * 归一成相对 POSIX 路径后，构建结果与平台无关，报错定位仍然可用（相对项目根）。
+   * Normalized to a relative POSIX path, the build result is platform-independent while
+   * error locations remain usable (relative to project root).
    *
-   * 注意：只影响调试元数据与 sourcemap 的 `sources`，不改变任何运行时行为。
+   * Note: only affects debug metadata and the sourcemap's `sources`; no runtime behavior changes.
    */
   const stableSourceName = (id: string): string => {
     const clean = id.split(/[?#]/u, 1)[0]
     if (projectRoot === '' || !clean.startsWith(projectRoot)) return toPosixPath(clean)
     const relative = path.relative(projectRoot, clean)
-    // `..` 开头说明它其实在项目根之外（如 monorepo 上层）—— 那时相对路径没有意义，保留原名
+    // A leading `..` means it actually lives outside the project root (e.g. above in the
+    // monorepo) — a relative path is meaningless there, keep the original name
     return relative.startsWith('..') ? toPosixPath(clean) : toPosixPath(relative)
   }
 
@@ -127,7 +141,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
     transformIndexHtml() {
       const tags = []
       if (guardrailsActive()) {
-        // 只返回 tag 数组：返回 { html } 会**替换**整份 HTML（不是合并）
+        // Return only the tag array: returning { html } would **replace** the whole HTML (not merge)
         tags.push({
           tag: 'script',
           attrs: { type: 'module', src: GUARDRAILS_URL },
@@ -146,14 +160,16 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
 
     configureServer(server: ViteDevServer) {
       /*
-       * Agent 运行时快照缓存（按页面 href 分桶，每页只留最近一份）。
-       * POST 写入（浏览器探针节流上报），GET 返回全部 —— Agent / CLI 的只读消费面。
+       * Agent runtime snapshot cache (bucketed by page href, one most-recent snapshot per page).
+       * POST writes (throttled reports from the browser probe), GET returns everything —
+       * the read-only consumption surface for Agent / CLI.
        */
       const agentSnapshots = new Map<string, Record<string, unknown>>()
       /*
-       * live 查询（`?live=1`）的应答收集：经 vite WS 广播请求，浏览器探针立即采集
-       * 回传。等**首个**应答或 600ms 超时（回退缓存）—— 不等所有连接，多标签页
-       * 场景 Agent 按 page 自行过滤。
+       * Response collection for live queries (`?live=1`): the request is broadcast over
+       * vite WS and the browser probe collects and responds immediately. Wait for the
+       * **first** response or a 600ms timeout (fall back to the cache) — do not wait for
+       * every connection; in multi-tab scenarios the Agent filters by page itself.
        */
       const pendingLive = new Map<number, (snapshot: Record<string, unknown>) => void>()
       server.ws?.on?.('vobs:agent-state:response', (data: { id?: number; snapshot?: Record<string, unknown> }) => {
@@ -180,7 +196,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
                     agentSnapshots.delete(oldest)
                   }
                 }
-              } catch { /* 损坏的快照直接丢弃 —— 通道是尽力而为，不影响应用 */ }
+              } catch { /* corrupted snapshots are dropped outright — the channel is best-effort and never affects the app */ }
               res.statusCode = 204
               res.end()
             })
@@ -236,8 +252,8 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
       if (!importer || !isHtmlComponent(source, options.html) || !isRelativeModule(source)) return null
       const cleanImporter = importer.split(/[?#]/u, 1)[0]
       const cleanSource = source.split(/[?#]/u, 1)[0]
-      // 必须返回 POSIX 形态：load 收到的是 Vite 规范化后的正斜杠 id，
-      // 反斜杠串在 htmlModules 里永远查不中（Windows 专属的整功能失效）。
+      // Must return POSIX form: load receives Vite's normalized forward-slash id;
+      // a backslash string never matches in htmlModules (the Windows-only whole-feature breakage).
       const resolved = toPosixPath(path.resolve(path.dirname(cleanImporter), cleanSource))
       htmlModules.add(resolved)
       return resolved
@@ -246,7 +262,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
     async load(id: string) {
       if (id === GUARDRAILS_ID) return guardrailsActive() ? createGuardrailsModule() : null
       if (id === AGENT_STATE_ID) return agentStateActive() ? createAgentStateModule() : null
-      // 防御性归一：即使某个调用方（或未来版本的 Vite）传回反斜杠形态也仍然命中
+      // Defensive normalization: still matches even if some caller (or a future Vite version) hands back a backslash form
       if (!htmlModules.has(id) && !htmlModules.has(toPosixPath(id))) return null
       return compileHtmlComponent(await readFile(id, 'utf8'), { filename: stableSourceName(id) })
     },
@@ -261,31 +277,33 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
         if (!include.test(id)) return null
       }
 
-      // .ts 状态模块（store 类）：声明了模块级 state 才纳入编译与 HMR，
-      // 避免对普通 .ts 全量重印。
+      // .ts state modules (store-like): only compiled and HMR-handled when they declare
+      // module-level state, avoiding a full re-print of ordinary .ts files.
       if (!isTsx && (!hmrStateEnabled || !isStatefulModule(code))) return null
 
       const extractor = options.extractI18n
         ? createI18nExtractor({ onKey: options.extractI18n })
         : undefined
       const hmr = options.hmr ?? !productionBuild
-      // SSR/Node 构建必须关闭静态模板提升：createTemplate 依赖 document，产物在服务端加载即崩。
+      // SSR/Node builds must disable static template hoisting: createTemplate depends on
+      // document, and the output would crash as soon as it loads on the server.
       const hoistTemplates = !transformOptions?.ssr
       const result = compileWithSourceMap(code, {
         ...options.compiler,
-        // 生产构建默认剔除组件源码位置（错误定位走 source map）；显式配置优先。
+        // Production builds strip component source locations by default (error location goes through the source map); explicit config wins.
         sourceLocation: options.compiler?.sourceLocation ?? !productionBuild,
         filename: stableSourceName(id),
-        // HMR 模块标识必须跨 ?t= 查询稳定（registry 复用语义依赖它），用干净路径。
+        // The HMR module identity must stay stable across ?t= queries (registry reuse semantics depend on it); use the clean path.
         hmrModuleId: hmr ? cleanId : options.compiler?.hmrModuleId,
-        // 显式配置优先；SSR 构建未显式配置时强制关闭（browser-only 优化）。
+        // Explicit config wins; when unset, SSR builds force it off (browser-only optimization).
         hoistTemplates: options.compiler?.hoistTemplates ?? hoistTemplates,
         plugins: [
           ...(options.compiler?.plugins ?? []),
           ...(extractor ? [extractor.plugin] : [])
         ]
       })
-      // 一次报全部：只取第一条的话，文件里有 5 处错误要构建 5 次才知道全貌
+      // Report everything at once: taking only the first entry means 5 errors in a file
+      // require 5 builds to see the full picture
       const summary = describeDiagnostics(result.diagnostics)
       if (summary) {
         throw new VobsError({
@@ -298,28 +316,33 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
         })
       }
       /*
-       * **warning 必须也报出来**。
+       * **Warnings must be reported too.**
        *
-       * 只处理 error 的话（`describeDiagnostics` 没有错误就返回 `null`），
-       * **警告被静默丢弃**：`VOBS_C105`（模块顶层 JSX）与 `VOBS_C104`（顶层条件
-       * return）在 `vite build` 里**完全隐形**——那两条诊断在主构建路径上等于不存在。
+       * Handling only errors (`describeDiagnostics` returns `null` when there are none)
+       * means **warnings are silently dropped**: `VOBS_C105` (JSX at module top level) and
+       * `VOBS_C104` (conditional return at top level) were **completely invisible** in
+       * `vite build` — on the main build path those two diagnostics effectively did not exist.
        *
-       * 走 Vite 自己的告警通道（`this.warn`），构建输出与 dev server 都能看到；
-       * 拿不到 PluginContext 时退回 `console.warn`（不静默）。
+       * Going through Vite's own warning channel (`this.warn`) makes them visible in both
+       * the build output and the dev server; fall back to `console.warn` when no
+       * PluginContext is available (never silent).
        *
-       * 刻意**不**把 warning 升级成错误：它们的立论是启发式的（见 C104/C105 的注释），
-       * 不该有挡构建的强度。要强拦可以在 CI 里把 warning 当失败。
+       * Deliberately **not** escalating warnings to errors: their rationale is heuristic
+       * (see the C104/C105 comments), not strong enough to block builds. For a hard gate,
+       * treat warnings as failures in CI.
        */
       const warnings = result.diagnostics.filter(item => item.severity === 'warning')
       /*
-       * 分析器诊断（`C118`/`C232`/`C210` 静态规则）**也要在这里报**。
+       * Analyzer diagnostics (`C118`/`C232`/`C210` static rules) **must be reported here too**.
        *
-       * 只在 `vobs check` 里报的话，`vite dev`/`vite build` **一条都不报** ——
-       * 开发时看不到，问题要等人跑 CI 才发现。
-       * 这与「错了不能静默」直接冲突：**AI 改完代码、`vite build` 通过，但问题还在。**
+       * Reported only in `vobs check`, `vite dev`/`vite build` report **none of them** —
+       * invisible during development; the problem only surfaces when someone runs CI.
+       * This directly conflicts with "errors must not be silent": **the AI finishes its
+       * change, `vite build` passes, but the problem is still there.**
        *
-       * 规则本体已抽到 `@vobs/compiler`（vite-plugin 与 CLI 都依赖它），直接调用即可 ——
-       * 见 `packages/compiler/src/analyze.ts` 的注释。
+       * The rule implementations were already extracted into `@vobs/compiler` (both
+       * vite-plugin and the CLI depend on it), so just call it directly —
+       * see the comments in `packages/compiler/src/analyze.ts`.
        */
       const analyzed = analyzeSource(code, cleanId)
       if (warnings.length > 0 || analyzed.length > 0) {
@@ -331,22 +354,24 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
         for (const warning of warnings) {
           const where = `${warning.location.file}:${warning.location.line}:${warning.location.column}`
           const text = `[vobs ${warning.code}] ${where}\n  ${warning.message}`
-            + (warning.fix ? `\n  修法：${warning.fix}` : '')
-          // 同一条诊断在同一文件里可能多处命中，按"代码+位置+消息"去重，避免刷屏
+            + (warning.fix ? `\n  Fix: ${warning.fix}` : '')
+          // The same diagnostic may hit multiple places in one file; deduplicate by
+          // "code + location + message" to avoid spamming the output
           const key = `${warning.code}|${where}|${warning.message}`
           if (seen.has(key)) continue
           seen.add(key)
           emit(text)
         }
         for (const item of analyzed) {
-          // 分析器的 error 也走**告警通道**（不挡构建）：它是"写完之后、运行之前"的提示，
-          // 让人构建不过会把开发流程卡死，而它并不是编译错误。
+          // Analyzer errors also go through the **warning channel** (does not block the
+          // build): it is an "after writing, before running" hint — failing the build over
+          // it would stall the dev workflow, and it is not a compile error.
           const where = `${cleanId}:${item.line}:${item.column}`
           const key = `${item.code}|${where}|${item.message}`
           if (seen.has(key)) continue
           seen.add(key)
           emit(`[vobs ${item.code}] ${where}\n  ${item.message}`
-            + (item.fix ? `\n  修法：${item.fix}` : '')
+            + (item.fix ? `\n  Fix: ${item.fix}` : '')
             + (item.snippet ? `\n  ${item.snippet}` : ''))
         }
       }
@@ -359,7 +384,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
   }
 }
 
-/** 模块级 state 的 store 类 .ts 模块判定：从 @vobs 导入 state 且实际调用。 */function isStatefulModule(code: string): boolean {
+/** Store-like .ts module with module-level state: imports state from @vobs and actually calls it. */function isStatefulModule(code: string): boolean {
   return /\bimport\s+(?:type\s+)?\{[^}]*\bstate\b[^}]*\}\s*from\s*['"]@vobs\/(?:reactivity|vobs)['"]/u.test(code)
     && /(?<![\w$.])state\s*\(/u.test(code)
 }
@@ -384,20 +409,22 @@ function isHtmlComponent(id: string, option: VobsVitePluginOptions['html']): boo
 
 
 /**
- * 注入到页面里的护栏模块。
+ * The guardrails module injected into the page.
  *
- * 两个刻意的选择：
- * 1. 用**动态** import 而不是静态 import：app 不一定依赖 `@vobs/vobs`（只用
- *    `@vobs/reactivity` 的项目也存在），静态 import 解析失败会直接让页面白屏 ——
- *    开发期护栏绝不该让开发环境变得更糟。
- * 2. 用 `.then()` 而不是顶层 await：TLA 需要浏览器与构建 target 都支持，而这里
- *    完全不需要 —— 护栏晚一个微任务装上没有任何影响。
+ * Two deliberate choices:
+ * 1. A **dynamic** import instead of a static one: the app does not necessarily depend
+ *    on `@vobs/vobs` (projects using only `@vobs/reactivity` exist); a failed static
+ *    import resolution would blank the page outright — dev guardrails must never make
+ *    the dev environment worse.
+ * 2. `.then()` instead of top-level await: TLA requires both browser and build target
+ *    support, which is entirely unnecessary here — the guardrails being installed one
+ *    microtask later has no impact at all.
  */
 function createGuardrailsModule(): string {
   return `
 const endpoint = ${JSON.stringify(VIOLATION_ENDPOINT)}
 
-// 上报失败无所谓：护栏是开发期辅助，不影响应用本身
+// Reporting failure does not matter: the guardrails are a dev-time aid and never affect the app itself
 const report = payload => {
   fetch(endpoint, {
     method: 'POST',
@@ -420,18 +447,19 @@ import('@vobs/vobs/dev').then(guardrails => {
     })
   })
 }).catch(error => {
-  console.warn('[vobs] 开发期护栏未启用：页面没有安装 @vobs/vobs。', error?.message ?? error)
+  console.warn('[vobs] Dev guardrails not enabled: the page does not have @vobs/vobs installed.', error?.message ?? error)
 })
 `
 }
 
 /**
- * Agent 快照探针（虚拟模块）。
+ * Agent snapshot probe (virtual module).
  *
- * 依赖 `window.__VOBS_DEVTOOLS__`（devtools 插件装上后全局可用）—— 探针只消费
- * 全局 API，与 devtools 内核零耦合。事件驱动 + 100ms 节流：任何 devtools 事件
- * （update / effect-run / network / error …）都会安排一次快照上报，POST 到
- * `/__vobs/agent-state`。没有事件就不发 —— 空闲页面零流量。
+ * Depends on `window.__VOBS_DEVTOOLS__` (globally available once the devtools plugin is
+ * installed) — the probe only consumes the global API, zero coupling with the devtools
+ * core. Event-driven + 100ms throttle: any devtools event (update / effect-run /
+ * network / error …) schedules one snapshot report, POSTed to `/__vobs/agent-state`.
+ * No events, no traffic — an idle page sends nothing.
  */
 function createAgentStateModule(): string {
   return `
@@ -454,7 +482,7 @@ const start = () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(snapshot)
       }).catch(() => {})
-    } catch { /* 上报失败不影响应用 */ }
+    } catch { /* reporting failure never affects the app */ }
   }
   let lastSent = 0
   let timer = null
@@ -464,7 +492,7 @@ const start = () => {
     timer = setTimeout(() => { timer = null; lastSent = Date.now(); send(collect()) }, waitMs)
   }
   api.subscribe('*', schedule)
-  // 「精确到此刻」的查询：中间件经 vite WS 广播请求，立即采集回传（不走节流）
+  // "Right now" queries: the middleware broadcasts over vite WS and the probe collects and responds immediately (no throttle)
   if (import.meta.hot) {
     import.meta.hot.on('vobs:agent-state-request', () => {
       import.meta.hot.send('vobs:agent-state:response', { snapshot: collect() })
@@ -472,7 +500,7 @@ const start = () => {
   }
 }
 
-// devtools 插件可能晚于本探针装载 —— 轮询等它出现（dev 里必然出现）
+// The devtools plugin may load after this probe — poll until it appears (it always appears in dev)
 const poll = setInterval(() => {
   if (window.__VOBS_DEVTOOLS__) { clearInterval(poll); start() }
 }, 200)
@@ -480,7 +508,7 @@ setTimeout(() => clearInterval(poll), 30000)
 `
 }
 
-/** 把浏览器上报的违规打到 dev server 终端。重复命中（count > 1）不再打印。 */
+/** Print violations reported by the browser to the dev server terminal. Repeat hits (count > 1) are not printed again. */
 function printViolation(server: ViteDevServer, body: string): void {
   let payload: VobsErrorOptions & { location?: VobsErrorLocation; count?: number }
   try {

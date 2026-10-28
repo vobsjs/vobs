@@ -34,11 +34,13 @@ export function Alert(props: AlertProps = {}): VobsNode {
   bindCommonAttributes(root, props, ['tone', 'title', 'description', 'icon'])
   bindUserStyle(root, props)
   /*
-   * `role` 做兜底，而不是无条件写死。
+   * `role` is a fallback, not an unconditional hardcode.
    *
-   * 原来 `role` 被放进上面那行的 skip 列表、又在这里硬编码成 'alert' —— 作者写
-   * `<Alert role="status">` 会被**静默吞掉**（实测拿到的是 role="alert"）。
-   * 现在作者给了就用作者的（role 本来就走 bindCommonAttributes 的通用通道），没给才退回 alert。
+   * `role` used to be in the skip list of the line above and then hard-coded
+   * to 'alert' here — an author writing `<Alert role="status">` was **silently
+   * swallowed** (verified: role="alert" came out). Now the author's value wins
+   * when given (role already flows through bindCommonAttributes' generic
+   * channel); the alert fallback applies only when absent.
    */
   if (!hasProp(props, 'role')) setAttribute(root, 'role', 'alert')
 

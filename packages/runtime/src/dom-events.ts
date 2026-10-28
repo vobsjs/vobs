@@ -1,24 +1,27 @@
 /**
- * `on*` 属性名 → 真实 DOM 事件名。
+ * `on*` prop name → real DOM event name.
  *
- * 与 `dom-props.ts` 的属性名表同理：这必须是**单一来源**——编译期与运行期各写一份
- * 就会分叉：裸的 `name.slice(2).toLowerCase()` 会把 `onDoubleClick` 变成
- * `"doubleclick"`，**DOM 里根本叫 dblclick**，回调永不触发而且不报错。
- * （别名表与「常见事件名」两个集合都是单一来源，编译期只是再导出。）
+ * Same rationale as the prop-name table in `dom-props.ts`: this must be the **single
+ * source of truth** — writing one copy for compile time and another for runtime forks
+ * them: a bare `name.slice(2).toLowerCase()` turns `onDoubleClick` into
+ * `"doubleclick"`, but **the DOM event is actually called dblclick** — the callback
+ * never fires and nothing errors.
+ * (Both the alias table and the "common event names" set are single sources; the
+ * compiler only re-exports them.)
  */
 
-/** JSX 驼峰名与 DOM 事件名不一致的少数情况（小写后的驼峰名 → 真实事件名）。 */
+/** The few cases where the JSX camelCase name differs from the DOM event name (lowercased camelCase → real event name). */
 export const EVENT_NAME_ALIASES: Readonly<Record<string, string>> = {
-  // React 风格的 onDoubleClick 对应的 DOM 事件是 dblclick
+  // React-style onDoubleClick corresponds to the DOM event dblclick
   doubleclick: 'dblclick',
-  // 少数人按 addEventListener 的写法写成 onDblClick
+  // Some people write onDblClick following the addEventListener spelling
   dblclick: 'dblclick'
 }
 
 /**
- * 把 `on*` 属性名解析成真实事件名。
+ * Resolve an `on*` prop name into the real event name.
  *
- * @returns 名字不以 `on` 开头或只有 `on` 本身时返回 undefined。
+ * @returns undefined when the name doesn't start with `on` or is just `on` itself.
  */
 export function resolveEventName(attributeName: string): string | undefined {
   if (!attributeName.startsWith('on') || attributeName.length <= 2) return undefined

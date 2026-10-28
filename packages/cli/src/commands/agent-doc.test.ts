@@ -1,19 +1,24 @@
 /*
- * `vobs agent-doc` —— 把框架契约**生成**到项目里，供任何 LLM / agent 读取。
+ * `vobs agent-doc` — **generates** the framework contract into a project for any LLM / agent to read.
  *
- * ## 为什么是"生成"而不是"手写"
+ * ## Why "generate" instead of "hand-write"
  *
- * 契约随框架演进（1.8.0 加 `Show`/`ClientOnly`、1.8.3 加 `on()`/`VOBS_C106`、
- * 1.8.4 加 `VOBS_C107`、1.8.5 改 fix 文案）。手写的话每个项目一份副本，**必然漂移**。
- * 生成则与版本绑定 —— 升级框架后重新生成即可。
+ * The contract evolves with the framework (1.8.0 added `Show`/`ClientOnly`, 1.8.3 added
+ * `on()`/`VOBS_C106`, 1.8.4 added `VOBS_C107`, 1.8.5 revised fix copy). Hand-written means
+ * one drifting copy per project. Generation is version-bound — after upgrading the
+ * framework, just regenerate.
  *
- * ## 要锁住的四条行为
+ * ## The four behaviors to lock in
  *
- * 1. **标记块**：只替换 `vobs:begin`/`vobs:end` 之间，块外是项目自有约定
- * 2. **不覆盖手写的 `AGENTS.md`**：没有标记块时**追加**生成块，原有内容全保留
- *    （丢掉别人的规则比不生成更糟）
- * 3. **`CLAUDE.md` 只写一行 `@AGENTS.md`**：内容只有一份，避免两份副本漂移
- * 4. **`--check`**：不一致时 exit 1，可进 CI —— 把"文档漂移"从"靠人记得"变成"机器拦"
+ * 1. **Marker block**: only the region between `vobs:begin`/`vobs:end` is replaced;
+ *    content outside the block is the project's own conventions
+ * 2. **Never overwrite a hand-written `AGENTS.md`**: when there is no marker block, the
+ *    generated block is **appended** and all existing content is preserved
+ *    (destroying someone's rules is worse than not generating)
+ * 3. **`CLAUDE.md` contains only the line `@AGENTS.md`**: one copy of the content,
+ *    avoiding two drifting duplicates
+ * 4. **`--check`**: exits 1 on mismatch, CI-ready — turns "doc drift" from
+ *    "someone has to remember" into "the machine blocks it"
  */
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -31,7 +36,7 @@ afterEach(() => {
   while (created.length > 0) rmSync(created.pop()!, { recursive: true, force: true })
 })
 
-/** 跑一次命令并吃掉它的 stdout（测试只关心退出码与文件）。 */
+/** Run the command once and swallow its stdout (the tests only care about exit codes and files). */
 async function run(dir: string, options: Record<string, boolean | string | undefined>): Promise<void> {
   const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
   const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
@@ -44,85 +49,85 @@ async function run(dir: string, options: Record<string, boolean | string | undef
 }
 
 describe('vobs agent-doc', () => {
-  it('--write 生成 AGENTS.md 与 CLAUDE.md，契约要点都在', async () => {
+  it('--write generates AGENTS.md and CLAUDE.md with all contract essentials present', async () => {
     const dir = makeProject()
     await run(dir, { write: true })
 
     const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
-    // 契约必须覆盖这轮落地的关键约束 —— 缺一条就等于没同步
+    // The contract must cover the key constraints landed this round — missing one means it was not synced
     for (const key of ['run-once', 'RouterView', 'on(deps', 'VOBS_C107', 'VOBS_C210', 'parseNumber', 'ClientOnly']) {
-      expect(agents, `契约里缺 ${key}`).toContain(key)
+      expect(agents, `contract is missing ${key}`).toContain(key)
     }
-    // 标记块存在（--check 靠它比对）
+    // Marker block exists (--check compares against it)
     expect(agents).toContain('vobs:begin')
     expect(agents).toContain('vobs:end')
-    // 内容只有一份：CLAUDE.md 是指针，不是副本
+    // One copy of the content: CLAUDE.md is a pointer, not a duplicate
     expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8').trim()).toBe('@AGENTS.md')
   })
 
-  it('**手写的 AGENTS.md 不被覆盖** —— 生成块追加在后', async () => {
+  it('**a hand-written AGENTS.md is not overwritten** — the generated block is appended after it', async () => {
     const dir = makeProject()
     writeFileSync(join(dir, 'AGENTS.md'), '# 我的项目约定\n- 目录：src/pages\n', 'utf8')
     await run(dir, { write: true })
 
     const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
-    expect(agents, '原有的项目约定被覆盖了').toContain('我的项目约定')
+    expect(agents, 'existing project conventions were overwritten').toContain('我的项目约定')
     expect(agents).toContain('目录：src/pages')
     expect(agents).toContain('vobs:begin')
   })
 
-  it('再次 --write 只替换契约块，块外的新内容保留', async () => {
+  it('a second --write replaces only the contract block; new content outside the block is preserved', async () => {
     const dir = makeProject()
     await run(dir, { write: true })
-    // 用户在块外补自己的内容
+    // The user adds their own content outside the block
     const first = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
     writeFileSync(join(dir, 'AGENTS.md'), `${first}\n- 我的新增规则\n`, 'utf8')
 
     await run(dir, { write: true })
     const second = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
-    expect(second, '块外的用户内容被清掉了').toContain('我的新增规则')
-    // 契约块仍然只有一份（不会重复追加）
+    expect(second, 'user content outside the block was wiped').toContain('我的新增规则')
+    // The contract block still exists exactly once (never appended twice)
     expect(second.match(/vobs:begin/gu)?.length).toBe(1)
   })
 
-  it('--check：未生成时 exit 1，生成后通过', async () => {
+  it('--check: exits 1 before generation, passes after', async () => {
     const dir = makeProject()
     process.exitCode = 0
     await run(dir, { check: true })
-    expect(process.exitCode, '没生成却通过了检查').toBe(1)
+    expect(process.exitCode, 'passed the check despite never being generated').toBe(1)
 
     process.exitCode = 0
     await run(dir, { write: true })
     await run(dir, { check: true })
-    expect(process.exitCode, '生成之后仍然检查失败').toBe(0)
+    expect(process.exitCode, 'still failing after generation').toBe(0)
     process.exitCode = 0
   })
 
-  it('--check：契约块被手改后报不一致', async () => {
+  it('--check: reports a mismatch when the contract block is hand-edited', async () => {
     const dir = makeProject()
     await run(dir, { write: true })
     const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
-    // 手改块内内容 —— 模拟框架升级后项目里那份没同步
+    // Hand-edit inside the block — simulates the project copy lagging behind a framework upgrade
     writeFileSync(join(dir, 'AGENTS.md'), agents.replace('run-once', 'run-once-手改过'), 'utf8')
 
     process.exitCode = 0
     await run(dir, { check: true })
-    expect(process.exitCode, '块被改动了却通过检查').toBe(1)
+    expect(process.exitCode, 'the block was modified yet the check passed').toBe(1)
     process.exitCode = 0
   })
 
-  it('--check：CLAUDE.md 被改成副本而非指针时也有提示', async () => {
+  it('--check: also flags CLAUDE.md turned into a duplicate instead of a pointer', async () => {
     const dir = makeProject()
     await run(dir, { write: true })
     writeFileSync(join(dir, 'CLAUDE.md'), '# 我把内容抄了一份\n', 'utf8')
 
     process.exitCode = 0
     await run(dir, { check: true })
-    expect(process.exitCode, 'CLAUDE.md 没指向 AGENTS.md 却通过了').toBe(1)
+    expect(process.exitCode, 'CLAUDE.md does not point at AGENTS.md yet the check passed').toBe(1)
     process.exitCode = 0
   })
 
-  it('--body 只输出契约正文（无标记块）', async () => {
+  it('--body prints only the contract body (no marker block)', async () => {
     const dir = makeProject()
     let captured = ''
     const write = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
@@ -135,10 +140,10 @@ describe('vobs agent-doc', () => {
       write.mockRestore()
     }
     expect(captured).toContain('run-once')
-    expect(captured, '--body 不该带标记块').not.toContain('vobs:begin')
+    expect(captured, '--body must not include the marker block').not.toContain('vobs:begin')
   })
 
-  it('不加任何开关时打到 stdout、不写文件', async () => {
+  it('with no flags it prints to stdout and writes no files', async () => {
     const dir = makeProject()
     const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     try {
@@ -146,20 +151,20 @@ describe('vobs agent-doc', () => {
     } finally {
       write.mockRestore()
     }
-    expect(existsSync(join(dir, 'AGENTS.md')), '没加 --write 却写了文件').toBe(false)
+    expect(existsSync(join(dir, 'AGENTS.md')), 'wrote a file without --write').toBe(false)
   })
 })
 
-describe('checkContractSync（vobs check 主入口的契约对齐）', () => {
-  it('未生成契约的项目（missing / no-block）不是漂移 —— 主入口静默，不骚扰', () => {
+describe('checkContractSync (contract sync used by the vobs check main entry)', () => {
+  it('projects without a generated contract (missing / no-block) are not drift — the main entry stays silent', () => {
     const dir = makeProject()
     expect(checkContractSync(dir).status).toBe('missing')
 
     writeFileSync(join(dir, 'AGENTS.md'), '# 手写的项目约定\n', 'utf8')
-    expect(checkContractSync(dir).status, '手写 AGENTS.md 没标记块 ≠ 漂移').toBe('no-block')
+    expect(checkContractSync(dir).status, 'a hand-written AGENTS.md with no marker block ≠ drift').toBe('no-block')
   })
 
-  it('--write 生成后 synced；契约块被手改后 drifted', () => {
+  it('synced after --write; drifted once the contract block is hand-edited', () => {
     const dir = makeProject()
     void agentDocCommand({ dir, write: true })
     expect(checkContractSync(dir).status).toBe('synced')
@@ -169,12 +174,12 @@ describe('checkContractSync（vobs check 主入口的契约对齐）', () => {
     const drifted = checkContractSync(dir)
     expect(drifted.status).toBe('drifted')
     if (drifted.status === 'drifted') {
-      expect(drifted.problems[0]).toContain('不一致')
-      expect(drifted.problems[0]).toContain('诊断码')
+      expect(drifted.problems[0]).toContain('out of sync')
+      expect(drifted.problems[0]).toContain('diagnostic codes')
     }
   })
 
-  it('--write 后用户改**块外**内容 —— 仍然 synced（块外是用户自己的地盘）', () => {
+  it('after --write the user edits **outside** the block — still synced (outside the block is the user\'s territory)', () => {
     const dir = makeProject()
     void agentDocCommand({ dir, write: true })
     const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
@@ -183,8 +188,8 @@ describe('checkContractSync（vobs check 主入口的契约对齐）', () => {
   })
 })
 
-describe('--llms：Agent 轻量知识分发通道（项目外可发现）', () => {
-  it('落盘三个文件：llms.txt 索引 + vobs-context.md 契约全文 + diagnostics.md 全码表', async () => {
+describe('--llms: lightweight agent knowledge-distribution channel (discoverable outside the project)', () => {
+  it('writes three files: llms.txt index + vobs-context.md full contract + diagnostics.md full code table', async () => {
     const dir = makeProject()
     await run(dir, { llms: 'dist' })
 
@@ -193,16 +198,16 @@ describe('--llms：Agent 轻量知识分发通道（项目外可发现）', () =
     expect(llms).toContain('[vobs-context.md](/vobs-context.md)')
     expect(llms).toContain('[diagnostics.md](/diagnostics.md)')
 
-    // 契约全文 —— Agent 不装 vobs 也能读到同一份语义
+    // Full contract — an agent that has not installed vobs still reads the same semantics
     const context = readFileSync(join(dir, 'dist', 'vobs-context.md'), 'utf8')
     for (const key of ['run-once', 'VOBS_C107', 'VOBS_C234', 'on(deps']) {
-      expect(context, `契约缺 ${key}`).toContain(key)
+      expect(context, `contract is missing ${key}`).toContain(key)
     }
 
-    // 诊断码全表 —— 每码带 why/correct/wrong
+    // Full diagnostic table — every code carries why/correct/wrong
     const diagnostics = readFileSync(join(dir, 'dist', 'diagnostics.md'), 'utf8')
     for (const code of ['VOBS_C107', 'VOBS_C233', 'VOBS_C234', 'VOBS_C120']) {
-      expect(diagnostics, `diagnostics.md 缺 ${code}`).toContain(`## ${code}`)
+      expect(diagnostics, `diagnostics.md is missing ${code}`).toContain(`## ${code}`)
     }
     expect(diagnostics).toContain('correct:')
   })

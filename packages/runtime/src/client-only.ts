@@ -3,61 +3,68 @@ import { insertDynamic } from './dynamic'
 import { createFragment, type VobsNode } from './fragment'
 
 export interface ClientOnlyProps {
-  /** 只在客户端渲染的内容。 */
+  /** Content rendered only on the client. */
   readonly children?: VobsNode | (() => VobsNode | null | undefined)
-  /** 服务端（以及水合首轮）渲染的占位。 */
+  /** Placeholder rendered on the server (and during the hydration first pass). */
   readonly fallback?: VobsNode | (() => VobsNode | null | undefined)
 }
 
 /**
- * `<ClientOnly>` —— 只在客户端渲染的子树。
+ * `<ClientOnly>` — a subtree rendered only on the client.
  *
- * 补的是外部踩坑文档 D 条的后一半：`onMount`（`39c155b`）管**副作用**
- * （定时器 / matchMedia / localStorage），`ClientOnly` 管**渲染** ——
- * 某些子树在服务端根本渲染不出来（依赖 `window`、第三方 widget、需要真实布局测量）。
+ * It completes the second half of pitfall D from the external postmortem doc:
+ * `onMount` (`39c155b`) handles **side effects** (timers / matchMedia / localStorage),
+ * while `ClientOnly` handles **rendering** — some subtrees simply cannot render on the
+ * server (they depend on `window`, third-party widgets, or real layout measurement).
  *
- * ## 为什么必须是**两阶段**（这是这个组件唯一需要想清楚的地方）
+ * ## Why it must be **two-phase** (the only thing that needs careful thought here)
  *
- * 朴素实现是"服务端渲染空、客户端渲染 children" —— **那会造成水合不匹配**：
- * 服务端产物里没有那棵子树，客户端却期望认领它（本仓库严格水合会报 `missing-node`，
- * 非严格模式也会静默重建，表现为内容闪烁）。
+ * The naive implementation is "server renders nothing, client renders children" —
+ * **that causes a hydration mismatch**: the server output lacks the subtree while the
+ * client expects to claim it (strict hydration in this repo reports `missing-node`;
+ * non-strict mode silently rebuilds, which shows up as content flicker).
  *
- * 所以这里：
- * 1. **首轮**：服务端与客户端**都**渲染 `fallback`（默认什么都不渲染）—— 对得上
- * 2. **挂载之后**（微任务）：翻成"已就绪"，`insertDynamic` 换入 `children`
+ * So:
+ * 1. **First pass**: server and client **both** render `fallback` (renders nothing by
+ *    default) — they match
+ * 2. **After mount** (microtask): flip to "ready", `insertDynamic` swaps in `children`
  *
- * ## 父节点从哪来
+ * ## Where the parent comes from
  *
- * 用 `createFragment` —— 它的工厂签名是 `(parent, anchor) => void`，
- * **框架在挂载时把父节点与锚点交进来**，于是可以直接用 `insertDynamic` 换内容，
- * 不需要包裹元素（包裹层会改 flex/grid 布局）。
+ * `createFragment` is used — its factory signature is `(parent, anchor) => void`,
+ * **the framework hands in the parent and anchor at mount time**, so `insertDynamic`
+ * can swap content directly without a wrapper element (a wrapper would change
+ * flex/grid layout).
  *
- * ## 边界（如实说明）
+ * ## Boundaries (stated honestly)
  *
- * 客户端判定用的是 `typeof document === 'undefined'`，与 `onMount`（`39c155b`）
- * 以及 `@vobs/ssr` 的 `prerender.ts` **同一套判据**。其已知局限也一样：
- * **在 jsdom 这类带 DOM 的环境里做预渲染时会被判成客户端**（框架目前没有"正在预渲染"标志）。
- * 那种环境下 `ClientOnly` 的首轮会渲染 `fallback`、微任务里再换成 `children`，
- * 水合仍然是对得上的（两侧首轮一致），只是"跳过客户端渲染"这件事没生效。
+ * The client check is `typeof document === 'undefined'` — the **same criterion** as
+ * `onMount` (`39c155b`) and `@vobs/ssr`'s `prerender.ts`, with the same known limitation:
+ * **when prerendering in a DOM-bearing environment like jsdom, it is judged to be the
+ * client** (the framework currently has no "prerendering in progress" flag). In such an
+ * environment ClientOnly's first pass renders `fallback` and swaps to `children` in a
+ * microtask; hydration still matches (both first passes agree) — only "skip client
+ * rendering" doesn't take effect.
  */
 export function ClientOnly(props: ClientOnlyProps = {}): VobsNode {
   return createFragment((parent, anchor) => {
     const ready = state(false, 'ready')
     /*
-     * 只有存在 `document` 才排这个微任务 —— Node 端预渲染时不应留下会稍后执行的副作用
-     * （那会让"服务端渲染"在 renderToString 返回之后还动到已完成的输出）。
+     * Only queue this microtask when `document` exists — prerendering in Node must not
+     * leave a side effect that runs later (it would let "server rendering" mutate the
+     * finished output after renderToString returned).
      */
     if (typeof document !== 'undefined') {
       const owner = getCurrentOwner()
       queueMicrotask(() => {
-        // 组件在这之前被卸载 → 不再翻转（与 onMount 同一防御）
+        // Component was unmounted before this ran → don't flip (same defense as onMount)
         if (owner?.disposed) return
         ready.value = true
       })
     }
     insertDynamic(parent, anchor, () => {
       const slot = ready.value ? props.children : props.fallback
-      // 用 unknown 承接：声明类型不含 false，但 `cond && <X/>` 会给出 false
+      // Typed as unknown: the declared type excludes false, but `cond && <X/>` yields false
       const value: unknown = typeof slot === 'function' ? slot() : slot
       return value === undefined || value === null || value === false ? null : (value as VobsNode)
     })

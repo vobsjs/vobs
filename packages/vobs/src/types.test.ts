@@ -7,12 +7,12 @@ interface AuthContext {
 }
 
 describe('Vobs public types', () => {
-  it('state 保留泛型并由初始值推导', () => {
+  it('state keeps its generic and infers from the initial value', () => {
     const count = state(0)
     expectTypeOf(count).toEqualTypeOf<Signal<number>>()
   })
 
-  it('InjectionKey 将 inject 和 provide 约束到同一类型', () => {
+  it('InjectionKey constrains inject and provide to the same type', () => {
     const key = createInjectionKey<AuthContext>('test.auth')
     const check = (): void => {
       const value: AuthContext | undefined = inject(key)

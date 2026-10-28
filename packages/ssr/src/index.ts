@@ -52,12 +52,12 @@ export function hydrate(
   options: SSRStateOptions & {
     plugins?: VobsPlugin[]
     state?: SSRState | string
-    /** 严格水合：服务端非空文本遇到客户端空文本时直接报不匹配（默认只发可观测事件）。 */
+    /** Strict hydration: server non-empty text meeting client empty text reports a mismatch directly (default only emits observable events). */
     strictHydration?: boolean
   } = {}
 ): VobsApp<Node> {
   const container = typeof target === 'string' ? document.querySelector(target) : target
-  if (!container) throw new Error(`hydrate: 目标不存在: ${target}`)
+  if (!container) throw new Error(`hydrate: target does not exist: ${target}`)
 
   const restored = options.state ? parseState(options.state) : undefined
   if (restored?.resources && options.resourceClient) options.resourceClient.hydrate(restored.resources)

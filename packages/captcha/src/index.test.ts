@@ -18,7 +18,7 @@ function mountCaptcha<Challenge = unknown>(props: CaptchaProps<Challenge>): HTML
 }
 
 describe('@vobs/captcha', () => {
-  it('只渲染外部传入的 challenge，不发起请求', () => {
+  it('renders only the externally provided challenge and never issues requests', () => {
     const challenge: CaptchaChallenge<{ prompt: string }> = {
       id: 'challenge-1',
       type: 'custom',
@@ -44,7 +44,7 @@ describe('@vobs/captcha', () => {
     expect(onSubmit).toHaveBeenCalledWith('answer', challenge)
   })
 
-  it('由外部控制 expired 和 retry 动作', () => {
+  it('expired status and the retry action are controlled externally', () => {
     const retry = vi.fn()
     const host = mountCaptcha({ status: 'expired', onRetry: retry, expiredLabel: '已过期' })
     expect(host.textContent).toContain('已过期')
@@ -54,7 +54,7 @@ describe('@vobs/captcha', () => {
     expect(retry).toHaveBeenCalledTimes(1)
   })
 
-  it('不处理服务端结果，submit 原样返回业务回调的 Promise', async () => {
+  it('does not process server results; submit returns the business callback Promise as-is', async () => {
     const result = { token: 'server-token' }
     const onSubmit = vi.fn(async () => result)
     let submit!: (answer: string) => void | PromiseLike<unknown>
@@ -71,7 +71,7 @@ describe('@vobs/captcha', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 
-  it('没有 onSubmit 或处于 loading/verifying 时不会提交', () => {
+  it('does not submit when onSubmit is missing or status is loading/verifying', () => {
     const onSubmit = vi.fn()
     const host = mountCaptcha({
       challenge: { id: 'c1', expiresAt: Date.now() + 60_000 },
@@ -87,7 +87,7 @@ describe('@vobs/captcha', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  it('支持 Signal props，并随外部状态和 challenge 更新 UI', async () => {
+  it('supports Signal props and updates the UI with external state and challenge', async () => {
     const status = state<CaptchaStatus>('loading')
     const challenge = state<CaptchaChallenge<{ prompt: string }> | null>(null)
     const error = state<unknown>(null)
@@ -120,7 +120,7 @@ describe('@vobs/captcha', () => {
     expect(host.textContent).toContain('验证失败')
   })
 
-  it('支持读取 Signal 的 getter props，并在状态更新后切换操作按钮', async () => {
+  it('supports getter props reading Signals and switches action buttons after status updates', async () => {
     const status = state<CaptchaStatus>('loading')
     const retry = vi.fn()
     const host = mountCaptcha({
@@ -137,7 +137,7 @@ describe('@vobs/captcha', () => {
     expect(retry).toHaveBeenCalledTimes(1)
   })
 
-  it('渲染滑块缺口并在 Pointer 拖动结束后提交轨迹和设备信号', async () => {
+  it('renders the slider gap and submits trail and device signals after Pointer dragging ends', async () => {
     const challenge: SliderCaptchaChallenge = {
       id: 'slider-1',
       payload: {
@@ -165,7 +165,7 @@ describe('@vobs/captcha', () => {
     const handle = host.querySelector('[role="slider"]') as HTMLElement
     expect(handle).not.toBeNull()
     expect(handle.textContent).toBe('>')
-    expect(host.querySelector('.vobs-slider-captcha__track-prompt')?.textContent).toBe('向右拖动滑块完成拼图')
+    expect(host.querySelector('.vobs-slider-captcha__track-prompt')?.textContent).toBe('Drag the slider to complete the puzzle')
     expect(host.querySelector('.vobs-slider-captcha__target')).not.toBeNull()
     expect(host.querySelector('.vobs-slider-captcha__decoy')).not.toBeNull()
     expect(host.querySelector('.vobs-slider-captcha__piece .vobs-slider-captcha__image')?.getAttribute('style'))
@@ -197,7 +197,7 @@ describe('@vobs/captcha', () => {
     expect(submittedChallenge).toBe(challenge)
   })
 
-  it('拼图块本身也可以拖动并提交结果', async () => {
+  it('the puzzle piece itself is draggable and submits the result', async () => {
     const challenge: SliderCaptchaChallenge = {
       id: 'slider-piece-1',
       payload: {
@@ -226,7 +226,7 @@ describe('@vobs/captcha', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 
-  it('支持由 challenge 提供数量不固定的多个干扰缺口', () => {
+  it('supports a variable number of decoy gaps provided by the challenge', () => {
     const challenge: SliderCaptchaChallenge = {
       id: 'slider-decoys-1',
       payload: {
@@ -254,7 +254,7 @@ describe('@vobs/captcha', () => {
       .not.toContain('transform: rotate(')
   })
 
-  it('支持左侧 startX 初始拼图位置，并提交图片内的绝对坐标', async () => {
+  it('supports a left-side startX initial piece position and submits absolute coordinates within the image', async () => {
     const challenge: SliderCaptchaChallenge = {
       id: 'slider-start-position-1',
       payload: {
@@ -285,7 +285,7 @@ describe('@vobs/captcha', () => {
     expect(onSubmit.mock.calls[0][0].x).toBe(162)
   })
 
-  it('校验失败时保持拼图位置，并将错误覆盖在图片底部', async () => {
+  it('keeps the piece position on verification failure and overlays the error at the bottom of the image', async () => {
     const status = state<CaptchaStatus>('ready')
     const error = state<unknown>(null)
     const challenge: SliderCaptchaChallenge = {
@@ -321,7 +321,7 @@ describe('@vobs/captcha', () => {
     expect(host.querySelector('.vobs-captcha__message-host')?.textContent).toBe('')
   })
 
-  it('刷新时保留画布和面板尺寸，并禁用拖动与刷新操作', async () => {
+  it('keeps the canvas and panel size while refreshing and disables dragging and the refresh action', async () => {
     const status = state<CaptchaStatus>('ready')
     const challenge: SliderCaptchaChallenge = {
       id: 'slider-loading-1',
@@ -358,7 +358,7 @@ describe('@vobs/captcha', () => {
     expect(host.querySelector('.vobs-slider-captcha__notice')?.textContent).toContain('正在刷新验证码')
   })
 
-  it('验证成功后按可配置延迟隐藏组件', async () => {
+  it('hides the component after a configurable delay once verified', async () => {
     vi.useFakeTimers()
     try {
       const status = state<CaptchaStatus>('ready')
@@ -392,7 +392,7 @@ describe('@vobs/captcha', () => {
     }
   })
 
-  it('计算滑块轨迹的基础行为特征，并标记明显不完整的轨迹', () => {
+  it('computes basic behavioral features of the slider trail and flags obviously incomplete trails', () => {
     const analysis = analyzeSliderTrail([
       { x: 0, y: 10, t: 0 },
       { x: 40, y: 11, t: 100 },

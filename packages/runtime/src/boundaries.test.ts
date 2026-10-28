@@ -60,11 +60,11 @@ describe('AsyncBoundary and Profiler', () => {
 })
 
 /*
- * 边界捕获错误之后，原来只调 invokeRuntimeDebug('error', …) ——
- * 没装 DevTools（也就没有 error 钩子）时控制台一个字都不输出：
- * 错误被替换成 fallback，现场再无痕迹。
+ * After a boundary captures an error, it used to only call invokeRuntimeDebug('error', …) —
+ * without DevTools installed (and thus no error hook) the console printed nothing at all:
+ * the error was replaced by the fallback, leaving no trace of the scene.
  */
-describe('边界错误不再静默', () => {
+describe('boundary errors are no longer silent', () => {
   const mountFailing = () => {
     const host = document.createElement('div')
     const app = createVobs({
@@ -83,7 +83,7 @@ describe('边界错误不再静默', () => {
     return { host, app }
   }
 
-  it('没有 error 钩子时写进控制台', () => {
+  it('writes to the console when there is no error hook', () => {
     setRuntimeDebugHooks(null)
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { host, app } = mountFailing()
@@ -96,7 +96,7 @@ describe('边界错误不再静默', () => {
     spy.mockRestore()
   })
 
-  it('装了 error 钩子时交给钩子，不重复输出', () => {
+  it('delegates to the hook when installed, without duplicate output', () => {
     const events: unknown[] = []
     const restore = setRuntimeDebugHooks({ error: event => events.push(event) })
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})

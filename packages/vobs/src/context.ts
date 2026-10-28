@@ -5,7 +5,7 @@ const ownerProviders = new WeakMap<Owner, Map<InjectionKey<unknown>, unknown>>()
 
 export function provide<T>(key: InjectionKey<T>, value: T, options: ProvideOptions = {}): void {
   const owner = getCurrentOwner()
-  if (!owner) throw new Error('Vobs: provide 必须在组件或 Owner 作用域内调用')
+  if (!owner) throw new Error('Vobs: provide must be called inside a component or Owner scope')
   provideToOwner(owner, key, value, options)
 }
 
@@ -20,7 +20,7 @@ export function inject<T>(key: InjectionKey<T>, fallback?: T): T | undefined {
 export function injectRequired<T>(key: InjectionKey<T>, description?: string): T {
   const value = inject(key)
   if (value === undefined) {
-    throw new Error(`Vobs: 找不到必需注入项${description ? ` ${description}` : ''}`)
+    throw new Error(`Vobs: required injection not found${description ? ` ${description}` : ''}`)
   }
   return value
 }
@@ -38,7 +38,7 @@ export function provideToOwner<T>(
     owner.onDispose(() => ownerProviders.delete(owner))
   }
   if (providers.has(key) && !options.override) {
-    throw new Error(`Vobs: 注入项 ${String(key)} 已存在；如需覆盖请传入 override: true`)
+    throw new Error(`Vobs: injection ${String(key)} already exists; pass override: true to replace it`)
   }
   providers.set(key, value)
 }

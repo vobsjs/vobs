@@ -8,21 +8,24 @@ import type {
 } from './types'
 
 /**
- * 微信支付异步通知处理（APIv3）
+ * WeChat Pay async notification handling (APIv3)
  *
- * 完整流程：
- * 1. verify()   — 用 certs（按 Wechatpay-Serial 查找平台证书/微信支付公钥）验证报文签名
- * 2. decrypt()  — 用 apiv3Key 做 AES-256-GCM 解密 resource 得到业务数据
- * 3. validate() — 比对商户侧期望值（订单号 / 金额），防错配
- * 4. 处理业务后用 successResponse()/failResponse() 应答微信
+ * Full flow:
+ * 1. verify()   — verify the message signature with certs (platform certificates / WeChat Pay
+ *                 public keys looked up by Wechatpay-Serial)
+ * 2. decrypt()  — AES-256-GCM decrypt resource with apiv3Key to get the business data
+ * 3. validate() — compare against merchant-side expected values (order number / amount) to
+ *                 guard against mismatched payments
+ * 4. After handling the business, answer WeChat with successResponse()/failResponse()
  */
 export function createNotifyHandler(client: WechatClient) {
   return {
     /**
-     * 验签异步通知
-     * @param headers 微信支付回调的 Wechatpay-* 系列 HTTP 头
-     * @param body 原始请求体字符串（必须是未解析的原文，不可先 JSON.parse 再序列化）
-     * @returns 验签是否通过
+     * Verify the async notification signature
+     * @param headers the Wechatpay-* HTTP headers of the WeChat Pay callback
+     * @param body the raw request body string (must be the unparsed original text; never
+     *   JSON.parse it and re-serialize)
+     * @returns whether signature verification passed
      */
     verify(headers: WechatNotifyHeaders, body: string): boolean {
       const publicKey = client.config.options.certs[headers.serial]
@@ -38,8 +41,8 @@ export function createNotifyHandler(client: WechatClient) {
     },
 
     /**
-     * 解密通知 resource 字段（AES-256-GCM，apiv3Key）
-     * @param resource 回调 JSON 中的 resource 字段
+     * Decrypt the notification resource field (AES-256-GCM, apiv3Key)
+     * @param resource the resource field in the callback JSON
      */
     decrypt<T extends WechatNotifyTransaction | WechatNotifyRefund = WechatNotifyTransaction>(
       resource: WechatNotifyResource
@@ -54,16 +57,20 @@ export function createNotifyHandler(client: WechatClient) {
     },
 
     /**
-     * 校验解密后的通知与商户侧订单是否一致。
-     * 验签只保证通知来自微信支付，不保证与你的订单一致。
+     * Check the decrypted notification against the merchant-side order.
+     * Signature verification only proves the notification comes from WeChat Pay; it does not
+     * prove it matches your order.
      *
-     * `expected` 是**必填**的两项：`outTradeNo` 订单号与 `total` 订单金额（分）。
+     * Both entries of `expected` are **required**: `outTradeNo` (order number) and `total`
+     * (order amount in cents).
      *
-     * 为什么是必填而不是可选的"有就比对"：可选链（`expected?.outTradeNo`）的姿势下
-     * **最省事的调用** `validate(payload)` 直接返回 `valid: true` —— 把"只验了商户号"
-     * 包装成"校验通过"，攻击者只要把 mchid 对上（那是公开的）就能让任意订单号/任意金额通过。
-     * 缺任何一项都以 `valid: false` + 明确 errors 收场（失败关闭）——文字警告拦不住
-     * "省略即通过"的 API 外形，只有类型才能拦住。
+     * Why required instead of an optional "compare when present": with optional chaining
+     * (`expected?.outTradeNo`), the laziest call `validate(payload)` would return
+     * `valid: true` directly — dressing up "only verified the merchant ID" as "validation
+     * passed". An attacker merely needs to match mchid (which is public) to push through any
+     * order number with any amount. Missing either entry ends with `valid: false` plus
+     * explicit errors (fail closed) — a text warning cannot stop an API shape where
+     * "omitting means passing"; only types can.
      */
     validate(
       payload: WechatNotifyTransaction | WechatNotifyRefund,
@@ -72,32 +79,32 @@ export function createNotifyHandler(client: WechatClient) {
       const errors: string[] = []
 
       if (payload.mchid !== client.config.mchid) {
-        errors.push(`mchid 不匹配: 期望 ${client.config.mchid}，收到 ${payload.mchid}`)
+        errors.push(`mchid mismatch: expected ${client.config.mchid}, got ${payload.mchid}`)
       }
 
       if (!expected?.outTradeNo) {
-        errors.push('缺少商户侧期望订单号 expected.outTradeNo —— 未与自有订单比对，拒绝放行')
+        errors.push('Missing merchant-side expected order number expected.outTradeNo — not compared against your own order, rejecting')
       } else if (payload.outTradeNo !== expected.outTradeNo) {
-        errors.push(`out_trade_no 不匹配: 期望 ${expected.outTradeNo}，收到 ${payload.outTradeNo}`)
+        errors.push(`out_trade_no mismatch: expected ${expected.outTradeNo}, got ${payload.outTradeNo}`)
       }
 
       if (expected?.total === undefined || expected.total === null) {
-        errors.push('缺少商户侧期望金额 expected.total —— 未与自有订单比对，拒绝放行')
+        errors.push('Missing merchant-side expected amount expected.total — not compared against your own order, rejecting')
       } else if (payload.amount?.total !== expected.total) {
-        errors.push(`amount.total 不匹配: 期望 ${expected.total}，收到 ${payload.amount?.total}`)
+        errors.push(`amount.total mismatch: expected ${expected.total}, got ${payload.amount?.total}`)
       }
 
       return { valid: errors.length === 0, errors }
     },
 
-    /** 通知处理成功应答（HTTP 200/201，body 恰为 {"code":"SUCCESS"}） */
+    /** Success response for notification handling (HTTP 200/201, body exactly {"code":"SUCCESS"}) */
     successResponse(): { code: 'SUCCESS'; message?: undefined } {
       return { code: 'SUCCESS' }
     },
 
-    /** 通知处理失败应答（微信会按衰减频率重发通知） */
+    /** Failure response for notification handling (WeChat retries the notification at decaying intervals) */
     failResponse(message?: string): { code: 'FAIL'; message: string } {
-      return { code: 'FAIL', message: message ?? '处理失败' }
+      return { code: 'FAIL', message: message ?? 'Processing failed' }
     }
   }
 }

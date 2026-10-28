@@ -9,18 +9,20 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * 两个面向选择列场景的能力：
- * - `column.head`：表头节点/工厂（动态插入，随信号响应）——表头全选框；
- *   sortable 列仍渲染排序按钮，head 被忽略。
- * - `rowActive`：行激活态 data-active，行 effect 内求值——信号翻转原地更新，
- *   keyed 行复用不丢订阅（不重建行）。
+ * Two capabilities aimed at selection-column scenarios:
+ * - `column.head`: header node/factory (dynamic insertion, reactive to
+ *   signals) — e.g. a header select-all checkbox; sortable columns still
+ *   render the sort button and head is ignored.
+ * - `rowActive`: the row active state data-active, evaluated inside a row
+ *   effect — a signal flip updates in place, keyed row reuse doesn't drop
+ *   subscriptions (no row rebuild).
  */
 interface Row { id: number; name: string }
 
 const ROWS: Row[] = [{ id: 1, name: 'Avery' }, { id: 2, name: 'Blake' }]
 
-describe('KitDataTable head 表头节点', () => {
-  it('非排序列渲染 head 节点，信号翻转后节点响应式重建', async () => {
+describe('KitDataTable head nodes', () => {
+  it('non-sortable columns render the head node, which rebuilds reactively after a signal flip', async () => {
     const selected = state(false)
     const columns: readonly DataTableColumn<Row>[] = [
       {
@@ -49,7 +51,7 @@ describe('KitDataTable head 表头节点', () => {
 
     selected.value = true
     await settle()
-    // insertDynamic 重建表头节点：旧引用失效，重新查询断言新状态
+    // insertDynamic rebuilds the header node: the old reference is dead, re-query and assert the new state
     const rebuilt = host.querySelector('thead input[type="checkbox"]') as HTMLInputElement
     expect(rebuilt).toBeTruthy()
     expect(rebuilt).not.toBe(input)
@@ -57,7 +59,7 @@ describe('KitDataTable head 表头节点', () => {
     app.destroy(); host.remove()
   })
 
-  it('sortable 列忽略 head（仍渲染排序按钮）', async () => {
+  it('sortable columns ignore head (the sort button still renders)', async () => {
     const columns: readonly DataTableColumn<Row>[] = [
       { id: 'name', label: 'Name', key: 'name', sortable: true, head: () => document.createElement('input') }
     ]
@@ -73,8 +75,8 @@ describe('KitDataTable head 表头节点', () => {
   })
 })
 
-describe('KitDataTable rowActive 行激活态', () => {
-  it('当前行标记 data-active，信号翻转原地更新（行节点不重建）', async () => {
+describe('KitDataTable rowActive state', () => {
+  it('marks the current row with data-active, updating in place on signal flips (row nodes not rebuilt)', async () => {
     const currentId = state(1)
     const columns: readonly DataTableColumn<Row>[] = [{ id: 'name', label: 'Name', key: 'name' }]
     const host = document.createElement('main')
@@ -98,13 +100,13 @@ describe('KitDataTable rowActive 行激活态', () => {
     currentId.value = 2
     await settle()
     const rows = host.querySelectorAll('tbody tr')
-    // 行节点被 keyed 复用（引用不变），仅属性原地更新
+    // Row nodes are reused by key (same references); only the attribute updates in place
     expect(host.querySelector('tbody tr[data-active="true"]')).toBe(rows[1])
     expect(rows[0].hasAttribute('data-active')).toBe(false)
     app.destroy(); host.remove()
   })
 
-  it('未提供 rowActive 时无 data-active', async () => {
+  it('no data-active when rowActive is not provided', async () => {
     const columns: readonly DataTableColumn<Row>[] = [{ id: 'name', label: 'Name', key: 'name' }]
     const host = document.createElement('main')
     document.body.appendChild(host)

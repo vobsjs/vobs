@@ -19,8 +19,8 @@ interface ListEntry<T> {
   owner: Owner
   viewOwner: Owner
   item: Signal<T>
-  /** 最近一次赋值的原始 item：供比较与刷新使用，避免在列表 effect 内读取 item 信号造成自依赖。
-   *  （刻意不叫 value —— `vobs check` 的 VOBS_C210 会把 `X.value` 的读写当成信号自订阅）。 */
+  /** The raw item last assigned: used for comparison and refresh, avoiding reads of the item signal inside the list effect creating a self-dependency.
+   *  (Deliberately not named value — `vobs check`'s VOBS_C210 treats reads/writes of `X.value` as signal self-subscription.) */
   current: T
   index: number
 }
@@ -44,9 +44,11 @@ export function insertDynamic(parent: Node, anchor: Node | null, factory: NodeFa
  * Inserts any Vobs child value. This is the escape hatch for JSX expressions
  * that return a node, an array of nodes, text, or an empty conditional value.
  *
- * 多态插入（Solid 式）：编译器把所有非静态子表达式统一路由到这里，值类型在运行时
- * 分发——原始值走自管理文本节点的原地更新快路径（等价 bindText 性能），节点/Fragment/
- * 数组走 scope 隔离的挂载/卸载路径。函数调用返回节点因此与返回字符串同样安全。
+ * Polymorphic insertion (Solid-style): the compiler routes all non-static child expressions
+ * here uniformly, and the value type is dispatched at runtime — primitives take the
+ * in-place-update fast path with a self-managed text node (equivalent to bindText
+ * performance), while nodes/Fragments/arrays take the scope-isolated mount/unmount path.
+ * A function call returning a node is therefore just as safe as returning a string.
  */
 export function insertDynamicValue(
   parent: Node,
@@ -56,16 +58,18 @@ export function insertDynamicValue(
   const marker = createComment('vobs:value')
   insertBefore(parent, marker, anchor)
   let current: VobsNode | null = null
-  /** current 是否为本 effect 自建的文本节点（可安全原地改写内容） */
+  /** Whether `current` is a text node created by this effect (safe to rewrite content in place) */
   let currentIsText = false
   let scope: Owner | null = null
 
   effect(() => {
-    // 每轮求值使用独立 scope Owner：factory 求值与挂载期间创建的组件 Owner 全部挂在它下面。
-    // 数组/节点被替换时整体 dispose 旧 scope，避免被丢弃子树的 effect 继续订阅信号（幽灵更新与内存泄漏）。
+    // Each evaluation round uses an independent scope Owner: component Owners created during
+    // factory evaluation and mounting are all attached under it.
+    // When an array/node is replaced, the old scope is disposed wholesale, preventing effects
+    // of the discarded subtree from staying subscribed to signals (ghost updates and memory leaks).
     const nextScope = createOwner()
     const value = nextScope.run(factory)
-    // ── 原始值快路径：自建文本节点原地改写，不销毁重建（高频文本零 GC）──
+    // ── Primitive fast path: rewrite the self-created text node in place, no destroy/rebuild (zero GC for high-frequency text) ──
     if (typeof value === 'string' || typeof value === 'number') {
       if (currentIsText) {
         setTextContent(current as Text, String(value))
@@ -91,7 +95,7 @@ export function insertDynamicValue(
       nextScope.dispose()
       return
     }
-    // ── 节点/Fragment/数组路径：scope 隔离的挂载与整体替换 ──
+    // ── Node/Fragment/array path: scope-isolated mount and wholesale replacement ──
     const next = nextScope.run(() => normalizeDynamicChild(value))
     if (next === current) {
       nextScope.dispose()
@@ -146,7 +150,8 @@ export function insertList<T>(
   effect(() => {
     const items = source()
 
-    // key 只计算一次：keyed 判定与调和共用，避免 keyOf 每轮被调用两遍。
+    // Keys are computed once: shared by the keyed decision and reconciliation, so keyOf
+    // isn't called twice per round.
     let keys: unknown[] | null = null
     if (keyOf) {
       keys = new Array(items.length)
@@ -163,15 +168,20 @@ export function insertList<T>(
     }
 
     /*
-     * 快路径：key 序列与上一轮**逐位相同** —— 行一个不多、一个不少、顺序也没变。
+     * Fast path: the key sequence is **bit-for-bit identical** to the previous round —
+     * not one row more, not one less, order unchanged.
      *
-     * 此时 DOM 已经是正确顺序（每次更新末尾的重排保证了「DOM 顺序 === entries 顺序」），
-     * 于是建表（Map）、查重（Set）、差集（retained Set）、重排（seq 数组 + LIS）**全都不需要**，
-     * 只同步每行的 item 与 index。这些记账是逐行的，200 行一次的固定成本实测约 34µs，
-     * 而这一轮真正需要做的 DOM 写只有 0.2µs（见 scripts/bench）。
+     * The DOM is already in the correct order (the reorder at the end of every update
+     * guarantees "DOM order === entries order"), so building the table (Map), dedup
+     * (Set), set difference (retained Set) and reordering (seq array + LIS) are **all
+     * unnecessary** — only each row's item and index need syncing. This bookkeeping is
+     * per-row: the fixed cost for 200 rows measured ~34µs, while the only DOM writes
+     * actually needed this round are 0.2µs (see scripts/bench).
      *
-     * 扫描本身是 O(n) 的两次比较（key 与是否需重建），比省掉的记账便宜一个数量级。
-     * 任何一行需要重建（原始类型项的值变了 —— 那种行的视图是静态捕获的）就退回常规路径。
+     * The scan itself is O(n) with two comparisons per row (key + needs-rebuild), an
+     * order of magnitude cheaper than the bookkeeping it saves. If any row needs a
+     * rebuild (a primitive item's value changed — that row's view was statically
+     * captured), fall back to the regular path.
      */
     if (keys !== null && entries.length === items.length) {
       let fast = true
@@ -192,7 +202,7 @@ export function insertList<T>(
           entry.index = index
           const item = items[index]
           if (!Object.is(entry.current, item)) {
-            // item 信号写入在值相同时会被 Object.is 短路，所以这里只对真正变了的行动手
+            // Signal writes are short-circuited by Object.is when the value is unchanged, so only touch rows that really changed
             entry.item.value = item
             entry.current = item
           }
@@ -205,8 +215,10 @@ export function insertList<T>(
       ? reconcileKeyed(items, keys, entries, renderItem)
       : reconcileIndexed(items, entries, renderItem)
 
-    // tracksIndex 时 index 参与渲染，位置变化的行必须整体重建，新节点不在 DOM 中，
-    // 重排阶段强制插入；否则只同步记录的位置，节点保持原样交给重排阶段移动。
+    // When tracksIndex, index participates in rendering, so rows whose position changed must
+    // be rebuilt wholesale — their new nodes aren't in the DOM yet and the reorder phase
+    // force-inserts them; otherwise only the recorded position is synced and the node is
+    // left in place for the reorder phase to move.
     const refreshed = tracksIndex ? new Set<ListEntry<T>>() : null
     for (let index = 0; index < nextEntries.length; index++) {
       const entry = nextEntries[index]
@@ -231,7 +243,7 @@ export function insertList<T>(
 }
 
 /**
- * 按 nextEntries 顺序整理 DOM，但只移动必须移动的节点。
+ * Reorder the DOM to match nextEntries, but only move the nodes that must move.
  */
 function reorderListEntries<T>(
   parent: Node,
@@ -243,7 +255,8 @@ function reorderListEntries<T>(
   const count = nextEntries.length
   if (count === 0) return
 
-  // 首次挂载（旧列表为空）：全部是新节点，倒序直插即可，跳过 Map/LIS 构建。
+  // First mount (previous list empty): everything is a new node, so a reverse-order direct
+  // insert suffices; skip Map/LIS construction.
   if (previous.length === 0) {
     let reference: VobsNode = marker
     for (let index = count - 1; index >= 0; index--) {
@@ -257,7 +270,7 @@ function reorderListEntries<T>(
   const oldIndexOf = new Map<ListEntry<T>, number>()
   for (let index = 0; index < previous.length; index++) oldIndexOf.set(previous[index], index)
 
-  // seq[i] = 条目在旧序中的位置；新条目、重建条目与强制插入条目为 -1。
+  // seq[i] = the entry's position in the old order; new, rebuilt and force-inserted entries are -1.
   const seq: number[] = new Array(count)
   for (let index = 0; index < count; index++) {
     const entry = nextEntries[index]
@@ -279,8 +292,9 @@ function reorderListEntries<T>(
 }
 
 /**
- * 严格递增子序列（LIS）成员标记，O(n log n)。
- * 负值（新节点）不参与 LIS，永远视为需要移动。
+ * Strictly increasing subsequence (LIS) membership marks, O(n log n).
+ * Negative values (new nodes) don't participate in the LIS and are always treated as
+ * needing to move.
  */
 function computeKeptByLis(seq: readonly number[]): boolean[] {
   const count = seq.length
@@ -323,8 +337,9 @@ function reconcileKeyed<T>(
   entries: Array<ListEntry<T>>,
   renderItem: (item: T, index: number) => VobsNode
 ): Array<ListEntry<T>> {
-  // 逐项建表，不用 entries.map(...)：后者会先造一个等长的「键值对数组」中间产物，
-  // 200 行就是 200 个元组对象的分配 —— 每次更新都白付一次。
+  // Build the table entry by entry instead of entries.map(...): the latter first allocates
+  // an equal-length "array of [key, value] pairs" as an intermediate artifact — for 200 rows
+  // that's 200 tuple object allocations paid for nothing on every update.
   const previous = new Map<unknown, ListEntry<T>>()
   for (const entry of entries) previous.set(entry.key, entry)
   const seen = new Set<unknown>()
@@ -334,14 +349,15 @@ function reconcileKeyed<T>(
     const item = items[index]
     const key = keys[index]
     if (seen.has(key)) {
-      console.warn(`Vobs: 检测到重复的列表 key: ${String(key)}`)
+      console.warn(`Vobs: duplicate list key detected: ${String(key)}`)
     }
     seen.add(key)
     const entry = previous.get(key)
     if (entry) {
       previous.delete(key)
       if (isPrimitiveItem(item) && !Object.is(entry.current, item)) {
-        // 原始类型项在编译产物中被静态捕获，无法通过 item 信号刷新视图：值变化时必须重建行。
+        // Primitive items are statically captured in the compiled output, so the view can't
+        // be refreshed via the item signal: the row must be rebuilt when the value changes.
         nextEntries.push(createListEntry(item, index, key, renderItem))
         continue
       }
@@ -366,7 +382,8 @@ function reconcileIndexed<T>(
     const item = items[index]
     const entry = entries[index]
     if (entry && isPrimitiveItem(item) && !Object.is(entry.current, item)) {
-      // 原始类型项被编译产物静态捕获，值变化时必须重建行；旧行由主循环统一 dispose。
+      // Primitive items are statically captured in the compiled output; the row must be
+      // rebuilt when the value changes. Old rows are disposed by the main loop.
       nextEntries.push(createListEntry(item, index, index, renderItem))
       continue
     }
@@ -381,7 +398,7 @@ function reconcileIndexed<T>(
   return nextEntries
 }
 
-/** 原始类型（含 function）无法被 Proxy 响应化，只能整行重建。 */
+/** Primitives (including functions) can't be made reactive via a Proxy; only a whole-row rebuild works. */
 function isPrimitiveItem(item: unknown): boolean {
   return item === null || typeof item !== 'object'
 }
@@ -421,7 +438,8 @@ function refreshListEntry<T>(
       index
     ))
   })
-  // 旧视图的 effect 仍订阅着 item 信号，必须 dispose，否则会写已脱离的 DOM（幽灵更新）。
+  // The old view's effect still subscribes to the item signal; it must be disposed, or it
+  // would write to detached DOM (ghost updates).
   previousView.dispose()
   associateNodeOwner(entry.node, entry.viewOwner)
 }
@@ -431,7 +449,8 @@ function toReactiveItem<T>(item: Signal<T>, initialValue: T): T {
     return initialValue
   }
 
-  // 属性读取转发到 item.value（顶替后的新条目），由 get 陷阱完成追踪；目标见 reactiveProxyTarget。
+  // Property reads are forwarded to item.value (the new entry after same-key replacement);
+  // the get trap does the tracking. See reactiveProxyTarget for the target.
   return new Proxy(reactiveProxyTarget(initialValue), {
     get(_target, property, receiver) {
       return Reflect.get(item.value as object, property, receiver)
@@ -445,7 +464,8 @@ function toReactiveItem<T>(item: Signal<T>, initialValue: T): T {
     getOwnPropertyDescriptor(target, property) {
       const descriptor = Object.getOwnPropertyDescriptor(item.value as object, property)
       if (!descriptor) return undefined
-      // 目标上已有的自有属性不能改报"可配置性"（数组的 length 就不可配置），否则违反不变量
+      // Existing own properties on the target must not be misreported as "configurable"
+      // (an array's length is non-configurable), or the proxy invariant is violated
       const own = Object.getOwnPropertyDescriptor(target, property)
       return { ...descriptor, configurable: own ? own.configurable : true }
     }
@@ -453,21 +473,25 @@ function toReactiveItem<T>(item: Signal<T>, initialValue: T): T {
 }
 
 /**
- * 选择代理目标。
+ * Choose the proxy target.
  *
- * 目标**不能**带"不可配置"的自有属性：代理把属性读取转发到 `item.value`（同 key 顶替后的
- * 新条目），而 Proxy 不变量要求 get / getOwnPropertyDescriptor / ownKeys 与目标一致。实测
- * `Object.freeze` 过的条目（@vobs/notification 每条通知都冻结）直接抛：
+ * The target **must not** carry non-configurable own properties: the proxy forwards
+ * property reads to `item.value` (the new entry after same-key replacement), and Proxy
+ * invariants require get / getOwnPropertyDescriptor / ownKeys to agree with the target.
+ * Measured: a frozen entry (@vobs/notification freezes every notification) throws outright:
  *
  *   TypeError: 'get' on proxy: property 'content' is a read-only and non-configurable data
  *   property on the proxy target but the proxy did not return its actual value
  *
- * 于是"冻结条目的行原地刷新"这条路径根本不可能成立（首轮渲染恰好同值，把问题掩盖了）。
+ * So "in-place refresh of a frozen entry's row" is fundamentally impossible as a path
+ * (the first render happens to have the same value, masking the problem).
  *
- * 安全的条目（可扩展 + 自有属性全部可配置：普通字面量、DOM 包装器等）照旧用条目自身当目标 ——
- * jsdom 会把 sameObjectCaches 之类的 Symbol 缓存写在包装器上，写与读必须落在同一个对象上，
- * 换目标会让 `element.classList` 直接抛 TypeError。冻结/密封/defineProperty 过的条目改用
- * 同原型的空对象（数组用空数组，保住 Array.isArray）。
+ * Safe entries (extensible + all own properties configurable: plain literals, DOM
+ * wrappers etc.) keep using the entry itself as the target — jsdom writes Symbol caches
+ * like sameObjectCaches onto the wrapper, so writes and reads must land on the same
+ * object; swapping the target would make `element.classList` throw a TypeError outright.
+ * Frozen/sealed/defineProperty'd entries switch to an empty object of the same prototype
+ * (arrays use an empty array, preserving Array.isArray).
  */
 function reactiveProxyTarget(value: object): object {
   if (Object.isExtensible(value)) {
@@ -489,18 +513,24 @@ function disposeEntry(parent: Node, entry: ListEntry<unknown>): void {
 }
 
 /**
- * 条件容器 + 容器内挂载（编译器「三元/`&&` 分支里的 keyed 列表」专用产物，C232 根治）。
+ * Conditional container + mount inside it (the dedicated compiled artifact for "keyed
+ * lists inside ternary/`&&` branches", the C232 cure).
  *
- * `{cond ? items.map(...) : null}` 走多态插入时，数组值没有身份（每次 factory 求值
- * 创建全新节点），运行时无从复用 —— cond 与 items 任一变化都重建整列。本指令把
- * **条件**与**列表**拆成两层订阅：cond 只管容器的挂载/卸载；列表在容器内部走标准
- * `insertList`，按 key 复用/移动，cond 抖动不再触碰列表。
+ * `{cond ? items.map(...) : null}` goes through polymorphic insertion, where an array
+ * value has no identity (every factory evaluation creates brand-new nodes) and the
+ * runtime has nothing to reuse — a change of either cond or items rebuilds the whole
+ * list. This instruction splits **condition** and **list** into two subscription layers:
+ * cond only manages the container's mount/unmount; inside the container the list goes
+ * through the standard `insertList`, reusing/moving by key, so cond jitter no longer
+ * touches the list.
  *
- * 实现注意：容器**不能是注释节点**（DOM 规范 Comment 不可有子节点，insertBefore
- * 直抛 HierarchyRequestError）——用一对注释标记包夹行区，mount 收到的 container
- * 是把插入转发到 parent（锚定 endMark）的轻量代理；卸载 = 删标记区间节点 + dispose
- * 容器 scope（列表行与行内 effect 一并销毁）。与 `Show`（hidden/inert 保留挂载）分工：
- * 这里是「真正卸载」语义。
+ * Implementation note: the container **cannot be a comment node** (per the DOM spec a
+ * Comment can't have children, insertBefore throws HierarchyRequestError) — a pair of
+ * comment marks brackets the row region, and the container that mount receives is a
+ * lightweight proxy forwarding inserts to parent (anchored at endMark); unmount = delete
+ * the nodes between the marks + dispose the container scope (list rows and their effects
+ * destroyed together). Division of labor with `Show` (hidden/inert keeps mounted): this
+ * one has true "unmount" semantics.
  */
 export function insertShow(
   parent: Node,
@@ -540,9 +570,10 @@ export function insertShow(
 }
 
 /**
- * insertShow 的容器代理：只实现 insertList 家族实际触碰的两个操作
- * （insertBefore / removeChild / appendChild），插入一律锚定 endMark——
- * 对外仍以 Node 形态出现（mount 产物的类型是 (container: Node) => void）。
+ * Container proxy for insertShow: implements only the operations the insertList family
+ * actually touches (insertBefore / removeChild / appendChild), with all inserts anchored
+ * at endMark — while still presenting as a Node externally (mount's type is
+ * (container: Node) => void).
  */
 function createShowContainer(parent: Node, endMark: Node): Node {
   const container = {

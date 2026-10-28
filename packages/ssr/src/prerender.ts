@@ -1,7 +1,9 @@
-// SSG 预渲染：构建时把每条路由渲染成完整 HTML（积木层，不碰文件系统——
-// 落盘由调用方脚本负责，保持本包同构纯净）。
-// 设计：每个目标路径用「占位启动路径」创建 Router，push 真实路径以完整执行
-// guards/loader（同路径 push 会被 router 去重跳过，loader 不会跑）。
+// SSG prerender: render every route into complete HTML at build time (building block layer; it
+// never touches the filesystem — writing to disk is the caller script's job, keeping this package
+// isomorphic and pure).
+// Design: for each target path, create the Router with a "placeholder boot path", then push the
+// real path so guards/loaders fully execute (a same-path push would be skipped by the router's
+// dedup, and loaders would never run).
 import {
   createMemoryHistory,
   createRouter,
@@ -13,15 +15,15 @@ import type { VobsNode, VobsPlugin } from '@vobs/vobs'
 import { escapeAttribute, escapeHTML, isSafeAttributeName } from './renderer'
 import { renderToStringAsync, serializeState, type SSRDebugSnapshot, type SSRState, type SSRStateOptions } from './render'
 
-/* ---------- Head 管理 ---------- */
+/* ---------- Head management ---------- */
 
-/** SEO 标签：title 用 text；meta/link 用 attrs（name/property/content 等） */
+/** SEO tag: title uses text; meta/link use attrs (name/property/content etc.) */
 export type HeadTag =
   | { readonly tag: 'title'; readonly text: string }
   | { readonly tag: 'meta'; readonly attrs: Readonly<Record<string, string>> }
   | { readonly tag: 'link'; readonly attrs: Readonly<Record<string, string>> }
 
-/** 序列化 head 标签为字符串（服务端 <head> 注入用；文本与属性均转义） */
+/** Serialize head tags into a string (for server-side <head> injection; both text and attributes are escaped) */
 export function serializeHeadTags(tags: readonly HeadTag[]): string {
   const parts: string[] = []
   for (const item of tags) {
@@ -38,14 +40,14 @@ function serializeAttrs(attrs: Readonly<Record<string, string>>): string {
   let html = ''
   for (const [key, value] of Object.entries(attrs)) {
     if (value === undefined || value === null) continue
-    // 属性名不可转义（HTML 没有名字实体），只能拒绝 —— 见 renderer.isSafeAttributeName
+    // Attribute names cannot be escaped (HTML has no name entities), only rejected — see renderer.isSafeAttributeName
     if (!isSafeAttributeName(key)) continue
     html += ` ${key}="${escapeAttribute(String(value))}"`
   }
   return html
 }
 
-/** 客户端：把 head 标签应用到 document（title 直接替换；meta/link 按「识别键」复用已有元素） */
+/** Client: apply head tags to the document (title replaced directly; meta/link reuse existing elements by "identifying key") */
 export function applyHead(tags: readonly HeadTag[]): void {
   if (typeof document === 'undefined') return
   for (const item of tags) {
@@ -61,7 +63,7 @@ export function applyHead(tags: readonly HeadTag[]): void {
   }
 }
 
-/** 识别键：决定 meta/link 是否为同一个逻辑标签（meta 按 name/property 等，link 按 rel） */
+/** Identifying key: decides whether two meta/link tags are the same logical tag (meta by name/property etc., link by rel) */
 function findHeadElement(
   tag: 'meta' | 'link',
   attrs: Readonly<Record<string, string>>
@@ -77,7 +79,7 @@ function findHeadElement(
   return null
 }
 
-/** 客户端：路由切换时同步 head（SSG 水合后的 SPA 导航；返回注销函数） */
+/** Client: sync the head on route changes (SPA navigation after SSG hydration; returns an unsubscribe function) */
 export function createHeadSync(
   router: Router,
   headFor: (path: string) => readonly HeadTag[]
@@ -87,18 +89,18 @@ export function createHeadSync(
   })
 }
 
-/* ---------- 预渲染 ---------- */
+/* ---------- Prerender ---------- */
 
 export interface PrerenderPage {
-  /** 请求路径（options.routes 中的原始值） */
+  /** Requested path (the original value from options.routes) */
   readonly path: string
-  /** 导航完成后的真实路由 fullPath（守卫重定向后可能与 path 不同） */
+  /** The real route fullPath after navigation completes (may differ from path after guard redirects) */
   readonly fullPath: string
-  /** <div id="app"> 内的渲染结果（不含外壳） */
+  /** Rendered result inside <div id="app"> (excluding the shell) */
   readonly html: string
-  /** 序列化后的 <head> 标签串 */
+  /** Serialized <head> tag string */
   readonly head: string
-  /** 脱水状态（传给 renderPage 注入 __VOBS_STATE__） */
+  /** Dehydrated state (passed to renderPage for __VOBS_STATE__ injection) */
   readonly state?: SSRState
 }
 
@@ -109,17 +111,17 @@ export interface PrerenderTemplateParts {
 }
 
 export interface PrerenderOptions extends SSRStateOptions {
-  /** 预渲染的路由清单，如 ['/', '/pricing', '/download'] */
+  /** Route list to prerender, e.g. ['/', '/pricing', '/download'] */
   readonly routes: readonly string[]
-  /** 官网路由表（同 createRouter 的 routes） */
+  /** Site route table (same shape as createRouter's routes) */
   readonly routeRecords: readonly RouteRecord[]
-  /** 整站根组件；默认 () => RouterView({ router }) */
+  /** Site-wide root component; default () => RouterView({ router }) */
   readonly render?: (router: Router) => VobsNode
-  /** 每页 SEO 标签 */
+  /** Per-page SEO tags */
   readonly head?: (path: string) => readonly HeadTag[]
-  /** 额外插件（i18n/theme 等） */
+  /** Extra plugins (i18n/theme etc.) */
   readonly plugins?: VobsPlugin[]
-  /** 请求诊断 side-channel */
+  /** Request diagnostics side-channel */
   readonly debug?: { readonly captureRequests?: boolean }
 }
 
@@ -129,15 +131,16 @@ export interface PrerenderResult {
 }
 
 /**
- * 构建时逐页渲染：返回每页的渲染结果 + head + 脱水状态（不写文件）。
- * 典型用法：build 脚本中循环 renderPage(page) 后 writeFile 到 dist/<path>/index.html。
+ * Render page by page at build time: returns each page's render result + head + dehydrated state
+ * (writes no files).
+ * Typical usage: in a build script, loop renderPage(page) and writeFile to dist/<path>/index.html.
  */
 export async function prerenderRoutes(options: PrerenderOptions): Promise<PrerenderResult> {
   const pages: PrerenderPage[] = []
   let debug: SSRDebugSnapshot | undefined
 
   for (const path of options.routes) {
-    // 占位启动路径：保证目标页的 guards/loader 完整执行（同路径 push 会被去重）
+    // Placeholder boot path: guarantees the target page's guards/loaders fully execute (a same-path push would be deduped)
     const router = createRouter({
       history: createMemoryHistory('/__vobs_boot__'),
       routes: options.routeRecords
@@ -145,7 +148,7 @@ export async function prerenderRoutes(options: PrerenderOptions): Promise<Preren
     try {
       const target = await router.push(path)
       if (target === false) {
-        throw new Error(`Vobs SSR: 预渲染 ${path} 被导航守卫取消`)
+        throw new Error(`Vobs SSR: prerender of ${path} was cancelled by a navigation guard`)
       }
       const render = options.render ?? ((instance: Router) => RouterView({ router: instance }))
       const result = await renderToStringAsync(() => render(router), {
@@ -172,13 +175,13 @@ export async function prerenderRoutes(options: PrerenderOptions): Promise<Preren
   return { pages, debug }
 }
 
-/** 把 PrerenderPage 组装成完整 HTML 文档（默认极简壳；template 可整页定制） */
+/** Assembles a PrerenderPage into a complete HTML document (minimal shell by default; template can fully customize the page) */
 export function renderPage(
   page: PrerenderPage,
   options: {
-    /** 客户端入口脚本（如 <script type="module" src="/assets/entry.js"></script>） */
+    /** Client entry script (e.g. <script type="module" src="/assets/entry.js"></script>) */
     readonly entryScript?: string
-    /** 自定义外壳；默认 <!doctype html><html><head>…</head><body>…</body></html> */
+    /** Custom shell; default <!doctype html><html><head>…</head><body>…</body></html> */
     readonly template?: (parts: PrerenderTemplateParts) => string
   } = {}
 ): string {

@@ -17,11 +17,13 @@ export interface AsyncSSRResult {
   readonly dict?: DictDehydratedState
   readonly state?: SSRState
   /**
-   * 这轮 SSR 里**失败**的资源（`ResourceClient.errors()` 的快照），**仅在非空时出现**。
+   * Resources that **failed** during this SSR round (a snapshot of `ResourceClient.errors()`),
+   * **present only when non-empty**.
    *
-   * 存在的理由：`prefetchAll()` 刻意不抛错（一个请求失败不该让整页 500），而 `dehydrate()` 又会
-   * 剔除失败项 —— 于是服务端会安安静静地返回一份"用残缺数据渲染"的 HTML。有了这个字段，
-   * 服务端至少能把"这次渲染有失败资源"记进日志/监控，而不是等用户看到空列表。
+   * Why it exists: `prefetchAll()` deliberately never throws (one failed request must not 500 the
+   * whole page), and `dehydrate()` drops failed entries — so the server would quietly return HTML
+   * "rendered from incomplete data". With this field, the server can at least log/monitor "this
+   * render had failed resources" instead of waiting for the user to notice an empty list.
    */
   readonly failedResources?: readonly ResourceFailure[]
   readonly debug?: SSRDebugSnapshot
@@ -85,8 +87,9 @@ export interface AsyncSSROptions extends SSRStateOptions {
     readonly captureRequests?: boolean
   }
   /**
-   * 异步 SSR 冲刷到"渲染结果不再变化"的最大轮数（默认 10）。
-   * 用于兜住"数据到达后又排了若干跳异步工作"的情况；设 1 即退回旧的单次 update 行为。
+   * Maximum rounds for async SSR to flush until "the render result stops changing" (default 10).
+   * Covers the case where "after data arrives, several more hops of async work were queued";
+   * setting 1 falls back to the old single-update behavior.
    */
   readonly maxFlushRounds?: number
 }
@@ -137,21 +140,25 @@ export async function renderToStringAsync(
     app.mount(ssr.container)
     await options.resourceClient?.prefetchAll()
     /*
-     * `setRenderer` 是进程级单例且没有 async context：上面这个 await 期间，另一个
-     * renderToString / renderToStringAsync 可能已经装上了它自己的渲染器。刷新前把自己这一份
-     * 重新装上 —— 否则这次 update 会用别人的渲染器写自己的树。
-     * 残留局限：两个 async 渲染真正交错时仍是"最后装上的赢"，彻底解决需要按 owner 携带渲染器。
+     * `setRenderer` is a process-level singleton with no async context: during the await above,
+     * another renderToString / renderToStringAsync may already have installed its own renderer.
+     * Re-install our own copy before flushing — otherwise this update would write our tree with
+     * someone else's renderer.
+     * Remaining limitation: when two async renders truly interleave, it is still "last installed
+     * wins"; a complete fix requires carrying the renderer per owner.
      */
     setRenderer(ssr.renderer)
     /*
-     * 冲刷到**稳定**为止，而不是只 update 一次。
+     * Flush until **stable**, not just a single update.
      *
-     * `await prefetchAll()` 只解决第一跳：数据到达后，绑定 effect 里可能还有链式 promise/`await`，
-     * 或者本次写入又触发新的 effect —— 它们要再经过若干轮微任务才就绪。只 `app.update()` 一次，
-     * 这些内容就**静默缺失**（HTML 里留着占位或旧值，既不报错也没有任何线索）。
+     * `await prefetchAll()` only resolves the first hop: after data arrives, the binding effects may
+     * still hold chained promises/`await`s, or this write may trigger new effects — those need a few
+     * more rounds of microtasks to become ready. A single `app.update()` leaves them **silently
+     * missing** (the HTML keeps placeholders or stale values, with no error and no lead).
      *
-     * 循环判据是"渲染结果不再变化"（不是固定次数），并设上限防死循环；
-     * 每轮都重装自己的渲染器（`setRenderer` 是进程级单例，await 期间可能被别人换掉）。
+     * The loop criterion is "the render result stops changing" (not a fixed count), with an upper
+     * bound to prevent infinite loops; every round re-installs our own renderer (`setRenderer` is a
+     * process-level singleton and may have been swapped during the await).
      */
     const maxFlushRounds = Math.max(1, options.maxFlushRounds ?? 10)
     let previousHTML = ''
@@ -161,11 +168,11 @@ export async function renderToStringAsync(
       const html = ssr.toHTML()
       if (html === previousHTML) break
       previousHTML = html
-      // 让排队中的异步工作推进一轮（宏任务：把已排队的微任务链全部放行）
+      // Let queued async work advance one round (macrotask: release the whole queued microtask chain)
       await new Promise(resolve => { setTimeout(resolve, 0) })
     }
     const endedAt = Date.now()
-    // `errors` 是后加的只读视图；用可选调用保持对旧 stub/旧 client 的兼容
+    // `errors` is the later-added read-only view; optional call keeps compatibility with old stubs/clients
     const failedResources = options.resourceClient?.errors?.() ?? []
     return {
       html: ssr.toHTML(),
@@ -185,16 +192,19 @@ export async function renderToStringAsync(
     restoreDebugContext()
     stopDebug()
     /*
-     * 进程级默认 client 必须在每次渲染收尾时复位。
+     * The process-level default client must be reset at the end of every render.
      *
-     * `resource()` 的函数式 API 用的是 `@vobs/resource` 的**模块级** client，它与本次请求
-     * 没有任何关系：不清就会被下一个请求（或同一进程里的下一轮预渲染）原样复用。
-     * 实测探针 `probe-audit-ssr-2.test.mjs` H5/H6：连续渲染「alice」「bob」两个用户，
-     * 第二次的产物与 `dehydrate()` 里都是 **alice**，fetcher 只被调用 1 次 ——
-     * 也就是把上一位用户的数据随脱水快照发给了下一个页面。
+     * The `resource()` function API uses `@vobs/resource`'s **module-level** client, which has
+     * nothing to do with this request: not clearing it means the next request (or the next
+     * prerender round in the same process) reuses it as-is.
+     * Measured probe `probe-audit-ssr-2.test.mjs` H5/H6: rendering users "alice" then "bob" in a
+     * row, the second render's output and `dehydrate()` both contained **alice**, and the fetcher
+     * was called only once — i.e. the previous user's data was shipped to the next page inside the
+     * dehydrated snapshot.
      *
-     * 放在 finally 里是为了「渲染抛错也不把脏缓存留给下一个请求」。
-     * 调用方**自己传入**的 `options.resourceClient` 不动 —— 那个生命周期由调用方拥有。
+     * Placed in finally so that "even a throwing render does not leave a dirty cache for the next
+     * request". A caller-supplied `options.resourceClient` is left alone — its lifecycle is owned
+     * by the caller.
      */
     resetDefaultResourceClient()
     app.destroy()
@@ -227,11 +237,11 @@ export function parseState(snapshot: unknown): SSRState {
     try {
       value = JSON.parse(snapshot)
     } catch {
-      throw new Error('Vobs SSR: 初始状态不是有效 JSON')
+      throw new Error('Vobs SSR: initial state is not valid JSON')
     }
   }
   if (!value || typeof value !== 'object' || (value as { version?: unknown }).version !== 1) {
-    throw new Error('Vobs SSR: 初始状态版本或格式无效')
+    throw new Error('Vobs SSR: initial state version or format is invalid')
   }
   const state = value as SSRState
   if (state.i18n !== undefined) validateI18nState(state.i18n)
@@ -242,10 +252,10 @@ function validateI18nState(value: I18nSSRState): void {
   if (!value || typeof value !== 'object' || value.version !== 1
     || typeof value.locale !== 'string' || !value.locale.trim()
     || !value.messages || typeof value.messages !== 'object' || Array.isArray(value.messages)) {
-    throw new Error('Vobs SSR: i18n 初始状态版本或格式无效')
+    throw new Error('Vobs SSR: i18n initial state version or format is invalid')
   }
   for (const [locale, messages] of Object.entries(value.messages)) {
-    if (!locale.trim() || !isMessageObject(messages)) throw new Error('Vobs SSR: i18n messages 格式无效')
+    if (!locale.trim() || !isMessageObject(messages)) throw new Error('Vobs SSR: i18n messages format is invalid')
   }
 }
 

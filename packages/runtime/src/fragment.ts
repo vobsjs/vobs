@@ -25,7 +25,7 @@ export function createFragment(factory: FragmentFactory): VobsFragment {
     end,
     mount(nextParent, anchor): void {
       if (parent && parent !== nextParent) {
-        throw new Error('Vobs Fragment: 不能跨父节点移动 Fragment')
+        throw new Error('Vobs Fragment: cannot move a Fragment across parent nodes')
       }
 
       if (initialized) {
@@ -43,7 +43,7 @@ export function createFragment(factory: FragmentFactory): VobsFragment {
     },
     unmount(nextParent): void {
       if (!initialized || parent !== nextParent) {
-        throw new Error('Vobs Fragment: Fragment 不属于指定父节点')
+        throw new Error('Vobs Fragment: the Fragment does not belong to the given parent node')
       }
       const renderer = getRenderer()
       let current = renderer.nextSibling(start)
@@ -75,7 +75,7 @@ function moveRange(parent: Node, start: Node, end: Node, anchor: Node | null): v
     current = renderer.nextSibling(current)
   }
   if (nodes[nodes.length - 1] !== end) {
-    throw new Error('Vobs Fragment: 找不到结束锚点')
+    throw new Error('Vobs Fragment: end anchor not found')
   }
   for (const node of nodes) renderer.insertBefore(parent, node, anchor)
 }

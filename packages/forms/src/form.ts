@@ -101,11 +101,11 @@ export interface FormFieldProps<T extends object> {
   form: Form<T>
   name: string
   label?: string
-  /** 直接渲染 UI 组件（如 @vobs/ui 的 Input/Select）；Field 注入 value/onInput/onBlur 受控接线。children 优先。 */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 接受任意组件的 props 形状
+  /** Render a UI component directly (e.g. @vobs/ui Input/Select); Field injects value/onInput/onBlur controlled wiring. children takes precedence. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accepts any component's props shape
   component?: (props: any) => VobsNode
   children?: (field: FormField<unknown>) => VobsNode
-  /** component 渲染时透传给组件的其余 props（如 placeholder、type）。 */
+  /** Remaining props passed through to the component when component renders (e.g. placeholder, type). */
   [prop: string]: unknown
 }
 
@@ -125,7 +125,7 @@ interface InternalField<TValue, TValues extends object> {
   debounceCancel?: () => void
 }
 
-const FORM_DISPOSED = 'Vobs forms: 表单已销毁'
+const FORM_DISPOSED = 'Vobs forms: the form has been disposed'
 
 export function useForm<T extends object>(initialValues: T, options: FormOptions<T> = {}): Form<T> {
   return createForm(initialValues, options)
@@ -175,7 +175,7 @@ export function createForm<T extends object>(initialValues: T, options: FormOpti
 
   function getInternalField(name: string): InternalField<unknown, T> {
     const field = fields.get(name)
-    if (!field) throw new Error(`Vobs forms: 未定义字段 "${name}"`)
+    if (!field) throw new Error(`Vobs forms: undefined field "${name}"`)
     return field
   }
 
@@ -221,7 +221,7 @@ export function createForm<T extends object>(initialValues: T, options: FormOpti
 
   function normalizeMessage(value: unknown): string | null {
     if (value === undefined || value === null || value === '' || value === false) return null
-    if (value instanceof Error) return value.message || '校验失败'
+    if (value instanceof Error) return value.message || 'Validation failed'
     return String(value)
   }
 
@@ -248,12 +248,12 @@ export function createForm<T extends object>(initialValues: T, options: FormOpti
           result = validator(value, snapshot, signal)
         } catch (error) {
           if (signal.aborted) return null
-          return normalizeMessage(error) ?? '校验失败'
+          return normalizeMessage(error) ?? 'Validation failed'
         }
         if (isPromiseLike(result)) {
           return Promise.resolve(result).then(
             message => normalizeMessage(message) ?? next(),
-            error => signal.aborted ? null : normalizeMessage(error) ?? '校验失败'
+            error => signal.aborted ? null : normalizeMessage(error) ?? 'Validation failed'
           )
         }
         const message = normalizeMessage(result)
@@ -271,12 +271,12 @@ export function createForm<T extends object>(initialValues: T, options: FormOpti
       const result = options.schema.validate(snapshot)
       if (isPromiseLike(result)) {
         return Promise.resolve(result).then(normalizeErrors, error => ({
-          __form: normalizeMessage(error) ?? '校验失败'
-        } as FormErrors<T>))
+        __form: normalizeMessage(error) ?? 'Validation failed'
+      } as FormErrors<T>))
       }
       return normalizeErrors(result)
     } catch (error) {
-      return { __form: normalizeMessage(error) ?? '校验失败' } as FormErrors<T>
+      return { __form: normalizeMessage(error) ?? 'Validation failed' } as FormErrors<T>
     }
   }
 
@@ -378,13 +378,15 @@ export function createForm<T extends object>(initialValues: T, options: FormOpti
   }
 
 /*
- * schema 返回了表单里没有的字段名 —— 那基本就是拼错了，而它原来被**静默丢弃**：
- * `applyAllErrors` 只遍历 `names`（本文件的 `for (const name of names)`），于是
- * `rules` 里写错一个字段名，那条校验永远不会执行，而 `validateAll()` 返回空对象
- * → `submit()` 直接 valid:true 并真的执行提交。
+ * The schema returned field names that do not exist in the form — almost certainly a typo, and
+ * they were originally **silently dropped**: `applyAllErrors` only iterates `names` (the
+ * `for (const name of names)` in this file), so a misspelled field name in `rules` meant that
+ * validation never ran and `validateAll()` returned an empty object
+ * → `submit()` went straight to valid:true and actually submitted.
  *
- * 这里只**警告**、不抛错：schema 作为"超集"（比如共享一份通用校验器）是合法用法，
- * 抛错会把那些用法一并打死。警告只报一次（拼错是静态错误，报一次就够了）。
+ * Here we only **warn**, not throw: schema as a "superset" (e.g. sharing one common validator
+ * set) is a legitimate usage, and throwing would kill those usages too. The warning fires only
+ * once per key (a typo is a static error; one warning is enough).
  */
 const reportedUnknownSchemaKeys = new Set<string>()
 
@@ -396,9 +398,9 @@ function reportUnknownSchemaKeys<T extends object>(
     if (key === '__form' || names.includes(key)) continue
     if (reportedUnknownSchemaKeys.has(key)) continue
     reportedUnknownSchemaKeys.add(key)
-    console.warn(`[vobs] 校验 schema 返回了表单里没有的字段 "${key}"，这条错误会被忽略、`
-      + `也不会挡住提交。表单字段：${names.length > 0 ? names.join('、') : '（无）'}`
-      + ' —— 请检查字段名是否拼错。')
+    console.warn(`[vobs] the validation schema returned field "${key}" which does not exist in the form; `
+      + `this error will be ignored and will not block submission. Form fields: ${names.length > 0 ? names.join(', ') : '(none)'}`
+      + ' — check whether the field name is misspelled.')
   }
 }
   function validateField(name: FormFieldName<T>): ValidationOutput {
@@ -510,8 +512,8 @@ function reportUnknownSchemaKeys<T extends object>(
 
   function addField<TValue>(name: string, initialValue: TValue, fieldOptions: DynamicFieldOptions<T, TValue> = {}): FormField<TValue> {
     assertActive()
-    if (!name) throw new Error('Vobs forms: 字段名不能为空')
-    if (fields.has(name)) throw new Error(`Vobs forms: 字段 "${name}" 已存在`)
+    if (!name) throw new Error('Vobs forms: field name must not be empty')
+    if (fields.has(name)) throw new Error(`Vobs forms: field "${name}" already exists`)
     const validators = fieldOptions.validators
       ? (Array.isArray(fieldOptions.validators) ? fieldOptions.validators : [fieldOptions.validators]) as readonly Validator<unknown, T>[]
       : undefined
@@ -559,12 +561,14 @@ function reportUnknownSchemaKeys<T extends object>(
       if (!fields.has(name)) continue
       setFieldError(name, normalizeMessage(message))
       /*
-       * 同时标记 touched。
+       * Also mark touched.
        *
-       * 服务端错误按定义是针对"用户已经提交过的值" —— 那个字段必然已经交互过。而 Field 的错误渲染
-       * 门槛是 `touched && error`（field.ts:54-55），原来这里只写 error 不置 touched，于是
-       * `setServerErrors()` 这个**专为服务端错误设计的 API** 在官方 Field 上永远显示不出来
-       * （实测：error 有值、touched=false、DOM 里什么都没有；用户一输入还被 set() 清掉）。
+       * Server errors are by definition about "values the user has already submitted" — that
+       * field was necessarily interacted with. Field's error rendering gate is `touched && error`
+       * (field.ts:54-55); originally only error was written here without setting touched, so
+       * `setServerErrors()` — an API **designed specifically for server errors** — never showed
+       * on the official Field (measured: error had a value, touched=false, nothing in the DOM;
+       * and a single input cleared it via set()).
        */
       markTouchedByName(name)
     }
@@ -692,7 +696,7 @@ function createValuesProxy<T extends object>(fields: Map<string, InternalField<u
       return fields.get(property)?.value.value
     },
     set(): boolean {
-      throw new Error('Vobs forms: values 不能直接赋值，请使用 field(name).set(value)')
+      throw new Error('Vobs forms: values must not be assigned directly; use field(name).set(value)')
     },
     has(_target, property: string | symbol): boolean {
       return typeof property === 'string' && fields.has(property)

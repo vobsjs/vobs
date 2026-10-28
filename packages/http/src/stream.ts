@@ -15,7 +15,7 @@ export type SSEConstructor = new (url: string, options?: EventSourceInit) => Eve
 
 export function createSSE(url: string, options: SSEOptions = {}): SSEClient {
   const EventSourceImpl = options.eventSource ?? globalThis.EventSource
-  if (!EventSourceImpl) throw new Error('HTTP: 当前环境没有可用的 EventSource')
+  if (!EventSourceImpl) throw new Error('HTTP: no EventSource available in the current environment')
   const source = new EventSourceImpl(url, { withCredentials: options.withCredentials ?? false })
   if (options.onOpen) source.addEventListener('open', options.onOpen)
   if (options.onMessage) source.addEventListener('message', options.onMessage)
@@ -55,10 +55,10 @@ export type WebSocketConstructor = new (
 
 export function createWebSocket(url: string, options: WebSocketOptions = {}): WebSocketClient {
   const WebSocketImpl = options.webSocket ?? globalThis.WebSocket
-  if (!WebSocketImpl) throw new Error('HTTP: 当前环境没有可用的 WebSocket')
+  if (!WebSocketImpl) throw new Error('HTTP: no WebSocket available in the current environment')
   const reconnectDelay = options.reconnectDelay ?? 1_000
   if (!Number.isFinite(reconnectDelay) || reconnectDelay < 0) {
-    throw new Error('HTTP: reconnectDelay 必须是大于等于 0 的有限数字')
+    throw new Error('HTTP: reconnectDelay must be a finite number >= 0')
   }
 
   const listeners = new Map<WebSocketEventName, Set<(event: Event) => void>>()
@@ -72,7 +72,7 @@ export function createWebSocket(url: string, options: WebSocketOptions = {}): We
     get state(): WebSocketState { return state },
     connect,
     send(data) {
-      if (!socket || state !== 'open') throw new Error('HTTP: WebSocket 尚未连接')
+      if (!socket || state !== 'open') throw new Error('HTTP: WebSocket is not connected yet')
       socket.send(data)
     },
     close(code, reason) {

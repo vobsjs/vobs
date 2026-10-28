@@ -43,8 +43,8 @@ export function resourceRouterPlugin(options: ResourceRouterPluginOptions = {}):
     install(context) {
       const router = options.router ?? context.inject(ROUTER_KEY)
       const client = options.client ?? context.inject(RESOURCE_KEY)
-      if (!router) throw new Error('Vobs Resource Router: 找不到 Router，请安装 routerPlugin 或传入 router')
-      if (!client) throw new Error('Vobs Resource Router: 找不到 ResourceClient，请安装 resourcePlugin 或传入 client')
+      if (!router) throw new Error('Vobs Resource Router: Router not found, install routerPlugin or pass a router')
+      if (!client) throw new Error('Vobs Resource Router: ResourceClient not found, install resourcePlugin or pass a client')
 
       return router.beforeEach(async to => {
         const prefetch = readPrefetch(to)
@@ -64,7 +64,7 @@ function readPrefetch(route: RouteLocation): readonly ResourceRoutePrefetch[] {
   if (value === undefined) return []
   if (typeof value === 'function') return [value as ResourceRoutePrefetch]
   if (!Array.isArray(value) || value.some(task => typeof task !== 'function')) {
-    throw new Error('Vobs Resource Router: route.meta.prefetch 必须是函数或函数数组')
+    throw new Error('Vobs Resource Router: route.meta.prefetch must be a function or an array of functions')
   }
   return value as ResourceRoutePrefetch[]
 }

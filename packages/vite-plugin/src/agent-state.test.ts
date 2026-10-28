@@ -1,16 +1,18 @@
 /*
- * Agent 运行时快照通道（`/__vobs/agent-state`）的**中间件行为**测试。
+ * Middleware-behavior tests for the Agent runtime snapshot channel (`/__vobs/agent-state`).
  *
- * 通道模式与 devGuardrails 违规上报同构（浏览器探针 POST → dev server 缓存 →
- * 消费面读取），但消费面不是终端而是 **HTTP GET 的 JSON** —— Agent 自验闭环
- * （生成 → 写前 snippet 自检 → 运行时快照查询 → 修正）的最后一环。
+ * The channel pattern is isomorphic to devGuardrails violation reporting (browser probe
+ * POST → dev server cache → consumer read), but the consumer is not the terminal — it is
+ * **HTTP GET JSON**, the last link in the Agent self-verification loop
+ * (generate → pre-write snippet self-check → runtime snapshot query → correction).
  *
- * 这里锁住四条行为：POST 落缓存、GET 返回、损坏载荷丢弃、页面桶上限。
+ * Four behaviors are locked here: POST lands in cache, GET returns, corrupted payloads
+ * are dropped, and the per-page bucket cap.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { vobsPlugin } from './index'
 
-/** 从插件里抽出 configureServer 注册的中间件（mock 掉 ViteDevServer 的用到的部分）。 */
+/** Extract the middleware registered by configureServer from the plugin (mocking the used parts of ViteDevServer). */
 function setupMiddleware() {
   let handler: (req: unknown, res: unknown, next: () => void) => void = () => undefined
   const wsHandlers = new Map<string, (data: unknown) => void>()
@@ -28,7 +30,7 @@ function setupMiddleware() {
   return { handler, wsHandlers, wsSend }
 }
 
-/** 极简 req/res 桩：POST 时 body 通过 'data'/'end' 事件给入。 */
+/** Minimal req/res stub: for POST, the body is fed in via 'data'/'end' events. */
 function call(handler: (req: unknown, res: unknown, next: () => void) => void, method: string, url: string, body?: string) {
   return new Promise<{ statusCode: number | undefined; body: string }>(resolve => {
     const chunks: string[] = []
@@ -52,8 +54,8 @@ function call(handler: (req: unknown, res: unknown, next: () => void) => void, m
   })
 }
 
-describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
-  it('POST 落缓存，GET 返回同一份快照（按 page 分桶）', async () => {
+describe('Agent runtime snapshot channel (/__vobs/agent-state)', () => {
+  it('POST lands in cache, GET returns the same snapshot (bucketed by page)', async () => {
     const { handler } = setupMiddleware()
     await call(handler, 'POST', '/__vobs/agent-state', JSON.stringify({
       page: 'http://localhost:5175/', ts: 1, effects: [{ id: 'effect-1', dependencies: ['signal-1'] }]
@@ -66,7 +68,7 @@ describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
     expect(parsed.pages[0]!.effects[0]!.id).toBe('effect-1')
   })
 
-  it('同一 page 的第二次 POST **替换**旧快照（不累积）', async () => {
+  it('a second POST for the same page **replaces** the old snapshot (does not accumulate)', async () => {
     const { handler } = setupMiddleware()
     for (const ts of [1, 2]) {
       await call(handler, 'POST', '/__vobs/agent-state', JSON.stringify({ page: 'http://x/', ts }))
@@ -77,7 +79,7 @@ describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
     expect(parsed.pages[0]!.ts).toBe(2)
   })
 
-  it('损坏的 JSON 载荷被丢弃（204，不影响已有快照）', async () => {
+  it('corrupted JSON payloads are dropped (204, existing snapshots unaffected)', async () => {
     const { handler } = setupMiddleware()
     await call(handler, 'POST', '/__vobs/agent-state', JSON.stringify({ page: 'http://x/', ts: 1 }))
     await call(handler, 'POST', '/__vobs/agent-state', '{ broken')
@@ -87,7 +89,7 @@ describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
     expect(parsed.pages[0]!.page).toBe('http://x/')
   })
 
-  it('页面桶上限 20 —— 防多标签页/轮询刷爆内存', async () => {
+  it('page bucket cap of 20 — keeps multi-tab/polling from exhausting memory', async () => {
     const { handler } = setupMiddleware()
     for (let index = 0; index < 25; index++) {
       await call(handler, 'POST', '/__vobs/agent-state', JSON.stringify({ page: `http://x/${index}`, ts: index }))
@@ -97,19 +99,19 @@ describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
     expect(parsed.pages.length).toBe(20)
   })
 
-  it('无关路径直接 next()（不劫持应用请求）', async () => {
+  it('unrelated paths go straight to next() (does not hijack application requests)', async () => {
     const { handler } = setupMiddleware()
     const result = await call(handler, 'GET', '/some/app/route')
     expect(result.body).toBe('next() was called')
   })
 
-  it('GET ?live=1 经 vite WS 广播请求，浏览器应答后返回 stale:false 的实时快照', async () => {
+  it('GET ?live=1 broadcasts over vite WS and returns a stale:false live snapshot once the browser responds', async () => {
     const { handler, wsHandlers, wsSend } = setupMiddleware()
     const pending = call(handler, 'GET', '/__vobs/agent-state?live=1')
-    // 广播已发出（探针在浏览器里监听这个 custom event）
+    // The broadcast has been sent (the probe listens for this custom event in the browser)
     expect(wsSend).toHaveBeenCalledWith({ type: 'custom', event: 'vobs:agent-state-request', data: { id: expect.any(Number) } })
     const id = (wsSend.mock.calls[0]![0] as { data: { id: number } }).data.id
-    // 模拟探针立即回传
+    // Simulate the probe responding immediately
     wsHandlers.get('vobs:agent-state:response')!({
       id,
       snapshot: { page: 'http://x/live', ts: Date.now(), effects: [{ id: 'effect-live' }] }
@@ -120,7 +122,7 @@ describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
     expect(parsed.pages[0]!.page).toBe('http://x/live')
   })
 
-  it('live 查询在无浏览器应答时超时回退缓存（stale:true），不挂死', async () => {
+  it('live queries time out and fall back to the cache (stale:true) when no browser responds, without hanging', async () => {
     vi.useFakeTimers()
     try {
       const { handler } = setupMiddleware()

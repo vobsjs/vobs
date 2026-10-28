@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 /*
- * `removeEventListener(node, event, handler)` **必须比 handler 身份**。
+ * `removeEventListener(node, event, handler)` **must compare handler identity**.
  *
- * 这是 DOM `removeEventListener` 的既定语义：只有 `(type, listener, capture)` 三者都一致
- * 才摘除；用另一个 listener 调用是 **no-op**。
+ * This is the DOM `removeEventListener` established semantics: only when
+ * `(type, listener, capture)` all match does it detach; calling with another listener is
+ * a **no-op**.
  *
- * 修复前：实现忽略传入的 `handler` —— 只要 `(node,event)` 上有绑定就一律摘掉并删除绑定记录。
- * 于是"取消自己那次"的调用把**当前生效的别人的**监听弄没了。
- * 实测形态：`addEventListener(el,'click',A)` 之后 `removeEventListener(el,'click',B)`
- * 会把 A 摘掉，A 从此再也收不到事件。
+ * Before the fix: the implementation ignored the passed-in `handler` — as long as a
+ * binding existed for `(node,event)` it detached and deleted the record. So a "cancel my
+ * own" call killed the **currently active listener belonging to someone else**.
+ * Measured form: after `addEventListener(el,'click',A)`, calling
+ * `removeEventListener(el,'click',B)` detached A, and A never received events again.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { createDOMRenderer } from '@vobs/dom'
@@ -17,21 +19,21 @@ import { addEventListener, removeEventListener } from './ops'
 
 setRenderer(createDOMRenderer())
 
-describe('removeEventListener 按 handler 身份摘除', () => {
-  it('传另一个 handler 是 no-op，当前绑定仍然生效', () => {
+describe('removeEventListener detaches by handler identity', () => {
+  it('passing another handler is a no-op; the current binding stays in effect', () => {
     const el = document.createElement('button')
     const a = vi.fn()
     const b = vi.fn()
     addEventListener(el, 'click', a)
 
-    removeEventListener(el, 'click', b)   // 修复前：把 a 摘掉了
+    removeEventListener(el, 'click', b)   // before the fix: detached a
 
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    expect(a, '用别的 handler 调 remove 把当前绑定误摘了').toHaveBeenCalledTimes(1)
+    expect(a, 'calling remove with a different handler mistakenly detached the current binding').toHaveBeenCalledTimes(1)
     expect(b).not.toHaveBeenCalled()
   })
 
-  it('传同一个 handler 才真的摘除', () => {
+  it('passing the same handler really detaches', () => {
     const el = document.createElement('button')
     const a = vi.fn()
     addEventListener(el, 'click', a)
@@ -41,47 +43,47 @@ describe('removeEventListener 按 handler 身份摘除', () => {
     expect(a).not.toHaveBeenCalled()
   })
 
-  it('误摘失败之后，正确的摘除仍然有效（绑定记录没被破坏）', () => {
+  it('after a failed mistaken detach, the correct detach still works (the binding record wasn\'t corrupted)', () => {
     const el = document.createElement('button')
     const a = vi.fn()
     const b = vi.fn()
     addEventListener(el, 'click', a)
 
     removeEventListener(el, 'click', b)   // no-op
-    removeEventListener(el, 'click', a)   // 真正摘掉
+    removeEventListener(el, 'click', a)   // really detached
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(a).not.toHaveBeenCalled()
   })
 
-  it('重绑之后按新 handler 摘除（绑定记录跟着走）', () => {
+  it('after rebinding, detaching by the new handler (the binding record follows along)', () => {
     const el = document.createElement('button')
     const a = vi.fn()
     const b = vi.fn()
     addEventListener(el, 'click', a)
-    addEventListener(el, 'click', b)            // 重绑替换
+    addEventListener(el, 'click', b)            // rebind replaces
 
-    removeEventListener(el, 'click', a)  // 旧 handler：已不是当前绑定 → no-op
+    removeEventListener(el, 'click', a)  // old handler: no longer the current binding → no-op
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(b).toHaveBeenCalledTimes(1)
     expect(a).not.toHaveBeenCalled()
 
-    removeEventListener(el, 'click', b)  // 当前绑定 → 摘掉
+    removeEventListener(el, 'click', b)  // current binding → detach
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(b).toHaveBeenCalledTimes(1)
   })
 
-  it('没有绑定记录时，按传入的 handler 兜底摘一次（渲染器直连仍可用）', () => {
+  it('with no binding record, falls back to one detach with the passed-in handler (direct renderer use still works)', () => {
     const el = document.createElement('button')
     const direct = vi.fn()
     const renderer = createDOMRenderer()
-    renderer.addEventListener(el, 'click', direct)   // 绕过 bindEvent 直接绑
+    renderer.addEventListener(el, 'click', direct)   // bind directly, bypassing bindEvent
 
     removeEventListener(el, 'click', direct)
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(direct).not.toHaveBeenCalled()
   })
 
-  it('多个事件类型互不干扰', () => {
+  it('multiple event types don\'t interfere with each other', () => {
     const el = document.createElement('button')
     const onClick = vi.fn()
     const onFocus = vi.fn()

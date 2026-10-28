@@ -17,7 +17,7 @@ describe('@vobs/storage', () => {
     window.sessionStorage.clear()
   })
 
-  it('支持 JSON set/get、has、keys、remove 和 prefix 隔离', () => {
+  it('supports JSON set/get, has, keys, remove, and prefix isolation', () => {
     const storage = createStorage({ storage: 'memory', prefix: 'test:' })
     storage.set('user', { id: '1', roles: ['admin'] })
     storage.set('count', 2)
@@ -32,7 +32,7 @@ describe('@vobs/storage', () => {
     storage.dispose()
   })
 
-  it('优先使用 localStorage/sessionStorage，并在 SSR 或不可用时使用内存 fallback', () => {
+  it('prefers localStorage/sessionStorage and falls back to memory on SSR or when unavailable', () => {
     const local = createStorage({ prefix: 'local:' })
     const session = createStorage({ storage: 'session', prefix: 'session:' })
     local.set('value', 'local')
@@ -62,7 +62,7 @@ describe('@vobs/storage', () => {
     degraded.dispose()
   })
 
-  it('损坏 JSON 会报告错误、删除坏值并返回 null', () => {
+  it('reports an error, removes the bad value, and returns null for corrupt JSON', () => {
     const backend = createMemoryStorage()
     backend.setItem('vobs:broken', '{not-json')
     const onError = vi.fn()
@@ -74,7 +74,7 @@ describe('@vobs/storage', () => {
     storage.dispose()
   })
 
-  it('读取旧版本时执行迁移并保存新 envelope', () => {
+  it('runs migration on older versions and persists the new envelope', () => {
     const backend = createMemoryStorage()
     backend.setItem('vobs:settings', JSON.stringify({ __vobsStorage: true, version: 1, value: { compact: true } }))
     const migrate = vi.fn((value: unknown, from: number, to: number) => ({
@@ -89,7 +89,7 @@ describe('@vobs/storage', () => {
     storage.dispose()
   })
 
-  it('迁移失败返回 null 且保留旧数据', () => {
+  it('returns null and keeps the old data when migration fails', () => {
     const backend = createMemoryStorage()
     const oldValue = JSON.stringify({ __vobsStorage: true, version: 1, value: { old: true } })
     backend.setItem('vobs:settings', oldValue)
@@ -107,7 +107,7 @@ describe('@vobs/storage', () => {
     storage.dispose()
   })
 
-  it('订阅本实例写入、删除、清空和浏览器跨标签页变化', () => {
+  it('subscribes to local writes, removals, clears, and cross-tab browser changes', () => {
     const storage = createStorage({ prefix: 'events:' })
     const changes: string[] = []
     storage.subscribe(change => changes.push(`${change.source}:${change.key}:${String(change.value)}`))
@@ -132,12 +132,15 @@ describe('@vobs/storage', () => {
   })
 
   /*
-   * #7：外部 storage 事件送来的旧版本数据原来**不跑 migrate**（decodeExternal 只 JSON.parse + 解包），
-   * 于是同一份数据在订阅者手里是 `{old:1}`、在 get() 手里是 `{migrated:{old:1}}`。
-   * 现在事件路径复用读取路径的迁移，但**只迁移不写回**：回写等于把写副作用放回通知路径，而且会在
-   * 另一个标签页再触发一次 storage 事件，两个标签页互写就成了跨标签页写风暴。
+   * #7: old-version data arriving via external storage events used to **skip migrate**
+   * (decodeExternal only did JSON.parse + unwrap), so the same data appeared as `{old:1}` in
+   * subscribers' hands but `{migrated:{old:1}}` via get().
+   * The event path now reuses the read path's migration, but **migrates without writing back**:
+   * writing back would put a write side effect back on the notification path, and would trigger
+   * another storage event on the other tab — two tabs writing to each other becomes a cross-tab
+   * write storm.
    */
-  it('外部 storage 事件跑 migrate 并把当前版本交给订阅者，但不回写存储', () => {
+  it('runs migrate on external storage events and hands subscribers the current version, without writing back to storage', () => {
     const oldRaw = JSON.stringify({ __vobsStorage: true, version: 1, value: { old: 1 } })
     window.localStorage.setItem('ext:migrating', oldRaw)
     const migrate = vi.fn((value: unknown, from: number, to: number) => ({ migrated: value, from, to }))
@@ -155,16 +158,17 @@ describe('@vobs/storage', () => {
       { source: 'external', key: 'migrating', value: { migrated: { old: 1 }, from: 1, to: 2 } }
     ])
     expect(migrate).toHaveBeenCalledWith({ old: 1 }, 1, 2)
-    // 事件路径只广播，不写回：盘上仍是旧信封
+    // The event path only broadcasts, never writes back: the old envelope stays on disk
     expect(window.localStorage.getItem('ext:migrating')).toBe(oldRaw)
 
-    // 真正读取时照既有契约迁移并回写 —— 读路径的写副作用只属于 get()
+    // A real read migrates and writes back per the existing contract — the read path's write side
+    // effect belongs only to get()
     expect(storage.get('migrating')).toEqual({ migrated: { old: 1 }, from: 1, to: 2 })
     expect(window.localStorage.getItem('ext:migrating')).toContain('"version":2')
     storage.dispose()
   })
 
-  it('外部事件迁移失败时报告 MIGRATION_FAILED、广播 null 且不写回、不丢盘上旧值', () => {
+  it('reports MIGRATION_FAILED on external-event migration failure, broadcasts null, does not write back, and keeps the old value on disk', () => {
     const oldRaw = JSON.stringify({ __vobsStorage: true, version: 1, value: { old: 1 } })
     window.localStorage.setItem('extbad:settings', oldRaw)
     const onError = vi.fn()
@@ -184,14 +188,15 @@ describe('@vobs/storage', () => {
     }))
 
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'MIGRATION_FAILED' }))
-    // 与 get() 一致：迁移不了就没有可交付的值（get 也是 null），且旧数据原样留在盘上
+    // Consistent with get(): if it can't migrate there is no deliverable value (get is null too),
+    // and the old data stays on disk untouched
     expect(changes).toEqual([null])
     expect(storage.get('settings')).toBeNull()
     expect(window.localStorage.getItem('extbad:settings')).toBe(oldRaw)
     storage.dispose()
   })
 
-  it('外部事件的信封版本不低于当前版本时原样交付、不调用 migrate', () => {
+  it('delivers external events as-is without calling migrate when the envelope version is not older than the current one', () => {
     const newerRaw = JSON.stringify({ __vobsStorage: true, version: 3, value: { future: true } })
     const migrate = vi.fn()
     const changes: unknown[] = []
@@ -209,7 +214,7 @@ describe('@vobs/storage', () => {
     storage.dispose()
   })
 
-  it('外部事件里的无信封历史值也按 fromVersion=0 走 migrate，与 get() 一致', () => {
+  it('runs migrate with fromVersion=0 for legacy envelope-less values in external events, consistent with get()', () => {
     const changes: unknown[] = []
     const migrate = vi.fn((value: unknown) => ({ migrated: value }))
     const storage = createStorage({ prefix: 'extraw:', version: 2, migrate })
@@ -226,7 +231,7 @@ describe('@vobs/storage', () => {
     storage.dispose()
   })
 
-  it('插件注入 StorageContext，应用销毁后上下文不可用', () => {
+  it('injects StorageContext via the plugin and makes the context unusable after app destruction', () => {
     let injected: ReturnType<typeof createStorage> | undefined
     const app = createVobs({
       render: () => createText('app'),
@@ -240,16 +245,18 @@ describe('@vobs/storage', () => {
     injected?.set('answer', 42)
     expect(injected?.get('answer')).toBe(42)
     app.destroy()
-    expect(() => injected?.get('answer')).toThrow('已销毁')
+    expect(() => injected?.get('answer')).toThrow('disposed')
   })
 
   /*
-   * 配额/容量错误（QuotaExceededError）说明后端**还能用**：读得到、腾出空间后还能写。
-   * 原来 withBackend 对**任何**异常都做 `backend = fallback; kind = 'memory'`，于是：
-   * 盘上原有数据 get 变 null · 写入静默进内存还照常 emit（订阅者以为已持久化）·
-   * 配额恢复后写入永不落盘 · 跨标签页 storage 事件因 storageArea 不匹配而全部失效。
+   * A quota/capacity error (QuotaExceededError) means the backend is **still usable**: reads work
+   * and writes work again once space is freed. withBackend used to run
+   * `backend = fallback; kind = 'memory'` on **every** exception, so:
+   * existing data on disk read back as null via get · writes silently landed in memory but still
+   * emitted (subscribers believed they were persisted) · after quota recovered, writes never
+   * touched disk again · cross-tab storage events all stopped matching on storageArea.
    */
-  it('配额错误不会永久降级后端：盘上数据仍可读、恢复后真的落盘、不广播假事件', () => {
+  it('quota errors never permanently degrade the backend: disk data stays readable, recovery really persists, and no fake events are broadcast', () => {
     const backing = createMemoryStorage()
     let quota = false
     const flaky = {
@@ -276,11 +283,11 @@ describe('@vobs/storage', () => {
 
     quota = true
     expect(() => storage.set('b', 2)).toThrowError(expect.objectContaining({ code: 'QUOTA_EXCEEDED' }))
-    // 没有降级，盘上数据仍然读得到（原来这里变 null）
+    // No degradation happened; disk data is still readable (it used to become null here)
     expect(storage.kind).toBe('custom')
     expect(storage.persistent).toBe(true)
     expect(storage.get('a')).toBe(1)
-    // 失败的那次不得广播成功
+    // The failed write must not broadcast success
     expect(changes).toEqual(['a:1'])
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'QUOTA_EXCEEDED' }))
 
@@ -291,13 +298,13 @@ describe('@vobs/storage', () => {
     storage.dispose()
   })
 
-  it('storage:"memory" 每个上下文各自独立（不再共用模块级单例）', () => {
+  it('storage:"memory" is independent per context (no longer shared module-level singleton)', () => {
     const first = createStorage({ storage: 'memory' })
     const second = createStorage({ storage: 'memory' })
     first.set('k', 1)
     expect(second.get('k')).toBeNull()
     expect(first.get('k')).toBe(1)
-    // 想共用仍然可以：显式传入导出的单例
+    // Sharing is still possible: pass the exported singleton explicitly
     const shared = createStorage({ storage: memoryStorage, prefix: 'shared-test:' })
     const alsoShared = createStorage({ storage: memoryStorage, prefix: 'shared-test:' })
     shared.set('x', 2)
@@ -309,7 +316,7 @@ describe('@vobs/storage', () => {
     alsoShared.dispose()
   })
 
-  it('JSON 存不进去的值不会让 get 返回信封对象本身', () => {
+  it('values JSON cannot represent never make get return the envelope object itself', () => {
     const storage = createStorage({ storage: 'memory' })
     storage.set('u', undefined)
     expect(storage.get('u')).toBeNull()
@@ -318,7 +325,7 @@ describe('@vobs/storage', () => {
     storage.dispose()
   })
 
-  it('未安装插件时 useStorage 给出明确错误', () => {
+  it('useStorage gives a clear error when the plugin is not installed', () => {
     const app = createVobs({ render: () => {
       useStorage()
       return createText('')

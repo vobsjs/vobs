@@ -25,18 +25,18 @@ const CHEVRON_LEFT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none
 const CHEVRON_RIGHT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>'
 
 export interface MonthPickerProps extends VuiCommonProps {
-  /** 受控月份（YYYY-MM；与 bind 二选一；bind 优先） */
+  /** Controlled month (YYYY-MM; mutually exclusive with bind; bind wins). */
   readonly value?: string
   readonly bind?: Signal<string>
   readonly onChange?: (value: string) => void
-  /** 前翻月按钮的无障碍名 */
+  /** Accessible name for the previous-month button. */
   readonly previousLabel?: string
-  /** 后翻月按钮的无障碍名 */
+  /** Accessible name for the next-month button. */
   readonly nextLabel?: string
   readonly disabled?: boolean
 }
 
-/** 月份步进选择（‹ YYYY-MM ›） */
+/** Month stepper picker (‹ YYYY-MM ›). */
 export function MonthPicker(props: MonthPickerProps = {}): VobsNode {
   const root = createElement('div')
   const previous = createElement('button')
@@ -86,17 +86,17 @@ export function MonthPicker(props: MonthPickerProps = {}): VobsNode {
 }
 
 export interface DateRangePanelProps extends VuiCommonProps {
-  /** 起始日期（YYYY-MM-DD；'' 表示未选） */
+  /** Start date (YYYY-MM-DD; '' means not selected). */
   readonly start?: string
-  /** 结束日期（'' 表示未选完） */
+  /** End date ('' means the range isn't finished). */
   readonly end?: string
-  /** 选点回调：第一击写 start，第二击按先后归位 (start, end) */
+  /** Pick callback: the first click writes start, the second click orders (start, end) by chronology. */
   readonly onChange: (start: string, end: string) => void
-  /** 星期表头（可本地化；默认「日一二三四五六」） */
+  /** Weekday headers (localizable; defaults to Su Mo Tu We Th Fr Sa). */
   readonly weekdayLabels?: readonly string[]
 }
 
-/** 双月日历面板（范围选择；受控组件，start/end 变化由调用方重建） */
+/** Two-month calendar panel (range selection; controlled — the caller rebuilds on start/end changes). */
 export function DateRangePanel(props: DateRangePanelProps): VobsNode {
   const root = createElement('div')
   bindClassList(root, props, () => ['vui-daterange-panel'])
@@ -131,7 +131,7 @@ function buildPanel(
   pick: (day: string) => void
 ): DocumentFragment {
   const fragment = document.createDocumentFragment()
-  const weekdays = readProp<readonly string[]>(props, 'weekdayLabels', ['日', '一', '二', '三', '四', '五', '六'])
+  const weekdays = readProp<readonly string[]>(props, 'weekdayLabels', ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'])
   const second = base.m === 11 ? { y: base.y + 1, m: 0 } : { y: base.y, m: base.m + 1 }
 
   const head = createElement('div')
@@ -206,7 +206,7 @@ function buildMonthGrid(
     day.addEventListener('click', () => pick(stamp))
     days.appendChild(day)
   }
-  // 悬停预览/选中范围的高亮统一在 build 后刷一遍（面板整体重建成本可接受）
+  // Hover preview / selected-range highlights are repainted once after build (a full panel rebuild is an acceptable cost)
   const paint = (): void => {
     const s: string = readProp(props, 'start', '')
     const e: string = readProp(props, 'end', '') || hover.value || ''
@@ -229,21 +229,21 @@ function buildMonthGrid(
 }
 
 export interface DateRangeProps extends VuiCommonProps {
-  /** 受控起始日期（与 bindStart 二选一） */
+  /** Controlled start date (mutually exclusive with bindStart). */
   readonly start?: string
-  /** 受控结束日期（与 bindEnd 二选一） */
+  /** Controlled end date (mutually exclusive with bindEnd). */
   readonly end?: string
   readonly bindStart?: Signal<string>
   readonly bindEnd?: Signal<string>
   readonly disabled?: boolean
-  /** 触发器占位文案 */
+  /** Trigger placeholder text. */
   readonly placeholder?: string
-  /** 面板宽度（数字按 px，默认 420） */
+  /** Panel width (number as px, default 420). */
   readonly panelWidth?: number
   readonly onChange?: (start: string, end: string) => void
 }
 
-/** 范围日期选择（触发器 + 弹出双月面板；点击外部收起） */
+/** Range date picker (trigger + two-month popup panel; collapses on outside click). */
 export function DateRange(props: DateRangeProps = {}): VobsNode {
   const root = createElement('div')
   const trigger = createElement('button')
@@ -264,7 +264,7 @@ export function DateRange(props: DateRangeProps = {}): VobsNode {
   bindTextContent(label, () => {
     const a = startOf()
     const b = endOf()
-    if (a === '') return readProp(props, 'placeholder', '开始日期 ~ 结束日期')
+    if (a === '') return readProp(props, 'placeholder', 'Start date ~ End date')
     return `${a} ~ ${b === '' ? '…' : b}`
   })
   insertBefore(trigger, label, null)
@@ -303,7 +303,7 @@ export function DateRange(props: DateRangeProps = {}): VobsNode {
       popup.remove()
     }
   }
-  // 点击外部收起（随组件 dispose 清理）
+  // Collapse on outside click (cleaned up with the component's dispose)
   {
     const handler = (event: MouseEvent): void => {
       if (open.value && event.target instanceof Node && !root.contains(event.target)) {

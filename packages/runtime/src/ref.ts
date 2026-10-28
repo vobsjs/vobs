@@ -13,17 +13,19 @@ export function ref<T extends object = Node>(initialValue: T | null = null): Ref
 }
 
 /*
- * 每个 (Owner, ref 目标) 只保留**一条**清理注册。
+ * Keep only **one** cleanup registration per (Owner, ref target).
  *
- * 为什么需要：`ref` 会被先后绑到不同节点（同一个 ref 对象、节点被替换；
- * 或条件分支里换了宿主元素）。若每次都 `onDispose` 追加一条，销毁时按注册**逆序**执行，
- * 后注册的那条先把 `target.current` 清成 `null`，于是先注册那条的守卫
- * （`isObjectRef(target) && target.current !== node`）**恰好通过**，再清一次 ——
- * 最终读到 `null` 而不是当前节点。
+ * Why: a `ref` may be bound to different nodes over time (same ref object, node replaced;
+ * or a conditional branch swaps the host element). If every binding appended another
+ * `onDispose` entry, disposal runs registrations in **reverse** order: the later entry
+ * clears `target.current` to `null` first, so the earlier entry's guard
+ * (`isObjectRef(target) && target.current !== node`) **happens to pass** and it clears
+ * again — the final read sees `null` instead of the current node.
  *
- * 用 WeakMap<Owner, WeakMap<target, cleanup>> 而不是往 Owner 上挂属性：
- * Owner 是 class 实例，挂新属性会把它推进字典模式（reactivity/src/owner.ts 记过这笔代价）。
- * target 可弱引用（对象），函数型 ref 也可弱引用，所以不阻止回收。
+ * A WeakMap<Owner, WeakMap<target, cleanup>> instead of attaching properties to the Owner:
+ * Owner is a class instance, and adding properties pushes it into dictionary mode
+ * (reactivity/src/owner.ts recorded that cost). target is weakly referenceable (object),
+ * and function refs are objects too, so nothing blocks GC.
  */
 const refCleanups = new WeakMap<Owner, WeakMap<object, () => void>>()
 
@@ -49,14 +51,18 @@ export function setRef<T extends object>(node: T, target: unknown): void {
   if (!owner) return
   const cleanup = (): void => {
     /*
-     * 清除 ref 时**必须自己吞掉异常**，不能让 user 的 ref 回调把 dispose 级联打断。
+     * When clearing a ref, exceptions **must be swallowed here** — a user ref callback
+     * must not be allowed to break the dispose cascade.
      *
-     * `assignRef` 内部已经 try/catch + `console.error`（回调是用户代码，不该让挂载失败），
-     * 但那条保护只覆盖"赋值"这一步 —— 而这里还有一个**可能抛错的前置判断**。
-     * 按 React 语义，函数型 ref 在卸载时**本来就该收到 `null`**；若回调没判空
-     * （如 `node => insertList(node, …)`），它会抛，而异常从 onDispose 冒出去会
-     * **中断 Owner 的整个清理循环**（实测：/runtime 页面的 `<ul ref={attachList}>`）。
-     * 这与 owner.ts 已修的"子 Owner 抛错不能中断级联"是同一类缺陷。
+     * `assignRef` already does try/catch + `console.error` internally (the callback is user
+     * code; mounting shouldn't fail over it), but that protection only covers the
+     * "assign" step — there is also a **pre-check here that may throw**. Per React
+     * semantics, a function ref **is supposed to receive `null`** on unmount; if the
+     * callback doesn't null-check (e.g. `node => insertList(node, …)`), it throws, and an
+     * exception bubbling out of onDispose **interrupts the Owner's entire cleanup loop**
+     * (observed: `/runtime` page's `<ul ref={attachList}>`). This is the same class of
+     * defect as the already-fixed "a child Owner throwing must not break the cascade"
+     * in owner.ts.
      */
     try {
       // Do not clear a ref that has since been reassigned to another node.
@@ -90,9 +96,10 @@ function assignRef<T extends object>(target: RefTarget<T>, value: T | null): voi
     else target.current = value
   } catch (error) {
     /*
-     * ref 回调是用户代码，挂载不该因为它失败 —— 但也不能**完全无声**：
-     * 回调抛错时 ref 拿不到节点，界面看起来正常，用户完全不知道为什么。
-     * 保持吞掉（不冒泡），但打一条控制台记录。
+     * A ref callback is user code; mounting must not fail over it — but it also can't be
+     * **completely silent**: when the callback throws, the ref never gets the node, the UI
+     * looks fine, and the user has no idea why. Keep swallowing (no bubbling), but leave a
+     * console record.
      */
     console.error(formatVobsError(error, { includeStack: true }))
   }

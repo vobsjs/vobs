@@ -16,7 +16,7 @@ import {
 } from './index'
 
 describe('@vobs/auth', () => {
-  it('登录、登出和权限判断保持响应式 session', async () => {
+  it('login, logout and permission checks keep the session reactive', async () => {
     const auth = createAuth({
       loginHandler: async credentials => ({
         user: {
@@ -41,11 +41,12 @@ describe('@vobs/auth', () => {
   })
 
   /*
-   * 登出/销毁期间落地的 in-flight 登录原来**无条件**写 session（await 之后没有世代检查）：
-   * `auth.login()` 还没回来时用户点了登出，登录结果一落地就把人重新登入。
-   * 与 jwt-auth 同源（`6736eaf` 的 revision 模式）。
+   * An in-flight login landing during logout/dispose used to write the session **unconditionally**
+   * (no generation check after the await): if the user clicked logout while `auth.login()` was still
+   * pending, the login result signed them back in the moment it landed.
+   * Same root cause as jwt-auth (`6736eaf`, the revision pattern).
    */
-  it('登出期间落地的 in-flight 登录不得把人重新登入', async () => {
+  it('an in-flight login landing during logout must not sign the user back in', async () => {
     let release: ((session: Session) => void) | undefined
     const auth = createAuth({
       loginHandler: () => new Promise<Session>(resolve => { release = resolve })
@@ -63,7 +64,7 @@ describe('@vobs/auth', () => {
     auth.dispose()
   })
 
-  it('销毁期间落地的 in-flight 登录同样作废', async () => {
+  it('an in-flight login landing during dispose is discarded as well', async () => {
     let release: ((session: Session) => void) | undefined
     const auth = createAuth({
       loginHandler: () => new Promise<Session>(resolve => { release = resolve })
@@ -77,7 +78,7 @@ describe('@vobs/auth', () => {
     expect(auth.session.value).toBeNull()
   })
 
-  it('登出后重新登录仍然生效（世代只作废被中断的那一次）', async () => {
+  it('logging in again after logout still works (the generation only invalidates the interrupted attempt)', async () => {
     const auth = createAuth({
       loginHandler: async credentials => ({
         user: { id: String(credentials.id), roles: [], permissions: [] }
@@ -90,7 +91,7 @@ describe('@vobs/auth', () => {
     auth.dispose()
   })
 
-  it('未配置登录处理器、无权限和无效 session 都给出 AuthError', async () => {
+  it('missing login handler, denied permission and invalid session all raise AuthError', async () => {
     const auth = createAuth()
     await expect(auth.login({})).rejects.toMatchObject({ code: 'LOGIN_NOT_CONFIGURED' })
     expect(() => auth.requirePermission('admin')).toThrowError(
@@ -102,7 +103,7 @@ describe('@vobs/auth', () => {
     invalid.dispose()
   })
 
-  it('authPlugin 注入上下文，并在应用销毁时清理自有上下文', () => {
+  it('authPlugin injects the context and cleans up its own context on app destroy', () => {
     let injected: unknown
     const app = createVobs({
       render: () => createText('app'),
@@ -114,10 +115,10 @@ describe('@vobs/auth', () => {
     })
     expect(injected).toBeDefined()
     app.destroy()
-    expect(() => (injected as ReturnType<typeof createAuth>).logout()).toThrow('已销毁')
+    expect(() => (injected as ReturnType<typeof createAuth>).logout()).toThrow('disposed')
   })
 
-  it('权限边界默认拒绝，并在 session 变化后更新子树', () => {
+  it('permission boundaries deny by default and re-render the subtree when the session changes', () => {
     setRenderer(createDOMRenderer())
     const auth = createAuth()
     const container = document.createElement('div')
@@ -150,7 +151,7 @@ describe('@vobs/auth', () => {
     auth.dispose()
   })
 
-  it('可配合 Router 守卫拒绝匿名访问并重定向登录页', async () => {
+  it('works with a Router guard to deny anonymous access and redirect to the login page', async () => {
     const auth = createAuth()
     const router = createRouter({
       history: createMemoryHistory('/'),
@@ -169,7 +170,7 @@ describe('@vobs/auth', () => {
     auth.dispose()
   })
 
-  it('可用 HTTP 请求拦截器读取当前 session 并在登出后停止携带凭证', async () => {
+  it('HTTP request interceptors can read the current session and stop attaching credentials after logout', async () => {
     const auth = createAuth()
     const seen: string[] = []
     const client = createHTTPClient({
@@ -193,7 +194,7 @@ describe('@vobs/auth', () => {
     auth.dispose()
   })
 
-  it('Resource fetcher 复用带 Auth session 的 HTTP 请求拦截器', async () => {
+  it('Resource fetcher reuses HTTP request interceptors carrying the Auth session', async () => {
     const auth = createAuth()
     const client = createHTTPClient({
       adapter: config => new Response(JSON.stringify({
@@ -224,7 +225,7 @@ describe('@vobs/auth', () => {
     auth.dispose()
   })
 
-  it('未安装插件时 useAuth 抛出明确错误', () => {
+  it('useAuth throws a clear error when the plugin is not installed', () => {
     const app = createVobs({ render: () => {
       useAuth()
       return createText('')

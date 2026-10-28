@@ -42,7 +42,7 @@ function compileNode(node: HtmlNode, filename: string): string[] {
 
   if (isElement(node)) {
     const tag = node.tagName.toLowerCase()
-    if (blockedTags.has(tag)) throw new Error(`Vobs HTML component: 禁止使用 <${tag}> (${filename})`)
+    if (blockedTags.has(tag)) throw new Error(`Vobs HTML component: <${tag}> is not allowed (${filename})`)
 
     const children = compileChildren(node, filename)
     const statements = [`const element = createElement(${JSON.stringify(tag)})`]
@@ -65,13 +65,13 @@ function compileNode(node: HtmlNode, filename: string): string[] {
         }
         continue
       }
-      if (blockedAttributes.test(name)) throw new Error(`Vobs HTML component: 禁止使用危险属性 ${attribute.name} (${filename})`)
+      if (blockedAttributes.test(name)) throw new Error(`Vobs HTML component: dangerous attribute not allowed: ${attribute.name} (${filename})`)
       if (urlAttributes.has(name) && !isSafeUrl(value)) {
-        throw new Error(`Vobs HTML component: 禁止使用危险 URL 属性 ${attribute.name} (${filename})`)
+        throw new Error(`Vobs HTML component: dangerous URL attribute not allowed: ${attribute.name} (${filename})`)
       }
       statements.push(`setAttribute(element, ${JSON.stringify(attribute.name)}, ${JSON.stringify(value)})`)
     }
-    if (dynamicText.length > 1) throw new Error(`Vobs HTML component: 一个元素只能使用一个 data-vobs-text 指令 (${filename})`)
+    if (dynamicText.length > 1) throw new Error(`Vobs HTML component: an element accepts only one data-vobs-text directive (${filename})`)
     if (dynamicText.length === 1) {
       const text = 'createText("")'
       statements.push(`const text = ${text}`)
@@ -112,22 +112,22 @@ function parseDirective(name: string, value: string, filename: string): HtmlDire
   const namePart = match[2]
   const prop = value.trim()
   if (!prop || !/^[A-Za-z_$][\w$]*$/u.test(prop)) {
-    throw new Error(`Vobs HTML component: ${name} 必须引用有效的 props 名称 (${filename})`)
+    throw new Error(`Vobs HTML component: ${name} must reference a valid props name (${filename})`)
   }
   if (kind === 'text' || kind === 'slot') {
-    if (namePart) throw new Error(`Vobs HTML component: ${name} 不接受额外名称 (${filename})`)
+    if (namePart) throw new Error(`Vobs HTML component: ${name} does not accept an extra name (${filename})`)
     return { kind, prop }
   }
   if (!namePart || !/^[a-z][a-z0-9:-]*$/iu.test(namePart)) {
-    throw new Error(`Vobs HTML component: ${name} 必须包含有效名称 (${filename})`)
+    throw new Error(`Vobs HTML component: ${name} must include a valid name (${filename})`)
   }
   if (kind === 'on') return { kind: 'event', name: namePart.toLowerCase(), prop }
   if (kind === 'bind') {
-    if (namePart.toLowerCase() === 'style') throw new Error(`Vobs HTML component: 不允许动态绑定 style (${filename})`)
+    if (namePart.toLowerCase() === 'style') throw new Error(`Vobs HTML component: dynamic style binding is not allowed (${filename})`)
     return { kind: 'attribute', name: namePart, prop }
   }
   if (!safePropertyNames.has(namePart.toLowerCase())) {
-    throw new Error(`Vobs HTML component: 不允许动态绑定 property ${namePart} (${filename})`)
+    throw new Error(`Vobs HTML component: dynamic property binding is not allowed: ${namePart} (${filename})`)
   }
   return { kind: 'property', name: normalizePropertyName(namePart), prop }
 }

@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { createDOMRenderer, setRenderer, getRenderer, createElement, createSvgElement, insertBefore } from '@vobs/vobs'
 import { SVG_NAMESPACE } from './svg'
 
-// 回归（Labelune 踩坑备忘）：createElement('svg'/'rect') 此前走 HTML namespace，
-// 产物是 HTMLUnknownElement——整棵 SVG 子树静默不渲染且无报错。
-// 1.7.4 起 createElement 按 SVG 标签全集分发到渲染器 createSvgElement（createElementNS）。
+// Regression (Labelune postmortem): createElement('svg'/'rect') used to go through the
+// HTML namespace, producing HTMLUnknownElement — the whole SVG subtree silently failed to
+// render, with no error.
+// Since 1.7.4, createElement dispatches SVG tags from the full set to the renderer's
+// createSvgElement (createElementNS).
 describe('svg namespace element creation', () => {
   it('creates SVG-namespace elements for SVG tags and HTML for the rest', () => {
     setRenderer(createDOMRenderer())
@@ -17,10 +19,10 @@ describe('svg namespace element creation', () => {
     expect(rect).toBeInstanceOf(SVGElement)
     expect(rect.namespaceURI).toBe('http://www.w3.org/2000/svg')
 
-    // 驼峰 SVG 标签（clipPath/linearGradient）同样命中
+    // camelCase SVG tags (clipPath/linearGradient) hit too
     expect(createElement('clipPath').namespaceURI).toBe('http://www.w3.org/2000/svg')
 
-    // 与 HTML 同名集合之外的普通标签仍是 HTML namespace
+    // Ordinary tags outside the HTML-homonym set stay in the HTML namespace
     const div = createElement('div')
     expect(div).toBeInstanceOf(HTMLDivElement)
     expect(div.namespaceURI).toBe('http://www.w3.org/1999/xhtml')
@@ -40,7 +42,7 @@ describe('svg namespace element creation', () => {
     const host = document.createElement('div')
     insertBefore(host, svg, null)
 
-    // 真实 SVG 子树：querySelector 命中、命名空间正确、属性大小写保留
+    // A real SVG subtree: querySelector hits, namespace correct, attribute casing preserved
     expect(host.querySelector('svg')).not.toBeNull()
     const found = host.querySelector('rect')
     expect(found).not.toBeNull()
@@ -54,20 +56,22 @@ describe('svg namespace element creation', () => {
       createSvgElement: undefined
     })
     const rect = createElement('rect')
-    // 旧自定义渲染器兜底：按 HTML 创建（保持原行为，不抛错）
+    // Old custom renderer fallback: created as HTML (keeps the original behavior, no throw)
     expect(rect.namespaceURI).not.toBe('http://www.w3.org/2000/svg')
 
-    // 还原：全局渲染器是共享状态，换了不还原会让后面的用例在 stub 上跑（曾经真的踩到）
+    // Restore: the global renderer is shared state; not restoring would run later cases
+    // on the stub (that actually happened once)
     setRenderer(createDOMRenderer())
   })
 })
 
 /*
- * SVG 命名空间继承：a / title / style / script 与 HTML 同名，光看名字会建出 HTML 元素。
- * 编译器在 <svg> 子树里显式改走 createSvgElement（见 compiler 的同名测试）。
+ * SVG namespace inheritance: a / title / style / script are HTML-homonyms; by name alone
+ * they'd be built as HTML elements. The compiler explicitly switches to createSvgElement
+ * inside `<svg>` subtrees (see the compiler's same-named test).
  */
-describe('createSvgElement 强制 SVG 命名空间', () => {
-  it('与 HTML 同名的标签也建在 SVG 命名空间里', () => {
+describe('createSvgElement forces the SVG namespace', () => {
+  it('HTML-homonym tags are also built in the SVG namespace', () => {
     const r = getRenderer()
     console.log('DEBUG op =', createSvgElement('a').namespaceURI)
     console.log('DEBUG renderer.createSvgElement =', typeof r.createSvgElement, '→', r.createSvgElement?.('a').namespaceURI)
@@ -76,11 +80,11 @@ describe('createSvgElement 强制 SVG 命名空间', () => {
     expect(anchor.namespaceURI).toBe(SVG_NAMESPACE)
     expect(anchor.constructor.name).not.toBe('HTMLAnchorElement')
 
-    // 对照：同样名字走 createElement 就是 HTML 元素
+    // Control: the same name through createElement is an HTML element
     expect(createElement('a').namespaceURI).not.toBe(SVG_NAMESPACE)
   })
 
-  it('title 同样', () => {
+  it('title likewise', () => {
     expect(createSvgElement('title').namespaceURI).toBe(SVG_NAMESPACE)
   })
 })

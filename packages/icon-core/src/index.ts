@@ -53,7 +53,8 @@ export interface SvgIconRenderOptions {
 type IconSource = SvgIconDefinition | (() => SvgIconDefinition | undefined)
 
 /**
- * 已经警告过的缺失图标名（按名字去重，避免 effect 每次重跑都刷屏）。
+ * Missing icon names already warned about (deduplicated by name so effect
+ * re-runs don't spam the console).
  */
 const warnedMissingIcons = new Set<string>()
 
@@ -132,9 +133,10 @@ function updateSvgIconNode(
   const ariaLabel = Reflect.get(props, 'aria-label')
   const decorative = readProp(props, 'decorative', title === undefined && ariaLabel === undefined)
   setOptionalAttribute(root, 'aria-hidden', decorative ? 'true' : undefined)
-  // 作者传了 aria-label 就必须留下（上面 managedAttributes 已经写好）——原来这里传的是
-  // `ariaLabel === undefined ? title : undefined`，于是**作者自己给的可读名字被当场删掉**：
-  // 实测 Camera({'aria-label':'Foo'}) 得到 aria-label=null，既不隐藏也没有名字。
+  // When the author passed aria-label it must survive (managedAttributes above
+  // already wrote it) — this used to pass `ariaLabel === undefined ? title : undefined`,
+  // so **a readable name the author set themselves got deleted on the spot**:
+  // Camera({'aria-label':'Foo'}) produced aria-label=null, neither hidden nor named.
   setOptionalAttribute(root, 'aria-label', ariaLabel === undefined ? title : ariaLabel)
   setOptionalAttribute(root, 'data-icon-name', options.dataIconName ?? definition?.name)
   setOptionalAttribute(root, 'color', readProp(props, 'color', undefined))
@@ -142,28 +144,34 @@ function updateSvgIconNode(
   if (!definition) {
     setProperty(root, 'innerHTML', '')
     /*
-     * 查表 miss 时**不能完全无声**（外部踩坑文档 H 条：lucide 图标白名单静默空白）。
+     * A lookup miss must **not be fully silent** (external postmortem doc item H:
+     * lucide icon whitelist silently rendered blank).
      *
-     * 那个坑的机制是「名字 → 图标定义」的查表 miss 返回空、渲染成空 span、不报错，
-     * 于是新增页面用了没登记的图标时，界面上只是"那里没有东西"，得靠人眼发现。
-     * 文档记的是它已经踩过三次变体（keyboard / upload-cloud / triangle-alert，以及
-     * `ICONS` / `FAVORITES` 双清单混淆）。
+     * The mechanism of that incident: a "name → icon definition" lookup miss
+     * returned empty, rendered an empty span, no error — so when a new page used
+     * an unregistered icon, the UI just showed "nothing there" and someone had
+     * to spot it by eye. The doc records three hit variants already (keyboard /
+     * upload-cloud / triangle-alert, plus the `ICONS` / `FAVORITES` dual-list confusion).
      *
-     * 这里能做的**不是**替应用维护白名单（查表在应用侧），而是把「miss」这件事说出来。
-     * 拿得到名字（`options.dataIconName`）就报出名字 —— 那是排查时唯一有用的信息。
+     * What we can do here is **not** maintain the whitelist for the app (the
+     * lookup lives on the app side) but speak up about the "miss". If the name
+     * is available (`options.dataIconName`) report it — it's the only useful
+     * piece of information for debugging.
      *
-     * 用 `console.warn` 而不是抛错：库不该因为一个图标缺失就把整棵渲染树打断；
-     * 而且这条路径在 effect 里，抛错会让"少一个图标"升级成"整块渲染失败"。
+     * `console.warn` instead of throwing: the library shouldn't break the whole
+     * render tree over one missing icon; and this path runs inside an effect,
+     * where throwing would escalate "one icon missing" into "a whole render
+     * block failed".
      */
     const label = options.dataIconName
-    const key = label ?? '(未提供名字)'
+    const key = label ?? '(no name provided)'
     if (!warnedMissingIcons.has(key)) {
       warnedMissingIcons.add(key)
-      // eslint-disable-next-line no-console -- 这是刻意的可观测出口
+      // eslint-disable-next-line no-console -- deliberate observability escape hatch
       console.warn(
-        `[Vobs Icon] 图标${label === undefined ? '' : ` “${label}”`}没有定义，渲染为空。`
-        + '常见原因：按名字查白名单时 miss（名字没登记 / 登记到了另一个清单）。'
-        + '若这是有意的空占位，忽略本条即可。'
+        `[Vobs Icon] icon${label === undefined ? '' : ` "${label}"`} has no definition; rendering empty.`
+        + 'Common cause: a whitelist lookup miss by name (name not registered / registered in another list).'
+        + 'If this is an intentional empty placeholder, just ignore this warning.'
       )
     }
     return
@@ -209,8 +217,10 @@ function normalizeCssLength(value: string | number): string {
 
 function setOptionalAttribute(node: Element, name: string, value: unknown): void {
   if (value === undefined || value === null || value === false || value === '') {
-    // 走框架 op：SSR 渲染器**没有**原生 removeAttribute（它是 VobsRenderer 里的可选项），
-    // 服务端数据节点上更不存在这个方法 —— 直接调原生会让 renderToString 整棵树抛 TypeError。
+    // Go through the framework op: the SSR renderer has **no** native
+    // removeAttribute (it's optional in VobsRenderer) and it doesn't exist on
+    // server data nodes at all — calling the native one directly would make
+    // renderToString throw TypeError for the whole tree.
     removeAttribute(node, name)
     return
   }

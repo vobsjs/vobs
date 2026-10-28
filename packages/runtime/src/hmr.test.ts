@@ -34,7 +34,7 @@ function setupRenderer(): void {
 }
 
 describe('runtime HMR', () => {
-  it('刷新已挂载的组件节点时复用原 Owner', () => {
+  it('reuses the original Owner when refreshing a mounted component node', () => {
     setupRenderer()
     const moduleId = `hmr-mounted-${Date.now()}-${Math.random()}`
     const first = resolveComponent(() => document.createTextNode('first'), moduleId, 'Panel')
@@ -47,7 +47,7 @@ describe('runtime HMR', () => {
     expect(parent.textContent).toBe('second')
   })
 
-  it('刷新 fragment 根组件时替换整个 DOM 区间', () => {
+  it('replaces the whole DOM range when refreshing a fragment-rooted component', () => {
     setupRenderer()
     const moduleId = `hmr-fragment-${Date.now()}-${Math.random()}`
     const renderFragment = (label: string): VobsNode => createFragment((parent, anchor) => {
@@ -62,11 +62,11 @@ describe('runtime HMR', () => {
     updateHmrModule(moduleId, { Panel: () => renderFragment('second') })
 
     expect(parent.textContent).toBe('second')
-    // 旧 fragment 区间（start 注释 + 文本 + end 注释）整体移除，只余新区间
+    // The old fragment range (start comment + text + end comment) is removed wholesale, leaving only the new range
     expect(parent.childNodes.length).toBe(3)
   })
 
-  it('普通节点与 fragment 根组件之间互相刷新替换', () => {
+  it('refreshes back and forth between plain-node and fragment root components', () => {
     setupRenderer()
     const moduleId = `hmr-mixed-${Date.now()}-${Math.random()}`
     const first = resolveComponent(() => document.createTextNode('first'), moduleId, 'Panel')
@@ -86,7 +86,7 @@ describe('runtime HMR', () => {
     expect(parent.childNodes.length).toBe(1)
   })
 
-  it('刷新时释放上一轮渲染作用域：body 清理回调执行、旧 effect 失效', () => {
+  it('releasing the previous render scope on refresh: body cleanup callbacks run, old effects invalidated', () => {
     setupRenderer()
     const moduleId = `hmr-dispose-${Date.now()}-${Math.random()}`
     const counter = state(0)
@@ -123,13 +123,13 @@ describe('runtime HMR', () => {
     expect(effectRuns).toBe(2)
     expect(disposed).toBe(1)
 
-    // 旧渲染的 effect 已随渲染作用域释放：信号变化只触发新一轮的 effect
+    // The old render's effect was released with the render scope: signal changes only trigger the new round's effect
     counter.value = 99
     scheduler.flush()
     expect(effectRuns).toBe(3)
   })
 
-  it('一次热更新中每个组件实例只渲染一次（refresh 期间新建的实例不再刷新）', () => {
+  it('each component instance renders only once per hot update (instances created during refresh are not refreshed again)', () => {
     setupRenderer()
     const moduleId = `hmr-once-${Date.now()}-${Math.random()}`
     let childRuns = 0
@@ -155,12 +155,13 @@ describe('runtime HMR', () => {
       }
     })
 
-    // Panel 刷新重渲染 Child 一次；refresh 期间新建的 Child 实例已在快照外，不再刷新
+    // Panel's refresh re-renders Child once; Child instances created during refresh are
+    // already outside the snapshot and are not refreshed again
     expect(childRuns).toBe(2)
     expect(parent.textContent).toBe('child-next')
   })
 
-  it('普通卸载仍释放整个渲染作用域', () => {
+  it('normal unmount still releases the entire render scope', () => {
     setupRenderer()
     const moduleId = `hmr-unmount-${Date.now()}-${Math.random()}`
     let disposed = 0
@@ -176,7 +177,7 @@ describe('runtime HMR', () => {
     expect(disposed).toBe(1)
   })
 
-  it('更新组件代理时保留已有引用，并保留模块状态', () => {
+  it('keeps existing references when updating the component proxy, and preserves module state', () => {
     const moduleId = `hmr-test-${Date.now()}-${Math.random()}`
     const first = resolveComponent(() => ({ textContent: 'first' } as unknown as Node), moduleId, 'Panel')
     const store = createHmrStateStore(moduleId)
@@ -192,14 +193,14 @@ describe('runtime HMR', () => {
 })
 
 describe('hmrStateRef', () => {
-  it('模块重执行时复用既有信号实例（状态保鲜）', () => {
+  it('reuses the existing signal instance when the module re-executes (state stays fresh)', () => {
     const create = () => ({ value: 0, tag: Math.random() })
-    // 模拟模块首执行
+    // Simulate the module's first execution
     const firstRef = hmrStateRef('src/stores/a.ts#count', create)
-    // 模拟热更新后模块重执行：新实例、同一 key
+    // Simulate module re-execution after a hot update: new instance, same key
     const secondRef = hmrStateRef('src/stores/a.ts#count', create)
     expect(secondRef).toBe(firstRef)
-    // 不同 key 各自独立
+    // Different keys are independent
     expect(hmrStateRef('src/stores/a.ts#other', create)).not.toBe(firstRef)
     expect(hmrStateRef('src/stores/b.ts#count', create)).not.toBe(firstRef)
   })

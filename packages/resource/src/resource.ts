@@ -60,7 +60,7 @@ export interface ResourceClientOptions {
 }
 
 /**
- * 一条缓存条目的失败快照。只读：改动它不影响缓存与条目信号。
+ * A failure snapshot of one cache entry. Read-only: mutating it does not affect the cache or entry signals.
  */
 export interface ResourceFailure {
   readonly key: ResourceKey
@@ -73,15 +73,19 @@ export interface ResourceClient {
   invalidate(key: ResourceKey): void
   prefetchAll(): Promise<void>
   /**
-   * `prefetchAll()` 之后"这一轮有哪些失败"的聚合只读快照。
+   * Aggregated read-only snapshot of "which failures happened this round" after `prefetchAll()`.
    *
-   * 语义边界（刻意收窄，避免被当成全局错误总线）：
-   * - 只读**当前缓存**（即带 key 且 cache 未关的条目）里 `error` 非空的条目 —— 与 `dehydrate()`
-   *   读的是同一批条目，只是 `dehydrate()` 剔除失败项、`errors()` 只取失败项；
-   * - 无 key / `cache: false` 的条目不在缓存里，因此**不出现**在清单中（它们的失败由各自的
-   *   `resource.error` 暴露，没人可枚举的条目放进来只会越攒越多）；
-   * - 是**快照**：每次调用返回新数组，失败重试成功、`mutate`、`hydrate`、`clear()` 之后自然消失；
-   * - 不做响应式追踪（不是 Signal），渲染期调用不会因失败变化而重渲染 —— SSR 一次性读取正合适。
+   * Semantic boundaries (deliberately narrow, to avoid it becoming a global error bus):
+   * - Only reads entries with a non-empty `error` in the **current cache** (i.e. keyed entries with
+   *   cache enabled) — the same batch `dehydrate()` reads, except `dehydrate()` drops failures
+   *   while `errors()` keeps only failures;
+   * - keyless / `cache: false` entries are not in the cache, so they **never appear** in the list
+   *   (their failures surface via each `resource.error`; adding unenumerable entries would only let
+   *   the list grow without bound);
+   * - It is a **snapshot**: each call returns a fresh array; entries naturally disappear once a
+   *   failed retry succeeds, or after `mutate`, `hydrate`, or `clear()`;
+   * - Not reactively tracked (not a Signal): calling it during render does not re-render when
+   *   failures change — exactly right for SSR's one-shot read.
    */
   errors(): readonly ResourceFailure[]
   dehydrate(): ResourceDehydratedState
@@ -106,13 +110,14 @@ interface ResourceEntry<T> {
 const defaultClient = createResourceClient()
 
 /**
- * 复位**模块级**默认 client 的缓存（`resource()` 函数式 API 用的那一个）。
+ * Reset the cache of the **module-level** default client (the one behind the `resource()` function API).
  *
- * 为什么必须有这个出口：`defaultClient` 是**进程级**缓存，`resource()` 只导出函数本身、
- * 不导出那个 client——没有别的办法把它清掉。不清理的话，服务端每个请求共用同一个
- * 模块实例，第二次请求会直接命中第一次的缓存，**跨请求数据泄漏**；
- * `@vobs/ssr` 的 `renderToStringAsync` 因此在每次渲染的 `finally` 里调它。
- * 浏览器端也可以用它做「登出/切换用户后清空共享缓存」。
+ * Why this exit point must exist: `defaultClient` is a **process-level** cache, and `resource()`
+ * only exports the function itself, not that client — there is no other way to clear it. Without
+ * clearing, every server request shares the same module instance and the second request hits the
+ * first one's cache directly — a **cross-request data leak**;
+ * `@vobs/ssr`'s `renderToStringAsync` therefore calls this in each render's `finally`.
+ * In the browser it can also be used to "clear the shared cache after logout / user switch".
  */
 export function resetDefaultResourceClient(): void {
   defaultClient.clear()
@@ -170,7 +175,8 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
     const request = requestWithRetry(fetcher, controller.signal, retry, retryDelay)
     entry.inFlight = request.then(
       data => {
-        // 请求飞行期间 mutate/optimistic 已推进 revision 时，迟到的旧结果不得覆盖新数据。
+        // If mutate/optimistic already advanced the revision while the request was in flight,
+        // the late stale result must not overwrite the newer data.
         if (entry.revision === revision) {
           entry.revision++
           entry.data.value = data
@@ -182,14 +188,18 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
       reason => {
         const error = toError(reason)
         /*
-         * 取消不是失败 —— 不该把 AbortError 写进**共享缓存**。
+         * Cancellation is not failure — an AbortError must not be written into the **shared cache**.
          *
-         * 原来这里在 revision 未变时无条件写 error（下面一行的 onError 倒是用 aborted 挡住了）。
-         * 后果跨页面：一次 refetch 中途被取消/dispose，缓存里就留下 { data, error: AbortError }；
-         * 同 key 的新页面因为 isFresh（staleTime 还没到）**零请求**就拿到这条错误，
-         * 而 boundary 先判 error → 直接渲染错误兜底（实测 fetcher 0 次调用）。
+         * The original code wrote the error unconditionally whenever the revision was unchanged
+         * (the onError line below was already guarded by `aborted`, but this line was not).
+         * The consequence crossed pages: a refetch cancelled/disposed midway left
+         * { data, error: AbortError } in the cache; a new page on the same key, seeing isFresh
+         * (staleTime not yet elapsed), picked up that error with **zero requests**, and since the
+         * boundary checks error first it rendered the error fallback directly (measured: fetcher
+         * called 0 times).
          *
-         * promise 仍然 reject：调用方要靠它知道自己被取消了（既有测试就是这么断言的）。
+         * The promise still rejects: callers rely on that to learn they were cancelled
+         * (the existing tests assert exactly this).
          */
         const aborted = controller.signal.aborted
         if (entry.revision === revision) {
@@ -320,16 +330,18 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
       }
 
       /*
-       * entry 值的同步必须由**独立的 effect** 负责，不能塞进追踪 key 的那个 effect 里。
+       * Syncing the entry's values must be handled by a **separate effect**; it must not be folded
+       * into the effect that tracks the key.
        *
-       * 原因（.artifacts/e2e-smoke 端到端实测）：追踪 key 的 effect 里既 `sync()`
-       * （读 entry 的 data/error/loading）又 `request()`（缓存未命中时写同一批信号），
-       * 读与写发生在同一次运行内 → 框架护栏判定自订阅（VOBS_C210），
-       * **每个使用响应式 key 的页面都会报**。
+       * Reason (end-to-end measured in .artifacts/e2e-smoke): the key-tracking effect both called
+       * `sync()` (reading the entry's data/error/loading) and `request()` (which, on a cache miss,
+       * writes those same signals), so reads and writes happened within the same run → the framework
+       * guard flags a self-subscription (VOBS_C210), and **every page using a reactive key reported it**.
        *
-       * 现在拆开：key effect 只追踪 key（并负责换 entry、发请求）；
-       * 这里这个 effect 只追踪**当前 entry** 的三个信号，换 entry 时整条重建
-       * （旧 effect 随 scope owner 一起销毁，所以不会同时订阅两个 entry）。
+       * Now they are split: the key effect only tracks the key (and handles switching entries and
+       * issuing requests); this effect only tracks the **current entry**'s three signals and is
+       * rebuilt entirely when the entry changes (the old effect is disposed together with its scope
+       * owner, so it never subscribes to two entries at once).
        */
       let entryScope: Owner | null = null
       const stopEntrySync = (): void => {
@@ -376,10 +388,11 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
       const stop = effect(() => {
         if (disposed) return
         const nextKey = resolveKey(reactiveConfig.key)
-        if (!nextKey) throw new Error('resource: 响应式 key 不能是 undefined')
+        if (!nextKey) throw new Error('resource: reactive key must not be undefined')
         /*
-         * 这个 effect 只追踪 **key**。entry 的缓存值由 startEntrySync() 的独立 effect 同步，
-         * 请求发起也不该建立依赖 —— 否则"读过的信号又被写"会构成自订阅（VOBS_C210）。
+         * This effect only tracks the **key**. The entry's cached values are synced by the separate
+         * effect in startEntrySync(), and issuing requests must not create dependencies either —
+         * otherwise "signals read are also written" forms a self-subscription (VOBS_C210).
          */
         untrack(() => {
           switchKey(nextKey)
@@ -423,13 +436,13 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
           next: T | ((current: T | null) => T),
           action: () => Result | PromiseLike<Result>
         ): Promise<Result> {
-          if (!activeEntry) return Promise.reject(new Error('resource: key 尚未初始化'))
+          if (!activeEntry) return Promise.reject(new Error('resource: key not initialized yet'))
           return createOptimistic<Result>(activeEntry, next, action)
         }
       }
 
       function request(force: boolean): Promise<T> {
-        if (!activeEntry) return Promise.reject(new Error('resource: key 尚未初始化'))
+        if (!activeEntry) return Promise.reject(new Error('resource: key not initialized yet'))
         if (!force && isFresh(activeEntry) && reactiveConfig.strategy === 'cache-first') {
           return Promise.resolve(activeEntry.data.value as T)
         }
@@ -483,11 +496,14 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
       await Promise.allSettled(requests)
     },
     /*
-     * prefetchAll() 刻意不抛错（SSR 不该因一个请求失败整页 500），失败落在各条目的 error 上。
-     * 但 dehydrate() 跳过失败项，"只持有 client 的调用方"无法一次问出失败清单：
-     * 于是连失败 key 都不可枚举，只能由调用方自己另存一份 key 列表再逐个 get() —— 那份列表
-     * 一旦漏了缓存里的 key（响应式 key、插件/路由建的 key）就永远发现不了失败。
-     * 这里把同一批缓存条目反过来筛一遍，给出一次性、只读、免序列化的失败视图。
+     * prefetchAll() deliberately never throws (SSR must not 500 the whole page because one request
+     * failed); failures land on each entry's error. But dehydrate() skips failed entries, so a
+     * "caller that only holds the client" cannot ask for the failure list in one shot:
+     * not even the failed keys were enumerable — the caller had to keep their own key list and
+     * get() each one, and the moment that list missed any cached key (reactive keys, keys created
+     * by plugins/routes) the failure could never be discovered. This method filters the same batch
+     * of cache entries the other way around, giving a one-shot, read-only, serialization-free view
+     * of failures.
      */
     errors(): readonly ResourceFailure[] {
       const failures: ResourceFailure[] = []
@@ -583,7 +599,7 @@ function resolveKey(source: ResourceKeySource | undefined): ResourceKey | undefi
     ? source()
     : isSignal(source) ? source.value : source
   if (key === undefined) return undefined
-  if (!Array.isArray(key)) throw new Error('resource: key 必须是数组')
+  if (!Array.isArray(key)) throw new Error('resource: key must be an array')
   return key
 }
 
@@ -607,7 +623,7 @@ function requestWithRetry<T>(
 function resolveRetryDelay(retryDelay: RetryDelay, attempt: number, error: Error): number {
   const delay = typeof retryDelay === 'function' ? retryDelay(attempt, error) : retryDelay
   if (!Number.isFinite(delay) || delay < 0) {
-    throw new Error('resource: retryDelay 必须是大于等于 0 的有限数字')
+    throw new Error('resource: retryDelay must be a finite number >= 0')
   }
   return delay
 }
@@ -618,14 +634,14 @@ function wait(delay: number): Promise<void> {
 
 function validateStaleTime(staleTime: number): number {
   if (!Number.isFinite(staleTime) || staleTime < 0) {
-    throw new Error('resource: staleTime 必须是大于等于 0 的有限数字')
+    throw new Error('resource: staleTime must be a finite number >= 0')
   }
   return staleTime
 }
 
 function validateRetry(retry: number): number {
   if (!Number.isInteger(retry) || retry < 0) {
-    throw new Error('resource: retry 必须是大于等于 0 的整数')
+    throw new Error('resource: retry must be an integer >= 0')
   }
   return retry
 }
@@ -654,18 +670,18 @@ function parseDehydratedState(snapshot: unknown): ResourceDehydratedState {
     try {
       value = JSON.parse(snapshot)
     } catch {
-      throw new Error('resource: 预取状态不是有效 JSON')
+      throw new Error('resource: prefetch state is not valid JSON')
     }
   }
-  if (!value || typeof value !== 'object') throw new Error('resource: 预取状态格式无效')
+  if (!value || typeof value !== 'object') throw new Error('resource: invalid prefetch state format')
   const candidate = value as { version?: unknown; entries?: unknown }
   if (candidate.version !== 1 || !Array.isArray(candidate.entries)) {
-    throw new Error('resource: 预取状态版本或 entries 无效')
+    throw new Error('resource: invalid prefetch state version or entries')
   }
 
   const entries: ResourceDehydratedEntry[] = []
   for (const entry of candidate.entries) {
-    if (!entry || typeof entry !== 'object') throw new Error('resource: 预取条目格式无效')
+    if (!entry || typeof entry !== 'object') throw new Error('resource: invalid prefetch entry format')
     const candidateEntry = entry as Partial<ResourceDehydratedEntry>
     if (!Array.isArray(candidateEntry.key)
       || typeof candidateEntry.updatedAt !== 'number'
@@ -673,7 +689,7 @@ function parseDehydratedState(snapshot: unknown): ResourceDehydratedState {
       || typeof candidateEntry.staleTime !== 'number'
       || !Number.isFinite(candidateEntry.staleTime)
       || candidateEntry.staleTime < 0) {
-      throw new Error('resource: 预取条目字段无效')
+      throw new Error('resource: invalid prefetch entry fields')
     }
     // Re-serialize now so untrusted keys cannot poison the cache map.
     stableSerialize(candidateEntry.key)
@@ -700,12 +716,12 @@ function serialize(value: unknown, stack: Set<object>): string {
     case 'undefined': return 'undefined'
     case 'function':
     case 'symbol':
-      throw new Error(`resource: key 不能包含 ${typeof value}`)
+      throw new Error(`resource: key cannot contain ${typeof value}`)
     case 'object': break
   }
 
   const object = value as object
-  if (stack.has(object)) throw new Error('resource: key 不能包含循环引用')
+  if (stack.has(object)) throw new Error('resource: key cannot contain circular references')
   stack.add(object)
   try {
     if (Array.isArray(object)) {
@@ -714,23 +730,26 @@ function serialize(value: unknown, stack: Set<object>): string {
     if (object instanceof Date) return `date:${object.toJSON()}`
     if (object instanceof RegExp) return `regexp:${object.toString()}`
     /*
-     * 只有**普通对象**能可靠地序列化成缓存键。
+     * Only **plain objects** can be reliably serialized into cache keys.
      *
-     * 下面那行按"自有可枚举键"序列化，于是 Map、Set、类实例、以及只有原型的对象
-     * （Object.create({...})）全都退化成同一个 `object:{}` —— 不同的 key 命中同一条缓存，
-     * 第二个 key 的 fetcher 一次都不会调用，却拿到别人的数据。这比崩溃隐蔽得多。
+     * The line below serializes by "own enumerable keys", so Map, Set, class instances, and
+     * prototype-only objects (Object.create({...})) all degrade into the same `object:{}` —
+     * different keys hit the same cache entry, the second key's fetcher is never called, yet the
+     * caller receives someone else's data. Far more insidious than a crash.
      *
-     * 这个包本来就走严格路线（函数/symbol/循环引用直接抛），所以这里也抛：把"拿错数据"
-     * 变成一句能照着改的报错，而不是静默串数据。
+     * This package already takes the strict route (functions/symbols/circular references throw
+     * directly), so this throws too: turn "getting the wrong data" into an actionable error message
+     * instead of silently cross-contaminating data.
      */
     const prototype = Object.getPrototypeOf(object)
     if (prototype !== Object.prototype && prototype !== null) {
       const kind = object instanceof Map ? 'Map'
         : object instanceof Set ? 'Set'
-          : (object.constructor?.name || '类实例')
-      throw new Error(`resource: key 不能包含 ${kind} —— 只有普通对象、数组、Date、RegExp 能被可靠地`
-        + '序列化为缓存键；' + kind + ' 会退化成同一个键，让不同 key 命中同一条缓存（拿到别的数据）。'
-        + '请改成普通对象或基本类型（例如 { id: 7 }）。')
+          : (object.constructor?.name || 'class instance')
+      throw new Error(`resource: key cannot contain ${kind} — only plain objects, arrays, Date and RegExp can be `
+        + 'reliably serialized as cache keys; ' + kind + ' degrades into the same key, making different keys hit '
+        + 'the same cache entry (retrieving someone else\'s data). '
+        + 'Use a plain object or primitive instead (e.g. { id: 7 }).')
     }
     const entries = Object.keys(object).sort().map(key => `${JSON.stringify(key)}:${serialize((object as Record<string, unknown>)[key], stack)}`)
     return `object:{${entries.join(',')}}`

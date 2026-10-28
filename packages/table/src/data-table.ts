@@ -83,11 +83,14 @@ export function KitDataTable<Row = Record<string, unknown>>(props: KitDataTableP
   setAttribute(table, 'class', 'vobs-data-table__table')
   setAttribute(footer, 'class', 'vobs-data-table__footer')
   /*
-   * 语义属性要落在**真正的 <table>** 上。
+   * Semantic attributes must land on **the real <table>**.
    *
-   * 作者传的 role / aria-label 会经通用属性通道落到外层 <section>（bindCommonAttributes 的 skip
-   * 列表里没有它们），而读屏在"表格"这一层用的是 <table> 自己的名字 —— 外层 section 上的名字只会
-   * 把它变成一个 region，表格本身仍然无名。这里把这两项同步给 table（外层保持不变，纯加法）。
+   * Author-passed role / aria-label travel through the generic attribute
+   * channel onto the outer <section> (they aren't in bindCommonAttributes'
+   * skip list), while screen readers use the <table>'s own name at the
+   * "table" level — a name on the outer section only turns it into a region
+   * and the table itself stays nameless. This syncs those two onto the table
+   * (outer element unchanged; purely additive).
    */
   effect(() => {
     const role = readProp<unknown>(props, 'role', undefined)
@@ -107,11 +110,15 @@ export function KitDataTable<Row = Record<string, unknown>>(props: KitDataTableP
 
   insertDynamic(head, null, () => createHeader(props))
   /*
-   * 页面数据（筛选/排序/分页后的行）放进 memo：单元格经由它读行，数据一变必然重跑，
-   * 不依赖"insertList 传下来的 item 代理"这一层（我实测那一层没能让复用的行更新内容）。
+   * Page data (rows after filter/sort/pagination) lives in a memo: cells read
+   * rows through it, so any data change necessarily re-runs — without relying
+   * on the "item proxy handed down by insertList" layer (verified: that layer
+   * did not make reused rows update their content).
    */
   const page = memo(() => resolvePage(props))
-  // tbody 走 keyed 调和：行按 key 复用/移动，而不是每轮整块重建（实测改 1 行原本重建 6014 个元素）
+  // tbody uses keyed reconciliation: rows are reused/moved by key instead of
+  // rebuilding the whole block each pass (verified: changing 1 row used to
+  // recreate 6014 elements)
   insertList(body, null, () => bodyItems(props, page.value, scrollTop.value), item => renderBodyItem(item, props, page), item => item.key)
   insertBefore(table, head, null)
   insertBefore(table, body, null)
@@ -128,9 +135,11 @@ export function KitDataTable<Row = Record<string, unknown>>(props: KitDataTableP
 }
 
 /**
- * 行右键菜单（纯交互机制）：contextmenu 委托 + `data-row-key` 反查行 + fixed 弹层。
- * 菜单项由页面的 `rowMenu(row, index)` 工厂给出（业务词汇全在页面侧）；
- * 机制层只负责定位、开关与清理。依赖 `rowKey`（行身份反查）。
+ * Row context menu (pure interaction mechanism): contextmenu delegation +
+ * `data-row-key` row lookup + fixed overlay. Menu items come from the page's
+ * `rowMenu(row, index)` factory (business vocabulary stays on the page side);
+ * the mechanism layer only handles positioning, open/close and cleanup.
+ * Depends on `rowKey` (reverse lookup of row identity).
  */
 function setupRowMenu<Row>(props: KitDataTableProps<Row>, root: Element): void {
   if (!hasProp(props, 'rowMenu')) return
@@ -143,7 +152,7 @@ function setupRowMenu<Row>(props: KitDataTableProps<Row>, root: Element): void {
     const rowElement = target?.closest?.('[data-row-key]') as HTMLElement | null
     if (rowElement === null) return
     const key = rowElement.getAttribute('data-row-key') ?? ''
-    // 事件时再解析当前页行：行会被 keyed 复用，闭包里的行可能是旧的
+    // Resolve the current page's rows at event time: rows get reused by key, so the row captured in the closure may be stale
     const rows = resolvePage(props).rows
     let matched: { row: Row; index: number } | undefined
     for (let index = 0; index < rows.length; index++) {
@@ -156,15 +165,16 @@ function setupRowMenu<Row>(props: KitDataTableProps<Row>, root: Element): void {
     if (matched === undefined) return
     event.preventDefault()
     const items = factory(matched.row, matched.index)
-    // 事件回调的写入包 untrack：handler 经 owner.run 重入组件作用域，
-    // 写入不应对该作用域建立订阅（结构性免疫 C210 自订阅误判）
+    // Wrap event-callback writes in untrack: the handler re-enters the component
+    // scope via owner.run, and the write must not subscribe to that scope
+    // (structurally immune to C210 self-subscription false positives)
     untrack(() => {
       ctx.value = items.length > 0
         ? { x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY, items }
         : null
     })
   })
-  // 弹层容器保持稳定（外点关闭用它判包含），菜单内容随 ctx 响应式重建
+  // The overlay container stays stable (outside-click close checks containment against it); menu content rebuilds reactively from ctx
   const layer = createElement('div')
   setAttribute(layer, 'class', 'vobs-data-table__rowmenu-layer')
   insertDynamic(layer, null, () => renderRowMenu(ctx))
@@ -172,7 +182,7 @@ function setupRowMenu<Row>(props: KitDataTableProps<Row>, root: Element): void {
   const onOutsideDown = (event: Event): void => {
     if (ctx.value === null) return
     const target = event.target as HTMLElement | null
-    // 菜单内的 mousedown（如条目按下）不算外点；右键另一行先关再由 contextmenu 重开
+    // A mousedown inside the menu (e.g. pressing an entry) is not an outside click; right-clicking another row closes first, then contextmenu reopens it
     if (target !== null && layer.contains(target)) return
     untrack(() => { ctx.value = null })
   }
@@ -184,12 +194,12 @@ function setupRowMenu<Row>(props: KitDataTableProps<Row>, root: Element): void {
   onDispose(() => {
     document.removeEventListener('mousedown', onOutsideDown)
     document.removeEventListener('keydown', onKeyDown)
-    // 卸载清理可能发生在效果重排的同步窗口内，写入同样断开追踪
+    // Unmount cleanup can happen inside the synchronous window of an effect flush; the write disconnects tracking too
     untrack(() => { ctx.value = null })
   })
 }
 
-/** ctx 传信号本体（条目点击要写回信号关菜单——传快照对象会把 `.value` 写在死对象上） */
+/** Pass ctx as the signal itself (entry clicks must write back to the signal to close the menu — passing a snapshot object writes `.value` on a dead object) */
 function renderRowMenu(ctx: Signal<{ x: number; y: number; items: readonly DataTableRowMenuItem[] } | null>): VobsNode | null {
   const value = ctx.value
   if (value === null) return null
@@ -238,7 +248,7 @@ function createHeader<Row>(props: KitDataTableProps<Row>): VobsNode {
       applyColumnStyle(cell, column, readProp<DataTableColumnSettings | undefined>(props, 'columnSettings', undefined))
       if (column.sortable) insertBefore(cell, createSortButton(props, column, cell), null)
       else if (column.head !== undefined) {
-        // 表头节点：动态插入（随信号响应——表头全选框等）；resolveSlot 归一节点/文本/工厂
+        // Header node: inserted dynamically (reactive to signals — e.g. header select-all boxes); resolveSlot normalizes node/text/factory
         insertDynamic(cell, null, () => resolveSlot(column.head))
       } else insertBefore(cell, createText(column.label), null)
       insertBefore(row, cell, null)
@@ -279,14 +289,18 @@ function createSortButton<Row>(props: KitDataTableProps<Row>, column: DataTableC
 }
 
 /**
- * tbody 的内容模型：状态行 / 虚拟化 spacer / 数据行，统一成"带 key 的列表"。
+ * tbody's content model: state rows / virtualization spacers / data rows,
+ * unified into a "keyed list".
  *
- * 原来这里直接 `createFragment` + 手写 `insertBefore` 循环 —— 每次 effect 重跑都整块重建：
- * 实测 2000 行改 1 行会创建 6014 个元素 / 240ms，而 keyed 调和同场景是 14 个元素 / 6ms。
- * 行复用、移动、多行重排在这里原本全是死代码。
+ * This used to be a direct `createFragment` + hand-written `insertBefore`
+ * loop — every effect re-run rebuilt the whole block: verified that changing
+ * 1 row of 2000 created 6014 elements / 240ms, while keyed reconciliation
+ * handles the same scenario with 14 elements / 6ms. Row reuse, moving and
+ * multi-row reordering were dead code here before.
  *
- * 行 key 优先用 `rowKey`（数据身份，支持重排复用）；没写就退化成位置 key ——
- * 至少"只改内容"时能复用行，保住行内焦点与 DOM 状态。
+ * Row keys prefer `rowKey` (data identity, supports reuse across reorders);
+ * without it they degrade to positional keys — at least "content-only
+ * changes" reuse rows, preserving in-row focus and DOM state.
  */
 type BodyItem<Row> =
   | { readonly key: string; readonly kind: 'state'; readonly state: 'loading' | 'empty' | 'error'; readonly error?: Error }
@@ -324,14 +338,18 @@ function renderBodyItem<Row>(
   if (item.kind === 'state') return createStateRow(props, item.state, item.error)
   if (item.kind === 'spacer') return createSpacerRow(visibleColumns(props).length, item.height)
   /*
-   * 行数据与**位置**都用 getter 传进去：
-   * - 数据：单元格在 effect 内取值 → 数据一变就重跑（行节点本身被复用）
-   * - 位置：**带 `rowKey` 时行会被复用并可能被挪到别处**，`item.index` 是创建那一刻的数字。
-   *   这里按 key 在**当前** rows 里反查位置，让 `column.render(row, index)` 与
-   *   `onRowClick(row, index)` 拿到当前顺序里的 index。
+   * Both row data and **position** are passed as getters:
+   * - Data: cells read values inside effects → any data change re-runs (the
+   *   row node itself is reused)
+   * - Position: **with `rowKey`, rows are reused and may be moved elsewhere**,
+   *   while `item.index` is the number from creation time. The position is
+   *   looked up by key in the **current** rows here, so `column.render(row,
+   *   index)` and `onRowClick(row, index)` receive the index in the current
+   *   order.
    *
-   * 不带 `rowKey` 时列表用 `pos:${index}` 作 key —— 位置就是身份，行不会被复用/移动，
-   * 所以直接用 `item.index`（也省掉每次查找）。
+   * Without `rowKey` the list uses `pos:${index}` as key — position is
+   * identity, rows are never reused/moved, so `item.index` is used directly
+   * (also saving the lookup each time).
    */
   const rowKey = readProp<KitDataTableProps<Row>['rowKey'] | undefined>(props, 'rowKey', undefined)
   const indexOfItem = (): number => {
@@ -341,7 +359,7 @@ function renderBodyItem<Row>(
       const candidate = rows[index]
       if (candidate !== undefined && `row:${String(rowKey(candidate, index))}` === item.key) return index
     }
-    // 该行已经不在当前页/窗口里（例如被过滤掉）—— 返回创建时的位置，别返回 -1 让调用方拿到负数
+    // The row is no longer in the current page/window (e.g. filtered out) — return the position from creation time rather than -1 so callers never see a negative index
     return item.index
   }
   return createRow(
@@ -378,44 +396,49 @@ function createRow<Row>(
   columns: readonly DataTableColumn<Row>[],
   getRow: () => Row,
   /**
-   * 当前**位置**（响应式）。
+   * Current **position** (reactive).
    *
-   * 行节点会被 keyed 列表复用，而 `initialIndex` 是创建那一刻的数字 —— 排序/过滤之后
-   * 它跟当前顺序不再一致。`column.render(row, index)` 与 `onRowClick(row, index)` 必须拿
-   * **当前位置**，否则渲染出来的 index 与回调收到的 index 都是冻结的旧值。
+   * Row nodes get reused by the keyed list, while `initialIndex` is the number
+   * from creation time — after sorting/filtering it no longer matches the
+   * current order. `column.render(row, index)` and `onRowClick(row, index)`
+   * must receive the **current position**, otherwise both the rendered index
+   * and the index delivered to callbacks are frozen stale values.
    */
   getIndex: () => number = () => initialIndex
 ): VobsNode {
   const tableRow = createElement('tr')
   const rowKey = readProp<KitDataTableProps<Row>['rowKey'] | undefined>(props, 'rowKey', undefined)
   /*
-   * `data-row-key` 用**创建时**的 index 求值一次。
-   * `rowKey(row, index)` 的契约是"行的身份"，行移动时身份不该跟着变 —— 所以这里刻意
-   * 不用响应式的 getIndex()。真正需要跟着走的是 render / 事件回调里的 index。
+   * `data-row-key` is evaluated once with the **creation-time** index.
+   * The contract of `rowKey(row, index)` is "the row's identity" — identity
+   * must not change when the row moves — so this deliberately avoids the
+   * reactive getIndex(). What needs to follow the row is the index inside
+   * render / event callbacks.
    */
   if (rowKey) setOptionalAttribute(tableRow, 'data-row-key', rowKey(getRow(), initialIndex))
   const onRowClick = readProp<KitDataTableProps<Row>['onRowClick'] | undefined>(props, 'onRowClick', undefined)
   if (onRowClick) {
     setProperty(tableRow, 'tabIndex', 0)
     setAttribute(tableRow, 'data-clickable', 'true')
-    // 事件时再取当前行与当前位置：行节点会被复用，闭包里那两份都可能是旧的
+    // Fetch the current row and position at event time: row nodes get reused, so both captured in the closure may be stale
     addEventListener(tableRow, 'click', () => onRowClick(getRow(), getIndex()))
     /*
-     * 键盘激活。行有 `tabIndex=0`、也带了 `data-clickable`，但原来只绑了 click ——
-     * 键盘用户能 Tab 到行上、按回车/空格却什么都不会发生。
+     * Keyboard activation. The row has `tabIndex=0` and `data-clickable`, but
+     * only click used to be bound — keyboard users could Tab onto the row and
+     * pressing Enter/Space did nothing.
      */
     addEventListener(tableRow, 'keydown', event => {
       const keyboardEvent = event as KeyboardEvent
       if (keyboardEvent.key !== 'Enter' && keyboardEvent.key !== ' ') return
-      // 空格默认会滚动页面，必须挡掉
+      // Space scrolls the page by default; that must be blocked
       keyboardEvent.preventDefault?.()
       onRowClick(getRow(), getIndex())
     })
   }
   const rowActive = readProp<KitDataTableProps<Row>['rowActive'] | undefined>(props, 'rowActive', undefined)
   if (rowActive) {
-    // 行激活态：effect 内求值——信号翻转原地更新 data-active（keyed 行复用不丢订阅），
-    // 行数据/位置变化（getRow/getIndex 读当前值）同样触发重算
+    // Row active state: evaluated inside an effect — a signal flip updates data-active in place (keyed row reuse doesn't drop subscriptions);
+    // row data/position changes (getRow/getIndex read current values) also trigger recomputation
     effect(() => {
       setOptionalAttribute(tableRow, 'data-active', rowActive(getRow(), getIndex()) ? 'true' : undefined)
     })
@@ -425,7 +448,7 @@ function createRow<Row>(
     setAttribute(cell, 'data-column-id', column.id)
     applyColumnStyle(cell, column, readProp<DataTableColumnSettings | undefined>(props, 'columnSettings', undefined))
     insertDynamic(cell, null, () => {
-      // 在 effect 内取行与位置：两者变化都会被追踪到
+      // Read the row and position inside the effect: changes to either are tracked
       const row = getRow()
       return resolveSlot(column.render
         ? column.render(row, getIndex())
@@ -641,11 +664,14 @@ function resolvePage<Row>(props: KitDataTableProps<Row>): { rows: readonly Row[]
   const source = normalizeRows(supplied)
   const query = currentQuery(props)
   /*
-   * 筛选与排序按**全部列**走，与"列是否可见"无关。
+   * Filtering and sorting run over **all columns**, regardless of column
+   * visibility.
    *
-   * 原来这里传的是 `visibleColumns(props)`：把某个可筛选列隐藏掉，它的筛选条件就静默不再生效
-   * —— 数据悄悄变了（实测把被筛选的那列隐藏后行数从 2 变回 3），而查询条件里明明还在。
-   * 可见性是显示层的事，不该改变数据语义。
+   * This used to pass `visibleColumns(props)`: hiding a filterable column
+   * silently stopped its filter from applying — the data changed without a
+   * trace (verified: hiding the filtered column took the row count from 2
+   * back to 3) while the query condition was still right there. Visibility is
+   * a display-layer concern and must not change data semantics.
    */
   const rows = applyFiltersAndSort(source.rows, allColumns(props), query, readProp(props, 'sortingMode', 'client'))
   const remoteTotal = source.total ?? readProp<number | undefined>(props, 'total', undefined)
@@ -653,12 +679,15 @@ function resolvePage<Row>(props: KitDataTableProps<Row>): { rows: readonly Row[]
   const isRemotePage = source.total !== undefined || readProp(props, 'total', undefined) !== undefined
   if (isRemotePage) return { rows, total }
   /*
-   * 越界页要收敛到有效范围。
+   * Out-of-range pages must clamp into the valid range.
    *
-   * 原来这里直接用 query.page：作者（或内部状态）给了超出范围的页码时，
-   * pageCount 算出来是 2、slice 却是空的 —— 摘要显示 "5/2"、表格显示 "No data"，
-   * 一个"假空态"。`goToPage` 那边本来就有 clamp，只有"从外面传进来的页"漏了。
-   * 只收敛**渲染**用的页号，emit 出去的 query 仍是作者给的值（不悄悄改对外契约）。
+   * This used to use query.page directly: when the author (or internal state)
+   * supplied an out-of-range page, pageCount computed to 2 but the slice was
+   * empty — the summary showed "5/2" and the table showed "No data": a fake
+   * empty state. `goToPage` already clamped; only "pages passed in from the
+   * outside" leaked. Only the page number used for **rendering** is clamped;
+   * the emitted query keeps the author's value (no silent change to the
+   * external contract).
    */
   const pageCount = Math.max(1, Math.ceil(total / query.pageSize))
   const safePage = Math.min(Math.max(1, query.page), pageCount)
@@ -812,7 +841,7 @@ function currentSort<Row>(props: KitDataTableProps<Row>): DataTableSort | null {
   return currentQuery(props).sort
 }
 
-/** 全部列（含 `visible: false` 与不在 visibleColumnIds 里的）：筛选/排序按数据语义走，不看可见性。 */
+/** All columns (including `visible: false` and ones outside visibleColumnIds): filter/sort follow data semantics, not visibility. */
 function allColumns<Row>(props: KitDataTableProps<Row>): readonly DataTableColumn<Row>[] {
   return readProp<readonly DataTableColumn<Row>[]>(props, 'columns', [])
 }
@@ -863,7 +892,7 @@ function resolvePaginationState<Row>(props: KitDataTableProps<Row>): DataTablePa
   const query = currentQuery(props)
   const pageCount = Math.max(1, Math.ceil(page.total / query.pageSize))
   return {
-    // 与 resolvePage 的收敛保持一致：否则摘要与页码按钮会显示越界的页
+    // Consistent with resolvePage's clamping: otherwise the summary and page buttons would show an out-of-range page
     page: Math.min(Math.max(1, query.page), pageCount),
     pageCount,
     pageSize: query.pageSize,

@@ -1,6 +1,6 @@
 import type { Ref, RefTarget, VobsNode } from '@vobs/runtime'
 
-// JSX 类型声明
+// JSX type declarations
 
 type VobsEventHandler<T extends Event = Event> = (event: T) => void
 
@@ -16,16 +16,16 @@ export interface VobsHTMLAttributes {
   className?: string
   /**
 
-   * 对象 / 数组形式的响应式类名（`{ 'is-open': open.value }`）。
+   * Reactive class names as object / array (`{ 'is-open': open.value }`).
 
-   * 只贡献它自己那部分，不影响 `class` 里的类名。见 @vobs/runtime 的 applyClassList。
+   * Contributes only its own portion; does not affect class names in `class`. See applyClassList in @vobs/runtime.
 
    */
   classList?: Record<string, unknown> | readonly unknown[] | string
   cols?: number
   colSpan?: number
   disabled?: boolean
-  /** 原生拖拽开关（img 防误拖等） */
+  /** Native drag toggle (preventing accidental drags on img, etc.) */
   draggable?: boolean
   download?: string | boolean
   height?: number | string
@@ -33,11 +33,11 @@ export interface VobsHTMLAttributes {
   hrefLang?: string
   hidden?: boolean
   id?: string
-  /** 虚拟键盘类型提示（移动端 input） */
+  /** Virtual keyboard type hint (mobile input) */
   inputMode?: 'none' | 'text' | 'tel' | 'url' | 'email' | 'numeric' | 'decimal' | 'search'
-  /** 原生图片懒加载（img） */
+  /** Native lazy loading for images (img) */
   loading?: 'lazy' | 'eager'
-  /** 原生图片解码时机（img） */
+  /** Native image decode timing (img) */
   decoding?: 'sync' | 'async' | 'auto'
   max?: number | string
   maxLength?: number
@@ -68,9 +68,9 @@ export interface VobsHTMLAttributes {
   children?: unknown
   onClick?: VobsEventHandler<MouseEvent>
   onDblClick?: VobsEventHandler<MouseEvent>
-  /** 资源加载失败（img error） */
+  /** Resource failed to load (img error) */
   onError?: VobsEventHandler<ErrorEvent>
-  /** 资源加载完成（img load） */
+  /** Resource finished loading (img load) */
   onLoad?: VobsEventHandler<Event>
   onFocus?: VobsEventHandler<FocusEvent>
   onBlur?: VobsEventHandler<FocusEvent>
@@ -95,11 +95,12 @@ export interface VobsHTMLAttributes {
   onWheel?: VobsEventHandler<WheelEvent>
   onScroll?: VobsEventHandler<Event>
   /*
-   * ↓ 以下事件**运行时早就支持**（dom-events.ts 对任何 `on*` 做 toLowerCase 解析），
-   * 这里只是补类型。起因：真实项目里 `onDragOver`/`onDrop` 报「不存在于
-   * VobsHTMLAttributes」，于是拖拽导入只能退回 ref + 原生 addEventListener。
+   * ↓ The events below were **already supported at runtime** (dom-events.ts applies toLowerCase
+   * resolution to any `on*`); this only adds the types. Origin: in a real project
+   * `onDragOver`/`onDrop` reported "does not exist on VobsHTMLAttributes", so drag-and-drop
+   * import had to fall back to ref + native addEventListener.
    */
-  /* 拖拽（onDragOver / onDrop 就是这次的报错来源） */
+  /* Drag and drop (onDragOver / onDrop were the source of that error report) */
   onDrag?: VobsEventHandler<DragEvent>
   onDragStart?: VobsEventHandler<DragEvent>
   onDragEnd?: VobsEventHandler<DragEvent>
@@ -108,33 +109,33 @@ export interface VobsHTMLAttributes {
   onDragOver?: VobsEventHandler<DragEvent>
   onDragExit?: VobsEventHandler<DragEvent>
   onDrop?: VobsEventHandler<DragEvent>
-  /* 剪贴板 */
+  /* Clipboard */
   onCopy?: VobsEventHandler<ClipboardEvent>
   onCut?: VobsEventHandler<ClipboardEvent>
   onPaste?: VobsEventHandler<ClipboardEvent>
-  /* 鼠标的补充（over/out 会冒泡，enter/leave 不会，两者语义不同） */
+  /* Mouse additions (over/out bubble, enter/leave do not — different semantics) */
   onMouseOver?: VobsEventHandler<MouseEvent>
   onMouseOut?: VobsEventHandler<MouseEvent>
   onContextMenu?: VobsEventHandler<MouseEvent>
-  /* 指针与触摸的补充 */
+  /* Pointer and touch additions */
   onPointerCancel?: VobsEventHandler<PointerEvent>
   onPointerOver?: VobsEventHandler<PointerEvent>
   onPointerOut?: VobsEventHandler<PointerEvent>
   onTouchCancel?: VobsEventHandler<TouchEvent>
-  /* 键盘补充（keypress 已废弃但仍在广泛使用） */
+  /* Keyboard additions (keypress is deprecated but still widely used) */
   onKeyPress?: VobsEventHandler<KeyboardEvent>
-  /* 表单补充 */
+  /* Form additions */
   onSelect?: VobsEventHandler<Event>
   onReset?: VobsEventHandler<Event>
   onInvalid?: VobsEventHandler<Event>
-  /* 动画与过渡 */
+  /* Animation and transitions */
   onAnimationStart?: VobsEventHandler<AnimationEvent>
   onAnimationEnd?: VobsEventHandler<AnimationEvent>
   onAnimationIteration?: VobsEventHandler<AnimationEvent>
   onTransitionEnd?: VobsEventHandler<TransitionEvent>
   onTransitionStart?: VobsEventHandler<TransitionEvent>
   onTransitionCancel?: VobsEventHandler<TransitionEvent>
-  /* 媒体 */
+  /* Media */
   onPlay?: VobsEventHandler<Event>
   onPause?: VobsEventHandler<Event>
   onEnded?: VobsEventHandler<Event>
@@ -152,7 +153,7 @@ export interface VobsHTMLAttributes {
   onCanPlay?: VobsEventHandler<Event>
   onLoadedMetadata?: VobsEventHandler<Event>
   onLoadedData?: VobsEventHandler<Event>
-  /* 其它常用 */
+  /* Other common events */
   onToggle?: VobsEventHandler<Event>
   onAbort?: VobsEventHandler<UIEvent>
   onBeforeInput?: VobsEventHandler<InputEvent>
@@ -163,7 +164,7 @@ export interface VobsHTMLAttributes {
   [name: `aria-${string}`]: string | number | boolean | undefined
 }
 
-/** SVG 元素属性：属性体系庞大且以 kebab-case 为主（stroke-width 等），通用索引放行；编译器对未知属性名原样 setAttribute。 */
+/** SVG element attributes: the attribute system is large and mostly kebab-case (stroke-width etc.), so a catch-all index is allowed; the compiler setAttributes unknown attribute names verbatim. */
 export interface VobsSVGAttributes {
   children?: unknown
   class?: string
@@ -182,14 +183,16 @@ declare global {
   namespace JSX {
     type Element = VobsNode
     interface ElementChildrenAttribute { children: {} }
-    // 组件 props 注入可选 key：编译器在列表 map 中提取 key 生成 keyOf（keyed 调和），
-    // key 不传入组件 props，仅供类型层面放行（IntrinsicAttributes 合并进所有 JSX 元素）。
+    // Inject optional key into component props: the compiler extracts key in list maps to generate keyOf
+    // (keyed reconciliation); key is not passed into component props, it only exists to pass type checking
+    // (IntrinsicAttributes is merged into all JSX elements).
     interface IntrinsicAttributes {
       key?: string | number
     }
-    // 内置元素全量自动映射：HTML 元素与 SVG 元素分别来自 lib.dom 的标签映射表，
-    // 属性统一走 vobs 的属性模型（setAttribute/property 混合）。新增元素随 TS
-    // 的 lib.dom 升级自动获得，无需手工维护元素枚举。
+    // Full automatic mapping of built-in elements: HTML and SVG elements come from lib.dom's
+    // tag mapping tables respectively; attributes go through vobs' unified attribute model
+    // (setAttribute/property mix). New elements arrive automatically as TS's lib.dom is
+    // upgraded — no manual element enumeration to maintain.
     type IntrinsicElements = {
       [K in keyof HTMLElementTagNameMap]: VobsHTMLAttributes
     } & {

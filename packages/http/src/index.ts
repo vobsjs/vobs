@@ -144,7 +144,7 @@ export function createMockAdapter(
 export function createXHRAdapter(): HTTPAdapter {
   return config => new Promise<Response>((resolve, reject) => {
     if (typeof XMLHttpRequest === 'undefined') {
-      reject(new Error('HTTP: 当前环境没有可用的 XMLHttpRequest'))
+      reject(new Error('HTTP: no XMLHttpRequest available in the current environment'))
       return
     }
     const xhr = new XMLHttpRequest()
@@ -179,7 +179,7 @@ export function createXHRAdapter(): HTTPAdapter {
       Object.defineProperty(response, PROGRESS_HANDLED, { value: true })
       resolve(response)
     }
-    xhr.onerror = () => { cleanup(); reject(new Error('HTTP: XMLHttpRequest 网络错误')) }
+    xhr.onerror = () => { cleanup(); reject(new Error('HTTP: XMLHttpRequest network error')) }
     xhr.onabort = () => {
       cleanup()
       reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }))
@@ -264,15 +264,16 @@ export class TimeoutError extends Error {
   readonly code = 'ETIMEDOUT'
 
   /**
-   * 超时时手上那个错误。
+   * The error that was in hand when the timeout hit.
    *
-   * 整链预算到点会把当前错误换成 TimeoutError —— 原来原错误就此丢掉（报告 P12：真实的
-   * ECONNREFUSED 变成了无 cause 的超时）。挂在这里，排查时还有线索。
+   * When the whole-chain budget expires, the current error is replaced with a TimeoutError —
+   * previously the original error was simply lost (report P12: a real ECONNREFUSED turned into a
+   * timeout with no cause). Attached here, there is still a lead when investigating.
    */
   readonly cause?: unknown
 
   constructor(timeout: number, cause?: unknown) {
-    super(`HTTP 请求超过 ${timeout}ms 未完成`)
+    super(`HTTP request did not complete within ${timeout}ms`)
     this.name = 'TimeoutError'
     if (cause !== undefined) this.cause = cause
   }
@@ -429,25 +430,28 @@ export function createHTTPClient(options: HTTPClientOptions = {}): HTTPClient {
 
     const adapterConfig: RequestConfig = { ...config, signal: controller.signal }
     /*
-     * 取消与超时必须是**硬保证**，不能只把 signal 交给适配器就算了。
+     * Cancellation and timeout must be **hard guarantees** — handing the signal to the adapter is
+     * not enough.
      *
-     * `HTTPAdapter` 是公开扩展点，完全可能不读 `config.signal`；原来这里直接
-     * `await requestAdapter(...)`，于是 abort 只是"建议"：已 abort 的请求照样发出并返回 200，
-     * `timeout: 10` 也要等适配器自己收敛才走到超时判定（实测 74ms 才成功）。适配器永不结算时
-     * 更糟：promise 永久 pending（并发闸被占死、去重同 key 永挂）。
+     * `HTTPAdapter` is a public extension point and may well never read `config.signal`; the
+     * original code did a bare `await requestAdapter(...)`, which made abort merely a "suggestion":
+     * an aborted request was still sent out and returned 200, and `timeout: 10` only reached the
+     * timeout decision once the adapter settled on its own (measured: succeeded only after 74ms).
+     * Worse, with an adapter that never settles: the promise stays pending forever (the concurrency
+     * gate stays occupied, dedupe on the same key hangs forever).
      *
-     * 所以让 abort 与适配器赛跑 —— 请求 promise 必定收敛。
+     * So abort races the adapter — the request promise is guaranteed to settle.
      */
     let rejectOnAbort: ((reason: unknown) => void) | undefined
-    /** 适配器自己报出来的错误（输了赛跑时也能留下来当 cause）。 */
+    /** Errors reported by the adapter itself (survives as the cause even when it loses the race). */
     let lastError: unknown
     const aborted = new Promise<never>((_, reject) => { rejectOnAbort = reject })
-    // 空 catch：没人接时不该变成 unhandledRejection（这个坑前面修过）
+    // Empty catch: with no one attached it must not turn into an unhandledRejection (a pit fixed before)
     aborted.catch(() => {})
     const abortError = (): Error => {
       const reason = controller.signal.reason
       if (reason instanceof Error) return reason
-      const error = new Error('Vobs HTTP: 请求已取消')
+      const error = new Error('Vobs HTTP: request was cancelled')
       error.name = 'AbortError'
       return error
     }
@@ -460,11 +464,12 @@ export function createHTTPClient(options: HTTPClientOptions = {}): HTTPClient {
       while (true) {
         try {
           /*
-           * 适配器的 promise 单独拿着：输了赛跑（abort 先到）时它稍后仍可能 reject ——
-           * 没人接就会变成 unhandledRejection。这里先挂一个空 catch，同时把它记进 lastError，
-           * 好在超时路径里作为 cause 保留下来（真实失败原因不该被丢掉）。
+           * Keep the adapter's promise in its own variable: if it loses the race (abort arrives
+           * first) it may still reject later — with no one attached that becomes an
+           * unhandledRejection. Attach an empty catch here, and also record it into lastError so
+           * the timeout path can keep it as the cause (the real failure reason must not be lost).
            */
-          // 适配器允许同步返回，所以先归一成 promise
+          // The adapter is allowed to return synchronously, so normalize to a promise first
           const adapterPromise = Promise.resolve(requestAdapter(adapterConfig))
           adapterPromise.catch(reason => { lastError = reason })
           const result = await Promise.race([adapterPromise, aborted])
@@ -475,25 +480,28 @@ export function createHTTPClient(options: HTTPClientOptions = {}): HTTPClient {
           return response
         } catch (error) {
           /*
-           * 只挂**适配器自己报出来**的错误。
+           * Only attach errors **reported by the adapter itself**.
            *
-           * 超时的 abort 通常先到，此刻 lastError 还是空的 —— 那就**不挂 cause**，
-           * 而不是把内部合成的 abort 错误塞进去当线索（那比没有更误导）。
-           * 真实错误若在超时前就已报出，会留在这里。
+           * The timeout's abort usually arrives first, at which point lastError is still empty —
+           * so **no cause** is attached, rather than stuffing the internally synthesized abort
+           * error in as a lead (that is more misleading than nothing).
+           * If the real error was reported before the timeout, it is kept here.
            */
           if (timedOut) throw new TimeoutError(config.timeout!, lastError)
           if (inputSignal?.aborted || isAbortError(error)) throw error
           const nextAttempt = attempt + 1
           if (nextAttempt > (config.retry ?? 0)) throw toError(error)
           /*
-           * 默认只对**幂等**方法自动重试。
+           * By default, only **idempotent** methods are retried automatically.
            *
-           * 原来默认是 `isRetryable(error)`，完全不看方法 —— README 推荐的客户端级 `retry: 2`
-           * 会让 POST 在 503 下真的发 3 次（报告实测）。服务端可能因此写入两次：静默重复提交。
-           * HTTP 客户端的惯例是"自动重试只用于幂等方法"。
+           * The original default was `isRetryable(error)`, ignoring the method entirely — the
+           * client-level `retry: 2` recommended by the README would really send a POST three times
+           * under 503 (measured in the report). The server could then write twice: a silent
+           * duplicate submission. The HTTP-client convention is "automatic retries only for
+           * idempotent methods".
            *
-           * 调用方一旦显式提供 `shouldRetry`，就完全交给它 —— 需要重试 POST 的人显式打开即可，
-           * `retry` 这个预算项本身不变。
+           * Once the caller provides `shouldRetry` explicitly, it is handed full control — anyone
+           * who needs POST retried opts in explicitly; the `retry` budget itself is unchanged.
            */
           const shouldRetry = config.shouldRetry
             ? await config.shouldRetry(toError(error), nextAttempt)
@@ -519,11 +527,12 @@ export function createHTTPClient(options: HTTPClientOptions = {}): HTTPClient {
             context: Object.keys(retryContext).length > 0 ? retryContext : undefined
           })
           /*
-           * 退避取两者**较大值**：
-           * - 配置的 `retryDelay`（默认 0，即"不额外等"）
-           * - 服务端 `Retry-After`（有就必须认，见 serverRetryDelay 的说明）
+           * Backoff takes the **larger** of the two:
+           * - the configured `retryDelay` (default 0, i.e. "no extra wait")
+           * - the server's `Retry-After` (when present it must be honored; see serverRetryDelay)
            *
-           * 取较大值而不是"有就用"：调用方显式配了更长退避时不该被服务端缩短。
+           * Taking the larger value instead of "prefer the server's": when the caller explicitly
+           * configured a longer backoff, the server must not be allowed to shorten it.
            */
           const serverHint = serverRetryDelay(toError(error))
           const configured = resolveRetryDelay(config.retryDelay ?? 0, attempt, toError(error))
@@ -619,7 +628,7 @@ function normalizeClientOptions(options: HTTPClientOptions): Required<Pick<HTTPC
 
 export function createConcurrencyLimiter(limit: number): ConcurrencyLimiter {
   if (limit !== Infinity && (!Number.isFinite(limit) || limit < 1 || !Number.isInteger(limit))) {
-    throw new Error('HTTP: concurrency 必须是大于等于 1 的整数')
+    throw new Error('HTTP: concurrency must be an integer >= 1')
   }
   let active = 0
   const queue: Array<() => void> = []
@@ -643,34 +652,40 @@ function getDedupeKey(config: RequestConfig, defaultEnabled: boolean): string | 
   if (!(config.dedupe ?? defaultEnabled)) return undefined
   if (config.method !== 'GET' && config.method !== 'HEAD') return undefined
   /*
-   * 键里必须带上"是谁在问"的凭据。
+   * The key must carry the credentials of "who is asking".
    *
-   * 原来只有 `METHOD url`：两个并发 GET 只要 URL 相同就合并，**哪怕 Authorization 不同** ——
-   * B 的请求根本不会发出，直接拿到 A 的响应（拿错数据，属于安全问题）。
-   * 只纳入凭据类头，其余头不参与，去重的价值不受影响。
+   * The original key was just `METHOD url`: two concurrent GETs with the same URL were merged,
+   * **even with different Authorization headers** — B's request was never sent at all and B got A's
+   * response directly (wrong data, a security issue).
+   * Only credential-class headers participate; other headers do not, so dedupe's value is unaffected.
    *
-   * 还必须带上**改变响应形态**的选项（`responseShapeFingerprint`）：
-   * 同一个 URL 并发要 `responseType:'json'` 与 `'blob'` 时，后者会拿到前者解析好的对象
-   * （类型与内容都不对，且完全无声 —— 去重是"共享同一个响应"，不是"共享同一个请求"）。
+   * It must also carry the options that **change the response shape** (`responseShapeFingerprint`):
+   * when the same URL concurrently asks for `responseType:'json'` and `'blob'`, the latter would
+   * receive the former's already-parsed object (wrong type and wrong content, and completely
+   * silent — dedupe means "share the same response", not "share the same request").
    */
   return `${config.method} ${config.url} ${credentialFingerprint(config.headers)} ${responseShapeFingerprint(config)}`
 }
 
 /**
- * 参与去重键的"响应形态"选项。
+ * The "response shape" options that participate in the dedupe key.
  *
- * 这些选项不改变请求发往哪里，但**改变返回给调用方的东西**，所以声明的形态不同就不能合并：
- * - `responseType`：json / text / blob / arrayBuffer / response —— 差异最大
- * - `credentials`：include 与 omit 会拿到不同内容（登录态与未登录态的响应可能完全不同）
- * - `cache`：default 与 no-store 可能拿到不同的新鲜度
+ * These options do not change where the request goes, but they **change what is returned to the
+ * caller**, so different declared shapes must not be merged:
+ * - `responseType`: json / text / blob / arrayBuffer / response — the biggest difference
+ * - `credentials`: include vs omit can return different content (signed-in vs anonymous responses
+ *   can differ completely)
+ * - `cache`: default vs no-store can return different freshness
  *
- * **刻意不纳入**：`onDownloadProgress` / `onUploadProgress` / `signal` / `timeout` / `debugContext`
- * / `retry` 等，它们不影响响应内容，只影响"怎么等"。
+ * **Deliberately excluded**: `onDownloadProgress` / `onUploadProgress` / `signal` / `timeout` /
+ * `debugContext` / `retry` etc. — they do not affect the response content, only "how we wait".
  *
- * ⚠️ 但要知道 `onDownloadProgress` 的这个取舍有代价：两个调用方若声明了**不同的**进度回调
- * 却共享同一个 key，只有先发出那一个的进度回调会被调用（后者静默收不到进度）。
- * 这一点写成注释而不是塞进 key —— 把回调塞进 key 会让"每个新回调都产生新请求"，
- * 去重就彻底失效了。需要独立进度回调的调用方请用 `dedupe: false` 或自定义 `dedupeKey`。
+ * ⚠️ But know that the `onDownloadProgress` trade-off has a cost: if two callers declare
+ * **different** progress callbacks yet share the same key, only the first-issued one's progress
+ * callback gets called (the latter silently receives no progress). This is written as a comment
+ * rather than folded into the key — putting callbacks into the key would make "every new callback
+ * produce a new request", completely defeating dedupe. Callers needing independent progress
+ * callbacks should use `dedupe: false` or a custom `dedupeKey`.
  */
 function responseShapeFingerprint(config: RequestConfig): string {
   return [
@@ -680,13 +695,13 @@ function responseShapeFingerprint(config: RequestConfig): string {
   ].join(' ')
 }
 
-/** 参与去重键的凭据头（小写）。 */
+/** Credential headers that participate in the dedupe key (lowercase). */
 const DEDUPE_CREDENTIAL_HEADERS = ['authorization', 'cookie', 'proxy-authorization'] as const
 
 function credentialFingerprint(headers: RequestConfig['headers']): string {
   if (!headers) return ''
   const parts: string[] = []
-  // for...in 而不是 Object.keys：headers 可能带原型（table 那轮踩过）
+  // for...in instead of Object.keys: headers may carry prototype members (hit during the table round)
   for (const key in headers) {
     const lower = key.toLowerCase()
     if (!(DEDUPE_CREDENTIAL_HEADERS as readonly string[]).includes(lower)) continue
@@ -697,14 +712,14 @@ function credentialFingerprint(headers: RequestConfig['headers']): string {
 }
 
 function normalizeRequest(input: RequestOptions, defaults: ReturnType<typeof normalizeClientOptions>): RequestConfig {
-  if (!input.url) throw new Error('HTTP: url 不能为空')
+  if (!input.url) throw new Error('HTTP: url must not be empty')
   const method = (input.method ?? 'GET').toUpperCase() as HTTPMethod
   const timeout = validateTimeout(input.timeout ?? defaults.timeout)
   const retry = validateRetry(input.retry ?? defaults.retry)
   const retryDelay = input.retryDelay ?? defaults.retryDelay
   const signal = input.signal ?? input.state
   if (input.signal && input.state && input.signal !== input.state) {
-    throw new Error('HTTP: signal 和 state 不能同时指向不同的 AbortSignal')
+    throw new Error('HTTP: signal and state must not point to different AbortSignals')
   }
   return {
     ...input,
@@ -720,7 +735,7 @@ function normalizeRequest(input: RequestOptions, defaults: ReturnType<typeof nor
 }
 
 async function fetchAdapter(config: RequestConfig): Promise<Response> {
-  if (typeof fetch !== 'function') throw new Error('HTTP: 当前环境没有可用的 fetch')
+  if (typeof fetch !== 'function') throw new Error('HTTP: no fetch available in the current environment')
   const headers = new Headers(config.headers)
   const body = encodeBody(config.body, headers, config.method)
   return fetch(config.url, {
@@ -777,7 +792,7 @@ const builtInAxiosRequest: AxiosRequest = async <T = unknown>(config: AxiosReque
   }
 }
 
-/** 可以安全地自动重试的方法：重复执行与执行一次等价。 */
+/** Methods that are safe to retry automatically: repeating the call is equivalent to calling once. */
 const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE'])
 
 function isIdempotentMethod(method: string | undefined): boolean {
@@ -790,7 +805,7 @@ function toAxiosCredentials(credentials?: RequestCredentials): boolean | undefin
 }
 
 function toRawResponse(data: unknown, status: number, statusText: string | undefined, headers: HeadersInit | undefined): Response {
-  if (typeof Response === 'undefined') throw new Error('HTTP: 当前环境没有可用的 Response')
+  if (typeof Response === 'undefined') throw new Error('HTTP: no Response available in the current environment')
   const body = status === 204 || status === 205 ? null : data as BodyInit | null | undefined
   return new Response(body, {
     status,
@@ -841,7 +856,7 @@ async function parseBody(
     try {
       return JSON.parse(text)
     } catch {
-      throw new Error('HTTP: 响应不是有效 JSON')
+      throw new Error('HTTP: response is not valid JSON')
     }
   }
   return text
@@ -944,23 +959,25 @@ function isAbortError(error: unknown): boolean {
 
 function resolveRetryDelay(retryDelay: RetryDelay, attempt: number, error: Error): number {
   const delay = typeof retryDelay === 'function' ? retryDelay(attempt, error) : retryDelay
-  if (!Number.isFinite(delay) || delay < 0) throw new Error('HTTP: retryDelay 必须是大于等于 0 的有限数字')
+  if (!Number.isFinite(delay) || delay < 0) throw new Error('HTTP: retryDelay must be a finite number >= 0')
   return delay
 }
 
 /**
- * 服务端在响应里给的**重试提示**（`Retry-After`），没给就返回 undefined。
+ * The server's **retry hint** in the response (`Retry-After`); returns undefined when absent.
  *
- * 为什么必须认它：`429`/`503` 上的 `Retry-After` 是服务端在明确说
- * "**别现在来**"。客户端零退避连环重试等于把它挡的那部分流量原样打回去 —— 是**放大器**，
- * 而且违反协议 —— 不认它，客户端就会在服务端明确说"别现在来"时连环重试。
+ * Why it must be honored: a `Retry-After` on `429`/`503` is the server explicitly saying
+ * "**not right now**". Retrying in a tight loop with zero backoff throws that rejected traffic
+ * right back at the server — an **amplifier** — and violates the protocol: ignore it and the
+ * client keeps hammering exactly when the server said "not right now".
  *
- * 支持两种合法格式（RFC 9110 §10.2.3）：
- * - 秒数：`Retry-After: 5`
- * - HTTP 日期：`Retry-After: Wed, 21 Oct 2015 07:28:00 GMT`
+ * Two legal formats are supported (RFC 9110 §10.2.3):
+ * - seconds: `Retry-After: 5`
+ * - HTTP date: `Retry-After: Wed, 21 Oct 2015 07:28:00 GMT`
  *
- * 只接受**非负有限值**；非法值当作没给（不因为服务端写错就阻断重试）。
- * 上限 60 秒：避免一个荒谬的 `Retry-After` 把调用方挂死。
+ * Only **non-negative finite values** are accepted; invalid values count as absent (a server's
+ * malformed header must not block retries).
+ * The 60-second cap: prevents an absurd `Retry-After` from hanging the caller indefinitely.
  */
 const MAX_SERVER_RETRY_DELAY = 60_000
 
@@ -983,12 +1000,12 @@ function serverRetryDelay(error: Error): number | undefined {
 }
 
 function validateRetry(retry: number): number {
-  if (!Number.isInteger(retry) || retry < 0) throw new Error('HTTP: retry 必须是大于等于 0 的整数')
+  if (!Number.isInteger(retry) || retry < 0) throw new Error('HTTP: retry must be an integer >= 0')
   return retry
 }
 
 function validateTimeout(timeout: number): number {
-  if (!Number.isFinite(timeout) || timeout < 0) throw new Error('HTTP: timeout 必须是大于等于 0 的有限数字')
+  if (!Number.isFinite(timeout) || timeout < 0) throw new Error('HTTP: timeout must be a finite number >= 0')
   return timeout
 }
 

@@ -3,18 +3,19 @@ import { Captcha, SliderCaptcha } from './index'
 import { hydrate, renderToString } from '../../ssr/src/index'
 
 /**
- * SSR 渲染器（ssr/src/renderer.ts）**没有** removeAttribute —— 它在 `VobsRenderer`
- * 里是可选能力（runtime/src/renderer.ts:21），服务端数据节点上也没有 DOM 的原生方法。
- * 组件里直接调 `node.removeAttribute(...)` 会让 renderToString 整棵树抛 TypeError。
+ * The SSR renderer (ssr/src/renderer.ts) does **not** have removeAttribute — it is an optional
+ * capability on `VobsRenderer` (runtime/src/renderer.ts:21), and server-side data nodes have no
+ * native DOM methods either. Calling `node.removeAttribute(...)` directly in a component would
+ * make renderToString throw a TypeError across the whole tree.
  */
 describe('@vobs/captcha SSR', () => {
-  it('renderToString 不抛错：属性清除走框架 op 而不是原生 DOM 方法', () => {
+  it('renderToString does not throw: attribute removal goes through framework ops instead of native DOM methods', () => {
     const html = renderToString(() => Captcha({ status: 'idle' }))
     expect(html).toContain('class="vobs-captcha"')
     expect(html).toContain('data-status="idle"')
   })
 
-  it('disabled / aria-* / SliderCaptcha 都不再崩，且 label 进入服务端产物', () => {
+  it('disabled / aria-* / SliderCaptcha no longer crash, and label lands in the server output', () => {
     expect(renderToString(() => Captcha({ status: 'ready', disabled: true })))
       .toContain('aria-disabled="true"')
     expect(renderToString(() => Captcha({ status: 'ready', 'aria-label': 'Security check' })))
@@ -30,7 +31,7 @@ describe('@vobs/captcha SSR', () => {
     }))).toContain('vobs-captcha')
   })
 
-  it('服务端产物可以被水合回同一棵树', () => {
+  it('server output can be hydrated back into the same tree', () => {
     const props = { status: 'ready' as const, label: 'Human check' }
     document.body.innerHTML = renderToString(() => Captcha(props))
 

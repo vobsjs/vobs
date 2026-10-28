@@ -1,49 +1,53 @@
 /**
- * 诊断码的**可查询说明**（`vobs explain` 的数据源）。
+ * Queryable explanations for diagnostic codes (the data source of `vobs explain`).
  *
- * ## 为什么需要它
+ * ## Why this exists
  *
- * 这一轮里 C104–C108 的规则我都是**读源码**才知道的；AI 只看到错误信息那一句。
- * Rust 生态的 `rustc --explain E0382` 是同类设施，而它被广泛认为是
- * "对人不友好但 AI 友好"的典范 —— 因为规则**可以查，不用猜**。
+ * In that round I only learned the C104–C108 rules by **reading the source**; an AI
+ * sees nothing but the single error-message line. Rust's `rustc --explain E0382` is
+ * the same kind of facility, widely regarded as "unfriendly to humans but AI-friendly"
+ * — because the rules **can be looked up instead of guessed**.
  *
- * ## 为什么放在 `@vobs/runtime`
+ * ## Why it lives in `@vobs/runtime`
  *
- * `@vobs/compiler`（静态规则）与 `@vobs/vobs`（运行时护栏）**都依赖它**，
- * 而诊断说明要能描述两边的码。放这里，双方与 CLI 都能读到**同一份**。
+ * Both `@vobs/compiler` (static rules) and `@vobs/vobs` (runtime guards) **depend on it**,
+ * and diagnostic explanations must describe codes from both sides. Placing it here lets
+ * both packages and the CLI read **the same copy**.
  *
- * ## 覆盖范围（诚实标注）
+ * ## Coverage (honestly labeled)
  *
- * 目前覆盖**能从框架语义说准**的码。`vobs explain` 对没有条目的码**明确说没有**，
- * 而不是编一段像模像样的说明 —— 猜的文档比没有文档更糟（`VOBS_C102`/`C103`
- * 等构建器内部错误尚未收录）。
+ * Currently covers the codes that can be stated precisely from framework semantics.
+ * For codes without an entry, `vobs explain` **says so explicitly** instead of inventing
+ * a plausible-sounding explanation — guessed docs are worse than none (`VOBS_C102`/`C103`
+ * and other builder-internal errors are not yet covered).
  *
- * 每条必须回答四个问题（少一个就退回成"只有一句报错"）：
- * **是什么** / **为什么是坑** / **正确写法** / **反例**。
+ * Each entry must answer four questions (miss one and it degrades into "just an error
+ * line"): **what it is** / **why it's a trap** / **the correct way** / **the counter-example**.
  */
 export interface DiagnosticGuideRewrite {
-  /** 触发该码的最小形态（机器可直接对照替换的 before）。 */
+  /** Minimal form that triggers the code (a before that machines can diff-and-replace directly). */
   readonly wrong: string
-  /** 按 fix 改写后的形态（after）—— 由 guide-verification 保证零诊断。 */
+  /** Form rewritten per the fix (after) — guide-verification guarantees zero diagnostics. */
   readonly correct: string
 }
 
 export interface DiagnosticGuide {
   readonly code: string
-  /** 默认严重度（静态规则与运行时可能不同，这里是给人看的典型值）。 */
+  /** Default severity (static rule and runtime may differ; this is the typical human-facing value). */
   readonly severity: 'error' | 'warning'
-  /** 一句话：这个码在说什么。 */
+  /** One sentence: what this code is about. */
   readonly title: string
-  /** 为什么会发生、为什么是坑。 */
+  /** Why it happens and why it is a trap. */
   readonly why: string
-  /** 正确写法。 */
+  /** The correct way to write it. */
   readonly correct: string
-  /** 反例（触发它的形态）。 */
+  /** Counter-example (the form that triggers it). */
   readonly wrong: string
   /**
-   * 可直接执行的改写对（before/after）。**这里的夹具是 guide-verification.test.ts
-   * 的验证对象**（按 correct 改写必须零诊断）—— 元数据是真相，测试消费它，
-   * 两者不可能漂移。`vobs explain --json` 与 `diagnostics.md` 原样透出给 AI。
+   * Directly executable rewrite pairs (before/after). **These fixtures are the verification
+   * target of guide-verification.test.ts** (rewriting per `correct` must yield zero
+   * diagnostics) — the metadata is the source of truth, tests consume it, so the two cannot
+   * drift. `vobs explain --json` and `diagnostics.md` pass them through verbatim to AI.
    */
   readonly rewrites?: readonly DiagnosticGuideRewrite[]
 }
@@ -52,11 +56,11 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C104',
     severity: 'warning',
-    title: '组件体里的条件 return 只会求值一次（run-once 冻结）',
-    why: '组件体只执行一次，所以这个 return 在挂载时就固化了，之后信号变化不会再切换。'
-      + '只有"返回值会被渲染"时才是问题，所以规则只认含 JSX 的形态。',
-    correct: '把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`）—— 编译期生成响应式条件工厂；'
-      + '只切显隐用 `<Show when={cond}>`；路由用 `<RouterView/>`。',
+    title: 'Conditional return in the component body is evaluated only once (run-once freeze)',
+    why: 'The component body executes only once, so this return is frozen at mount time and later signal changes never switch it again. '
+      + 'It is only a problem when "the return value gets rendered", which is why the rule only flags forms containing JSX.',
+    correct: 'Put the condition in a JSX child position (`<div>{cond ? <A/> : <B/>}</div>`) — the compiler generates a reactive conditional factory; '
+      + 'use `<Show when={cond}>` for visibility-only toggling; use `<RouterView/>` for routing.',
     wrong: '`return cond.value ? <A/> : null`',
     rewrites: [
       {
@@ -68,12 +72,12 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C105',
     severity: 'warning',
-    title: '模块顶层写了 JSX',
-    why: '模块顶层表达式在 import 求值时执行，**早于** `createVobs()` 安装渲染器，'
-      + '运行时必炸「渲染器未初始化」，而堆栈指向 import 它的地方，与真正原因隔得很远。',
-    correct: '把 JSX 移进组件体；需要「数据 + 节点」的常量，改成**返回节点的函数**'
-      + '（`const menu = () => [<Item/>]`）。',
-    wrong: '`const MENU = <KitMenuItem />`（写在模块顶层）',
+    title: 'JSX written at module top level',
+    why: 'Module top-level expressions run at import-evaluation time, **before** `createVobs()` has installed the renderer, '
+      + 'so it crashes at runtime with "renderer not initialized" — and the stack points at the importing site, far away from the real cause.',
+    correct: 'Move the JSX into a component body; for constants that need "data + nodes", use a **function returning nodes** instead '
+      + '(`const menu = () => [<Item/>]`).',
+    wrong: '`const MENU = <KitMenuItem />` (at module top level)',
     rewrites: [
       {
         wrong: 'export const MENU = <div>顶层</div>',
@@ -84,11 +88,11 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C106',
     severity: 'warning',
-    title: '把 async 函数交给了 effect / 生命周期',
-    why: 'async 函数在**首个 await 之前**的代码是同步执行的，那些读写在 effect 的追踪作用域内 —— '
-      + '「effect 只调了个函数」不等于没依赖。而且 effect 不等返回的 Promise，清理契约也对不上。',
-    correct: '只想声明依赖用 `effect(on(deps, () => { … }))`；只想跑一次副作用放 `onMount`；'
-      + '异步取数用 `@vobs/resource`；确要保留就显式 `untrack(() => { void fn() })`。',
+    title: 'An async function was passed to effect / lifecycle',
+    why: 'Code in an async function **before the first await** executes synchronously, and those reads/writes land inside the effect\'s tracking scope — '
+      + '"the effect merely calls a function" does not mean it has no dependencies. And effect does not await the returned Promise, so the cleanup contract does not line up either.',
+    correct: 'To declare dependencies only, use `effect(on(deps, () => { … }))`; for a one-off side effect use `onMount`; '
+      + 'for async data fetching use `@vobs/resource`; if you must keep it, wrap explicitly in `untrack(() => { void fn() })`.',
     wrong: '`effect(async () => { if (!s.value.on) return; s.value = { on: true } })`',
     rewrites: [
       {
@@ -100,11 +104,11 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C107',
     severity: 'warning',
-    title: '组件体的 return 读了信号（run-once 冻结）',
-    why: '组件顶层 `return` 处**没有 parent/anchor**，而响应式条件渲染需要一个能换内容的位置 —— '
-      + '所以 `return cond.value ? <A/> : <B/>` 即使两支都是 JSX 也**一样冻结**（实测编译产物无 insertDynamic）。',
-    correct: '路由分支用 `<RouterView/>`；保留挂载只切显隐用 `<Show when={cond}>`；'
-      + '普通条件渲染放进 JSX 子节点位置。',
+    title: 'The component body\'s return reads a signal (run-once freeze)',
+    why: 'The top-level `return` of a component has **no parent/anchor**, while reactive conditional rendering needs a position where content can be swapped — '
+      + 'so `return cond.value ? <A/> : <B/>` **freezes even when both branches are JSX** (verified: the compiled output contains no insertDynamic).',
+    correct: 'Use `<RouterView/>` for routing branches; `<Show when={cond}>` to keep mounted and toggle visibility only; '
+      + 'put ordinary conditional rendering in a JSX child position.',
     wrong: '`return router.currentRoute.value.path === "/login" ? <Login/> : <Shell/>`',
     rewrites: [
       {
@@ -120,12 +124,12 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C108',
     severity: 'warning',
-    title: 'JSX 被存进变量（节点被急切创建）',
-    why: '`const node = <X/>` 在**这一行**就把组件实例化并跑了 body（`<X/>` 是 `createComponent(...)`，'
-      + '不是 React 那种描述对象）。之后的条件判断发生在创建之后，组件可能带着空值渲染并崩。',
-    correct: '① 写在 JSX 子节点位置；② 组件顶层 return 处**别改成三元**（会命中 C107），用 `Show`/`RouterView`；'
-      + '③ 要复用就用**返回节点的函数**（延迟求值）；④ 别把节点存进数据常量（会进 SSG 序列化）；'
-      + '⑤ 有内部状态要保留时，常驻挂载 + 传状态对象 + 内部判空。',
+    title: 'JSX stored in a variable (node created eagerly)',
+    why: '`const node = <X/>` instantiates the component and runs its body **on that very line** (`<X/>` is `createComponent(...)`, '
+      + 'not a React-style description object). Any condition evaluated afterwards happens after creation, so the component may render with empty values and crash.',
+    correct: '① Write it in a JSX child position; ② at the component\'s top-level return **do not switch to a ternary** (it hits C107), use `Show`/`RouterView`; '
+      + '③ to reuse, use a **function returning nodes** (lazy evaluation); ④ never store nodes in data constants (they would enter SSG serialization); '
+      + '⑤ when internal state must survive, keep it permanently mounted + pass a state object + null-check inside.',
     wrong: '`const node = <Picker el={p.value} />; return open.value ? node : null`',
     rewrites: [
       {
@@ -137,10 +141,10 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C118',
     severity: 'warning',
-    title: '组件体里把信号读进常量',
-    why: '组件体只执行一次，所以这个常量是**创建时刻的快照**，之后信号变化它永不更新 —— '
-      + '界面看起来"卡住了"，但没有任何报错。',
-    correct: '把读取放进 JSX（`<div>{count.value}</div>`）或回调体内；派生值用 `memo`。',
+    title: 'Signal read into a constant in the component body',
+    why: 'The component body executes only once, so the constant is a **snapshot from creation time** and never updates when the signal changes later — '
+      + 'the UI looks "stuck", with no error at all.',
+    correct: 'Move the read into JSX (`<div>{count.value}</div>`) or inside a callback body; use `memo` for derived values.',
     wrong: '`const snapshot = count.value; return <div>{snapshot}</div>`',
     rewrites: [
       {
@@ -152,13 +156,13 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C210',
     severity: 'warning',
-    title: 'effect 写入了它自己依赖的信号（自订阅）',
-    why: '依赖是**自动收集**的：effect 运行期间读到的任何信号都会变成依赖，写入会把它重新调度 → '
-      + '循环。而且**被调函数在首个 await 之前的代码也是同步执行的**，所以"只调了个函数"不等于没依赖。',
-    correct: '首选 `effect(on(deps, () => { … }))`（回调在 untrack 作用域里跑，结构上不会自订阅）；'
-      + '次选改成派生值 / `memo`；兜底才是 `untrack(() => { x.value = next })`。'
-      + '静态规则按变量名判定，可能误报（同名局部遮蔽），所以是 warning；'
-      + '运行时护栏按真实依赖集判定，是 error。',
+    title: 'effect writes to a signal it itself depends on (self-subscription)',
+    why: 'Dependencies are **auto-collected**: any signal read while the effect runs becomes a dependency, and writing to it re-schedules the effect → loop. '
+      + 'Moreover, **code in a called function before its first await also runs synchronously**, so "just calling a function" does not mean no dependencies.',
+    correct: 'Prefer `effect(on(deps, () => { … }))` (the callback runs in an untrack scope, structurally unable to self-subscribe); '
+      + 'second choice is a derived value / `memo`; the last resort is `untrack(() => { x.value = next })`. '
+      + 'The static rule matches by variable name and can false-positive (same-name local shadowing), hence warning; '
+      + 'the runtime guard judges by the real dependency set and is an error.',
     wrong: '`effect(() => { count.value = count.value + 1 })`',
     rewrites: [
       {
@@ -170,24 +174,24 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C211',
     severity: 'error',
-    title: '同一个 effect 在短时间内连跑很多次',
-    why: '大概率是自订阅，或两个 effect 在互相触发。它比 C210 更宽 —— 互相触发的循环不一定有单点自订阅。',
-    correct: '检查这些 effect 对信号的写入：首选 `effect(on(deps, fn))`；由其它信号派生的值改用 `memo`；'
-      + '兜底才是 `untrack`。注意被调函数首个 await 之前的代码也是同步的。',
-    wrong: '两个 effect 各自读对方写的信号'
+    title: 'The same effect runs many times within a short period',
+    why: 'Most likely self-subscription, or two effects triggering each other. Broader than C210 — mutually triggering loops need not have a single self-subscription point.',
+    correct: 'Inspect these effects\' writes to signals: prefer `effect(on(deps, fn))`; use `memo` for values derived from other signals; '
+      + 'the last resort is `untrack`. Note that code in a called function before its first await also runs synchronously.',
+    wrong: 'Two effects each read a signal the other writes'
   },
   {
     code: 'VOBS_C232',
     severity: 'warning',
-    title: 'list 写在三元 / && 的分支里',
-    why: '三元里同时有节点与 list 时，list 那一支**不会编译成 `insertList`** —— 会走多态插入，'
-      + '失去 keyed 复用（重排时整段重建而不是移动节点）。'
-      + '还有一个更容易被忽略的代价：**分支条件本身变化也会重建整个列表** —— '
-      + '因为编译产物是 `insertDynamicValue(el, null, () => cond.value ? items.map(…) : null)`，'
-      + '那个 getter 读了 `cond`。而直接子表达式编译成 `insertList(el, null, () => items, renderItem)`，'
-      + '只订阅列表源。'
-      + '影响大小看**条目数与是否有状态**：几项无状态按钮可忽略；几十项、或条目内有焦点/输入/滚动状态时必须改。',
-    correct: '把 list 提成**直接的**子表达式：先写条件分支，再单独写 `{items.map(...)}`。',
+    title: 'A list written inside a ternary / && branch',
+    why: 'When a ternary contains both a node and a list, the list branch **does not compile to `insertList`** — it goes through polymorphic insertion '
+      + 'and loses keyed reuse (reordering rebuilds the whole segment instead of moving nodes). '
+      + 'There is an even more easily missed cost: **a change of the branch condition itself also rebuilds the entire list** — '
+      + 'the compiled output is `insertDynamicValue(el, null, () => cond.value ? items.map(…) : null)`, and that getter reads `cond`. '
+      + 'A direct child expression compiles to `insertList(el, null, () => items, renderItem)`, which subscribes only to the list source. '
+      + 'How much it matters depends on **item count and whether items hold state**: a few stateless buttons is negligible; '
+      + 'dozens of items, or items holding focus/input/scroll state, must be fixed.',
+    correct: 'Hoist the list into a **direct** child expression: write the conditional branch first, then `{items.map(...)}` separately.',
     wrong: '`{cond ? items.value.map(i => <li key={i}/>) : <b/>}`',
     rewrites: [
       {
@@ -199,12 +203,12 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C233',
     severity: 'warning',
-    title: '数组信号用 mutator 原地修改（push/sort/splice…）',
-    why: '这些方法改的是**同一个数组引用** —— 信号靠引用相等判断要不要通知，'
-      + '所以订阅它的 JSX 永远不会更新，界面停留在旧数据且没有任何报错。',
-    correct: '数组更新必须**换引用**：push 用 `list.value = [...list.value, item]`；'
-      + '排序/截断先拷贝再改：`list.value = [...list.value].sort(...)`。',
-    wrong: '`list.value.push(item)`（`list` 绑定到 `state([...])`）',
+    title: 'Array signal mutated in place via mutators (push/sort/splice…)',
+    why: 'These methods mutate **the same array reference** — a signal uses reference equality to decide whether to notify, '
+      + 'so subscribed JSX never updates and the UI stays on stale data with no error at all.',
+    correct: 'Array updates must **swap the reference**: for push use `list.value = [...list.value, item]`; '
+      + 'for sort/truncate, copy first then mutate: `list.value = [...list.value].sort(...)`.',
+    wrong: '`list.value.push(item)` (with `list` bound to `state([...])`)',
     rewrites: [
       {
         wrong: 'export function P() {\n  const list = state([1, 2])\n  const add = () => { list.value.push(3) }\n  return <button onClick={add}>{list.value.length}</button>\n}',
@@ -220,10 +224,10 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C120',
     severity: 'warning',
-    title: 'state() 没传调试名',
-    why: '运行时诊断（如 C210 自订阅、C211 循环）会把这个信号显示为 **"(未命名信号)"** —— '
-      + '页面上有多个信号时，你无法从报错定位是哪一个。排查成本全部后置到了出错的时刻。',
-    correct: '创建时给第二个参数传与变量同名的调试名：`const count = state(0, \'count\')`。',
+    title: 'state() called without a debug name',
+    why: 'Runtime diagnostics (e.g. C210 self-subscription, C211 loops) will display this signal as **"(unnamed signal)"** — '
+      + 'with several signals on a page, you cannot tell from the error which one it is. All debugging cost is deferred to the moment of failure.',
+    correct: 'Pass a debug name matching the variable as the second argument at creation: `const count = state(0, \'count\')`.',
     wrong: '`const count = state(0)`',
     rewrites: [
       {
@@ -236,14 +240,14 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
   {
     code: 'VOBS_C234',
     severity: 'warning',
-    title: 'on 的回调里读了 deps 之外的信号（untrack 断边）',
-    why: '`on` 的回调跑在 **untrack 作用域**里 —— 回调内读到的信号**不会建立订阅**。'
-      + '若你期望那个信号也触发本 effect，更新会静默丢失：代码在跑、值也新鲜，'
-      + '只是它变化时没人通知。',
-    correct: '期望它也触发 → 加进 deps：`on([a, b], fn)`（声明即订阅）。'
-      + '若只要最新值、由 deps 触发刷新（刻意不订阅）→ 可忽略，'
-      + '或用 `untrack(() => b.value)` 显式表达意图。',
-    wrong: '`effect(on([a], () => { use(b.value) }))`（b 变化不会触发）',
+    title: 'The on callback reads a signal outside deps (untrack severs the edge)',
+    why: 'The `on` callback runs in an **untrack scope** — signals read inside it **establish no subscription**. '
+      + 'If you expected that signal to trigger this effect as well, updates are silently lost: the code runs and values are fresh, '
+      + 'it is just that nobody is notified when it changes.',
+    correct: 'Want it to trigger too → add it to deps: `on([a, b], fn)` (declaring is subscribing). '
+      + 'If you only want the latest value, refreshed by deps (deliberately not subscribed) → you may ignore this, '
+      + 'or make the intent explicit with `untrack(() => b.value)`.',
+    wrong: '`effect(on([a], () => { use(b.value) }))` (changes of b will not trigger)',
     rewrites: [
       {
         wrong: 'export function P() {\n  const a = state(1, \'a\')\n  const b = state(2, \'b\')\n  effect(on([a], () => { console.log(a.value, b.value) }))\n  return <div>{b.value}</div>\n}',
@@ -252,72 +256,72 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
     ]
   },
 
-  /* ---------- 构建器 / 配置层（补齐 --missing 指出的缺口） ---------- */
+  /* ---------- Builder / config layer (fills the gaps reported by --missing) ---------- */
   {
     code: 'VOBS_C002',
     severity: 'error',
-    title: '边界组件缺少必需属性',
-    why: '`ResourceBoundary` / `ErrorBoundary` / `AsyncBoundary` 靠各自那个属性工作：'
-      + '`resource` 决定订阅哪个资源、`fallback` 决定出错时渲染什么、`promise` 决定等哪个 Promise。'
-      + '缺了它，编译期不知道该挂什么，运行期也建立不起边界 —— '
-      + '而症状是"边界**没生效**"（错误照样冒到上层、资源不订阅），不是一条清楚的报错。',
-    correct: '`<ResourceBoundary resource={userResource}>…</ResourceBoundary>`；'
-      + '`<ErrorBoundary fallback={(e) => <Err error={e}/>}>…</ErrorBoundary>`；'
-      + '`<AsyncBoundary promise={pending}>…</AsyncBoundary>`。',
-    wrong: '`<ErrorBoundary>…</ErrorBoundary>`（漏了 `fallback`）'
+    title: 'Boundary component missing a required prop',
+    why: '`ResourceBoundary` / `ErrorBoundary` / `AsyncBoundary` each work through their respective prop: '
+      + '`resource` decides which resource to subscribe, `fallback` what to render on error, `promise` which Promise to await. '
+      + 'Without it, the compiler does not know what to mount and the runtime cannot establish the boundary — '
+      + 'and the symptom is "the boundary **silently does not work**" (errors still bubble up, the resource is never subscribed), not a clear error message.',
+    correct: '`<ResourceBoundary resource={userResource}>…</ResourceBoundary>`; '
+      + '`<ErrorBoundary fallback={(e) => <Err error={e}/>}>…</ErrorBoundary>`; '
+      + '`<AsyncBoundary promise={pending}>…</AsyncBoundary>`.',
+    wrong: '`<ErrorBoundary>…</ErrorBoundary>` (missing `fallback`)'
   },
   {
     code: 'VOBS_C007',
     severity: 'error',
-    title: '编译器插件缺少 name 或重名',
-    why: '插件按 `name` 去重与排序，而**顺序决定谁先改 AST**。'
-      + '没有 name、或两个插件同名时，`transformPluginNodes` 的产出顺序不确定 —— '
-      + '于是"同一份源码两次编译结果不同"，这类构建不确定性比崩溃更难查。'
-      + '所以这里**直接抛错**（`VobsError`）而不是给警告。',
-    correct: '每个插件都给唯一且稳定的 `name`：`{ name: "vobs-plugin-i18n", transform(...) {…} }`。',
-    wrong: '两个插件都写 `{ name: "i18n" }`，或干脆不写 `name`'
+    title: 'Compiler plugin missing a name, or duplicate names',
+    why: 'Plugins are deduplicated and ordered by `name`, and **order decides who transforms the AST first**. '
+      + 'Without a name, or with two plugins sharing one, the output order of `transformPluginNodes` is nondeterministic — '
+      + 'meaning "the same source compiles to different results on two runs". This kind of build nondeterminism is harder to debug '
+      + 'than a crash, so this **throws directly** (`VobsError`) instead of issuing a warning.',
+    correct: 'Give every plugin a unique, stable `name`: `{ name: "vobs-plugin-i18n", transform(...) {…} }`.',
+    wrong: 'Two plugins both declare `{ name: "i18n" }`, or omit `name` entirely'
   },
   {
     code: 'VOBS_C101',
     severity: 'error',
-    title: '不支持的 JSX 标签形态',
-    why: 'React 接受 `<svg:rect>`（JSX 命名空间标签）与 `<Foo.Bar>`（成员表达式）。'
-      + 'vobs 不做这两种解析：它们没有清晰的"组件还是 DOM 元素"归属，'
-      + '而 vobs 正是靠**大小写**来区分二者的 —— 猜错会导致整棵子树走错编译路径。',
-    correct: '组件用大写标识符 `<MyComponent/>`；DOM 元素用小写标签名 `<rect/>`；'
-      + 'Fragment 用 `<Fragment>` 或 `<>…</>`。',
-    wrong: '`<svg:rect/>`、`<Svg.Rect/>`'
+    title: 'Unsupported JSX tag form',
+    why: 'React accepts `<svg:rect>` (JSX namespace tags) and `<Foo.Bar>` (member expressions). '
+      + 'vobs does not parse either form: they have no clear "component or DOM element" classification, '
+      + 'and vobs distinguishes the two precisely by **casing** — guessing wrong sends the whole subtree down the wrong compilation path.',
+    correct: 'Components use capitalized identifiers `<MyComponent/>`; DOM elements use lowercase tag names `<rect/>`; '
+      + 'Fragments use `<Fragment>` or `<>…</>`.',
+    wrong: '`<svg:rect/>`, `<Svg.Rect/>`'
   },
   {
     code: 'VOBS_C102',
     severity: 'warning',
-    title: 'on* 属性绑到了不存在 / 不规范的事件名',
-    why: '三种情形**分开定级**：'
-      + '① `onFoo` 解析出的事件既不符合 `on` + 大写的约定、也不是已知 DOM 事件'
-      + '→ **回调永远不会触发，而且毫无声音**（error）；'
-      + '② 小写 `onclick` 只是"碰巧对得上"，换个名字就会静默失效（warning）；'
-      + '③ `onFoo` 是未知事件 —— 可能是自定义事件（可忽略），也可能是拼错（warning）。'
-      + '**只在"不可能是对"时报 error**：这条的目的不是拦人，'
-      + '而是把"绑到不存在的事件上、回调永不触发且没有任何提示"这件事说出来。',
-    correct: '事件处理器写成 `on` + 大写字母开头：`onClick` / `onDoubleClick` / `onPointerDown`。'
-      + '本来不是事件处理器的属性换个别名；确需手动挂监听就在 effect 里 `addEventListener`。',
-    wrong: '`onclick={…}`（小写）、`onClik={…}`（拼错）、`onFooBar={…}`（非标准事件）'
+    title: 'An on* prop bound to a nonexistent / non-canonical event name',
+    why: 'Three cases, **graded separately**: '
+      + '① the event parsed from `onFoo` neither follows the `on` + capital convention nor is a known DOM event '
+      + '→ **the callback never fires, silently** (error); '
+      + '② lowercase `onclick` only "happens to match" — rename it and it silently stops working (warning); '
+      + '③ `onFoo` is an unknown event — it may be a custom event (ignorable) or a typo (warning). '
+      + '**Error only when it "cannot possibly be right"**: this rule exists not to block anyone, '
+      + 'but to surface "bound to a nonexistent event, callback never fires, and not a single hint".',
+    correct: 'Write event handlers as `on` + a capitalized letter: `onClick` / `onDoubleClick` / `onPointerDown`. '
+      + 'Rename props that were never event handlers; if you truly need a manual listener, use `addEventListener` inside an effect.',
+    wrong: '`onclick={…}` (lowercase), `onClik={…}` (typo), `onFooBar={…}` (non-standard event)'
   },
   {
     code: 'VOBS_C103',
     severity: 'warning',
-    title: 'map 回调体不满足「单个 JSX 表达式」或「恰好一个 return」',
-    why: '编译器靠这个形态把列表编译成 **keyed 复用**（`insertList`：按 key 调和、移动已有节点）。'
-      + '回调体一旦有多个语句、或返回的是 Fragment，它就认不出来 → 退化成**多态插入**：'
-      + '每轮**重建每一项**，`key` 与 keyed 复用全部失效（重排时节点身份丢失、项内状态被重置）。',
-    correct: '把计算提到 `map` 之外（或先用 `memo` 派生好），让回调体保持"单个 JSX 表达式"；'
-      + '列表项用**一个元素**而不要用 Fragment 包。',
-    wrong: '`{items.map(i => { const t = f(i); return <li key={i}>{t}</li> })}`　'
+    title: 'map callback body fails "a single JSX expression" or "exactly one return"',
+    why: 'The compiler relies on this shape to compile lists into **keyed reuse** (`insertList`: reconcile by key, move existing nodes). '
+      + 'Once the callback body has multiple statements, or returns a Fragment, it can no longer be recognized → degrades to **polymorphic insertion**: '
+      + 'every round **rebuilds every item**, `key` and keyed reuse are fully defeated (node identity lost on reorder, per-item state reset).',
+    correct: 'Hoist computation out of `map` (or pre-derive with `memo`) so the callback body stays a "single JSX expression"; '
+      + 'make each list item **one element** instead of wrapping it in a Fragment.',
+    wrong: '`{items.map(i => { const t = f(i); return <li key={i}>{t}</li> })}` '
       + '`{items.map(i => <><li key={i}/></>)}`'
   }
 ]
 
-/** 按码查说明；没有条目时返回 `undefined`（调用方必须显式处理，不要编）。 */
+/** Look up a guide by code; returns `undefined` when there is no entry (callers must handle that explicitly — do not invent one). */
 export function findDiagnosticGuide(code: string): DiagnosticGuide | undefined {
   return DIAGNOSTIC_GUIDES.find(item => item.code === code)
 }

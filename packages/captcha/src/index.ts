@@ -71,11 +71,14 @@ export interface CaptchaProps<Challenge = unknown> {
 export function Captcha<Challenge = unknown>(props: CaptchaProps<Challenge> = {}): VobsNode {
   const root = createElement('section')
   /**
-   * 各槽位必须**按文档序**创建、就地 insertDynamic、再挂进 root。
+   * Each slot must be created **in document order**, hydrated in place via insertDynamic, then
+   * attached into root.
    *
-   * 水合认领的游标是「最近一次 createElement/insertBefore 的父节点」，且同标签元素按位置认领：
-   * 若先创建四个 div 再统一插入，四个槽位会按创建序认领到别人的 DOM 节点（class 被写到错节点上），
-   * 且嵌套槽位的 `<!--vobs:dynamic-->` 注释在游标所在的父节点下根本找不到。
+   * The hydration claim cursor is "the parent node of the most recent createElement/insertBefore",
+   * and same-tag elements are claimed by position: if the four divs are created first and inserted
+   * in one pass, the four slots claim each other's DOM nodes in creation order (class ends up on
+   * the wrong node), and the `<!--vobs:dynamic-->` comments of nested slots cannot be found at all
+   * under the parent node the cursor sits in.
    */
   const header = createElement('div')
   setAttribute(header, 'class', 'vobs-captcha__header')
@@ -84,8 +87,9 @@ export function Captcha<Challenge = unknown>(props: CaptchaProps<Challenge> = {}
   insertDynamic(header, null, () => {
     const label = readString(props, 'label')
     if (!label) return null
-    // 文本节点同样要**在动态槽位内**惰性创建：在组件体里提前 createText 会把认领游标留在
-    // 错误的父节点上（服务端产物认领不到，报 missing-node 动态文本节点）。
+    // Text nodes must likewise be created lazily **inside the dynamic slot**: calling createText
+    // early in the component body leaves the claim cursor on the wrong parent node (the server
+    // output cannot claim it, reporting a missing-node dynamic text node).
     if (!headerText) headerText = createText('')
     setTextContent(headerText, label)
     return headerText

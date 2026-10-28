@@ -13,7 +13,7 @@ describe('@vobs/notification', () => {
     vi.useRealTimers()
   })
 
-  it('创建响应式通知队列，并提供类型快捷方法与结构化数据', () => {
+  it('creates a reactive notification queue with type shortcuts and structured data', () => {
     const notification = createNotification({ now: () => 1_700_000_000_000 })
     const infoId = notification.info('Background sync started')
     const successId = notification.success('Saved', { title: 'Document', duration: 0, data: { revision: 3 } })
@@ -28,7 +28,7 @@ describe('@vobs/notification', () => {
     notification.dispose()
   })
 
-  it('超时、手动关闭、清空和上限淘汰分别完成生命周期回调', () => {
+  it('timeout, manual dismiss, clear, and overflow eviction each complete lifecycle callbacks', () => {
     vi.useFakeTimers()
     const dismissed: Array<[string, string]> = []
     const notification = createNotification({
@@ -53,7 +53,7 @@ describe('@vobs/notification', () => {
     notification.dispose()
   })
 
-  it('同 ID 写入替换旧通知、清理旧 timer，并且关闭不存在通知返回 false', () => {
+  it('same-ID writes replace the old notification, clean up its timer, and dismissing a missing notification returns false', () => {
     vi.useFakeTimers()
     const dismissed = vi.fn()
     const notification = createNotification({ defaultDuration: 20 })
@@ -67,7 +67,7 @@ describe('@vobs/notification', () => {
     notification.dispose()
   })
 
-  it('无 DOM 环境不需要浏览器 API，并拒绝无效输入与销毁后使用', () => {
+  it('needs no browser APIs in a DOM-less environment and rejects invalid input and use after disposal', () => {
     const notification = createNotification({ defaultDuration: 0 })
     expect(() => notification.notify({ content: '' })).toThrowError(
       expect.objectContaining({ code: 'INVALID_NOTIFICATION' })
@@ -84,7 +84,7 @@ describe('@vobs/notification', () => {
     )
   })
 
-  it('notificationPlugin 注入自有上下文，并随应用销毁清理', () => {
+  it('notificationPlugin injects its own context and cleans up when the app is destroyed', () => {
     let injected: ReturnType<typeof createNotification> | undefined
     const app = createVobs({
       render: () => createText('notification'),
@@ -96,10 +96,10 @@ describe('@vobs/notification', () => {
     injected?.success('before destroy')
     expect(injected?.notifications.value).toHaveLength(1)
     app.destroy()
-    expect(() => injected?.info('after destroy')).toThrow('已销毁')
+    expect(() => injected?.info('after destroy')).toThrow('disposed')
   })
 
-  it('未安装插件时 useNotification 给出明确错误', () => {
+  it('useNotification gives a clear error when the plugin is not installed', () => {
     const app = createVobs({ render: () => {
       useNotification()
       return createText('')

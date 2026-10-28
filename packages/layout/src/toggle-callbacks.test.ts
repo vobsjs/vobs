@@ -9,18 +9,23 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * 默认 header 的开关按钮要同时触发 onToggleSidebar 与状态回调。
+ * The default header's toggle button must trigger both onToggleSidebar and the
+ * state callback.
  *
- * 深读报告称"受控时默认按钮只调 onSidebarCollapsedChange，onToggleSidebar 只有自定义 header 会调，
- * 所以只接 onToggleSidebar 的应用点了没反应"。**实测不成立**：点默认 header 的
- * `.vobs-kit-header__toggle-button`，两个回调各触发 1 次。
+ * A deep-read report claimed "in controlled mode the default button only calls
+ * onSidebarCollapsedChange; onToggleSidebar is only invoked by custom headers,
+ * so apps wiring only onToggleSidebar saw no response". **Disproved by
+ * measurement**: clicking the default header's
+ * `.vobs-kit-header__toggle-button` fired each callback exactly once.
  *
- * 代码路径也对得上：`createDefaultToggle`（header.ts:80-83）读的是 KitHeader 的 onToggleSidebar，
- * 而 KitHeader 的该 prop 来自 `createHeaderSlot` 里那个"先 context.toggleSidebar() 再调作者回调"的
- * 包装（layout.ts:196-200）—— 而且 `createHeaderSlot` 只有一处调用（layout.ts:136），
- * 默认与自定义 header 共用同一条路径。
+ * The code path agrees: `createDefaultToggle` (header.ts:80-83) reads
+ * KitHeader's onToggleSidebar, and KitHeader's prop comes from the wrapper in
+ * `createHeaderSlot` that "first context.toggleSidebar(), then the author's
+ * callback" (layout.ts:196-200) — and `createHeaderSlot` has a single call
+ * site (layout.ts:136), so default and custom headers share one path.
  *
- * 既然核查结果是"没有这个 bug"，就把**当前正确的契约**钉住，免得日后真被改坏。
+ * Since the verdict is "no such bug", this pins **the currently correct
+ * contract** so it can't be broken silently later.
  */
 function mount(props: NonNullable<Parameters<typeof KitLayout>[0]>) {
   const host = document.createElement('main')
@@ -32,8 +37,8 @@ function mount(props: NonNullable<Parameters<typeof KitLayout>[0]>) {
   return { host, toggle, click, cleanup: () => { app.destroy(); host.remove() } }
 }
 
-describe('KitLayout 开关回调契约', () => {
-  it('受控时：默认 header 按钮同时调 onToggleSidebar 与 onSidebarCollapsedChange', async () => {
+describe('KitLayout toggle callback contract', () => {
+  it('controlled: the default header button calls both onToggleSidebar and onSidebarCollapsedChange', async () => {
     const toggles: number[] = []
     const changes: boolean[] = []
     const collapsed = state(false)
@@ -48,11 +53,11 @@ describe('KitLayout 开关回调契约', () => {
     click()
     await settle()
     expect(toggles).toHaveLength(1)
-    expect(changes).toEqual([true])          // false → true（受控，由作者决定是否采纳）
+    expect(changes).toEqual([true])          // false → true (controlled; the author decides whether to adopt it)
     cleanup()
   })
 
-  it('非受控时：状态回调同样会触发（作者可以据此持久化）', async () => {
+  it('uncontrolled: the state callback fires too (the author can persist on it)', async () => {
     const changes: boolean[] = []
     const { host, click, cleanup } = mount({
       menu: [{ key: '/home', label: 'Home' }],
@@ -60,7 +65,7 @@ describe('KitLayout 开关回调契约', () => {
     })
     await settle()
 
-    // 非受控的默认是 collapsed=true（sidebarExpanded 默认 false）→ 点一下是**展开**
+    // Uncontrolled defaults to collapsed=true (sidebarExpanded defaults to false) → one click **expands**
     expect(host.querySelector('.vobs-kit-layout--sidebar-collapsed')).toBeTruthy()
     click()
     await settle()

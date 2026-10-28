@@ -4,12 +4,14 @@ import { createResourceClient } from './index'
 import type { ResourceFailure, ResourceKey } from './index'
 
 /*
- * `client.errors()` 是 prefetchAll() 的配套只读失败视图：不抛错的老契约（prefetch-all.test.ts）
- * 保持不变，这里钉住新视图的语义边界 —— 只反映**当前缓存**里出错且未清掉的条目，是快照而非
- * 订阅源，并且外部改动清单不会回写内部状态。
+ * `client.errors()` is the companion read-only failure view of prefetchAll(): the old never-throws
+ * contract (prefetch-all.test.ts) stays unchanged; this test pins the new view's semantic
+ * boundaries — it only reflects entries in the **current cache** that errored and have not been
+ * cleared, it is a snapshot rather than a subscription source, and external mutations of the list
+ * never write back into internal state.
  */
-describe('resource.errors 只读失败视图', () => {
-  it('混合成功/失败时只列出失败的缓存条目', async () => {
+describe('resource.errors read-only failure view', () => {
+  it('lists only failed cache entries when successes and failures are mixed', async () => {
     const client = createResourceClient()
     const boom = new Error('orders 500')
     client.resource({ key: ['orders', 1], fetcher: async () => { throw boom } })
@@ -24,7 +26,7 @@ describe('resource.errors 只读失败视图', () => {
     expect(healthy.error.value).toBeNull()
   })
 
-  it('重试成功后从清单消失', async () => {
+  it('disappears from the list once a retry succeeds', async () => {
     let calls = 0
     const client = createResourceClient()
     const flaky = client.resource({
@@ -45,7 +47,7 @@ describe('resource.errors 只读失败视图', () => {
     expect(client.errors()).toEqual([])
   })
 
-  it('clear() 后为空', async () => {
+  it('empty after clear()', async () => {
     const client = createResourceClient()
     client.resource({ key: ['gone'], fetcher: async () => { throw new Error('gone') } })
 
@@ -57,7 +59,7 @@ describe('resource.errors 只读失败视图', () => {
     expect(client.errors()).toEqual([])
   })
 
-  it('返回只读快照：改动清单不影响内部状态', async () => {
+  it('returns a read-only snapshot: mutating the list does not affect internal state', async () => {
     const client = createResourceClient()
     const boom = new Error('boom')
     const failing = client.resource({ key: ['k'], fetcher: async () => { throw boom } })
@@ -69,7 +71,8 @@ describe('resource.errors 只读失败视图', () => {
     expect(second).not.toBe(first)
     expect(second[0]).not.toBe(first[0])
 
-    // 调用方能做的最粗暴改动：改数组长度、改条目字段、塞假条目 —— 一个都不该回写内部状态
+    // The crudest mutations a caller can attempt: resize the array, change entry fields, inject a
+    // fake entry — none of them may write back into internal state
     ;(first as ResourceFailure[]).push({ key: ['injected'], error: new Error('injected') })
     ;(first[0] as { error: Error }).error = new Error('overwritten')
     ;(first[0] as { key: ResourceKey }).key = ['overwritten']
@@ -82,7 +85,7 @@ describe('resource.errors 只读失败视图', () => {
     expect(client.get(['injected'])).toBeUndefined()
   })
 
-  it('无 key（不缓存）资源的失败不进清单，因为它不在缓存里', async () => {
+  it('failures of keyless (uncached) resources never enter the list, because they are not in the cache', async () => {
     const client = createResourceClient()
     const loose = client.resource(async () => { throw new Error('no key') })
 

@@ -5,12 +5,14 @@ import { bindText, createElement, createText, insertBefore } from '@vobs/vobs'
 import { createDevTools } from './index'
 
 /*
- * ssr 会在"水合时临时认领了一个非空文本"时发 `hydrationProvisionalText`（服务端渲染了真实文本、
- * 客户端此刻要空文本，等绑定 effect 覆写 —— 这类"值被悄悄换掉"过去完全无声）。
- * 这条测试钉住 devtools 真的把它接住了：否则那个可观测出口等于没人听。
+ * ssr emits `hydrationProvisionalText` when "a non-empty text is temporarily claimed during
+ * hydration" (the server rendered real text, the client needs empty text at that moment until a
+ * binding effect overwrites it — this kind of "value quietly swapped out" used to be fully
+ * silent). This test pins that devtools really catches it: otherwise that observable outlet has
+ * nobody listening.
  */
-describe('@vobs/devtools 接住水合的临时认领', () => {
-  it('hydrationProvisionalText 记成一条 lifecycle 事件', () => {
+describe('@vobs/devtools catches hydration provisional claims', () => {
+  it('hydrationProvisionalText is recorded as a lifecycle event', () => {
     const devtools = createDevTools({ expose: false })
     const render = () => {
       const span = createElement('span')

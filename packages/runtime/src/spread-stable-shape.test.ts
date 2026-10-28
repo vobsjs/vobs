@@ -8,38 +8,41 @@ setRenderer(createDOMRenderer())
 const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 
 /*
- * `bindSpreadProps` 的增量 diff 基准是"上一轮的对象引用"（ops.ts 里 `previous = next`）。
+ * `bindSpreadProps`'s incremental diff baseline is "the previous round's object reference"
+ * (`previous = next` in ops.ts).
  *
- * 那把 `previous` 存成 `next` 的**同一引用**时，下一轮的
- * `Object.is(previous[key], value)` 读的是同一份值 → **恒等 → 整个 diff 短路**，
- * 移除循环也因 `key in next` 全跳过。
+ * Storing `previous` as the **same reference** as `next` makes the next round's
+ * `Object.is(previous[key], value)` read the same values → **always equal → the entire
+ * diff short-circuits**, and the removal loop is skipped wholesale by `key in next`.
  *
- * 而编译器为 `<div {...props}>` 发射的正是**身份稳定 + getter** 的形状
- * （`bindSpreadProps(_el0, () => props)`，props 的读取经 getter 反应式求值），
- * 所以这不是假想用法：真实产物下改了 props，属性/事件/class **完全不上 DOM**。
+ * And the shape the compiler emits for `<div {...props}>` is precisely
+ * **identity-stable + getter** (`bindSpreadProps(_el0, () => props)`, props read
+ * reactively through getters), so this isn't a hypothetical usage: with real compiled
+ * output, changing props meant attributes/events/class **never landed on the DOM at all**.
  *
- * `spread.test.ts` 的 5 条用例全部走"每轮赋一个新对象"（`props.value = {...}`），
- * 恰好绕开了这个形状 —— 101 条 runtime 用例全绿，却没人问"这条路在真实产物里长什么样"。
+ * All 5 cases in `spread.test.ts` use "assign a fresh object every round"
+ * (`props.value = {...}`), which happens to sidestep this shape — 101 runtime cases all
+ * green, yet nobody asked "what does this path look like in real compiled output".
  */
-describe('bindSpreadProps 在身份稳定 + getter 的形状下（编译器真实产物形状）', () => {
-  it('同一对象引用、getter 值变化时，attribute 必须更新', async () => {
+describe('bindSpreadProps under the identity-stable + getter shape (the compiler\'s real output shape)', () => {
+  it('same object reference with a changing getter value: the attribute must update', async () => {
     const title = state('a')
-    // 身份稳定：每次都是同一个对象，值经 getter 读取
+    // Identity-stable: the same object every time, values read through the getter
     const props = { get title() { return title.value } }
     const el = createElement('div')
     bindSpreadProps(el, () => props)
     await flush()
 
-    // 首次应用
+    // First application
     expect(el.getAttribute('title')).toBe('a')
 
     title.value = 'b'
-    // effect 是调度执行（不是同步），所以这里要 flush 一轮
+    // The effect is scheduled (not synchronous), so flush a round here
     await flush()
     expect(el.getAttribute('title')).toBe('b')
   })
 
-  it('handler 身份变化时事件必须重绑（且新 handler 生效）', async () => {
+  it('handler identity change must rebind the event (and the new handler takes effect)', async () => {
     const calls: string[] = []
     const first = () => calls.push('first')
     const second = () => calls.push('second')
@@ -55,16 +58,17 @@ describe('bindSpreadProps 在身份稳定 + getter 的形状下（编译器真�
     handler.value = second
     await flush()
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    // 修复前：diff 恒等短路 → 仍是 first，且 second 从未被挂上
+    // Before the fix: the diff short-circuited as always-equal → still first, and second was never attached
     expect(calls).toEqual(['first', 'second'])
   })
 
-  it('键从对象里删掉时 attribute 被移除（null 值不移除，那是已钉的契约）', async () => {
+  it('keys deleted from the object get their attributes removed (null values don\'t remove — that\'s the pinned contract)', async () => {
     const present = state(true)
     /*
-     * 用"键在不在"表达移除，而不是"值变 null"：
-     * `props.test.ts` 把 null/undefined = "不提供值、保持现状"钉成了契约，
-     * 所以这条路径的清除语义是**删键**（下面的移除循环），不是把值设成 null。
+     * Express removal as "key present or not", not "value becomes null":
+     * `props.test.ts` pins null/undefined = "no value provided, keep the status quo" as a
+     * contract, so this path's clearing semantics are **deleting the key** (the removal
+     * loop below), not setting the value to null.
      */
     const props = new Proxy({} as Record<string, unknown>, {
       ownKeys: () => (present.value ? ['data-extra'] : []),
@@ -81,7 +85,7 @@ describe('bindSpreadProps 在身份稳定 + getter 的形状下（编译器真�
     expect(el.hasAttribute('data-extra')).toBe(false)
   })
 
-  it('身份稳定时布尔 property 的值变化必须跟进', async () => {
+  it('boolean property value changes must be followed when identity-stable', async () => {
     const flag = state(true)
     const props = { get disabled() { return flag.value } }
     const el = createElement('input') as HTMLInputElement
@@ -94,7 +98,7 @@ describe('bindSpreadProps 在身份稳定 + getter 的形状下（编译器真�
     expect(el.disabled).toBe(false)
   })
 
-  it('身份稳定时 value property 也必须跟进（受控输入）', async () => {
+  it('the value property must also be followed when identity-stable (controlled input)', async () => {
     const text = state('v1')
     const props = { get value() { return text.value } }
     const el = createElement('input') as HTMLInputElement

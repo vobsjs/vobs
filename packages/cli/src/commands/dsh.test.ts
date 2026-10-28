@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { buildInstallSpec, buildPreviewHtml, buildShellCommand, collectIssues, resolveExport } from './dsh.js'
 
-/* ---------------------------------------------------------------- 夹具 */
+/* ---------------------------------------------------------------- fixtures */
 
 const tempDirs: string[] = []
 
@@ -24,7 +24,7 @@ afterEach(() => {
   while (tempDirs.length > 0) rmSync(tempDirs.pop() as string, { recursive: true, force: true })
 })
 
-/** 一个各处都合法的插件项目。 */
+/** A plugin project that is valid in every respect. */
 function healthyProject(overrides: Record<string, string> = {}): Record<string, string> {
   return {
     'package.json': JSON.stringify(
@@ -61,13 +61,13 @@ function healthyProject(overrides: Record<string, string> = {}): Record<string, 
 /* ------------------------------------------------------------ collectIssues */
 
 describe('collectIssues', () => {
-  it('健康项目零错误', () => {
+  it('a healthy project yields zero errors', () => {
     const result = collectIssues(makeProject(healthyProject()))
     expect(result.errors).toEqual([])
     expect(result.passed.length).toBeGreaterThan(4)
   })
 
-  it('缺 dsh.bundle.patch 直接判错', () => {
+  it('a missing dsh.bundle.patch is an error', () => {
     const dir = makeProject(
       healthyProject({
         'package.json': JSON.stringify({ name: 'p', version: '1.0.0', exports: {} })
@@ -77,72 +77,72 @@ describe('collectIssues', () => {
     expect(result.errors.join('\n')).toContain('dsh.bundle.patch')
   })
 
-  it('patch 文件不存在判错', () => {
+  it('a missing patch file is an error', () => {
     const manifest = JSON.parse(healthyProject()['package.json'] as string) as Record<string, unknown>
     ;(manifest.dsh as Record<string, unknown>).bundle = { patch: './missing.yml' }
     const result = collectIssues(makeProject(healthyProject({ 'package.json': JSON.stringify(manifest) })))
     expect(result.errors.join('\n')).toContain('missing.yml')
   })
 
-  it('patch 里没有 insert 判错', () => {
+  it('a patch without insert is an error', () => {
     const result = collectIssues(makeProject(healthyProject({ 'cordis.patch.yml': '- id: other\n' })))
     expect(result.errors.join('\n')).toContain('insert')
   })
 
-  it('platform 不是 web 判错', () => {
+  it('a platform other than web is an error', () => {
     const manifest = JSON.parse(healthyProject()['package.json'] as string) as Record<string, unknown>
     ;(manifest.dsh as Record<string, unknown>).client = { platform: 'node' }
     const result = collectIssues(makeProject(healthyProject({ 'package.json': JSON.stringify(manifest) })))
     expect(result.errors.join('\n')).toContain('web')
   })
 
-  it('声明了 prepare 判错（DSH 安装时不构建）', () => {
+  it('declaring prepare is an error (DSH does not build at install time)', () => {
     const manifest = JSON.parse(healthyProject()['package.json'] as string) as Record<string, unknown>
     manifest.scripts = { prepare: 'vite build' }
     const result = collectIssues(makeProject(healthyProject({ 'package.json': JSON.stringify(manifest) })))
     expect(result.errors.join('\n')).toContain('prepare')
   })
 
-  it('依赖里出现 workspace: 判错（Git 子目录直装解析不了）', () => {
+  it('workspace: in dependencies is an error (unresolvable by direct Git subdirectory install)', () => {
     const manifest = JSON.parse(healthyProject()['package.json'] as string) as Record<string, unknown>
     manifest.devDependencies = { '@vobs/vobs': 'workspace:*' }
     const result = collectIssues(makeProject(healthyProject({ 'package.json': JSON.stringify(manifest) })))
     expect(result.errors.join('\n')).toContain('workspace:')
   })
 
-  it('客户端产物缺失判错', () => {
+  it('a missing client bundle is an error', () => {
     const files = healthyProject()
     delete files['lib/client.js']
     const result = collectIssues(makeProject(files))
-    expect(result.errors.join('\n')).toContain('客户端产物')
+    expect(result.errors.join('\n')).toContain('client bundle')
   })
 
-  it('产物里出现动态 import 判错', () => {
+  it('a dynamic import in the bundle is an error', () => {
     const code = `${healthyProject()['lib/client.js'] as string}\nconst load = () => import("./chunk.js")\n`
     const result = collectIssues(makeProject(healthyProject({ 'lib/client.js': code })))
-    expect(result.errors.join('\n')).toContain('动态 import')
+    expect(result.errors.join('\n')).toContain('dynamic import')
   })
 
-  it('产物 require 了非平台模块判错', () => {
+  it('requiring a non-platform module is an error', () => {
     const code = (healthyProject()['lib/client.js'] as string).replace('require("react")', 'require("lodash")')
     const result = collectIssues(makeProject(healthyProject({ 'lib/client.js': code })))
     expect(result.errors.join('\n')).toContain('lodash')
   })
 
-  it('__ModuleLoader__.load 出现多次判错', () => {
+  it('multiple __ModuleLoader__.load occurrences are an error', () => {
     const code = `${healthyProject()['lib/client.js'] as string}\nwindow.__ModuleLoader__.load({id:"x",factory(){}});\n`
     const result = collectIssues(makeProject(healthyProject({ 'lib/client.js': code })))
-    expect(result.errors.join('\n')).toContain('2 次')
+    expect(result.errors.join('\n')).toContain('2 times')
   })
 
-  it('模块 id 与包名不一致只给警告', () => {
+  it('a module id mismatching the package name yields only a warning', () => {
     const code = (healthyProject()['lib/client.js'] as string).replace(/"dsh-plugin-demo"/u, '"wrong-id"')
     const result = collectIssues(makeProject(healthyProject({ 'lib/client.js': code })))
     expect(result.errors).toEqual([])
-    expect(result.warnings.join('\n')).toContain('模块 id')
+    expect(result.warnings.join('\n')).toContain('module id')
   })
 
-  it('package.json 语法错误时给出明确错误', () => {
+  it('a malformed package.json produces a clear error', () => {
     const result = collectIssues(makeProject({ 'package.json': '{ not json' }))
     expect(result.errors[0]).toContain('package.json')
   })
@@ -151,11 +151,11 @@ describe('collectIssues', () => {
 /* --------------------------------------------------------- buildInstallSpec */
 
 describe('buildInstallSpec', () => {
-  it('显式 spec 原样透传', () => {
+  it('an explicit spec is passed through verbatim', () => {
     expect(buildInstallSpec({ spec: 'github:a/b#v1&path:/x' }).spec).toBe('github:a/b#v1&path:/x')
   })
 
-  it('repo 无 tag 无子目录', () => {
+  it('repo without tag or subdirectory', () => {
     expect(buildInstallSpec({ repo: 'vobsjs/vobs' }).spec).toBe('github:vobsjs/vobs')
   })
 
@@ -163,32 +163,33 @@ describe('buildInstallSpec', () => {
     expect(buildInstallSpec({ repo: 'vobsjs/vobs', tag: 'v1.7.6' }).spec).toBe('github:vobsjs/vobs#v1.7.6')
   })
 
-  it('repo + tag + 子目录用 & 连接', () => {
+  it('repo + tag + subdirectory joined with &', () => {
     expect(buildInstallSpec({ repo: 'vobsjs/vobs', tag: 'v1.7.6', subpath: '/packages/dsh-console' }).spec).toBe(
       'github:vobsjs/vobs#v1.7.6&path:/packages/dsh-console'
     )
   })
 
-  it('repo + 只有子目录时用 # 起头', () => {
+  it('repo + subdirectory only starts with #', () => {
     expect(buildInstallSpec({ repo: 'vobsjs/vobs', subpath: '/packages/dsh-plugin' }).spec).toBe(
       'github:vobsjs/vobs#path:/packages/dsh-plugin'
     )
   })
 
-  it('--from 解析成绝对路径', () => {
+  it('--from resolves to an absolute path', () => {
     const result = buildInstallSpec({ from: '.' })
     expect(result.error).toBeUndefined()
-    // 原来断言 spec 含冒号 —— 那是**Windows 盘符**的代理，在 POSIX 上必然失败
-    // （/home/runner/... 没有冒号）。换成真正要断言的事：它是绝对路径。
+    // This used to assert that spec contains a colon — a **Windows drive letter** proxy,
+    // guaranteed to fail on POSIX (/home/runner/... has no colon). Replaced with the real
+    // assertion: it is an absolute path.
     expect(path.isAbsolute(result.spec as string)).toBe(true)
   })
 
-  it('--from 指向不存在的路径时报错', () => {
+  it('errors when --from points at a nonexistent path', () => {
     const result = buildInstallSpec({ from: './definitely-not-here-xyz' })
-    expect(result.error).toContain('不存在')
+    expect(result.error).toContain('does not exist')
   })
 
-  it('什么都不给时报错并说明可选参数', () => {
+  it('errors with the available options when nothing is given', () => {
     const result = buildInstallSpec({})
     expect(result.error).toContain('--spec')
   })
@@ -197,7 +198,7 @@ describe('buildInstallSpec', () => {
 /* ---------------------------------------------------------- buildShellCommand */
 
 describe('buildShellCommand', () => {
-  it('给含 & 的 spec 加引号，否则 cmd 会把它当命令分隔符', () => {
+  it('quotes a spec containing &, otherwise cmd treats it as a command separator', () => {
     const command = buildShellCommand('dsh', [
       'plugin',
       '--profile',
@@ -210,52 +211,52 @@ describe('buildShellCommand', () => {
     )
   })
 
-  it('普通参数不加多余引号', () => {
+  it('plain arguments get no extra quotes', () => {
     expect(buildShellCommand('dsh', ['plugin', '--profile', 'desktop'])).toBe('dsh plugin --profile desktop')
   })
 
-  it('含空格的参数加引号', () => {
+  it('arguments with spaces are quoted', () => {
     expect(buildShellCommand('dsh', ['add', 'C:/my plugins/demo'])).toBe('dsh add "C:/my plugins/demo"')
   })
 
-  it('参数内的双引号按 cmd 规则翻倍', () => {
+  it('double quotes inside an argument are doubled per cmd rules', () => {
     expect(buildShellCommand('dsh', ['add', 'a"b'])).toBe('dsh add "a""b"')
   })
 })
 
-/* ------------------------------------------------------------ dev 预览页 */
+/* ------------------------------------------------------------ dev preview page */
 
 describe('buildPreviewHtml', () => {
   const html = buildPreviewHtml({ packageName: 'dsh-plugin-demo' })
 
-  it('在插件 bundle 之前装 __ModuleLoader__ 垫片', () => {
+  it('installs the __ModuleLoader__ shim before the plugin bundle', () => {
     const shimAt = html.indexOf('window.__ModuleLoader__')
     const bundleAt = html.indexOf('<script src="/client.js">')
     expect(shimAt).toBeGreaterThan(-1)
     expect(bundleAt).toBeGreaterThan(shimAt)
   })
 
-  it('垫片把 factory 收进注册表而不是执行它', () => {
+  it('the shim collects factories into a registry instead of executing them', () => {
     expect(html).toContain('factories.set(entry.id, entry.factory)')
   })
 
-  it('用 startPreview 启动并传入包名', () => {
+  it('boots via startPreview and passes the package name', () => {
     expect(html).toContain("from '/preview.js'")
     expect(html).toContain('packageName: "dsh-plugin-demo"')
   })
 
-  it('订阅 SSE 以便重建后自动刷新', () => {
+  it('subscribes to SSE so rebuilds auto-refresh', () => {
     expect(html).toContain("new EventSource('/events')")
     expect(html).toContain('location.reload()')
   })
 
-  it('包名被转义，含 </script> 也不会突破 script 标签', () => {
+  it('the package name is escaped; a </script> cannot break out of the script tag', () => {
     const injected = buildPreviewHtml({ packageName: '</script><script>alert(1)</script>' })
     expect(injected).toContain('packageName: "\\u003c/script>')
     expect(injected).not.toContain('</script><script>alert(1)')
   })
 
-  it('标题里的 HTML 元字符被剔除', () => {
+  it('HTML metacharacters are stripped from the title', () => {
     const html = buildPreviewHtml({ packageName: 'p', title: '<img src=x onerror=alert(1)>' })
     expect(html).toContain('<title>vobs preview · img src=x onerror=alert(1)</title>')
     expect(html).not.toContain('<img')
@@ -263,11 +264,11 @@ describe('buildPreviewHtml', () => {
 })
 
 describe('resolveExport', () => {
-  it('字符串写法直接返回', () => {
+  it('returns the string form directly', () => {
     expect(resolveExport({ exports: { './client': './lib/client.js' } }, './client')).toBe('./lib/client.js')
   })
 
-  it('条件对象按 default / import / require 顺序取', () => {
+  it('conditions objects are read in default / import / require order', () => {
     expect(resolveExport({ exports: { './client': { import: './lib/client.mjs' } } }, './client')).toBe('./lib/client.mjs')
     expect(resolveExport({ exports: { './client': { require: './lib/client.cjs' } } }, './client')).toBe('./lib/client.cjs')
     expect(
@@ -275,7 +276,7 @@ describe('resolveExport', () => {
     ).toBe('./lib/client.js')
   })
 
-  it('缺失时返回 undefined', () => {
+  it('returns undefined when missing', () => {
     expect(resolveExport({ exports: {} }, './client')).toBeUndefined()
     expect(resolveExport({}, './client')).toBeUndefined()
   })

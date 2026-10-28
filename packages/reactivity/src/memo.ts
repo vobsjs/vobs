@@ -10,46 +10,49 @@ import {
   type Subscriber
 } from './signal'
 
-/** 派生值：只读信号。写入在类型层面即被禁止；运行时保留 setter 防线兜底未经类型检查的调用方。 */
+/** Derived value: a read-only signal. Writes are forbidden at the type level; the runtime setter remains as a backstop for callers that bypass type checking. */
 export interface Memo<T> extends ReadableSignal<T> {}
 
 /**
- * memo 的依赖收集身份（在 compute 期间充当 currentSubscriber）。
+ * The memo's dependency-collection identity (acts as currentSubscriber during compute).
  *
- * 与 `MemoSignal` 分开是必需的：一个是信号（可被订阅），一个是订阅者（收集依赖），
- * 二者不能是同一个对象。**这里为什么是 class 而不是对象字面量**，见 `MemoSignal` 的说明。
+ * Kept separate from `MemoSignal` by necessity: one is a signal (subscribable), the
+ * other is a subscriber (collects dependencies); they cannot be the same object.
+ * **Why a class instead of an object literal here** — see the note on `MemoSignal`.
  */
 class MemoSubscriber<T> implements Subscriber {
   readonly dependencies = new Set<Dependency>()
-  /** 数据字段而不是 `get disposed()`：字面量里的访问器会让实例掉进字典模式。 */
+  /** Plain data field instead of `get disposed()`: accessors on a literal drop the instance into dictionary mode. */
   disposed = false
 
   constructor(private readonly signal: MemoSignal<T>) {}
 
   notify(): void {
-    // 与原来的闭包实现同一逻辑：已销毁或已脏都不再向下传播
+    // Same logic as the original closure implementation: no further propagation once disposed or dirty
     if (this.disposed || this.signal.dirty) return
     this.signal.invalidate()
   }
 }
 
 /**
- * 派生值信号。
+ * Derived-value signal.
  *
- * **class 而不是对象字面量**：与 `signal.ts` 的 `StateSignal` 同一个原因 ——
- * 对象字面量里的 get/set 访问器会让 V8 把实例降级成字典模式，实测每次 `.value`
- * 读从 ~1ns 变成 ~13ns，而 memo 读是渲染热路径的一部分。
+ * **Class instead of object literal**: same reason as `StateSignal` in `signal.ts` —
+ * get/set accessors on an object literal demote the V8 instance to dictionary mode;
+ * measured, each `.value` read went from ~1ns to ~13ns, and memo reads are part of
+ * the render hot path.
  */
 class MemoSignal<T> implements Memo<T> {
-  /** 派生值缓存与脏标记：由本信号独占（订阅者通过引用访问）。 */
+  /** Cached derived value and dirty flag: owned exclusively by this signal (the subscriber accesses them by reference). */
   cached!: T
   dirty = true
   disposed = false
   readonly subscribers = new Set<Subscriber>()
   readonly subscriber: MemoSubscriber<T>
   /**
-   * 逐实例箭头函数：对外必须能**脱离对象**传递 ——
-   * `owner?.addCleanup(memoSignal.dispose)` 就是这么用的，原型方法会丢 `this`。
+   * Per-instance arrow function: it must be passable **detached from the object** —
+   * `owner?.addCleanup(memoSignal.dispose)` is exactly how it is used; a prototype
+   * method would lose `this`.
    */
   readonly dispose: () => void
 
@@ -82,14 +85,14 @@ class MemoSignal<T> implements Memo<T> {
   }
 
   set value(_: T) {
-    throw new Error('memo: 派生值不能直接赋值')
+    throw new Error('memo: cannot assign directly to a derived value')
   }
 
   unsubscribe(subscriber: Subscriber): void {
     this.subscribers.delete(subscriber)
   }
 
-  /** 由 MemoSubscriber 调用：标脏并向下传播失效。 */
+  /** Called by MemoSubscriber: marks dirty and propagates invalidation downstream. */
   invalidate(): void {
     this.dirty = true
     if (hasDebugHooks()) invokeDebug('memoInvalidated', this as unknown as ReadableSignal<unknown>)

@@ -9,11 +9,12 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * 可点击的行必须能用键盘激活。
+ * Clickable rows must be activatable with the keyboard.
  *
- * `onRowClick` 存在时行会拿到 `tabIndex=0` 与 `data-clickable`（可 Tab 停靠、也对读屏可见），
- * 但原来**只绑了 click** —— 键盘用户 Tab 到行上按回车/空格什么都不会发生。
- * 空格还必须 preventDefault，否则页面会跟着滚。
+ * When `onRowClick` exists the row gets `tabIndex=0` and `data-clickable`
+ * (a Tab stop, also visible to screen readers), but **only click used to be
+ * bound** — keyboard users could Tab onto the row and pressing Enter/Space did
+ * nothing. Space must also preventDefault, otherwise the page scrolls along.
  */
 interface Row { id: number; name: string }
 
@@ -32,8 +33,8 @@ async function mountTable(extra: Record<string, unknown> = {}) {
   return { host, rows, press, cleanup: () => { app.destroy(); host.remove() } }
 }
 
-describe('KitDataTable 行的键盘激活', () => {
-  it('回车激活可比行，回调收到当前行', async () => {
+describe('KitDataTable row keyboard activation', () => {
+  it('Enter activates a clickable row and the callback receives the current row', async () => {
     const clicked: Array<[number, string]> = []
     const { rows, press, cleanup } = await mountTable({ onRowClick: (row: Row) => clicked.push([row.id, row.name]) })
     expect(rows()[0]?.getAttribute('tabindex')).toBe('0')
@@ -45,26 +46,26 @@ describe('KitDataTable 行的键盘激活', () => {
     cleanup()
   })
 
-  it('空格也能激活，且阻止默认（否则页面会滚）', async () => {
+  it('Space also activates and blocks the default (otherwise the page scrolls)', async () => {
     const clicked: string[] = []
     const { rows, press, cleanup } = await mountTable({ onRowClick: (row: Row) => clicked.push(row.name) })
 
     rows()[0]?.focus()
-    const notCancelled = press(rows()[0]!, ' ')      // preventDefault 生效时返回 false
+    const notCancelled = press(rows()[0]!, ' ')      // returns false when preventDefault took effect
     await settle()
     expect(clicked).toEqual(['Ada'])
     expect(notCancelled).toBe(false)
     cleanup()
   })
 
-  it('没有 onRowClick 的行不可聚焦（行为不变）', async () => {
+  it('rows without onRowClick are not focusable (behavior unchanged)', async () => {
     const { rows, cleanup } = await mountTable()
     expect(rows()[0]?.getAttribute('tabindex')).toBeNull()
     expect(rows()[0]?.hasAttribute('data-clickable')).toBe(false)
     cleanup()
   })
 
-  it('键盘激活取的是当前行（行会被复用，闭包里的可能是旧的）', async () => {
+  it('keyboard activation reads the current row (rows get reused; the closure may hold a stale one)', async () => {
     const clicked: string[] = []
     const data = state<Row[]>([{ id: 1, name: 'Ada' }])
     const host = document.createElement('main')

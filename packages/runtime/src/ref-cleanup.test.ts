@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
 /*
- * 回归：**坏的回调 ref 不得打断 Owner 的 dispose 级联**。
+ * Regression: **a bad callback ref must not break the Owner's dispose cascade**.
  *
- * 实测来源（端到端交互冒烟）：playground 的 `<ul ref={attachList}>` 里
- * `attachList(node)` 直接 `insertList(node, …)` 没判空。回调 ref 会在**卸载时以 null 调用**
- * （React 语义），于是收到 null 时抛
+ * Source (end-to-end interaction smoke): in the playground's `<ul ref={attachList}>`,
+ * `attachList(node)` called `insertList(node, …)` directly without null-checking. A
+ * callback ref **is called with null on unmount** (React semantics), so on receiving null
+ * it threw
  *   TypeError: Cannot read properties of null (reading 'insertBefore')
- * 而该异常从 `onDispose` 里**冒了出去** —— 导致同一 Owner 后续的 cleanup
- * （effect 解绑、监听移除、其它 ref 清理）**全部不执行**。
+ * and that exception **bubbled out of `onDispose`** — so the same Owner's subsequent
+ * cleanups (effect unbinding, listener removal, other ref cleanups) **all never ran**.
  *
- * 这与 `owner.ts:114-128` 已经修过的"子 Owner 抛错不能中断级联"是同一类缺陷：
- * 清理路径必须逐个隔离，不能因为一个 cleanup 失败就丢下其余的。
+ * Same class of defect as the already-fixed "a child Owner throwing must not break the
+ * cascade" (`owner.ts:114-128`): cleanup paths must be isolated one by one; one failing
+ * cleanup must not abandon the rest.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { createOwner, effect, state } from '@vobs/reactivity'
@@ -24,8 +26,8 @@ const flush = async (): Promise<void> => {
   for (let i = 0; i < 4; i++) await Promise.resolve()
 }
 
-describe('回调 ref 在卸载时收到 null 的行为', () => {
-  it('回调 ref 在挂载时收到节点、在 Owner 销毁时收到 null', () => {
+describe('callback ref receiving null on unmount', () => {
+  it('a callback ref receives the node on mount and null on Owner disposal', () => {
     const owner = createOwner()
     const el = createElement('div')
     const seen: Array<unknown> = []
@@ -33,11 +35,11 @@ describe('回调 ref 在卸载时收到 null 的行为', () => {
     expect(seen).toEqual([el])
 
     owner.dispose()
-    // React 语义：卸载时以 null 调用
+    // React semantics: called with null on unmount
     expect(seen).toEqual([el, null])
   })
 
-  it('坏的回调 ref（不判空、收到 null 就抛）不得打断 dispose 级联', async () => {
+  it('a bad callback ref (no null-check, throws on null) must not break the dispose cascade', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const owner = createOwner()
     const el = createElement('div')
@@ -46,33 +48,33 @@ describe('回调 ref 在卸载时收到 null 的行为', () => {
     let laterCleanupRan = false
 
     owner.run(() => {
-      // 一个会在收到 null 时抛错的回调 ref（模拟未判空的 attachList）
+      // A callback ref that throws when receiving null (simulating an unchecked attachList)
       setRef(el, (node: unknown) => {
         if (node === null) throw new TypeError("Cannot read properties of null (reading 'insertBefore')")
       })
-      // 这个 effect 代表"同一 Owner 里后续的 cleanup"
+      // This effect stands for "subsequent cleanups in the same Owner"
       effect(() => { value.value; effectRuns += 1 })
-      // 再挂一个一定该执行的清理
+      // And one cleanup that must definitely run
       owner.onDispose(() => { laterCleanupRan = true })
     })
 
     expect(effectRuns).toBe(1)
 
-    // 关键：dispose 不该因为那个坏 ref 回调而抛出去
+    // Key: dispose must not throw out because of that bad ref callback
     expect(() => owner.dispose()).not.toThrow()
 
-    // 关键：后续清理必须都跑过（这正是修复前被丢掉的）
+    // Key: subsequent cleanups must all have run (exactly what was lost before the fix)
     expect(laterCleanupRan).toBe(true)
     value.value = 1
     await flush()
-    expect(effectRuns).toBe(1)          // effect 已被解绑
+    expect(effectRuns).toBe(1)          // the effect was unbound
 
-    // 异常不该无声：要么记录，要么冒泡 —— 这里选择记录
+    // The exception must not be silent: either log it or let it bubble — here we log
     expect(spy).toHaveBeenCalled()
     spy.mockRestore()
   })
 
-  it('同 owner 内 ref 改指只留一条清理注册（不留陈旧项）', () => {
+  it('re-pointing a ref within the same owner keeps one cleanup registration (no stale entries)', () => {
     const owner = createOwner()
     const a = createElement('div')
     const b = createElement('div')
@@ -85,20 +87,22 @@ describe('回调 ref 在卸载时收到 null 的行为', () => {
 
     owner.run(() => { setRef(b, target) })
     /*
-     * 关键：第二次绑定**替换**掉第一条注册，而不是追加。
-     * 修复前这里会变成 2 条 —— 销毁时逆序跑两条清理，其中一条的守卫
-     * （`target.current !== node`）会因为另一条已经把值清成 null 而"恰好通过"，
-     * 于是同一个 ref 被清两次。现在只留最新那条。
+     * Key: the second binding **replaces** the first registration instead of appending.
+     * Before the fix this became 2 entries — on disposal they ran in reverse order, and
+     * one of them's guard (`target.current !== node`) would "happen to pass" because the
+     * other had already cleared the value to null, so the same ref was cleared twice.
+     * Now only the latest one remains.
      */
     expect(owner.mark().cleanups - before).toBe(1)
     expect(target.current).toBe(b)
 
-    // 销毁时把 ref 清成 null 是**既定语义**（React 的 unmount ref 回调同样收到 null）
+    // Clearing the ref to null on disposal is the **established semantics** (React's
+    // unmount ref callback likewise receives null)
     owner.dispose()
     expect(target.current).toBeNull()
   })
 
-  it('跨 owner 改指时，先销毁的那个不覆盖后绑定的值', () => {
+  it('when re-pointed across owners, the earlier-disposed one doesn\'t overwrite the later binding\'s value', () => {
     const first = createOwner()
     const second = createOwner()
     const b = createElement('div')
@@ -107,12 +111,12 @@ describe('回调 ref 在卸载时收到 null 的行为', () => {
     first.run(() => { setRef(b, shared) })
     second.run(() => { setRef(c, shared) })
     first.dispose()
-    expect(shared.current).toBe(c)   // 已被 second 改指，first 的清理不该动它
+    expect(shared.current).toBe(c)   // re-pointed by second; first's cleanup must not touch it
     second.dispose()
     expect(shared.current).toBeNull()
   })
 
-  it('同一个 ref 绑到不同 owner 时各自独立清理（不互相摘除）', () => {
+  it('the same ref bound to different owners cleans up independently (no cross-removal)', () => {
     const first = createOwner()
     const second = createOwner()
     const target = { current: null as unknown }
@@ -122,16 +126,16 @@ describe('回调 ref 在卸载时收到 null 的行为', () => {
     second.run(() => { setRef(b, target) })
     second.dispose()
     expect(target.current).toBeNull()
-    // first 的注册必须还在（属于另一个 owner），销毁时照常清理
+    // first's registration must still exist (belongs to another owner); disposal cleans it as usual
     first.dispose()
     expect(target.current).toBeNull()
   })
 
-  it('ref 指向的节点被移除后，后续插入不该拿到 null 父节点', () => {
+  it('after the node a ref pointed to is removed, later inserts must not get a null parent', () => {
     const host = createElement('div')
     const list = createElement('ul')
     insertBefore(host, list, null)
-    // 判空守卫的形态（修复后 playground 的写法）
+    // The null-checked form (the playground's shape after the fix)
     const attach = (node: Element | null): void => {
       if (!node) return
       const li = createElement('li')

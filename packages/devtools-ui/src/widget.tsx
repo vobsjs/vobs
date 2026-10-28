@@ -11,8 +11,9 @@ export interface DevToolsWidgetProps extends DevToolsPanelProps {
 /** Floating entry point for opening the DevTools panel without leaving the app. */
 export function DevToolsWidget(props: DevToolsWidgetProps = {}): VobsNode {
   /*
-   * 同 DevToolsPanel：devtools 只靠"祖先 owner 名字以 `DevTools` 开头"来判断"这是调试台自己"
-   * （isInternalOwnerId）。单独挂载 Widget（不经面板）时它自己的 state/副作用原本会被当成应用数据记录。
+   * Same as DevToolsPanel: devtools identifies "the devtools itself" solely by ancestor owner
+   * names starting with `DevTools` (isInternalOwnerId). When the Widget is mounted standalone
+   * (not via the panel), its own state/side effects would otherwise be recorded as app data.
    */
   const widgetOwner = getCurrentOwner()
   if (widgetOwner) setOwnerDebugName(widgetOwner, 'DevToolsWidget')

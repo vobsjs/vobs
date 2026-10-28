@@ -1,4 +1,4 @@
-// 编译产物调用的基础操作
+// Base operations called by compiled output
 
 import { createOwner, effect, getCurrentOwner, setOwnerDebugName, untrack, type Owner } from '@vobs/reactivity'
 import { isVobsFragment, type VobsNode } from './fragment'
@@ -28,12 +28,15 @@ interface EventBinding {
 const eventBindings = new WeakMap<object, Map<string, EventBinding>>()
 
 /*
- * 事件清理槽。目的：让**每个 (Owner, node, event) 只在 `Owner.cleanups` 里占一个槽**，
- * 重绑 handler 时只换槽里的间接引用，数组不增长（理由见 addEventListener）。
+ * Event cleanup slots. Purpose: make **each (Owner, node, event) occupy exactly one slot
+ * in `Owner.cleanups`** — rebinding a handler only swaps the indirect reference inside the
+ * slot, the array never grows (rationale in addEventListener).
  *
- * 用 WeakMap<Owner, Map<key, handle>> 而不是往 Owner 上挂属性：
- * Owner 是 class 实例，挂新属性会把它推进字典模式（reactivity/src/owner.ts:30-50 记过这笔账）。
- * key 由 per-node 数字 id 与事件名拼成，避免每次重绑比较长字符串前缀。
+ * A WeakMap<Owner, Map<key, handle>> instead of attaching properties to the Owner:
+ * Owner is a class instance, and adding properties pushes it into dictionary mode
+ * (the cost was recorded in reactivity/src/owner.ts:30-50). The key is composed from a
+ * per-node numeric id and the event name, avoiding long string prefix comparisons on
+ * every rebind.
  */
 const eventCleanupSlots = new WeakMap<Owner, Map<string, EventBinding>>()
 const eventCleanupNodeIds = new WeakMap<object, number>()
@@ -56,18 +59,20 @@ export function setRenderer<
 >(
   renderer: VobsRenderer<NodeType, TextNode, ElementNode, CommentNode> | undefined
 ): VobsRenderer<NodeType, TextNode, ElementNode, CommentNode> | undefined {
-  // 返回**上一份**渲染器（没有则是 undefined），调用方据此成对"安装 / 还原"。
-  // 全局单例原来只装不还：一次 renderToString 之后就永久停在 SSR 渲染器上（见 vobs/src/app.ts）。
+  // Returns the **previous** renderer (undefined if none), so callers can pair
+  // "install / restore". The global singleton used to install-only: after one
+  // renderToString it stayed on the SSR renderer forever (see vobs/src/app.ts).
   const previous = currentRenderer as unknown as
     VobsRenderer<NodeType, TextNode, ElementNode, CommentNode> | undefined
-  // 编译产物仍使用 DOM 节点声明；实际宿主类型由应用提供的渲染器决定。
+  // Compiled output still declares DOM nodes; the actual host type is decided by the
+  // renderer the application provides.
   currentRenderer = (renderer as unknown as RuntimeRenderer) ?? null
   return previous
 }
 
 export function getRenderer(): RuntimeRenderer {
   if (!currentRenderer) {
-    throw new Error('渲染器未初始化')
+    throw new Error('Renderer not initialized')
   }
   return currentRenderer
 }
@@ -76,13 +81,14 @@ export function createText(content: string): Text {
   return getRenderer().createText(content)
 }
 
-/** SVG 命名空间与标签清单见 ./svg —— 编译期判定提升用的是同一份依据。 */
+/** For the SVG namespace and tag list see ./svg — the same source of truth used for compile-time hoisting decisions. */
 export { SVG_NAMESPACE } from './svg'
 
 export function createElement(tag: string): Element {
-  // SVG 标签走命名空间创建：document.createElement('rect') 产物是 HTMLUnknownElement，
-  // 整棵 SVG 子树都不会渲染（无报错）。渲染器未实现 createSvgElement 时按 createElement
-  // 兜底（旧自定义渲染器保持原行为）。
+  // SVG tags are created in the namespace: document.createElement('rect') yields an
+  // HTMLUnknownElement and the whole SVG subtree fails to render (no error). When the
+  // renderer hasn't implemented createSvgElement, fall back to createElement (old custom
+  // renderers keep their original behavior).
   if (isSvgTag(tag)) {
     const renderer = getRenderer()
     if (renderer.createSvgElement) return renderer.createSvgElement(tag)
@@ -91,13 +97,15 @@ export function createElement(tag: string): Element {
 }
 
 /**
- * 在 SVG 命名空间里建元素，**不看标签名**。
+ * Create an element in the SVG namespace, **regardless of tag name**.
  *
- * 给编译器用在 `<svg>` 祖先下那些与 HTML 同名的标签（a / title / style / script）——
- * 它们不在 SVG_TAGS 里，`createElement` 会按 HTML 建。只按名字判定命名空间是行不通的：
- * `<svg><a href="…">` 会变成 HTML 锚点，而且不报错。
+ * For the compiler to use on tags homonymous with HTML (a / title / style / script)
+ * under an `<svg>` ancestor — they are not in SVG_TAGS, so `createElement` would build
+ * them as HTML. Deciding the namespace by name alone doesn't work:
+ * `<svg><a href="…">` would become an HTML anchor, with no error.
  *
- * 渲染器没实现 createSvgElement 时按 createElement 兜底（自定义渲染器保持原行为）。
+ * When the renderer hasn't implemented createSvgElement, fall back to createElement
+ * (custom renderers keep their original behavior).
  */
 export function createSvgElement(tag: string): Element {
   const renderer = getRenderer()
@@ -151,14 +159,17 @@ function syncSelectValue(parent: Node): void {
     if ((current as Element).nodeName === 'SELECT') {
       const read = selectValueReaders.get(current)
       /*
-       * 读取必须 `untrack` —— 这里是在**插入 option 的过程中同步**重放当前值，
-       * 而插入往往发生在某个 effect 运行时（`insertList` / `insertDynamic` 都由 effect 驱动）。
-       * 若那次读取被算进外层 effect 的依赖，该 effect 以后会被这个信号唤醒：
-       * 一个**隐藏订阅** —— 依赖关系图上多一条没人打算建立的边，
-       * 表现为"插入选项时恰好重跑了某个不相关的 effect"，很难追。
+       * The read must be `untrack`ed — here we synchronously **replay** the current value
+       * in the middle of inserting an option, and insertion usually happens while some
+       * effect is running (both `insertList` and `insertDynamic` are effect-driven).
+       * If that read were counted into the outer effect's dependencies, the effect would
+       * from then on be woken by this signal: a **hidden subscription** — one extra edge
+       * in the dependency graph nobody intended, showing up as "inserting an option
+       * happens to re-run some unrelated effect", very hard to trace.
        *
-       * 这条绑定的订阅由 `bindProperty` 自己的 effect 负责（bind.ts），
-       * 这里的重放只是把值**再写一次**，不需要也不应该建立依赖。
+       * This binding's subscription belongs to `bindProperty`'s own effect (bind.ts);
+       * the replay here merely writes the value **once more** — it neither needs nor
+       * should establish a dependency.
        */
       if (read !== undefined) setProperty(current as Element, 'value', untrack(read))
       return
@@ -172,11 +183,13 @@ export function removeChild(
   child: VobsNode
 ): void {
   /*
-   * **先摘 DOM，再释放 Owner。**
+   * **Detach the DOM first, then release the Owner.**
    *
-   * 原来是反过来的：`disposeNodeOwner(child)` 抛错（用户 cleanup 里抛）就永远走不到
-   * 摘除那一步 —— DOM 里留着旧节点、它的 effect 却已经没了，屏幕上出现两棵树且没有提示。
-   * 顺序反过来之后，即使清理抛错，DOM 也已一致；错误照旧抛给调用方。
+   * It used to be the other way around: if `disposeNodeOwner(child)` threw (a user
+   * cleanup throwing), the detach step was never reached — the DOM kept the old node
+   * while its effects were already gone, leaving two trees on screen with no hint.
+   * With the order flipped, the DOM stays consistent even when cleanup throws; the
+   * error is still thrown to the caller as before.
    */
   if (isVobsFragment(child)) {
     child.unmount(parent)
@@ -239,22 +252,29 @@ const pendingSelectValues = new WeakMap<Element, unknown>()
 const selectSyncScheduled = new WeakSet<Element>()
 
 /**
- * `<select value>` 在 option 子节点存在前赋值不生效（HTML 规范：select 的 value
- * 由已存在的 option 决定）。编译产物先设置属性、后插入子节点，静态写法必然丢初始值。
- * 这里对 select 的 value 赋值统一延迟到微任务重放一次：静态子节点在同一同步任务内
- * 插入完毕，重放即命中。动态（insertList/insertDynamic）插入的 option 晚于该微任务时，
- * 由 value 的绑定 effect 在后续信号更新中正常覆盖。
+ * Assigning `<select value>` has no effect before option children exist (HTML spec: the
+ * select's value is determined by the options already present). Compiled output sets the
+ * property first and inserts children afterwards, so the static form inevitably loses the
+ * initial value. Here, value assignments on a select are uniformly deferred and replayed
+ * once in a microtask: static children are all inserted within the same synchronous task,
+ * so the replay hits. Options inserted dynamically (insertList/insertDynamic) arrive after
+ * that microtask; the value binding effect then overrides them normally on later signal
+ * updates.
  */
 function scheduleSelectValueSync(node: Element, value: unknown): void {
   pendingSelectValues.set(node, value)
   if (selectSyncScheduled.has(node)) return
   selectSyncScheduled.add(node)
   /*
-   * 在这一刻就把渲染器抓下来，**不要**在微任务里再 getRenderer()：
-   * 1) 应用销毁会把全局渲染器还原（没装过就是"没有"），那时微任务里的 getRenderer() 会抛
-   *    "渲染器未初始化" —— 抛在微任务里没人接，直接变成进程级 unhandled error（实测
-   *    `packages/ui/src/bind.test.ts` 就因为这条让 vitest 报 1 个 unhandled error，退出码非 0）；
-   * 2) 语义上也更对：节点是哪个渲染器造的，就用哪个渲染器写回（期间全局可能已经换人）。
+   * Capture the renderer **right now** — do **not** call getRenderer() again inside the
+   * microtask:
+   * 1) Application teardown restores the global renderer (or "none" if never installed);
+   *    a getRenderer() inside the microtask would then throw "Renderer not initialized" —
+   *    thrown inside a microtask nobody catches, it becomes a process-level unhandled
+   *    error (measured: `packages/ui/src/bind.test.ts` got 1 unhandled error in vitest
+   *    and a non-zero exit code because of exactly this);
+   * 2) It's also more correct semantically: whichever renderer created the node writes
+   *    it back (the global one may have been swapped in the meantime).
    */
   const renderer = getRenderer()
   queueMicrotask(() => {
@@ -290,7 +310,7 @@ export function spreadProps(node: Element, props: Record<string, unknown>): void
   applySpreadProps(node, null, props)
 }
 
-/** 删除一个 attribute。渲染器没实现时退回空串（属性仍在，但内容清空）—— 老自定义渲染器的降级行为。 */
+/** Remove one attribute. When the renderer hasn't implemented it, fall back to an empty string (the attribute remains, content cleared) — the downgrade behavior for old custom renderers. */
 export function removeAttribute(node: Element, key: string): void {
   const renderer = getRenderer()
   if (renderer.removeAttribute) {
@@ -300,34 +320,37 @@ export function removeAttribute(node: Element, key: string): void {
   renderer.setAttribute(node, key, '')
 }
 
-/** 布尔型 property 的「清除」值是 false，其余是空串（与 React 的移除语义一致）。 */
+/** The "clearing" value for boolean properties is false; for the rest it's an empty string (matching React's removal semantics). */
 const BOOLEAN_PROPERTIES = new Set([
   'checked', 'selected', 'disabled', 'multiple', 'readOnly', 'required',
   'hidden', 'open', 'indeterminate', 'defaultChecked', 'muted', 'autoFocus'
 ])
 
 /**
- * JSX 属性名 → **IDL 属性名**（`el[name] = value` 里的那个 name）。
+ * JSX prop name → **IDL property name** (the name in `el[name] = value`).
  *
- * 多数名字两边相同，但少数不同；写错名字的后果是**静默的**：
- * `Reflect.set(el, 'autoFocus', …)` 只是给元素挂了一个不反射的 expando，
- * 既不产生 `autofocus` 属性、也不改变 IDL 属性 —— 于是 `autoFocus={false}` 毫无作用。
- * 实测（jsdom，与真实 DOM 同语义）：
- *   IDL 名 `autofocus`（全小写）→ has=true/idl=true，写 false 则 has=false/idl=false  ← 反射正确
- *   JSX 名 `autoFocus`（驼峰）  → 只挂 expando，属性与 IDL 都不变
- * 这也解释了为什么 `disabled` / `checked` / `readOnly` / `tabIndex` 一直是对的：
- * 它们的 IDL 名恰好与 JSX 名相同。
+ * Most names are identical on both sides, but a few differ; the consequence of the wrong
+ * name is **silent**: `Reflect.set(el, 'autoFocus', …)` only hangs a non-reflecting
+ * expando on the element — it produces neither the `autofocus` attribute nor a change to
+ * the IDL property — so `autoFocus={false}` does nothing at all. Measured (jsdom, same
+ * semantics as real DOM):
+ *   IDL name `autofocus` (all lowercase) → has=true/idl=true, writing false gives has=false/idl=false ← reflection correct
+ *   JSX name `autoFocus` (camelCase)     → only an expando; attribute and IDL unchanged
+ * This also explains why `disabled` / `checked` / `readOnly` / `tabIndex` always worked:
+ * their IDL names happen to equal their JSX names.
  */
 const PROPERTY_IDL_NAMES: Readonly<Record<string, string>> = {
   autoFocus: 'autofocus'
 }
 
 /**
- * 把一份 props 应用（或**增量**应用到）节点上。
+ * Apply (or **incrementally** apply) a props object onto a node.
  *
- * `previous` 为 null 表示首次应用（`spreadProps` 的老路径）；否则只处理真正变化的键，
- * 并**移除**新对象里已经消失的键 —— 这正是原来缺的那一半：`{...props}` 只在创建时应用一次，
- * 之后对象里删掉的键会永远留在 DOM 上，而且改了的值也不会生效。
+ * `previous === null` means first application (the old `spreadProps` path); otherwise
+ * only keys that really changed are processed, and keys that disappeared from the new
+ * object are **removed** — exactly the half that was missing: `{...props}` used to apply
+ * only once at creation, so keys deleted from the object afterwards stayed on the DOM
+ * forever, and changed values never took effect either.
  */
 function applySpreadProps(
   node: Element,
@@ -339,9 +362,11 @@ function applySpreadProps(
     if (previous !== null && Object.is(previous[key], value)) continue
 
     if (key.startsWith('on')) {
-      // 事件：先摘旧监听（值变了、或新值不再是函数），再挂新的。
-      // 事件名必须过别名表：`onDoubleClick` 的真实事件名是 `dblclick`，
-      // 直接小写会得到不存在的 `"doubleclick"`（回调永不触发且静默）。
+      // Events: detach the old listener first (value changed, or the new value isn't a
+      // function), then attach the new one.
+      // The event name must go through the alias table: `onDoubleClick`'s real event
+      // name is `dblclick`; naive lowercasing yields the nonexistent `"doubleclick"`
+      // (the callback never fires, silently).
       const eventName = resolveEventName(key) ?? key.slice(2).toLowerCase()
       const previousHandler = previous?.[key]
       if (typeof previousHandler === 'function') {
@@ -356,12 +381,14 @@ function applySpreadProps(
       setRef(node, value)
       continue
     }
-    // null/undefined 表示"不提供值"，**保持现状**（props.test.ts 把这条钉成了契约）。
-    // 注意它有一个已知后果：键仍在 `next` 里时移除循环够不着（`key in next`），
-    // 所以"值从中变成 null"不会清掉已有属性 —— 要清就得把键从对象里删掉。
+    // null/undefined mean "no value provided", **keep the status quo** (props.test.ts
+    // pins this as a contract).
+    // Note one known consequence: while the key is still in `next`, the removal loop
+    // can't reach it (`key in next`), so "value changed to null midway" doesn't clear
+    // an existing attribute — to clear it, the key must be deleted from the object.
     if (value === null || value === undefined) continue
-    // property 键的 false 有语义（如 disabled={false} 必须清除），不能跳过；
-    // attribute 键的 false 表示"不设置"，与 HTML 语义一致。
+    // false on property keys is semantic (e.g. disabled={false} must clear) and can't be
+    // skipped; false on attribute keys means "don't set", consistent with HTML semantics.
     else if (isClassListKey(key)) applyClassList(node, value)
     else if (isPropertyName(key)) setProperty(node, key, value)
     else if (value === false) continue
@@ -386,31 +413,38 @@ function applySpreadProps(
 }
 
 /**
- * 把 `{...props}` 绑定成**响应式**的：对象变了就增量应用，消失的键会被移除。
+ * Bind `{...props}` **reactively**: when the object changes, apply the diff; vanished
+ * keys are removed.
  *
- * 编译器对带展开的 JSX 属性发射这个而不是 `spreadProps` —— 后者只在创建时应用一次，
- * 于是「改了 props 不生效」「删掉的键留在 DOM 上」两个问题都**不报错**。
+ * The compiler emits this (not `spreadProps`) for JSX elements carrying a spread — the
+ * latter applies only once at creation, so "changed props don't take effect" and "deleted
+ * keys linger on the DOM" both fail **without any error**.
  *
- * ⚠️ `previous` 必须是**值的快照**，不能是 `next` 的引用。
- * 这里存引用时，下一轮 `applySpreadProps` 里的 `Object.is(previous[key], value)`
- * 读的是同一份值 → 恒等 → **整个 diff 短路**，移除循环也因 `key in next` 全跳过。
- * 而编译器为 `<div {...props}>` 发射的正是**身份稳定 + getter**的形状
- * （`bindSpreadProps(_el0, () => props)`，值经 getter 反应式求值），
- * 于是真实产物下"改了 props 什么都不更新"。
+ * ⚠️ `previous` must be a **snapshot of the values**, not a reference to `next`.
+ * When a reference is stored here, the next round's `Object.is(previous[key], value)` in
+ * `applySpreadProps` reads the same values → always equal → **the entire diff
+ * short-circuits**, and the removal loop is skipped wholesale by `key in next`.
+ * And the shape the compiler emits for `<div {...props}>` is precisely
+ * **identity-stable + getter** (`bindSpreadProps(_el0, () => props)`, values evaluated
+ * reactively through the getter), so with real compiled output "changing props updates
+ * nothing at all".
  *
- * 快照用浅拷贝即可，且**必须在应用之前取**：拷贝会把 getter 求值一次、转成数据属性，
- * 而 `applySpreadProps` 又会把 `next` 的每个键读一遍 —— 两者都在 effect 的追踪窗口内，
- * 所以信号依赖不会因为多这一遍而丢失。
+ * A shallow copy suffices for the snapshot, and it **must be taken before applying**:
+ * the copy evaluates each getter once and turns them into data properties, while
+ * `applySpreadProps` also reads every key of `next` — both happen inside the effect's
+ * tracking window, so signal dependencies are not lost by the extra pass.
  */
 /**
- * `classList` 每次贡献的类名（按元素记账，便于下次替换而不是叠加）。
+ * The class names `classList` contributed last time (bookkept per element so the next
+ * call replaces instead of stacking).
  *
- * 为什么需要记账：`classList` 与 `class` 写的是**同一个** HTML 属性。
- * 若不记住上次由 `classList` 贡献了哪些，切换时要么越加越多、要么把作者的 `class` 抹掉。
+ * Why bookkeep: `classList` and `class` write the **same** HTML attribute. Without
+ * remembering which names the last `classList` call contributed, toggling either
+ * accumulates more and more, or wipes the author's own `class`.
  */
 const classListContributions = new WeakMap<object, string[]>()
 
-/** `classList` 值 → 类名数组。支持对象 / 数组 / 字符串三种写法。 */
+/** `classList` value → class name array. Supports object / array / string forms. */
 export function parseClassList(value: unknown): string[] {
   const names: string[] = []
   const push = (candidate: unknown): void => {
@@ -431,18 +465,21 @@ export function parseClassList(value: unknown): string[] {
 }
 
 /**
- * 应用 `classList`：与元素上已有的 `class` **合并**，并可反复切换。
+ * Apply `classList`: **merged** with the `class` already on the element, and toggleable
+ * repeatedly.
  *
- * 存在的理由（外部踩坑文档 C 条）：条件分支里的输入控件会丢焦点 ——
- * `insertDynamic` 按引用比较（`next === current`），写条件表达式就会重建子树。
- * 文档给出的对策是「固定渲染 + 响应式 class 显隐」，对应写法：
+ * Why it exists (external postmortem doc item C): input controls inside conditional
+ * branches lose focus — `insertDynamic` compares by reference (`next === current`), so a
+ * conditional expression rebuilds the subtree. The doc's countermeasure is "always render
+ * + toggle visibility via a reactive class", written as:
  *
  * ```tsx
- * <div class={open.value ? 'panel is-open' : 'panel'}>   // 易漏、易写错
- * <div class="panel" classList={{ 'is-open': open.value }}>  // 现在：
+ * <div class={open.value ? 'panel is-open' : 'panel'}>   // easy to miss, easy to get wrong
+ * <div class="panel" classList={{ 'is-open': open.value }}>  // now:
  * ```
  *
- * `classList` 只负责它自己贡献的部分，作者写在 `class` 里的类名不受影响。
+ * `classList` only manages its own contribution; class names the author wrote in `class`
+ * are untouched.
  */
 export function applyClassList(node: Element, value: unknown): void {
   const next = parseClassList(value)
@@ -506,12 +543,14 @@ export function addEventListener(
   const previous = bindings.get(event)
   if (previous && previous.original === handler && previous.owner === owner) return
   if (previous) {
-    // 旧监听先摘掉；Owner 清理槽由下面的 slots 原地续用，不在清理表里增删
+    // Detach the old listener first; its Owner cleanup slot is reused in place by the
+    // slots logic below — nothing added or removed in the cleanup table
     renderer.removeEventListener(node, event, previous.handler)
   }
   const listener = owner ? (reason: Event) => {
-    // Owner 已销毁说明节点所属子树已被卸载/替换，事件来自游离 DOM，直接忽略。
-    // 否则 owner.run 会抛"已销毁的 Owner"，在事件流里制造无意义的错误噪音。
+    // A disposed Owner means the subtree owning the node was unmounted/replaced and the
+    // event came from detached DOM — ignore it. Otherwise owner.run would throw
+    // "disposed Owner", injecting meaningless error noise into the event stream.
     if (owner.disposed) return
     try {
       owner.run(() => handler(reason))
@@ -525,9 +564,11 @@ export function addEventListener(
         recovery: handled ? 'handled' : 'propagated'
       })
       /*
-       * 被 owner 的 onError 处理掉之后，错误就只剩 debug 钩子这一个出口 ——
-       * 没装 DevTools 时控制台一个字都没有：事件处理器抛错、界面没反应、无从查起。
-       * 没被处理的情况下面会 rethrow（浏览器自己会报），所以只在「被吞下」时补控制台。
+       * Once handled by the owner's onError, the error's only remaining outlet is the
+       * debug hook — without DevTools installed the console says nothing: an event
+       * handler throws, the UI doesn't respond, and there's nothing to trace. The
+       * unhandled case is rethrown below (the browser reports it itself), so the console
+       * is only supplemented when "swallowed".
        */
       if (handled && getRuntimeDebugHooks()?.error === undefined) {
         console.error(formatVobsError(error, { includeStack: true }))
@@ -536,31 +577,36 @@ export function addEventListener(
     }
   } : handler
   /*
-   * 这个 (node,event) 在 Owner 清理表里只占**一个**槽，替换 handler 时**原地**换掉它做的事。
+   * This (node,event) occupies exactly **one** slot in the Owner cleanup table; when the
+   * handler is replaced, what the slot does is swapped **in place**.
    *
-   * 如果**每次** addEventListener 都无条件 `owner.onDispose(...)`：`Owner.cleanups`
-   * 是只 push 的数组（reactivity/src/owner.ts）→ 换一次 handler 就多一条永不执行的
-   * 清理项，旧的 handler 闭包也被一并扣住。组件的 effect 每次重跑都会重绑事件，
-   * 所以这是热路径上的**无界增长**（长寿命页面里等价于内存泄漏）。
+   * If **every** addEventListener unconditionally called `owner.onDispose(...)`:
+   * `Owner.cleanups` is a push-only array (reactivity/src/owner.ts) → each handler swap
+   * adds a cleanup entry that never executes, with the old handler closure held captive.
+   * Component effects rebind events on every re-run, so this is **unbounded growth** on
+   * the hot path (equivalent to a memory leak on long-lived pages).
    *
-   * `binding` 是 `const`，所以槽里必须包一层可变的 `current` —— 换绑时改的是 `current`，
-   * 数组长度不变、旧闭包被释放。
+   * `binding` is `const`, so the slot must wrap a mutable `current` — a rebind mutates
+   * `current`, the array length stays unchanged, and the old closure is released.
    */
   const binding: EventBinding = { handler: listener, owner, original: handler }
   bindings.set(event, binding)
   renderer.addEventListener(node, event, listener)
   if (!owner) return
   /*
-   * **每个 (node,event) 在 Owner 清理表里只占一个槽。**
+   * **Every (node,event) occupies exactly one slot in the Owner cleanup table.**
    *
-   * 如果**每次** addEventListener 都无条件 `owner.onDispose(...)`：`Owner.cleanups`
-   * 是只 push 的数组（reactivity/src/owner.ts）→ 换一次 handler 就多一条永不执行的
-   * 清理项，旧的 handler 闭包也被一并扣住。组件 effect 每次重跑都会重绑事件，
-   * 所以这是热路径上的**无界增长**（长寿命页面里等价于内存泄漏）。
+   * If **every** addEventListener unconditionally called `owner.onDispose(...)`:
+   * `Owner.cleanups` is a push-only array (reactivity/src/owner.ts) → each handler swap
+   * adds a cleanup entry that never executes, with the old handler closure held captive.
+   * Component effects rebind events on every re-run, so this is **unbounded growth** on
+   * the hot path (equivalent to a memory leak on long-lived pages).
    *
-   * 做法：清理槽里存的是**间接引用**（owner → (node,event) → 当前 handle），
-   * 重绑时只换间接引用指向的东西，槽本身不增不减；最后一个引用被清掉时槽自然失效。
-   * 键用 per-owner 的 `eventCleanupKeys` 映射成数字，避免长字符串前缀比较。
+   * Approach: the cleanup slot stores an **indirect reference**
+   * (owner → (node,event) → current handle); a rebind only swaps what the indirect
+   * reference points at, the slot itself never grows or shrinks, and it naturally expires
+   * when the last reference is cleared. Keys are mapped to numbers via the per-owner
+   * `eventCleanupKeys` to avoid long string prefix comparisons.
    */
   const key = eventCleanupKey(node, event)
   let slots = eventCleanupSlots.get(owner)
@@ -568,7 +614,8 @@ export function addEventListener(
     slots = new Map()
     eventCleanupSlots.set(owner, slots)
   }
-  // 槽存的永远是"当前该清哪一条绑定"，所以重绑/摘除后再绑都只是覆盖它
+  // The slot always stores "which binding should currently be cleaned up", so rebinding
+  // or re-binding after removal just overwrites it
   const hasSlot = slots.has(key)
   slots.set(key, binding)
   if (hasSlot) return
@@ -591,17 +638,21 @@ export function removeEventListener(
   const map = eventBindings.get(node)
   const binding = map?.get(event)
   /*
-   * **必须比 handler 身份**（DOM 的 `removeEventListener` 语义就是如此）。
+   * **Must compare handler identity** (that is exactly the DOM's `removeEventListener`
+   * semantics).
    *
-   * 原来这里忽略传入的 `handler`：只要 `(node,event)` 上有绑定就一律摘掉，
-   * 并把绑定记录删掉。于是"用另一个 handler 调 remove"会把**别人的**绑定误摘 ——
-   * 调用方以为只是取消自己那次（本来应当是 no-op），实际把当前生效的监听弄没了。
+   * This used to ignore the passed-in `handler`: as long as a binding existed for
+   * `(node,event)` it was always detached and the binding record deleted. So "remove with
+   * a different handler" would mistakenly detach **someone else's** binding — the caller
+   * thought it was only cancelling its own (which should have been a no-op), but actually
+   * killed the currently active listener.
    *
-   * 现在的行为：
-   * - 有绑定且身份一致 → 摘掉（正常路径）
-   * - 有绑定但身份不同 → **no-op**（不去动别人的绑定）
-   * - 绑定记录里没有（例如由别处直接经 renderer 绑的）→ 按传入的 handler 兜底摘一次，
-   *   保持与渲染器 API 直连时的可用性
+   * Current behavior:
+   * - binding exists and identity matches → detach (normal path)
+   * - binding exists but identity differs → **no-op** (don't touch someone else's binding)
+   * - no binding record (e.g. bound directly via the renderer elsewhere) → fall back to
+   *   one detach with the passed-in handler, keeping usability when talking to the
+   *   renderer API directly
    */
   if (binding) {
     if (binding.handler !== handler) return
@@ -611,19 +662,25 @@ export function removeEventListener(
 }
 
 /**
- * 清空容器。
+ * Clear a container.
  *
- * 原来只调渲染器的 clear（DOM 实现就是 `textContent = ''`）—— **被清掉子树的 Owner
- * 一个都不释放**：组件里的 effect 继续订阅信号（幽灵更新）、监听不解绑、onDispose 不跑。
- * 现在先把子树里能找到的 Owner 释放掉，再清 DOM。
+ * This used to only call the renderer's clear (the DOM implementation is
+ * `textContent = ''`) — **not a single Owner of the cleared subtrees was released**:
+ * effects inside components kept subscribing to signals (ghost updates), listeners stayed
+ * bound, onDispose never ran. Now the Owners findable in the subtree are released first,
+ * then the DOM is cleared.
  *
- * 覆盖范围如实说明：`nodeOwners` 只登记**组件输出节点**（`createComponent` 时
- * `associateNodeOwner`）。所以在组件边界上清理是完整的（组件 Owner 的销毁会级联它的
- * effect 与子 Owner）；而在组件外直接 `bindText` 之类建立的 effect 挂在调用方当时的
- * Owner 上、不在节点表里，这里**清不到** —— 那部分归它的 Owner 管，通常由
- * `app.destroy()` 负责。要彻底解决需要节点表能反向枚举，代价更大，先不做。
+ * Coverage, stated honestly: `nodeOwners` only registers **component output nodes**
+ * (`associateNodeOwner` at `createComponent` time). So cleanup at component boundaries is
+ * complete (destroying a component's Owner cascades to its effects and child Owners);
+ * but effects established directly outside components (e.g. `bindText`) are attached to
+ * the caller's Owner at that moment and are not in the node table, so they **can't be
+ * cleared here** — that part belongs to their Owner, usually handled by `app.destroy()`.
+ * A complete fix would need the node table to support reverse enumeration, at a greater
+ * cost; not done for now.
  *
- * 清理抛错不影响 DOM 被清空（先释放、后清 DOM 的顺序也保证了这一点）。
+ * Cleanup throwing does not prevent the DOM from being cleared (the release-first,
+ * clear-after order also guarantees this).
  */
 export function clear(container: Node): void {
   let firstError: unknown
@@ -649,28 +706,31 @@ export function clear(container: Node): void {
 }
 
 /**
- * 组件函数。
+ * Component function.
  *
- * 返回类型**必须包含空值**：`null` / `undefined` / `false` 都是合法的 JSX 写法
- * （`cond ? <X/> : null`、`cond && <X/>`），运行时会把它们统一归一化成空注释节点。
+ * The return type **must include the empty values**: `null` / `undefined` / `false` are
+ * all legal JSX forms (`cond ? <X/> : null`, `cond && <X/>`), and the runtime normalizes
+ * them uniformly into an empty comment node.
  *
- * ⚠️ 声明写窄了会实际伤人：`return cond ? <div/> : null` 会报
- * `Type 'null' is not assignable to type 'VobsNode'`，把写的人劝退去改成早退式
- * —— 而运行时其实完全支持 `null`。
+ * ⚠️ Declaring it too narrow hurts in practice: `return cond ? <div/> : null` would
+ * report `Type 'null' is not assignable to type 'VobsNode'`, scaring the author into an
+ * early-return rewrite — while the runtime fully supports `null` anyway.
  *
- * `VobsNode` 本身**不**放宽：它表示"真的节点"，`insertBefore` 等位置传 `null`
- * 仍然是错的。空只在"组件返回值"这个位置合法。
+ * `VobsNode` itself is **not** loosened: it means "a real node"; passing `null` in
+ * position arguments of `insertBefore` etc. is still an error. Emptiness is only legal
+ * in the "component return value" position.
  */
 type VobsComponent = (...args: any[]) => VobsNode | null | undefined | false
 
 /*
- * 从组件签名里推出它的 props。
+ * Infer a component's props from its signature.
  *
- * 返回类型这里写 `unknown` 而不是 `VobsNode`：`VobsComponent` 的返回是可空值域
- * （`VobsNode | null | undefined | false`），写死成某一个成员会让这个条件类型
- * 不再匹配任何组件，静默回落到 `Record<string, never>` —— 表现为
- * `createComponent(Comp, props)` 里 `props` 变成空对象类型，报
- * 「Record<string, unknown> is not assignable to Record<string, never>」。
+ * The return type here is written `unknown`, not `VobsNode`: `VobsComponent`'s return is
+ * a nullable domain (`VobsNode | null | undefined | false`), and hard-coding one member
+ * would make this conditional type match no component at all, silently falling back to
+ * `Record<string, never>` — showing up as `props` in `createComponent(Comp, props)`
+ * becoming an empty object type and erroring with
+ * "Record<string, unknown> is not assignable to Record<string, never>".
  */
 type ComponentProps<Component extends VobsComponent> = Component extends (
   props: infer Props
@@ -695,8 +755,8 @@ export function createComponent<Component extends VobsComponent>(
     attachComponentContext(reason, componentName, owner.id)
     throw reason
   })
-  // HMR 注册先于渲染作用域标记：注册清理必须跨热更新保活，不能被
-  // disposeSince 当作上一轮渲染的清理释放掉。
+  // HMR registration precedes the render-scope mark: the registration cleanup must survive
+  // hot updates and must not be released by disposeSince as last round's render cleanup.
   const hmrKey = (component as typeof component & { hmrKey?: string }).hmrKey
   let instance: HmrInstance | null = null
   if (hmrKey) {
@@ -706,29 +766,36 @@ export function createComponent<Component extends VobsComponent>(
     const cleanup = registerHmrInstance(moduleId, instance)
     owner.onDispose(cleanup)
   }
-  // 渲染作用域：组件 Owner 只承载 HMR 注册与错误处理，每轮渲染注册的 effect、
-  // onDispose（含 portal 清理）与嵌套组件 Owner 都归属该轮作用域。HMR refresh
-  // 重渲染前释放上一轮作用域，旧实例的 effect 不再订阅信号、portal 节点不再
-  // 残留在 body 中每轮热更新叠加；组件 Owner 与 HMR 注册保活。
+  // Render scope: the component Owner carries only HMR registration and error handling;
+  // effects, onDispose entries (including portal cleanup) and nested component Owners
+  // registered during each render all belong to that round's scope. Before an HMR refresh
+  // re-renders it releases the previous scope, so stale instances' effects stop
+  // subscribing to signals and portal nodes no longer pile up in body on every hot
+  // update; the component Owner and the HMR registration stay alive.
   const renderScope = owner.mark()
   /*
-   * 局部类型放宽到运行时真实值域：组件返回 `null` / `undefined` / `false`
-   * 都是合法 JSX 写法（`cond ? <X/> : null`、`cond && <X/>`），
-   * 只是 `VobsComponent` 的声明把它写窄了。下面统一归一化成空注释节点。
+   * Locally widen the type to the runtime's real value domain: a component returning
+   * `null` / `undefined` / `false` is all legal JSX (`cond ? <X/> : null`,
+   * `cond && <X/>`); only the `VobsComponent` declaration wrote it too narrow.
+   * Normalized into an empty comment node below.
    */
   /*
-   * 用**独立变量**承接渲染结果再归一化。
-   * 直接写 `let node: VobsNode | null | undefined | false` 再比较 `node === false` 时，
-   * TS 的控制流分析会依据 `component(props)` 的声明类型把 `node` 收窄回 `VobsNode`，
-   * 于是 `false` 分支被判成"类型不可达"而报错 —— 但运行时它确实会出现。
+   * Receive the render result in a **separate variable** before normalizing.
+   * Writing `let node: VobsNode | null | undefined | false` directly and then comparing
+   * `node === false` makes TS's control-flow analysis narrow `node` back to `VobsNode`
+   * based on `component(props)`'s declared type, so the `false` branch is judged
+   * "unreachable" and errors — yet at runtime it really does occur.
    */
   let rendered: unknown
   try {
-    // 组件渲染必须 untrack：组件是 run-once 的，其渲染发生在某次 effect 求值
-    // （insertDynamic/insertBoundary 的渲染工厂、路由挂载）内时，若不切断追踪，
-    // 组件体内读取的信号会被收集为祖先 effect 的依赖——一次无关编辑就会触发
-    // 整棵子树销毁重建（输入框被换掉、焦点丢失、事件监听随旧树一起被清理）。
-    // 结构性响应只属于条件工厂与绑定 effect，组件本体渲染一次即止。
+    // Component rendering must be untracked: components are run-once, and when their
+    // render happens inside some effect evaluation (the render factories of
+    // insertDynamic/insertBoundary, route mounting), signals read in the component body
+    // would be collected as the ancestor effect's dependencies without severing tracking —
+    // one unrelated edit would then destroy and rebuild the whole subtree (inputs swapped
+    // out, focus lost, event listeners cleaned away with the old tree).
+    // Structural reactivity belongs only to conditional factories and binding effects;
+    // the component body renders once and that's it.
     rendered = owner.run(() => untrack(() => component(props)))
   } catch (error) {
     owner.dispose()
@@ -737,18 +804,22 @@ export function createComponent<Component extends VobsComponent>(
     throw error
   }
   /*
-   * 组件返回 `null` / `undefined` / `false` 时用**注释节点**代替。
+   * When a component returns `null` / `undefined` / `false`, substitute a **comment node**.
    *
-   * 这是生产事故（Labelune 2026-09-30 发版黑屏）的根因：`createComponent` 把渲染结果
-   * 直接当作 `nodeOwners` 这个 **WeakMap 的 key**，而 `null` / `undefined` 不是合法 key ——
-   * `nodeOwners.set(null, owner)` 抛 `Invalid value used as weak map key`。
-   * 后果特别贵：App 挂载即崩、**没有任何 JS 崩溃日志**、splash 兜底也失效，
-   * 只能靠人肉纪律「组件永远返回真实节点」避免。
+   * This is the root cause of a production incident (Labelune 2026-09-30 release
+   * black screen): `createComponent` used the render result directly as a **WeakMap key**
+   * for `nodeOwners`, and `null` / `undefined` are not legal keys —
+   * `nodeOwners.set(null, owner)` throws `Invalid value used as weak map key`.
+   * Especially costly consequences: the App crashed at mount, **with no JS crash log at
+   * all**, and even the splash fallback failed; the only defense was human discipline
+   * "components must always return a real node".
    *
-   * 「组件顶层条件 return null」是合法的 JSX 写法，框架不该崩。
-   * 注释节点是**渲染为空的既有原语**（fragment 与 dynamic 的标记都用它），
-   * 视觉结果与返回 null 完全一致，但满足 `VobsNode` 契约 —— 于是挂载、HMR 刷新、
-   * 节点替换、水合这些下游路径都不需要各自特判一个"空"分支。
+   * "Conditional return null at the top of a component" is a legal JSX form; the framework
+   * must not crash on it. A comment node is the **existing primitive that renders as
+   * nothing** (fragment and dynamic markers both use it) — visually identical to
+   * returning null, while satisfying the `VobsNode` contract — so downstream paths
+   * (mounting, HMR refresh, node replacement, hydration) don't each need a special-case
+   * "empty" branch.
    */
   const node: VobsNode = isRenderableNode(rendered) ? rendered : createComment('vobs:empty')
   associateNodeOwner(node, owner)
@@ -757,28 +828,31 @@ export function createComponent<Component extends VobsComponent>(
     associateHmrInstance(node, instance)
   }
   function refreshInstance(): void {
-    // 组件已随旧渲染树一起卸载（如父级在同一次热更新中先完成刷新），
-    // 无法也无需再刷新。
+    // The component was unmounted together with the old render tree (e.g. the parent
+    // completed its refresh first in the same hot update); it can't and needn't refresh again.
     if (owner.disposed) return
     const previous = instance!.node
     owner.disposeSince(renderScope)
     const rawNext = owner.run(() => untrack(() => component(props)))
     /*
-     * 重渲染路径**同样**要把空返回值归一化 —— 只修首屏路径漏掉重渲染。
+     * The re-render path must **also** normalize empty return values — fixing only the
+     * first-mount path would miss re-renders.
      *
-     * 首屏路径（上面的 `isRenderableNode(rendered) ? … : createComment('vobs:empty')`）
-     * 处理了空值，但这条更新路径没有：组件在**重渲染**时返回 `null`，
-     * `nodeOwners.set(next as object, owner)` 就会拿到 `null` 当 WeakMap 的 key →
-     * 抛 `Invalid value used as weak map key`。
+     * The first-mount path (the `isRenderableNode(rendered) ? … : createComment('vobs:empty')`
+     * above) handles empty values, but this update path didn't: when a component returns
+     * `null` during a **re-render**, `nodeOwners.set(next as object, owner)` would get
+     * `null` as a WeakMap key → throws `Invalid value used as weak map key`.
      *
-     * 之所以一直没暴露：触发它需要"组件首次渲染返回节点、之后某次重渲染返回空"，
-     * 而首次就返回空的场景（更常见）走的是上面那条已被修复的路径。
+     * Why it stayed hidden for so long: triggering it needs "component returns a node on
+     * first render, then returns empty on some later re-render", while the (more common)
+     * case of returning empty on the very first render takes the path fixed above.
      */
     const next: VobsNode = isRenderableNode(rawNext) ? rawNext : createComment('vobs:empty')
     const parent = instance!.parent
     if (parent) {
-      // 先插入新树再卸载旧树：替换锚点始终取自仍在文档中的旧树，
-      // fragment 与普通节点两种形态任意组合都能正确定位插入点。
+      // Insert the new tree before unmounting the old one: the replacement anchor is
+      // always taken from the old tree still in the document, so any combination of
+      // fragment and plain node forms locates the insertion point correctly.
       const anchor = isVobsFragment(previous) ? previous.start : previous
       if (isVobsFragment(next)) next.mount(parent, anchor)
       else getRenderer().insertBefore(parent, next, anchor)
@@ -851,12 +925,13 @@ export function createBlock(factory: () => VobsNode | null | undefined | false):
 }
 
 /**
- * 组件渲染结果是否是**可用的节点值**。
+ * Whether a component render result is a **usable node value**.
  *
- * `VobsNode` 的真实值域是一个对象（`Node` / fragment / 自定义渲染器的宿主对象），
- * 而合法 JSX 写法可能返回 `null` / `undefined` / `false`（`cond ? <X/> : null`、`cond && <X/>`）。
- * 用一个守卫而不是直接比较，是因为 `component()` 的声明类型是 `VobsNode`，
- * TS 的控制流会把 `=== false` 之类的比较判成"类型不可达"。
+ * `VobsNode`'s real value domain is an object (`Node` / fragment / a custom renderer's
+ * host object), while legal JSX forms may return `null` / `undefined` / `false`
+ * (`cond ? <X/> : null`, `cond && <X/>`). A guard instead of a direct comparison is used
+ * because `component()`'s declared type is `VobsNode`, and TS's control flow would judge
+ * comparisons like `=== false` "unreachable".
  */
 function isRenderableNode(value: unknown): value is VobsNode {
   return (typeof value === 'object' && value !== null) || typeof value === 'function'
@@ -864,15 +939,17 @@ function isRenderableNode(value: unknown): value is VobsNode {
 
 export function associateNodeOwner(node: VobsNode, owner: Owner): void {
   /*
-   * 防御：`node` 在类型上必然是 `VobsNode`，但运行时可能收到 `null`/`undefined`
-   * （组件返回空、第三方渲染器返回非节点）。直接当 WeakMap key 会抛
-   * `Invalid value used as weak map key` —— 那是**框架内部错误**，信息量为零，
-   * 且会让 App 挂载静默崩溃。这条断言把它变成一条能指认原因的报错。
+   * Defense: `node` is necessarily a `VobsNode` type-wise, but at runtime `null`/
+   * `undefined` may arrive (component returned empty, a third-party renderer returned a
+   * non-node). Using it directly as a WeakMap key throws
+   * `Invalid value used as weak map key` — a **framework-internal error** with zero
+   * information, which also makes the App mount crash silently. This assertion turns it
+   * into an error that names the cause.
    */
   if (node === null || node === undefined || (typeof node !== 'object' && typeof node !== 'function')) {
     throw new Error(
-      `Vobs: associateNodeOwner 收到非节点值（${String(node)}）。`
-      + '组件必须返回 VobsNode；返回 null/undefined 由 createComponent 转成空注释节点。'
+      `Vobs: associateNodeOwner received a non-node value (${String(node)}). `
+      + 'Components must return a VobsNode; null/undefined returns are converted into an empty comment node by createComponent.'
     )
   }
   nodeOwners.set(node, owner)

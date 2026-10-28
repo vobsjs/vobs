@@ -8,9 +8,10 @@ setRenderer(createDOMRenderer())
 const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 
 /**
- * 列表调和里有一条「key 序列逐位相同」的快路径（跳过建表/去重/差集/LIS）。
- * 实测 200 行只改 1 行从 34µs 降到 4.2µs。这些测试锁住它的两条边界：
- * 该更新的行必须更新，该重排的时候**绝不能**被快路径吞掉。
+ * List reconciliation has a fast path for "key sequence bit-for-bit identical"
+ * (skips table building/dedup/set-difference/LIS). Measured: changing 1 of 200 rows went
+ * from 34µs to 4.2µs. These tests lock down its two boundaries: rows that must update do
+ * update, and reorders must **never** be swallowed by the fast path.
  */
 function mountList<T>(items: () => readonly T[], keyOf: (item: T) => unknown) {
   const host = document.createElement('div')
@@ -29,8 +30,8 @@ function mountList<T>(items: () => readonly T[], keyOf: (item: T) => unknown) {
   return { host, app }
 }
 
-describe('列表快路径', () => {
-  it('key 顺序不变、只有一项内容变了：那一行更新，其余不动', async () => {
+describe('list fast path', () => {
+  it('key order unchanged, one item\'s content changed: that row updates, the rest untouched', async () => {
     const rows = state([
       { id: 1, label: 'a' },
       { id: 2, label: 'b' },
@@ -49,7 +50,7 @@ describe('列表快路径', () => {
     expect(host.textContent).toBe('aBc')
   })
 
-  it('顺序变化必须真的重排（不能被快路径吞掉）', async () => {
+  it('order changes must really reorder (never swallowed by the fast path)', async () => {
     const rows = state([{ id: 1, label: 'a' }, { id: 2, label: 'b' }, { id: 3, label: 'c' }])
     const { host } = mountList(() => rows.value, item => item.id)
     await flush()
@@ -59,14 +60,15 @@ describe('列表快路径', () => {
     await flush()
     expect(host.textContent).toBe('cab')
 
-    // DOM 顺序也要真的对（不只是文本拼接结果）；列表末尾有个注释锚点，不是行
+    // The DOM order must really be right too (not just the concatenated text); there's a
+    // comment anchor at the end of the list, which is not a row
     const labels = Array.from((host.firstChild as Element).childNodes)
       .filter(node => node.nodeType === 1)
       .map(node => node.textContent)
     expect(labels).toEqual(['c', 'a', 'b'])
   })
 
-  it('插入与删除仍然正常（长度不同时快路径不参与）', async () => {
+  it('insert and delete still work (the fast path doesn\'t engage when lengths differ)', async () => {
     const rows = state([{ id: 1, label: 'a' }, { id: 3, label: 'c' }])
     const { host } = mountList(() => rows.value, item => item.id)
     await flush()

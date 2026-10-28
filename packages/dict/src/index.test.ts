@@ -15,7 +15,7 @@ const statusItems = [
 ] as const
 
 describe('@vobs/dict', () => {
-  it('支持静态业务字典、查询、value 查找和 label 回退，不依赖 i18n', () => {
+  it('supports static business dictionaries, querying, value lookup, and label fallback without i18n', () => {
     const dict = createDict({ data: { user_status: statusItems } })
     const query = dict.query('user_status')
 
@@ -29,7 +29,7 @@ describe('@vobs/dict', () => {
     dict.dispose()
   })
 
-  it('按字典名去重请求、遵守 TTL，并在失效后重新加载', async () => {
+  it('deduplicates requests by dictionary name, honors TTL, and reloads after invalidation', async () => {
     let time = 1_000
     const loader = vi.fn(async (name: string) => [{ value: `${name}-${loader.mock.calls.length}`, label: 'Loaded' }])
     const dict = createDict({ loader, staleTime: 100, now: () => time })
@@ -50,7 +50,7 @@ describe('@vobs/dict', () => {
     dict.dispose()
   })
 
-  it('加载失败保留旧字典、暴露错误并报告观察者', async () => {
+  it('keeps the old dictionary on load failure, exposes the error, and reports to observers', async () => {
     const onError = vi.fn()
     const dict = createDict({
       data: { user_status: statusItems },
@@ -66,13 +66,14 @@ describe('@vobs/dict', () => {
     dict.dispose()
   })
 
-  it('失败后不自动重发：普通 load() 不会形成微任务重试风暴，显式重试才重发', async () => {
+  it('does not auto-refire after failure: a plain load() cannot form a microtask retry storm, only explicit retries re-fire', async () => {
     const loader = vi.fn(async () => { throw new Error('offline') })
     const dict = createDict({ loader, staleTime: 0 })
     const query = dict.query('roles')
 
-    // 最常规的反应式消费者：读 error/loading，并在变化时触发加载。
-    // 计数上限只为"修复前不要把测试进程打死"（实测不限速时会 OOM 崩溃）。
+    // The most ordinary reactive consumer: read error/loading and trigger a load on change.
+    // The run cap only exists so the pre-fix bug can't kill the test process (measured: unthrottled
+    // it OOM-crashes).
     let runs = 0
     effect(() => {
       void query.error.value
@@ -81,12 +82,12 @@ describe('@vobs/dict', () => {
       void query.load().catch(() => {})
     })
 
-    // 充分运转微任务队列：修复前每轮微任务都会重新发一次请求
+    // Run the microtask queue thoroughly: pre-fix, every microtask round re-fired a request
     for (let i = 0; i < 200; i += 1) await Promise.resolve()
 
     expect(loader).toHaveBeenCalledTimes(1)
 
-    // 显式重试仍然可用：invalidate / force
+    // Explicit retries still work: invalidate / force
     dict.invalidate('roles')
     await expect(dict.load('roles')).rejects.toMatchObject({ code: 'DICT_LOAD_FAILED' })
     expect(loader).toHaveBeenCalledTimes(2)
@@ -95,7 +96,7 @@ describe('@vobs/dict', () => {
     dict.dispose()
   })
 
-  it('失效会中止在途请求，并阻止慢请求结果覆盖缓存', async () => {
+  it('invalidation aborts in-flight requests and prevents a slow request result from overwriting the cache', async () => {
     let resolveLoader: ((items: readonly { value: string; label: string }[]) => void) | undefined
     let aborted = false
     const dict = createDict({
@@ -117,7 +118,7 @@ describe('@vobs/dict', () => {
     dict.dispose()
   })
 
-  it('序列化并恢复 SSR 状态，恢复后的缓存不会重复调用 loader', async () => {
+  it('serializes and restores SSR state, and the restored cache does not re-call the loader', async () => {
     let time = 10_000
     const source = createDict({
       data: { user_status: statusItems },
@@ -139,7 +140,7 @@ describe('@vobs/dict', () => {
     target.dispose()
   })
 
-  it('dictPlugin 注入上下文并在应用销毁后释放自有状态', () => {
+  it('dictPlugin injects the context and releases owned state after app destruction', () => {
     let injected: ReturnType<typeof createDict> | undefined
     const app = createVobs({
       render: () => createText('dict'),
@@ -150,10 +151,10 @@ describe('@vobs/dict', () => {
     })
     expect(injected?.label('user_status', 'active')).toBe('Active')
     app.destroy()
-    expect(() => injected?.get('user_status')).toThrow('已销毁')
+    expect(() => injected?.get('user_status')).toThrow('disposed')
   })
 
-  it('未安装插件与无 loader 的加载给出明确错误', async () => {
+  it('missing plugin and loader-less loads give clear errors', async () => {
     const noLoader = createDict()
     await expect(noLoader.load('roles')).rejects.toMatchObject({ code: 'DICT_LOADER_MISSING' })
     noLoader.dispose()

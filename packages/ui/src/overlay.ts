@@ -18,7 +18,7 @@ export function createPortal<Target>(
 ): VobsNode {
   const placeholder = createComment('vui:portal')
   const owner = getCurrentOwner()
-  if (!owner) throw new Error('Vobs UI: createPortal 必须在组件 Owner 作用域内调用')
+  if (!owner) throw new Error('Vobs UI: createPortal must be called inside a component Owner scope')
   adapter.mount(node, target)
   const cleanup = (): void => adapter.unmount(node, target)
   owner.onDispose(cleanup)
@@ -58,35 +58,43 @@ export function createFocusTrap(
   let previouslyFocused: Element | null = null
 
   /*
-   * 可聚焦元素必须**真的能被聚焦**，不能只按标签名取。
+   * Focusable elements must be **actually focusable**, not just picked by tag
+   * name.
    *
-   * 原来只过滤 `disabled` 与 `aria-hidden="true"`，于是这些都会进列表：
-   * - `hidden` 属性 / `display:none` / `visibility:hidden`（元素根本不可见）
-   * - `tabindex="-1"`（**明确**声明"可编程聚焦、不参与 Tab"）
-   * - `inert` 子树里的元素（整棵子树不参与交互）
-   * - 祖先上的 `hidden` / `display:none` / `aria-hidden`
+   * Only `disabled` and `aria-hidden="true"` used to be filtered, so all of
+   * these entered the list:
+   * - `hidden` attribute / `display:none` / `visibility:hidden` (not visible
+   *   at all)
+   * - `tabindex="-1"` (**explicitly** declares "programmatically focusable,
+   *   not part of Tab")
+   * - elements inside an `inert` subtree (the whole subtree is
+   *   non-interactive)
+   * - `hidden` / `display:none` / `aria-hidden` on an ancestor
    *
-   * 后果不只是"焦点落在隐藏元素上"。Tab 循环用的是 `first`/`last` 两个端点：
-   * 若**最后一个可见元素之后还有隐藏元素**，`last` 会算成隐藏那个 ——
-   * 于是用户在最后一个可见元素上按 Tab 时，焦点被送进不可见区域（看起来"焦点消失了"），
-   * 反向 Shift+Tab 同理。
+   * The consequence wasn't just "focus lands on a hidden element". The Tab
+   * cycle uses the `first`/`last` endpoints: if hidden elements exist **after
+   * the last visible one**, `last` computes to the hidden one — so pressing
+   * Tab on the last visible element sent focus into an invisible area
+   * ("focus disappeared"); Shift+Tab backwards likewise.
    *
-   * 说明一处**刻意的取舍**：隐藏判定只看内联样式与 `hidden` 属性，不做
-   * `getComputedStyle`。理由是后者在测试环境（jsdom 不加载外部样式表）对 class 驱动的
-   * 在隐藏测不出来、且每次 Tab 都要强制样式计算。**由 class / 外部样式表造成的隐藏
-   * 这里识别不到** —— 那种情况下请让被隐藏的元素带上 `hidden` 或 `aria-hidden="true"`
-   * （这本来也是更好的可访问性写法）。
+   * One **deliberate trade-off**: the hidden check only looks at inline styles
+   * and the `hidden` attribute, not `getComputedStyle`. Rationale: in test
+   * environments (jsdom doesn't load external stylesheets) class-driven hiding
+   * can't be measured anyway, and every Tab would force a style computation.
+   * **Hiding caused by classes / external stylesheets is not detected here** —
+   * in that case give the hidden element `hidden` or `aria-hidden="true"`
+   * (which is the better accessibility practice anyway).
    */
   const isFocusable = (element: HTMLElement): boolean => {
     if (element.hasAttribute('disabled')) return false
-    // `closest` 会匹配自身，所以这一条同时覆盖"自身带 hidden"与"祖先带 hidden"
+    // `closest` matches the element itself, so this one line covers both "self has hidden" and "an ancestor has hidden"
     if (element.closest('[hidden]') !== null) return false
     if (element.closest('[inert]') !== null) return false
     if (element.closest('[aria-hidden="true"]') !== null) return false
-    // tabindex="-1" 是"可编程聚焦"，按设计不参与 Tab 序列；非数字同样无效
+    // tabindex="-1" means "programmatically focusable" and by design isn't part of the Tab sequence; non-numbers are invalid too
     const tabIndex = element.getAttribute('tabindex')
     if (tabIndex !== null && (Number.isNaN(Number(tabIndex)) || Number(tabIndex) < 0)) return false
-    // 内联样式隐藏：自身或**任意祖先**（`[hidden]` 之外最常见的写法）
+    // Inline-style hiding: on self or **any ancestor** (the most common form besides `[hidden]`)
     let current: HTMLElement | null = element
     while (current !== null && current !== root) {
       const style = current.style

@@ -15,8 +15,10 @@ import {
 setRenderer(createDOMRenderer())
 
 /**
- * 三个 Guard（RequireAuth / RequirePermission / RequireRole 及其 Any/All 变体）**全仓零测试**
- * （§12.3）。这些组件是"授权判定 → 渲染哪一棵子树"的唯一出口，漏测的代价直接是放行。
+ * The three guards (RequireAuth / RequirePermission / RequireRole plus their Any/All variants) had
+ * **zero tests across the repo** (§12.3). These components are the single exit point for
+ * "authorization decision → which subtree gets rendered", so a missed test means a hole that lets
+ * traffic through.
  */
 const session: Session = {
   user: { id: 'ada', roles: ['editor'], permissions: ['article:read', 'article:edit'] }
@@ -41,8 +43,8 @@ const guardProps = {
   fallback: () => createText('DENIED')
 }
 
-describe('@vobs/auth Guard 组件', () => {
-  it('RequireAuth：匿名显示 fallback，登录后显示 children，登出后再回 fallback', async () => {
+describe('@vobs/auth Guard components', () => {
+  it('RequireAuth: anonymous shows fallback, signed-in shows children, back to fallback after logout', async () => {
     const auth = createAuth({
       loginHandler: async () => session
     })
@@ -61,7 +63,7 @@ describe('@vobs/auth Guard 组件', () => {
     auth.dispose()
   })
 
-  it('RequirePermission / RequireRole：按权限与角色放行，且随 session 变化重算', () => {
+  it('RequirePermission / RequireRole: allow by permission and role, recomputed as the session changes', () => {
     const auth = createAuth()
     const permission = mountGuard(auth, RequirePermission, { ...guardProps, permission: 'article:read' })
     const role = mountGuard(auth, RequireRole, { ...guardProps, role: 'editor' })
@@ -85,7 +87,7 @@ describe('@vobs/auth Guard 组件', () => {
     auth.dispose()
   })
 
-  it('RequireAnyPermission：任一满足即放行；空列表拒绝', () => {
+  it('RequireAnyPermission: any match allows; empty list denies', () => {
     const auth = createAuth()
     const any = mountGuard(auth, RequireAnyPermission, { ...guardProps, permissions: ['article:read', 'other:x'] })
     const empty = mountGuard(auth, RequireAnyPermission, { ...guardProps, permissions: [] })
@@ -99,12 +101,12 @@ describe('@vobs/auth Guard 组件', () => {
     auth.dispose()
   })
 
-  it('RequireAllPermissions：必须全部满足；空列表按"未满足"处理（fail closed）', () => {
+  it('RequireAllPermissions: all must match; empty list counts as "not satisfied" (fail closed)', () => {
     const auth = createAuth()
     const all = mountGuard(auth, RequireAllPermissions, { ...guardProps, permissions: ['article:read', 'article:edit'] })
     const missing = mountGuard(auth, RequireAllPermissions, { ...guardProps, permissions: ['article:read', 'admin'] })
     const empty = mountGuard(auth, RequireAllPermissions, { ...guardProps, permissions: [] })
-    // 匿名 + 空列表：原来 `[].every(...)` 恒真，这里直接给出 SECRET
+    // anonymous + empty list: `[].every(...)` used to be always true, which handed out SECRET
     expect(empty.container.textContent).toBe('DENIED')
     auth.session.value = session
     all.update()
@@ -112,7 +114,7 @@ describe('@vobs/auth Guard 组件', () => {
     empty.update()
     expect(all.container.textContent).toBe('SECRET')
     expect(missing.container.textContent).toBe('DENIED')
-    // 已登录 + 空列表：同样按"未满足"处理（与 RequireAnyPermission([]) 结论一致）
+    // signed-in + empty list: also treated as "not satisfied" (consistent with RequireAnyPermission([]))
     expect(empty.container.textContent).toBe('DENIED')
     all.destroy()
     missing.destroy()
@@ -121,29 +123,30 @@ describe('@vobs/auth Guard 组件', () => {
   })
 
   /*
-   * §12.3 #4 说 `RequireAuth` 用 `Boolean(session.value)` 是"第二个真相源"。
-   * 实测：`status` 就是 `session.value ? 'authenticated' : 'anonymous'`，两者**恒等价** ——
-   * 不是缺陷（不像报告说的"session.value={} 时它放行而 hasPermission 拒绝"：
-   * 那是"已登录但无权限"的正常语义，hasPermission 与它本来就该相反）。
-   * 这里把等价关系钉住，避免以后单边改动让两者悄悄分叉。
+   * §12.3 #4 claims `RequireAuth` using `Boolean(session.value)` is a "second source of truth".
+   * Measured: `status` is exactly `session.value ? 'authenticated' : 'anonymous'`, so the two are
+   * **always equivalent** — not a defect (unlike the report's claim that "it allows when
+   * session.value={} while hasPermission denies": that is the normal semantics of
+   * "signed-in but permissionless", which hasPermission is supposed to contradict).
+   * This test pins the equivalence so a one-sided change cannot make them silently drift apart.
    */
-  it('RequireAuth 的判定与 status 恒等价（钉住，不是两个真相源）', () => {
+  it('RequireAuth is always equivalent to status (pinned; not two sources of truth)', () => {
     const auth = createAuth()
     const view = mountGuard(auth, RequireAuth, { ...guardProps })
     const agree = (): void => {
       view.update()
       expect(view.container.textContent === 'SECRET').toBe(auth.status.value === 'authenticated')
     }
-    agree()                                                              // 匿名
+    agree()                                                              // anonymous
     auth.session.value = session
-    agree()                                                              // 已登录且有权限
+    agree()                                                              // signed-in with permissions
     auth.session.value = { user: { id: 'bob', roles: [], permissions: [] } }
-    agree()                                                              // 已登录但零权限：仍然算 authenticated
+    agree()                                                              // signed-in with zero permissions: still authenticated
     view.destroy()
     auth.dispose()
   })
 
-  it('Guard 对匿名用户一律 fail closed（不抛错、不放行）', () => {
+  it('guards always fail closed for anonymous users (no throw, no access)', () => {
     const auth = createAuth()
     for (const [component, props] of [
       [RequireAuth, {}],

@@ -1,11 +1,13 @@
 name: Release tag check
 
-# `pnpm run check:release` 校验「tag 版本 == 全部可发布包的版本」，但它此前
-# **没有被任何 workflow 调用** —— 于是「打了 tag 却忘了 bump 包版本」这类错位
-# 没有任何东西会拦（历史上真的发生过：v1.7.8 指向的提交里版本没对齐）。
+# `pnpm run check:release` validates "tag version == all publishable package versions", but it
+# previously was **not invoked by any workflow** — so misalignment like "tagged but forgot to bump
+# the package versions" had nothing to catch it (it genuinely happened historically: the commit
+# v1.7.8 pointed at had unaligned versions).
 #
-# 这个仓库的 npm 发布是手动的（见 docs/npm-release.md），所以这里只做校验：
-# tag 推上来时先确认它与包版本一致，发布前就能发现问题。
+# npm publishing in this repository is manual (see docs/npm-release.md), so this workflow only
+# validates: when a tag is pushed, first confirm it matches the package versions, so problems
+# surface before publishing.
 on:
   push:
     tags:
@@ -38,6 +40,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # GITHUB_REF_NAME 就是 tag 名，脚本会自己取
+      # GITHUB_REF_NAME is the tag name; the script picks it up itself
       - name: Tag matches publishable package versions
         run: pnpm run check:release

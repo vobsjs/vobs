@@ -104,8 +104,9 @@ export interface EffectExecutionInfo {
 
 export interface DomUpdateInfo {
   /**
-   * 直接用运行时的联合类型，不再抄一份 —— 抄的那份在 `clear` 加入后立刻漏了
-   * （加一个 DOM 操作就编译不过，是类型重复的典型代价）。
+   * Use the runtime's union type directly instead of copying it — the copy started missing cases
+   * the moment `clear` was added (adding one DOM operation no longer compiles; the typical cost
+   * of duplicated types).
    */
   readonly operation: RuntimeDomMutationOperation
   readonly target: string
@@ -144,8 +145,10 @@ export type LifecycleEventType =
   | 'memo-created' | 'memo-invalidated'
   | 'effect-created' | 'effect-invalidated' | 'effect-run-start' | 'effect-run' | 'effect-disposed'
   /**
-   * 水合时"临时认领了一个非空文本"（服务端渲染了真实文本、客户端要空文本，等绑定 effect 覆写）。
-   * 这类"值被悄悄换掉"过去完全无声，现在会被记为一条生命周期事件（见 ssr/hydration.ts）。
+   * "A non-empty text was temporarily claimed during hydration" (the server rendered real text,
+   * the client needs empty text until a binding effect overwrites it). This kind of "value
+   * quietly swapped out" used to be fully silent; it is now recorded as a lifecycle event
+   * (see ssr/hydration.ts).
    */
   | 'hydration-provisional-text'
 
@@ -336,13 +339,16 @@ export interface DevToolsTarget {
 
 export interface DevToolsOptions {
   /**
-   * 是否把 API 挂到宿主对象（默认 `target`，浏览器里就是 `window.__VOBS_DEVTOOLS__`）。
+   * Whether to attach the API to the host object (default `target`; in the browser that is
+   * `window.__VOBS_DEVTOOLS__`).
    *
-   * 三态：
-   * - 省略 —— 跟随环境：非生产构建（含 vitest 的 `NODE_ENV=test`）里挂，**生产构建里不挂**，
-   *   因为全局名会把调试 API（以及 `allowMutations` 打开后的写信号能力）交给页面上的任何脚本；
-   * - `true` —— 显式要求，生产里也挂（playground 就走这条路）；
-   * - `false` —— 显式关掉。
+   * Three states:
+   * - omitted — follow the environment: attached in non-production builds (including vitest's
+   *   `NODE_ENV=test`), **not attached in production builds**, because the global name hands the
+   *   debug API (and, with `allowMutations` enabled, the ability to write signals) to any script
+   *   on the page;
+   * - `true` — explicit opt-in, attached even in production (the playground takes this path);
+   * - `false` — explicitly off.
    */
   readonly expose?: boolean
   readonly target?: DevToolsTarget
@@ -533,15 +539,18 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
   const memoSignalIds = new WeakMap<object, string>()
   const edges = new Map<string, DependencyEdge>()
   /*
-   * `from` → 目标 id 的邻接表。传播遍历原来对**每个被访问节点**全表扫一遍 `edges.values()`
-   * （O(V×E)）：实测 1 signal → 1500 memo + 1500 effect 的广度拓扑，单次写入 62.5 ms，
-   * 而无关 signal 同规模下只 0.21 ms（≈300×）。瓶颈是"传播集合大"，不是边数。
+   * Adjacency list `from` → target ids. The propagation traversal originally full-table-scanned
+   * `edges.values()` for **every visited node** (O(V×E)): measured on a breadth topology of
+   * 1 signal → 1500 memos + 1500 effects, a single write took 62.5 ms, while an unrelated signal
+   * at the same scale took only 0.21 ms (≈300×). The bottleneck is "large propagation set", not
+   * edge count.
    */
   const outgoingEdges = new Map<string, Set<string>>()
   /*
-   * `to` → 来源 id 的反向邻接表。`effectInfo()` 原来每次调用都全表扫 `edges` 求依赖
-   * （一次 effect 生命周期里会被调用 4 次），`signalInfo()` 也全表扫求 subscribers ——
-   * 1500 effect × 3000 边 × 4 ≈ 1800 万次比较，这才是广度拓扑下写入耗时的大头。
+   * Reverse adjacency list `to` → source ids. `effectInfo()` originally full-table-scanned `edges`
+   * for dependencies on every call (4 calls per effect lifecycle), and `signalInfo()`
+   * full-table-scanned for subscribers — 1500 effects × 3000 edges × 4 ≈ 18M comparisons, which
+   * was the bulk of the write time under the breadth topology.
    */
   const incomingEdges = new Map<string, Set<string>>()
   const listeners = new Map<string, Set<(...args: any[]) => void>>()
@@ -832,7 +841,7 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     return `${from}->${to}`
   }
 
-  /** 加边：`edges` 是真相来源，`outgoingEdges` 是为传播遍历维护的邻接索引，两者必须同步。 */
+  /** Add an edge: `edges` is the source of truth, `outgoingEdges` is the adjacency index kept for the propagation traversal — the two must stay in sync. */
   function addEdge(edge: DependencyEdge): void {
     edges.set(edgeKey(edge.from, edge.to), edge)
     let targets = outgoingEdges.get(edge.from)
@@ -863,7 +872,7 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     }
   }
 
-  /** 由邻接索引还原边对象（保持插入序，与 `edges` 的顺序一致）。 */
+  /** Rebuild edge objects from the adjacency index (insertion order preserved, matching `edges`). */
   function outgoingEdgeList(from: string): DependencyEdge[] {
     const targets = outgoingEdges.get(from)
     if (!targets) return []
@@ -910,7 +919,7 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     const visit = (sourceId: string): void => {
       if (visited.has(sourceId)) return
       visited.add(sourceId)
-      // 邻接索引：只遍历真正从这个节点出发的边（原来是每个被访问节点全表扫 edges）
+      // adjacency index: only walk edges that actually leave this node (previously every visited node full-table-scanned edges)
       const targets = outgoingEdges.get(sourceId)
       if (!targets) return
       for (const targetId of targets) {
@@ -1329,11 +1338,11 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
 
   const runtimeHooks: RuntimeDebugHooks = {
     hydrationProvisionalText(event): void {
-      // 只记一条生命周期事件：调用方（面板/工具）据此提示"这个文本的值在水合时被换掉了"
+      // record just one lifecycle event: callers (panel/tools) use it to hint that "this text's value was swapped during hydration"
       recordLifecycle(
         'hydration-provisional-text',
         event.actual,
-        `水合临时认领文本 ${event.actual}`,
+        `Hydration provisional text claim ${event.actual}`,
         undefined,
         'success'
       )

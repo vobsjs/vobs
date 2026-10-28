@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createElement, createText, createVobs, effect, ErrorBoundary, insertErrorBoundary, state } from '@vobs/vobs'
 
 describe('insertErrorBoundary', () => {
-  it('捕获子渲染分支的错误并可重试', () => {
+  it('catches errors from child render branches and can retry', () => {
     const broken = state(true)
     let retry!: () => void
     const app = createVobs({
@@ -33,7 +33,7 @@ describe('insertErrorBoundary', () => {
     app.destroy()
   })
 
-  it('捕获子分支中创建的 effect 的错误', () => {
+  it('catches errors from effects created inside the child branch', () => {
     const broken = state(false)
     let cleanups = 0
     const app = createVobs({
@@ -62,7 +62,7 @@ describe('insertErrorBoundary', () => {
     app.destroy()
   })
 
-  it('组件形态复用同一边界协议，并在路由 key 变化时恢复子树', () => {
+  it('the component form reuses the same boundary protocol and recovers the subtree when the route key changes', () => {
     const broken = state(true)
     let retry!: () => void
     const app = createVobs({

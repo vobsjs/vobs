@@ -4,7 +4,7 @@ import { addEventListener, bindText, createElement, createText, insertBefore } f
 import { mount } from './index'
 
 describe('test-utils', () => {
-  it('在内存渲染器中挂载、交互和更新', () => {
+  it('mounts, interacts, and updates in the in-memory renderer', () => {
     const count = state(0)
     const app = mount(() => {
       const button = createElement('button')

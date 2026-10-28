@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { vobsTailwind } from './index'
 
 describe('@vobs/tailwind', () => {
-  it('暴露 Tailwind Vite 插件数组', () => {
+  it('exposes the Tailwind Vite plugin array', () => {
     const plugins = vobsTailwind()
 
     expect(Array.isArray(plugins)).toBe(true)
@@ -12,7 +12,7 @@ describe('@vobs/tailwind', () => {
     expect(plugins.every(plugin => typeof plugin.name === 'string')).toBe(true)
   })
 
-  it('透传 Tailwind Vite 优化选项', () => {
+  it('passes through Tailwind Vite optimize options', () => {
     const plugins = vobsTailwind({ optimize: false })
 
     expect(plugins.length).toBeGreaterThan(0)

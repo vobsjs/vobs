@@ -112,7 +112,7 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
   let sequence = 0
   let active = 0
   let nextId = 0
-  /** 累计完成/失败数：任务移出 `tasks.value` 之后仍要保留。 */
+  /** Cumulative completed/failed counts: must survive tasks being removed from `tasks.value`. */
   let completedCount = 0
   let failedCount = 0
   let disposed = false
@@ -129,26 +129,27 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
     add<T>(fn: QueueTaskFunction<T>, taskOptions: QueueTaskOptions = {}): QueueTask<T> {
       ensureActive()
       if (typeof fn !== 'function') {
-        throw new QueueError('INVALID_TASK', 'Vobs Queue: task 必须是函数')
+        throw new QueueError('INVALID_TASK', 'Vobs Queue: task must be a function')
       }
       const id = taskOptions.id ?? options.idFactory?.() ?? `task-${++nextId}`
       if (typeof id !== 'string' || id.trim() === '') {
-        throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: task id 必须是非空字符串')
+        throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: task id must be a non-empty string')
       }
       /*
-       * 判重只针对**尚未结束**的任务。
+       * Deduplication applies only to tasks that **haven't finished** yet.
        *
-       * 原来只要 `tasks.value` 里有同名就抛，而 `tasks.value` 从不清空 ——
-       * 于是"任务结束之后再复用同一个 id"（显式 id，或 idFactory 按业务键生成）
-       * 会无故抛 `已存在任务 <id>`。
+       * The old code threw whenever `tasks.value` contained a same-named id, and `tasks.value` was
+       * never cleared — so "reusing the same id after the task finished" (an explicit id, or an
+       * idFactory generating one per business key) spuriously threw `task <id> already exists`.
        *
-       * 实际生效的机制是"已结束任务被移出 `tasks.value`"（见 `finally` 里的移除）：
-       * 移出之后这里就找不到它了，id 自然可复用。
-       * 这里**不额外判断 `settled`** —— 试过加 `!duplicate.settled`，但实测走不到那条分支
-       * （任务在 promise 结算前就已移出），留着就是无法被测试覆盖的死代码。
+       * The mechanism that actually makes reuse work is "finished tasks are removed from
+       * `tasks.value`" (see the removal in `finally`): once removed, the lookup here can't find it,
+       * so the id is naturally reusable. We deliberately do **not** add a `settled` check here —
+       * `!duplicate.settled` was tried, but it was never reachable in practice (tasks are removed
+       * before the promise settles), so it would just be dead code no test could cover.
        */
       if (tasks.value.some(candidate => candidate.id === id)) {
-        throw new QueueError('INVALID_QUEUE_OPTIONS', `Vobs Queue: 已存在任务 ${id}`)
+        throw new QueueError('INVALID_QUEUE_OPTIONS', `Vobs Queue: task ${id} already exists`)
       }
       const task = createTask(fn, id, taskOptions)
       ownedTasks.add(task)
@@ -203,11 +204,11 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
   function createTask<T>(fn: QueueTaskFunction<T>, id: string, taskOptions: QueueTaskOptions): InternalTask<T> {
     const priority = taskOptions.priority ?? 'normal'
     if (!(priority in PRIORITIES)) {
-      throw new QueueError('INVALID_QUEUE_OPTIONS', `Vobs Queue: 不支持任务优先级 ${String(priority)}`)
+      throw new QueueError('INVALID_QUEUE_OPTIONS', `Vobs Queue: unsupported task priority ${String(priority)}`)
     }
     const maxRetries = taskOptions.retry ?? 0
     if (!Number.isInteger(maxRetries) || maxRetries < 0) {
-      throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: retry 必须是大于等于 0 的整数')
+      throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: retry must be an integer greater than or equal to 0')
     }
     const retryDelay = taskOptions.retryDelay ?? 0
     validateRetryDelay(retryDelay)
@@ -242,7 +243,7 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
         task.controller?.abort()
         removeFromQueue(task)
         status.value = 'cancelled'
-        const cancellation = new QueueError('QUEUE_TASK_CANCELLED', `Vobs Queue: 任务 ${id} 已取消`)
+        const cancellation = new QueueError('QUEUE_TASK_CANCELLED', `Vobs Queue: task ${id} was cancelled`)
         error.value = cancellation
         settleReject(cancellation)
         refreshStats()
@@ -271,22 +272,26 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
         task.retryQueued = false
         task.executing = true
         /*
-         * 用微任务**延后起步**。原来这里是 `execute(task)`：`drain()` 由 `add()` 同步调用，
-         * 于是 `task.fn(...)` 在 `add()` 返回**之前**就已经跑了 —— 紧接着调用 `cancel()` 根本来不及，
-         * 副作用已经发生，而状态却报 cancelled、result 为 null（报告实测 ran=true / status=cancelled）。
-         * 延后一跳之后，"add 完立刻 cancel" 能真正阻止执行（execute 开头的 while 会看到 cancelled）。
+         * Defer the start by one microtask. This used to be `execute(task)` directly: `drain()` is
+         * called synchronously from `add()`, so `task.fn(...)` already ran **before** `add()`
+         * returned — an immediately following `cancel()` had no chance to prevent it, the side
+         * effects had already happened, yet the status reported cancelled and result stayed null
+         * (measured in the report: ran=true / status=cancelled). Deferring one hop makes
+         * "cancel right after add" actually prevent execution (the while at the top of execute
+         * sees cancelled).
          */
         return Promise.resolve()
           .then(() => execute(task))
           .finally(() => {
             task.executing = false
             /*
-             * 任务结束后移出 `tasks.value`。
+             * Remove finished tasks from `tasks.value`.
              *
-             * 原来只追加、从不移除（只有 clear()/dispose() 会清空）——长会话里无界增长，
-             * 并且正是上面"同名 id 判重"误报的根源。
-             * 读 `tasks.value` 必须 untrack：这里可能在某个 effect 运行期间收尾，
-             * 读取会建立隐藏订阅（与 <select> 那条同族）。
+             * The old code only appended and never removed (only clear()/dispose() emptied it) —
+             * unbounded growth in long sessions, and exactly the root cause of the same-id
+             * deduplication false positive above.
+             * Reading `tasks.value` must be untracked: this may run during some effect's execution,
+             * and reading would create a hidden subscription (same family as the <select> issue).
              */
             if (task.settled && !disposed) {
               untrack(() => {
@@ -321,12 +326,14 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
         task.reject = reject
       })
       /*
-       * 只多挂一个空 handler，把这条 promise 标记为"已处理"。
+       * Attach one empty handler only, marking this promise as "handled".
        *
-       * 取消（`:232`）、`clear()`（`:160`）、`dispose()`（`:170`）都会 reject 任务 promise，
-       * 而调用方完全可能只关心 `add()` 的返回值、从没碰过 `.promise` —— 在 Node 里那就是
-       * **进程级 unhandledRejection**（实测 clear()/dispose() 各 1 次），在清理阶段把进程带走。
-       * 真正 `await task.promise` 的调用方照常拿到这个 rejection（原 promise 仍然 rejected）。
+       * cancel (`:232`), `clear()` (`:160`), and `dispose()` (`:170`) all reject the task promise,
+       * and the caller may perfectly well only care about `add()`'s return value and never touch
+       * `.promise` — in Node that means a **process-level unhandledRejection** (measured: 1 each
+       * from clear()/dispose()), killing the process during cleanup. A caller that truly
+       * `await task.promise` still receives this rejection as usual (the original promise remains
+       * rejected).
        */
       next.catch(() => undefined)
       return next
@@ -360,7 +367,7 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
       } catch (reason) {
         if (isCancelled(task) || disposed) return
         if (isAbortError(reason)) {
-          const cancellation = new QueueError('QUEUE_TASK_CANCELLED', `Vobs Queue: 任务 ${task.id} 已取消`, reason)
+          const cancellation = new QueueError('QUEUE_TASK_CANCELLED', `Vobs Queue: task ${task.id} was cancelled`, reason)
           task.error.value = cancellation
           task.status.value = 'cancelled'
           settleTask(task, undefined, cancellation)
@@ -431,11 +438,12 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
 
   function refreshStats(): void {
     /*
-     * dispose 之后不再写统计信号。
+     * Don't write stat signals after dispose.
      *
-     * dispose 会 cancel + dispose 每个任务的信号，但**在途**任务的收尾仍会走到这里 →
-     * 往已销毁的 pending/processing/completed/failed/total 写值，每条刷一条
-     * `[vobs] 写入已 dispose 的 state` 告警（探针实测 **5 条**，与报告一致）。
+     * dispose cancels + disposes every task's signals, but the wrap-up of **in-flight** tasks still
+     * reaches here → writing to the already-disposed pending/processing/completed/failed/total
+     * emits one `[vobs] write to a disposed state` warning per write (probe measured **5**, matching
+     * the report).
      */
     if (disposed) return
     let nextPending = 0
@@ -447,23 +455,25 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
     pending.value = nextPending
     processing.value = nextProcessing
     /*
-     * `completed` / `failed` 是**累计**计数，不能从 `tasks.value` 现算。
+     * `completed` / `failed` are **cumulative** counts and must not be computed from `tasks.value`.
      *
-     * 原因：已结束的任务现在会被移出 `tasks.value`（见下方 `finally` 里的移除），
-     * 现算会让"完成数"在任务被移除后掉回 0 —— 而这两个计数是给用户看"一共完成了多少"的。
-     * `total` 则保持"当前有多少任务"（在飞 + 尚未移出）的语义。
+     * Reason: finished tasks are now removed from `tasks.value` (see the removal in `finally`
+     * below), so computing on the fly would make "completed" drop back to 0 after tasks are
+     * removed — while these two counters exist to show the user "how many finished in total".
+     * `total` keeps the "how many tasks exist right now" (in flight + not yet removed) semantics.
      */
     completed.value = completedCount
     failed.value = failedCount
     /*
-     * `total` = 状态计数之和（`pending + processing + completed + failed`；
-     * cancelled 任务不计入 completed/failed）。
+     * `total` = the sum of the status counters (`pending + processing + completed + failed`;
+     * cancelled tasks are not counted in completed/failed).
      *
-     * 这样它与其余四个计数**自洽**：任何时刻
-     * `total === pending + processing + completed + failed` —— 调用方不用猜
-     * "total 到底包不包含已结束的"。既不用数组长度（移除发生在 promise 结算之后一跳，
-     * 会让 `await task.promise` 之后读到的值偏大），也不等于"在飞数"（那样 total 与
-     * completed 数量级不一致）。
+     * This keeps it **self-consistent** with the other four counters: at any moment
+     * `total === pending + processing + completed + failed` — callers never have to guess
+     * "does total include finished tasks or not". Neither the array length (removal happens one
+     * hop after the promise settles, which would make the value read after `await task.promise`
+     * skew high) nor the "in-flight count" (which would put total and completed on different
+     * scales).
      */
     total.value = nextPending + nextProcessing + completedCount + failedCount
   }
@@ -472,9 +482,10 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
     if (task.settled) return
     task.settled = true
     /*
-     * 累计计数在**结算这一步**推进，而不是等到下面 `finally` 里的移除 ——
-     * 否则 `await task.promise` 之后立刻读 `completed` 会看到旧值（要等额外一跳），
-     * 这对"任务完成后马上刷新界面"的调用方是可见的错。
+     * The cumulative counters advance **at settle time**, not at the removal in the `finally`
+     * below — otherwise reading `completed` right after `await task.promise` shows the old value
+     * (it would need one extra hop), a visible wrongness for callers that refresh the UI
+     * immediately after a task completes.
      */
     if (task.status.value === 'success') completedCount++
     else if (task.status.value === 'error') failedCount++
@@ -490,7 +501,7 @@ export function createTaskQueue(options: TaskQueueOptions = {}): TaskQueue {
   }
 
   function ensureActive(): void {
-    if (disposed) throw new QueueError('QUEUE_CONTEXT_DISPOSED', 'Vobs Queue: 上下文已销毁')
+    if (disposed) throw new QueueError('QUEUE_CONTEXT_DISPOSED', 'Vobs Queue: context has been disposed')
   }
 
   function isCancelled(task: QueueTask): boolean {
@@ -512,34 +523,34 @@ export function queuePlugin(options: QueuePluginOptions = {}): VobsPlugin {
 
 export function useQueue(): TaskQueue {
   const queue = inject(QUEUE_KEY)
-  if (!queue) throw new QueueError('QUEUE_CONTEXT_MISSING', 'Vobs Queue: 找不到上下文，请安装 queuePlugin')
+  if (!queue) throw new QueueError('QUEUE_CONTEXT_MISSING', 'Vobs Queue: context not found; install queuePlugin first')
   return queue
 }
 
 function resolveConcurrency(options: TaskQueueOptions): number {
   if (options.concurrency !== undefined && options.concurrent !== undefined && options.concurrency !== options.concurrent) {
-    throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: concurrency 与 concurrent 不能设置为不同值')
+    throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: concurrency and concurrent must not be set to different values')
   }
   const value = options.concurrency ?? options.concurrent ?? 3
   if (!Number.isInteger(value) || value <= 0) {
-    throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: concurrency 必须是正整数')
+    throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: concurrency must be a positive integer')
   }
   return value
 }
 
 function validateRetryDelay(value: QueueRetryDelay): void {
   if (typeof value === 'number' && (!Number.isFinite(value) || value < 0)) {
-    throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: retryDelay 必须是大于等于 0 的有限数字或函数')
+    throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: retryDelay must be a finite number or a function, greater than or equal to 0')
   }
   if (typeof value !== 'number' && typeof value !== 'function') {
-    throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: retryDelay 必须是数字或函数')
+    throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: retryDelay must be a number or a function')
   }
 }
 
 function resolveRetryDelay(value: QueueRetryDelay, attempt: number, error: Error): number {
   const delay = typeof value === 'function' ? value(attempt, error) : value
   if (!Number.isFinite(delay) || delay < 0) {
-    throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: retryDelay 函数必须返回大于等于 0 的有限数字')
+    throw new QueueError('INVALID_QUEUE_OPTIONS', 'Vobs Queue: the retryDelay function must return a finite number greater than or equal to 0')
   }
   return delay
 }
@@ -562,7 +573,7 @@ function wait(delay: number, signal: AbortSignal): Promise<void> {
 
 function toQueueError(reason: unknown, id: string): QueueError {
   if (reason instanceof QueueError) return reason
-  return new QueueError('QUEUE_TASK_FAILED', `Vobs Queue: 任务 ${id} 执行失败`, reason)
+  return new QueueError('QUEUE_TASK_FAILED', `Vobs Queue: task ${id} failed`, reason)
 }
 
 function isAbortError(value: unknown): boolean {

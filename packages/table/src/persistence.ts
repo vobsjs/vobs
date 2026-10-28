@@ -9,7 +9,7 @@ export function createColumnSettingsPersistence(
   key: string
 ): DataTableColumnSettingsPersistence {
   const normalizedKey = key.trim()
-  if (!normalizedKey) throw new Error('VOBS_TABLE001: column settings key 不能为空')
+  if (!normalizedKey) throw new Error('VOBS_TABLE001: column settings key must not be empty')
 
   return {
     load(): DataTableColumnSettings | null | undefined {
@@ -29,7 +29,7 @@ export function createLocalColumnSettingsPersistence(
   storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 ): DataTableColumnSettingsPersistence {
   const normalizedKey = key.trim()
-  if (!normalizedKey) throw new Error('VOBS_TABLE001: column settings key 不能为空')
+  if (!normalizedKey) throw new Error('VOBS_TABLE001: column settings key must not be empty')
   const memory = new Map<string, string>()
   let backend = storage ?? resolveLocalStorage()
 

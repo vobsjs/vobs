@@ -23,7 +23,7 @@ describe('@vobs/theme', () => {
     setRenderer(createDOMRenderer())
   })
 
-  it('嵌套令牌映射为 --vobs CSS 变量，并保留自定义变量名', () => {
+  it('maps nested tokens to --vobs CSS variables and preserves custom variable names', () => {
     expect(flattenTheme({
       brand: { primary: '#123456' },
       spacing: { md: '8px' },
@@ -35,7 +35,7 @@ describe('@vobs/theme', () => {
     })
   })
 
-  it('默认主题提供可供布局层使用的 surface token', () => {
+  it('the default theme provides surface tokens usable by the layout layer', () => {
     const theme = createTheme()
 
     expect(theme.theme.value.neutral).toMatchObject({
@@ -50,7 +50,7 @@ describe('@vobs/theme', () => {
     theme.dispose()
   })
 
-  it('ThemeBoundary 写入初始 CSS 变量，切换 mode 后更新变量', () => {
+  it('ThemeBoundary writes the initial CSS variables and updates them after a mode switch', () => {
     const theme = createTheme({
       defaultMode: 'light',
       themes: {
@@ -74,7 +74,7 @@ describe('@vobs/theme', () => {
     theme.dispose()
   })
 
-  it('setBrand 更新当前主题，局部 Boundary 只覆盖自己的子树', () => {
+  it('setBrand updates the current theme and a local Boundary only overrides its own subtree', () => {
     const theme = createTheme({ defaultMode: 'light' })
     function BrandText() {
       const text = createText('')
@@ -109,7 +109,7 @@ describe('@vobs/theme', () => {
     theme.dispose()
   })
 
-  it('支持 system mode 和动态注册主题', () => {
+  it('supports system mode and dynamic theme registration', () => {
     const theme = createTheme({ defaultMode: 'light' })
     const unregister = theme.registerTheme('light', { '--custom': 'yes' })
     expect(theme.theme.value['--custom']).toBe('yes')
@@ -120,7 +120,7 @@ describe('@vobs/theme', () => {
     theme.dispose()
   })
 
-  it('未安装主题插件时给出明确错误', () => {
+  it('gives a clear error when the theme plugin is not installed', () => {
     const app = createVobs({ render: () => {
       void useTheme()
       return createText('')

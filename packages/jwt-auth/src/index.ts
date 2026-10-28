@@ -53,11 +53,13 @@ export function createJWTAuth<C extends Credentials = Credentials>(
       const result = await options.transport.login(credentials)
       validateLoginResult(result)
       /*
-       * 登出/销毁之后落地的登录**不得写回** —— 否则"已经退出的用户"会被复活（安全级）。
-       * 实测：logout 后放行 in-flight login → session 又变回已登录。
+       * A login landing after logout/dispose **must not be written back** — otherwise a "user who
+       * already signed out" gets resurrected (security level).
+       * Measured: letting an in-flight login through after logout flipped the session back to
+       * signed-in.
        */
       if (generation !== issued || disposed) {
-        throw new Error('Vobs JWT Auth: 登录结果已过期（期间发生了登出或销毁）')
+        throw new Error('Vobs JWT Auth: login result is stale (logout or dispose happened in the meantime)')
       }
       accessToken.value = result.accessToken
       return { user: result.user }
@@ -65,16 +67,17 @@ export function createJWTAuth<C extends Credentials = Credentials>(
   })
   let refreshing: Promise<string> | null = null
   let refreshingGeneration = -1
-  /** 世代计数：登出/销毁会推进它，之后落地的 in-flight 结果一律作废（照 resource 的 revision 模式）。 */
+  /** Generation counter: logout/dispose advances it; in-flight results landing afterwards are discarded (resource's revision pattern). */
   let generation = 0
   let disposed = false
   /*
-   * 先抓住**底层 auth 的 dispose**。
+   * Grab the **underlying auth's dispose** first.
    *
-   * 下面的 `Object.assign(baseAuth, {...})` 改的就是 `baseAuth` 本身 —— 于是 `baseAuth.dispose()`
-   * 变成**自调用**：`:97` 刚把 `disposed = true`，`:96` 的守卫立刻 return，原实现永远执行不到，
-   * **底层 createAuth 永不销毁**（实测 app.destroy() 后 login() 仍成功、hasPermission 仍 true）。
-   * 而现有测试恰好只断言那个还抛错的 getAccessToken() → 假绿。
+   * The `Object.assign(baseAuth, {...})` below mutates `baseAuth` itself — so `baseAuth.dispose()`
+   * becomes a **self-call**: `:97` sets `disposed = true`, the guard on `:96` returns immediately,
+   * and the original implementation is never reached — **the underlying createAuth is never
+   * disposed** (measured: after app.destroy() login() still succeeded and hasPermission stayed true).
+   * The existing tests happened to only assert getAccessToken(), which still throws → false green.
    */
   const baseDispose = baseAuth.dispose.bind(baseAuth)
 
@@ -88,7 +91,8 @@ export function createJWTAuth<C extends Credentials = Credentials>(
 
     async refreshToken(): Promise<string> {
       ensureActive()
-      // 世代变了就重新发起：否则登出之后的新调用会复用**登出前**那次的 in-flight promise
+      // Restart when the generation changed: otherwise a new call after logout would reuse the
+      // in-flight promise from **before** the logout
       if (!refreshing || refreshingGeneration !== generation) {
         const issued = generation
         refreshingGeneration = issued
@@ -96,14 +100,14 @@ export function createJWTAuth<C extends Credentials = Credentials>(
           .then(result => {
             validateRefreshResult(result)
             if (generation !== issued || disposed) {
-              throw new Error('Vobs JWT Auth: 刷新结果已过期（期间发生了登出或销毁）')
+              throw new Error('Vobs JWT Auth: refresh result is stale (logout or dispose happened in the meantime)')
             }
             accessToken.value = result.accessToken
             if (result.user) baseAuth.session.value = { user: result.user }
             return result.accessToken
           })
           .catch(error => {
-            // 过期的失败**不能**清掉新一轮的会话
+            // A stale failure **must not** clear the new round's session
             if (generation === issued && !disposed) clearSession()
             reportFailure(error)
             throw error
@@ -120,7 +124,8 @@ export function createJWTAuth<C extends Credentials = Credentials>(
 
     async logout(): Promise<void> {
       ensureActive()
-      // 推进世代：此后落地的 login/refresh 结果一律作废（不复活、也不清掉新一轮的会话）
+      // Advance the generation: login/refresh results landing afterwards are discarded (no
+      // resurrection, and the new round's session is not cleared either)
       generation++
       refreshing = null
       refreshingGeneration = -1
@@ -132,7 +137,7 @@ export function createJWTAuth<C extends Credentials = Credentials>(
       if (disposed) return
       disposed = true
       accessToken.dispose()
-      baseDispose()      // 不是 baseAuth.dispose() —— 那是自调用（见上面 baseDispose 的说明）
+      baseDispose()      // not baseAuth.dispose() — that would be a self-call (see baseDispose above)
     }
   }) as JWTAuthContext<C>
 
@@ -148,7 +153,7 @@ export function createJWTAuth<C extends Credentials = Credentials>(
   }
 
   function ensureActive(): void {
-    if (disposed) throw new AuthError('AUTH_CONTEXT_MISSING', 'Vobs JWT Auth: 上下文已销毁')
+    if (disposed) throw new AuthError('AUTH_CONTEXT_MISSING', 'Vobs JWT Auth: context has been disposed')
   }
 }
 
@@ -166,7 +171,7 @@ export function jwtAuthPlugin<C extends Credentials = Credentials>(
     version: '0.1.0',
     install(context) {
       if (!options.auth && !options.transport) {
-        throw new AuthError('AUTH_CONTEXT_MISSING', 'Vobs JWT Auth: 必须传入 transport 或 auth')
+        throw new AuthError('AUTH_CONTEXT_MISSING', 'Vobs JWT Auth: either transport or auth must be provided')
       }
       const ownedAuth = options.auth ? undefined : createJWTAuth({
         transport: options.transport!,
@@ -182,7 +187,7 @@ export function jwtAuthPlugin<C extends Credentials = Credentials>(
 
 export function useJWTAuth(): JWTAuthContext {
   const auth = inject(JWT_AUTH_KEY)
-  if (!auth) throw new AuthError('AUTH_CONTEXT_MISSING', 'Vobs JWT Auth: 找不到上下文，请安装 jwtAuthPlugin')
+  if (!auth) throw new AuthError('AUTH_CONTEXT_MISSING', 'Vobs JWT Auth: context not found, install jwtAuthPlugin first')
   return auth
 }
 
@@ -190,7 +195,7 @@ function validateOptions<C extends Credentials>(options: JWTAuthOptions<C>): voi
   if (!options || !options.transport
     || typeof options.transport.login !== 'function'
     || typeof options.transport.refresh !== 'function') {
-    throw new AuthError('INVALID_SESSION', 'Vobs JWT Auth: transport 必须提供 login 和 refresh')
+    throw new AuthError('INVALID_SESSION', 'Vobs JWT Auth: transport must provide login and refresh')
   }
 }
 
@@ -207,7 +212,7 @@ function validateRefreshResult(value: JWTRefreshResult): void {
 }
 
 function invalidResult(): AuthError {
-  return new AuthError('INVALID_SESSION', 'Vobs JWT Auth: transport 返回了无效结果')
+  return new AuthError('INVALID_SESSION', 'Vobs JWT Auth: transport returned an invalid result')
 }
 
 function validateToken(token: unknown): asserts token is string {

@@ -1,78 +1,78 @@
 /**
- * `on*` 属性 → DOM 事件名。
+ * `on*` attributes → DOM event names.
  *
- * 编译器原来的做法是无条件 `name.slice(2).toLowerCase()`，于是：
- *   onDoubleClick → "doubleclick"   DOM 里根本叫 dblclick，回调永不触发且无报错
- *   once={fn}     → "ce"            垃圾事件名，同样静默失效
- *   onclick       → "click"         碰巧能工作
+ * The compiler's original approach was an unconditional `name.slice(2).toLowerCase()`, so:
+ *   onDoubleClick → "doubleclick"   the DOM actually calls it dblclick; the callback never fires and nothing reports it
+ *   once={fn}     → "ce"            a garbage event name, silently broken the same way
+ *   onclick       → "click"         happens to work
  *
- * ⚠️ **别名表与解析函数的单一来源在 `@vobs/runtime` 的 `dom-events.ts`**，这里只是再导出——
- * 运行期的 `{...props}` 展开路径必须与编译期同一份别名表，否则
- * `<div {...props} onDoubleClick={…}>` 挂的是不存在的 `"doubleclick"`，
- * 而 `<div onDoubleClick={…}>` 挂的是正确的 `dblclick`：同一个属性名，两条路径两种行为。
- * 收拢到 runtime 是因为它同时被运行期用；编译期只剩诊断需要额外信息（见下）。
+ * ⚠️ **The single source of the alias table and resolver is `@vobs/runtime`'s `dom-events.ts`**; this file only re-exports it —
+ * the runtime's `{...props}` spread path must use the same alias table as compile time, otherwise
+ * `<div {...props} onDoubleClick={…}>` binds the nonexistent `"doubleclick"`,
+ * while `<div onDoubleClick={…}>` binds the correct `dblclick`: one attribute name, two paths, two behaviors.
+ * It was consolidated into the runtime because the runtime uses it too; only the compiler's diagnostics need the extra info (see below).
  */
 
 export { EVENT_NAME_ALIASES } from '@vobs/runtime/dom-events'
 
 import { resolveEventName as resolveEventNamePlain } from '@vobs/runtime/dom-events'
 
-/** 常见 DOM 事件名（用于区分「写错了」与「自定义事件」）。 */
+/** Common DOM event names (used to distinguish "a typo" from "a custom event"). */
 export const DOM_EVENT_NAMES: ReadonlySet<string> = new Set([
-  // 剪贴板
+  // clipboard
   'copy', 'cut', 'paste',
-  // 输入法
+  // input method
   'compositionstart', 'compositionupdate', 'compositionend',
-  // 键盘
+  // keyboard
   'keydown', 'keypress', 'keyup',
-  // 焦点
+  // focus
   'focus', 'blur', 'focusin', 'focusout',
-  // 鼠标
+  // mouse
   'click', 'dblclick', 'mousedown', 'mouseup', 'mouseenter', 'mouseleave', 'mousemove',
   'mouseover', 'mouseout', 'contextmenu', 'auxclick',
-  // 指针
+  // pointer
   'pointerdown', 'pointerup', 'pointermove', 'pointerover', 'pointerout', 'pointerenter',
   'pointerleave', 'pointercancel', 'pointerrawupdate', 'gotpointercapture', 'lostpointercapture',
-  // 触摸
+  // touch
   'touchstart', 'touchend', 'touchmove', 'touchcancel',
-  // 拖拽
+  // drag & drop
   'drag', 'dragstart', 'dragend', 'dragenter', 'dragleave', 'dragover', 'drop',
-  // 滚动与滚轮
+  // scroll & wheel
   'wheel', 'scroll', 'scrollend',
-  // 表单
+  // form
   'input', 'beforeinput', 'change', 'submit', 'reset', 'invalid', 'select', 'selectionchange',
-  // 媒体
+  // media
   'play', 'playing', 'pause', 'ended', 'timeupdate', 'volumechange', 'durationchange',
   'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'progress', 'seeking', 'seeked',
   'stalled', 'suspend', 'waiting', 'ratechange', 'emptied',
-  // 动画与过渡
+  // animation & transition
   'animationstart', 'animationend', 'animationiteration', 'animationcancel',
   'transitionstart', 'transitionend', 'transitionrun', 'transitioncancel',
-  // 文档与窗口
+  // document & window
   'load', 'unload', 'beforeunload', 'resize', 'online', 'offline', 'error', 'abort',
   'hashchange', 'popstate', 'pagehide', 'pageshow', 'visibilitychange', 'readystatechange',
   'storage', 'languagechange', 'message', 'messageerror', 'slotchange', 'selectstart',
-  // 其他
+  // misc
   'toggle', 'close', 'cancel', 'cuechange', 'fullscreenchange', 'fullscreenerror',
   'securitypolicyviolation', 'contextlost', 'contextrestored'
 ])
 
 export interface ResolvedEventName {
-  /** 最终绑定的 DOM 事件名。 */
+  /** The DOM event name finally bound. */
   readonly eventName: string
-  /** `on` 之后的部分是否以大写字母开头（vobs 的驼峰约定）。 */
+  /** Whether the part after `on` starts with an uppercase letter (vobs's camelCase convention). */
   readonly camelCase: boolean
-  /** 是否属于已知 DOM 事件（false 不必然是错的 —— 可能是自定义事件）。 */
+  /** Whether it is a known DOM event (false is not necessarily wrong — it may be a custom event). */
   readonly known: boolean
 }
 
 /**
- * 解析 `on*` 属性名（编译期版本，额外给出诊断需要的 `camelCase`/`known`）。
+ * Resolve an `on*` attribute name (the compile-time version, additionally providing `camelCase`/`known` for diagnostics).
  *
- * 事件名本身来自 runtime 的单一来源；这里只补诊断信息。
- * 与 runtime 的同名导出区分开，避免与本文件的再导出撞名。
+ * The event name itself comes from the runtime's single source; this only adds diagnostic info.
+ * Kept distinct from the runtime's same-named export to avoid clashing with this file's re-export.
  *
- * @returns 属性名不以 `on` 开头或只有 `on` 本身时返回 undefined。
+ * @returns undefined when the attribute name does not start with `on` or is just `on` itself.
  */
 export function resolveEventNameForDiagnostics(attributeName: string): ResolvedEventName | undefined {
   const eventName = resolveEventNamePlain(attributeName)

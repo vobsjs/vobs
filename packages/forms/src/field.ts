@@ -15,10 +15,10 @@ import { parseNumber, type NumberParseFailure, type ParseNumberOptions } from '.
 import type { Form, FormField, FormFieldProps } from './form'
 
 /**
- * 从透传 props 里读出数字语义。返回 `null` 表示"这不是数字输入"。
+ * Read numeric semantics out of passthrough props. Returns `null` means "this is not a numeric input".
  *
- * 判定：`type="number"`，或调用方显式给了 `min`/`max`/`step`/`precision`
- * —— 后三者本身就表明这个框是数值语义（即使 type 没写 number）。
+ * Detection: `type="number"`, or the caller explicitly gave `min`/`max`/`step`/`precision`
+ * — the latter three already indicate the box has numeric semantics (even without type=number).
  */
 function readNumericOptions(
   extra: Record<string, unknown>
@@ -39,9 +39,11 @@ function readNumericOptions(
 
 export function Field<T extends object>(props: FormFieldProps<T>): VobsNode {
   const field = props.form.field(props.name as never) as FormField<unknown>
-  // 与 component 分支同一份透传集合：除框架已消费的 5 个字段外，其余原样给输入元素。
-  // 此前 `extra` 只在 component 分支（:34）透传，默认 input 分支一个都不透 ——
-  // 于是 `<Field type="password" placeholder="…">` 静默渲染成 type="text" 的明文框。
+  // Same passthrough set as the component branch: everything except the 5 fields the framework
+  // consumes goes to the input element as-is.
+  // Previously `extra` was only passed through in the component branch (:34); the default input
+  // branch passed none — so `<Field type="password" placeholder="…">` silently rendered a
+  // type="text" box showing plain text.
   const { form: _form, name: _name, label: _label, children: _children, component: _component, ...extra } = props
 
   return createFragment((parent, anchor) => {
@@ -70,26 +72,29 @@ export function Field<T extends object>(props: FormFieldProps<T>): VobsNode {
       insertBefore(wrapper, wired, null)
     } else {
       const input = createElement('input')
-      // 透传：`type` / `placeholder` / `name` / `autocomplete` / `required` / `aria-*` … 全走属性通道。
-      // 值是 undefined 的键不落属性（`<input required={cond}>` 为假时不该留 `required="undefined"`）。
+      // Passthrough: `type` / `placeholder` / `name` / `autocomplete` / `required` / `aria-*` … all via the attribute channel.
+      // Keys whose value is undefined do not become attributes (a false `<input required={cond}>`
+      // must not leave `required="undefined"` behind).
       for (const [key, value] of Object.entries(extra)) {
         if (value === undefined) continue
-        // onNumberInvalid 是我们自己的回调，不能落成 DOM 属性
+        // onNumberInvalid is our own callback; it must not land as a DOM attribute
         if (key === 'onNumberInvalid') continue
         setAttribute(input, key, String(value))
       }
-      // 值同步：null/undefined 不能写进 `input.value`（否则字面量 "undefined" 出现在框里，
-      // 与 bind.ts 的 null/undefined 守卫同一意图 —— `useForm({ nickname: undefined })` 曾如此）
+      // Value sync: null/undefined must not be written into `input.value` (otherwise the literal
+      // "undefined" shows up in the box; same intent as the null/undefined guard in bind.ts —
+      // `useForm({ nickname: undefined })` did exactly that)
       /*
-       * 数字输入走**解析契约**（外部踩坑文档 #7）。
+       * Numeric input goes through the **parsing contract** (external pitfall doc #7).
        *
-       * `Number('') === 0`：用户把框清空的瞬间值被当成 0 写进信号，
-       * 在「比例锁定 / 联动计算」链路里 `0` 经除法变成 `Infinity`，
-       * 再把兄弟维度一并清零 —— **清一个输入框，旁边几个也跟着归零**。
+       * `Number('') === 0`: the instant the user clears the box, the value is written into the
+       * signal as 0; in "ratio locking / linked calculation" chains that 0 becomes `Infinity`
+       * through division and zeroes the sibling dimensions too — **clearing one input box zeroes
+       * several neighboring ones as well**.
        *
-       * 所以 `type="number"`（或显式给了 `min`/`max`/`step` 的数值语义框）时：
-       * 空串、非法、超界一律**不提交**，信号保持最后一次有效值。
-       * 其余类型仍按原样写字符串（文本框、密码框的语义不变）。
+       * So for `type="number"` (or a numerically semantic box with explicit `min`/`max`/`step`):
+       * empty, invalid, and out-of-bounds values are **not committed**; the signal keeps the last
+       * valid value. Other types still write the string as-is (text/password semantics unchanged).
        */
       const numericOptions = readNumericOptions(extra)
       effect(() => {
@@ -100,7 +105,7 @@ export function Field<T extends object>(props: FormFieldProps<T>): VobsNode {
         const text = (event.target as HTMLInputElement).value
         if (numericOptions !== null) {
           const parsed = parseNumber(text, numericOptions)
-          // 解析失败 → 不提交（保持原值）。调用方要提示的话看 onNumberInvalid。
+          // parse failure → not committed (previous value kept). Callers wanting a hint use onNumberInvalid.
           if (!parsed.ok) {
             numericOptions.onInvalid?.(parsed.reason, text)
             return

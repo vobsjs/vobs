@@ -13,19 +13,23 @@ afterEach(() => {
 const BROAD = 3000
 
 /**
- * devtools 的依赖图原来只有一张 `edges` 哈希表，**每个**取用点都全表扫：
- * - `collectEffectIds` / `collectAffectedSignals`：对每个被访问节点扫一遍 → O(V×E)；
- * - `effectInfo()`：每次调用扫全表求依赖（一次 effect 生命周期里调 4 次）；
- * - `signalInfo()`：每次调用扫全表求 subscribers 数。
+ * devtools' dependency graph was originally a single `edges` hash table, full-table-scanned by
+ * **every** consumer:
+ * - `collectEffectIds` / `collectAffectedSignals`: one scan per visited node → O(V×E);
+ * - `effectInfo()`: scanned the whole table for dependencies on every call (4 calls per effect
+ *   lifecycle);
+ * - `signalInfo()`: scanned the whole table for the subscribers count on every call.
  *
- * 实测 1 signal → 3000 memo + 3000 effect（6000 边）的广度拓扑、单次 signal 写入：
- * **修复前 581.19 / 586.92 / 598.07 ms → 修复后 25.70 / 18.42 / 20.04 ms（约 31×）**。
- * 瓶颈是"传播集合大"，不是边数。
+ * Measured on a breadth topology of 1 signal → 3000 memos + 3000 effects (6000 edges), single
+ * signal write:
+ * **before the fix 581.19 / 586.92 / 598.07 ms → after 25.70 / 18.42 / 20.04 ms (about 31×)**.
+ * The bottleneck was "large propagation set", not edge count.
  *
- * ⚠️ 计时必须每轮之间让调度器落定：传播遍历只在"该 signal 新建一条待处理更新"时跑，
- * 同一 signal 的连续写入会复用同一条 pending，测到的就只是快路径（会漏掉这个 bug）。
+ * ⚠️ Timing requires letting the scheduler settle between rounds: the propagation traversal only
+ * runs when "this signal creates a new pending update"; consecutive writes to the same signal
+ * reuse the same pending entry, so what you measure would just be the fast path (missing this bug).
  */
-describe('@vobs/devtools 传播遍历', () => {
+describe('@vobs/devtools propagation traversal', () => {
   function buildBroad(owner: ReturnType<typeof createOwner>) {
     let broad!: Signal<number>
     owner.run(() => {
@@ -38,14 +42,15 @@ describe('@vobs/devtools 传播遍历', () => {
     return broad
   }
 
-  it('广度拓扑：传播结果完整，且不再是 O(V×E)', async () => {
+  it('breadth topology: propagation results stay complete and are no longer O(V×E)', async () => {
     active = createDevTools({ expose: false })
     const owner = createOwner()
     owner.onError(() => undefined)
     const broad = buildBroad(owner)
 
-    // 传播遍历只在"该 signal 新建一次待处理更新"时跑（同一 signal 的连续写入复用同一条 pending），
-    // 所以每轮之间必须让调度器把 pending 落定，否则测到的是复用了 pending 的快路径。
+    // The propagation traversal only runs when "this signal creates a new pending update"
+    // (consecutive writes to the same signal reuse the same pending entry), so the scheduler
+    // must be allowed to settle between rounds — otherwise you measure the pending-reusing fast path.
     const settle = async (): Promise<void> => { await Promise.resolve(); await Promise.resolve() }
     const samples: number[] = []
     for (let round = 0; round < 3; round++) {
@@ -57,18 +62,19 @@ describe('@vobs/devtools 传播遍历', () => {
     const elapsed = Math.min(...samples)
     await settle()
 
-    // 传播集合必须是完整的 3000 个 effect（修索引时最容易在这里出错）
+    // The propagation set must be the complete 3000 effects (the easiest place to break while reindexing)
     const update = active.getUpdates().at(-1)!
     expect(update.affectedEffects).toHaveLength(BROAD)
     expect(active.getDependencies(update.signalId)).toHaveLength(BROAD)
     expect(active.getDependents(update.affectedEffects[0]!)).toHaveLength(1)
 
-    // 修复前 581ms、修复后 18.4ms：上限取 100ms —— 给修复后留 5× 余量，对回归有 5× 判别力。
+    // 581ms before the fix, 18.4ms after: the 100ms cap leaves 5× headroom over the fixed state,
+    // giving 5× discrimination power against regressions.
     expect(elapsed).toBeLessThan(100)
     owner.dispose()
   })
 
-  it('链式与菱形传播仍然完整（邻接索引不改变语义）', async () => {
+  it('chained and diamond propagation stay complete (adjacency indexing does not change semantics)', async () => {
     active = createDevTools({ expose: false })
     const owner = createOwner()
     owner.onError(() => undefined)
@@ -80,9 +86,9 @@ describe('@vobs/devtools 传播遍历', () => {
       const second = memo(() => first.value * 2)
       const left = memo(() => second.value + 10)
       const right = memo(() => second.value + 20)
-      // 菱形：second 有两条下游，最后汇到同一个 effect
+      // diamond: second has two downstreams, finally converging into the same effect
       effect(() => { runs.push(left.value + right.value) })
-      // 链式：source → first → second → third → effect
+      // chain: source → first → second → third → effect
       const third = memo(() => second.value + 100)
       effect(() => { runs.push(third.value) })
     })
@@ -91,9 +97,9 @@ describe('@vobs/devtools 传播遍历', () => {
     await Promise.resolve()
 
     const update = active.getUpdates().at(-1)!
-    // 两个 effect 都必须被收集到（一条走菱形左支、一条走链式）
+    // both effects must be collected (one via the diamond's left branch, one via the chain)
     expect(update.affectedEffects).toHaveLength(2)
-    // 传播信号集合要覆盖整条链（source → first → second → left/right/third）
+    // the propagated signal set must cover the whole chain (source → first → second → left/right/third)
     expect(update.affectedSignals.length).toBeGreaterThanOrEqual(5)
     expect(runs.length).toBeGreaterThanOrEqual(4)
     owner.dispose()

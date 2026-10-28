@@ -25,7 +25,7 @@ const columns: readonly DataTableColumn<User>[] = [
 describe('@vobs/table', () => {
   beforeEach(() => setRenderer(createDOMRenderer()))
 
-  it('支持客户端筛选、排序和分页，并通过 query 回调交给宿主控制', () => {
+  it('supports client-side filtering, sorting and paging, handing control to the host via the query callback', () => {
     const container = document.createElement('div')
     const queries: DataTableQuery[] = []
     const app = createVobs({
@@ -53,7 +53,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('客户端排序会实际改变行顺序，并支持升序、降序和取消排序', async () => {
+  it('client sorting actually reorders rows and supports ascending, descending and cancel', async () => {
     const container = document.createElement('div')
     const app = createVobs({
       render: () => KitDataTable<User>({
@@ -92,7 +92,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('客户端排序支持数字、日期、空值置后和自定义 sortValue', async () => {
+  it('client sorting supports numbers, dates, missing values last, and custom sortValue', async () => {
     interface Metric {
       readonly id: number
       readonly score: number | null
@@ -137,7 +137,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('服务端排序模式只发出 sort 查询，不重排当前页数据', () => {
+  it('server sorting mode only emits the sort query without reordering the current page', () => {
     const queries: DataTableQuery[] = []
     const serverColumns: readonly DataTableColumn<User>[] = [
       { id: 'name', label: 'Name', key: 'name', sortable: true, sortKey: 'display_name' },
@@ -167,7 +167,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('接受外部 filters 和列 filter 谓词，但不渲染表格内筛选输入', () => {
+  it('accepts external filters and column filter predicates without rendering in-table filter inputs', () => {
     const container = document.createElement('div')
     const app = createVobs({
       render: () => KitDataTable<User>({
@@ -189,7 +189,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('默认固定表头，并允许关闭固定表头', () => {
+  it('sticks the header by default and allows turning it off', () => {
     const container = document.createElement('div')
     const app = createVobs({
       render: () => KitDataTable<User>({
@@ -214,7 +214,7 @@ describe('@vobs/table', () => {
     disabledApp.destroy()
   })
 
-  it('hauto: true 挂满高自适应形态类（默认不挂）', () => {
+  it('hauto: true attaches the full-height adaptive class (absent by default)', () => {
     const container = document.createElement('div')
     const app = createVobs({
       render: () => KitDataTable<User>({
@@ -226,7 +226,7 @@ describe('@vobs/table', () => {
     app.mount(container)
     const root = container.querySelector('.vobs-data-table')
     expect(root?.classList.contains('vobs-data-table--hauto')).toBe(true)
-    // 形态契约：viewport 是 flex 容器（jsdom 不算样式，锚定结构即可——CSS 规则在 table.css）
+    // Form contract: the viewport is a flex container (jsdom doesn't compute styles, so pin the structure — CSS rules live in table.css)
     expect(root?.querySelector(':scope > .vobs-data-table__viewport')).not.toBeNull()
     app.destroy()
 
@@ -242,7 +242,7 @@ describe('@vobs/table', () => {
     plainApp.destroy()
   })
 
-  it('使用列设置应用列显隐、顺序和宽度', () => {
+  it('applies column settings for visibility, order and width', () => {
     const container = document.createElement('div')
     const app = createVobs({
       render: () => KitDataTable<User>({
@@ -266,7 +266,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('使用紧凑摘要显示当前显示数、每页数、当前页和总页数', () => {
+  it('shows a compact summary of visible count, page size, current page and total pages', () => {
     const container = document.createElement('div')
     const app = createVobs({
       render: () => KitDataTable<User>({
@@ -288,7 +288,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('按 simple、standard、all 逐步增加页码和跳转控件', () => {
+  it('adds page numbers and a jump control progressively across simple, standard and all', () => {
     const renderTable = (paginationMode: 'simple' | 'standard' | 'all') => KitDataTable<User>({
       columns,
       rows: Array.from({ length: 8 }, (_, id) => ({ id, name: `User ${id}`, role: 'Viewer' })),
@@ -313,7 +313,7 @@ describe('@vobs/table', () => {
     }
   })
 
-  it('切换每页数时回到第 1 页并通过 query 回调通知宿主', () => {
+  it('returns to page 1 when the page size changes and notifies the host via the query callback', () => {
     const container = document.createElement('div')
     const queries: DataTableQuery[] = []
     const app = createVobs({
@@ -335,7 +335,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('显式设置分页模式后，即使只有一页也保留每页数控件', () => {
+  it('keeps the page-size control even with a single page once the pagination mode is explicit', () => {
     const container = document.createElement('div')
     const app = createVobs({
       render: () => KitDataTable<User>({
@@ -351,7 +351,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('all 模式可以通过页码输入跳转', () => {
+  it('all mode can jump via the page-number input', () => {
     const container = document.createElement('div')
     const queries: DataTableQuery[] = []
     const app = createVobs({
@@ -377,7 +377,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('pagination 插槽可以完全接管右侧区域并使用分页上下文', () => {
+  it('the pagination slot fully takes over the right side and can use the pagination context', () => {
     const container = document.createElement('div')
     const queries: DataTableQuery[] = []
     const app = createVobs({
@@ -403,7 +403,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('列设置至少保留一列，并通过回调返回可见列 id', () => {
+  it('column settings keep at least one column and report visible ids through the callback', () => {
     const container = document.createElement('div')
     const onChange = vi.fn()
     const app = createVobs({
@@ -417,7 +417,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('列设置支持恢复、保存顺序和宽度，并可重置', () => {
+  it('column settings support restore, saving order and width, and can reset', () => {
     const saved: {
       visibleColumnIds: string[]
       columnOrder: string[]
@@ -476,7 +476,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('受控列设置变化会同步到同页数据表', async () => {
+  it('controlled column-settings changes sync to the data table on the same page', async () => {
     const settings = state<DataTableColumnSettings>({
       visibleColumnIds: ['name', 'role'],
       columnOrder: ['name', 'role'],
@@ -512,7 +512,7 @@ describe('@vobs/table', () => {
     app.destroy()
   })
 
-  it('列设置持久化工厂支持存取和重置', () => {
+  it('the column-settings persistence factory supports load/save and reset', () => {
     const values = new Map<string, unknown>()
     const get = vi.fn((key: string) => values.get(key) ?? null)
     const set = vi.fn((key: string, value: unknown) => { values.set(key, value) })
@@ -541,7 +541,7 @@ describe('@vobs/table', () => {
     expect(remove).toHaveBeenCalledWith('users.columns')
   })
 
-  it('本地持久化在损坏值和无浏览器存储时回退为空设置', () => {
+  it('local persistence falls back to empty settings on corrupted values and missing browser storage', () => {
     const values = new Map<string, string>([['users.columns', '{bad json']])
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,

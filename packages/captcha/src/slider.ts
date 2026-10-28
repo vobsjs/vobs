@@ -22,29 +22,30 @@ export interface SliderCaptchaChallenge {
 }
 
 /**
- * 拼图挑战的**几何数据**（由服务端下发）。
+ * The **geometry data** of the puzzle challenge (delivered by the server).
  *
- * ⚠️ 名字容易误解：`payload` **不是滑块数据**，是**拼图区的几何与底图**。
- * 滑块相关的文案在 `SliderCaptchaProps` 的 `*Label` 上（见 `dragLabel`）。
+ * ⚠️ The name is easy to misread: `payload` is **not slider data** — it is the **geometry and
+ * background image of the puzzle area**.
+ * Slider-related copy lives on the `*Label` props of `SliderCaptchaProps` (see `dragLabel`).
  *
- * 坐标是相对拼图区左上角的像素值（不是百分比）。
+ * Coordinates are pixel values relative to the top-left corner of the puzzle area (not percentages).
  */
 export interface SliderCaptchaPayload {
   /**
-   * 底图。会被写进 CSS `background-image: url(…)` ——
-   * **所以必须是 url() 能吃的值**（dataURL 或路径），**不能是节点**。
-   * 官网/示例用的是 SVG dataURL；用位图 dataURL 也可以。
+   * Background image. Written into CSS `background-image: url(…)` —
+   * **so it must be a value url() accepts** (dataURL or path), **never a node**.
+   * The website/examples use an SVG dataURL; a bitmap dataURL works too.
    */
   readonly image?: string
-  /** 拼图区宽度（px）。 */
+  /** Puzzle area width (px). */
   readonly width: number
-  /** 拼图区高度（px）。 */
+  /** Puzzle area height (px). */
   readonly height: number
-  /** 滑块手柄的初始 x（px），默认 0。 */
+  /** Initial x of the slider handle (px), default 0. */
   readonly startX?: number
-  /** 缺口的目标 x（px）—— 判定"拖对了"比的是这个。 */
+  /** Target x of the gap (px) — "dragged correctly" is judged against this. */
   readonly targetX: number
-  /** 缺口的目标 y（px）。 */
+  /** Target y of the gap (px). */
   readonly targetY: number
   readonly rotation?: number
   readonly decoys?: readonly SliderCaptchaDecoy[]
@@ -97,25 +98,26 @@ export interface CaptchaDeviceSignals {
 }
 
 /**
- * 提交给服务端校验的拖动结果。
+ * The drag result submitted to the server for verification.
  *
- * ⚠️ **校验不只看落点**：`trail`（轨迹点）与 `analysis`（轨迹分析）**都是协议的一部分**，
- * 服务端可用它们做人机判定（匀速直线 = 机器）。所以：
- * - 不要只把 `x`/`y` 发上去就丢掉其余字段
- * - 拖动过程中**不要人为插点/平滑**，那会毁掉分析依据
+ * ⚠️ **Verification must not look only at the landing point**: `trail` (trail points) and
+ * `analysis` (trail analysis) are **both part of the protocol**; the server can use them for
+ * bot detection (constant-speed straight line = machine). So:
+ * - do not send only `x`/`y` and drop the rest
+ * - do **not** artificially insert/smooth points during dragging — that destroys the analysis basis
  */
 export interface SliderCaptchaResult {
-  /** 最终落点 x（与 `targetX` 比对，容差见 `payload.tolerance`）。 */
+  /** Final landing x (compared against `targetX`; tolerance in `payload.tolerance`). */
   readonly x: number
-  /** 最终落点 y。 */
+  /** Final landing y. */
   readonly y: number
-  /** 完整拖动轨迹。 */
+  /** Full drag trail. */
   readonly trail: readonly SliderTrailPoint[]
-  /** 从按下到松开的毫秒数。 */
+  /** Milliseconds from pointer-down to pointer-up. */
   readonly duration: number
-  /** 轨迹分析结果（服务端判定依据之一）。 */
+  /** Trail analysis result (one of the server's detection inputs). */
   readonly analysis: SliderTrailAnalysis
-  /** 采集到的设备信号（`collectDeviceSignals` 为真时才有）。 */
+  /** Collected device signals (present only when `collectDeviceSignals` is true). */
   readonly deviceSignals?: CaptchaDeviceSignals
 }
 
@@ -138,11 +140,12 @@ export interface SliderCaptchaProps {
   readonly errorLabel?: SliderCaptchaValue<string>
   readonly label?: SliderCaptchaValue<string>
   /**
-   * 手柄按钮的**无障碍名字**（`aria-label`），默认是字面量 `'>'`。
+   * The **accessible name** of the handle button (`aria-label`), default the literal `'>'`.
    *
-   * ⚠️ 名字容易误解：它**不是"拖动提示文案"**。视觉提示是硬编码的
-   * 「向右拖动滑块完成拼图」；这个 prop 只影响读屏器念什么。
-   * 默认值 `'>'` 作为可读名字并不好 —— 需要无障碍支持时请显式给一个词。
+   * ⚠️ The name is easy to misread: this is **not the "drag hint copy"**. The visual hint is the
+   * hardcoded "Drag the slider to complete the puzzle"; this prop only affects what screen
+   * readers announce. The default `'>'` is a poor accessible name — pass a real word when you
+   * need accessibility support.
    */
   readonly dragLabel?: SliderCaptchaValue<string>
   readonly successDuration?: SliderCaptchaValue<number>
@@ -160,9 +163,10 @@ export type SliderCaptchaValue<T> = T | Signal<T> | (() => T)
 
 const sessionId = createSessionId()
 
-/** 内置刷新图标：span + CSS mask（data URI，currentColor 上色）。
- *  不走 @vobs/ui（captcha 不依赖它），也不用 SVG 命名空间（vobs JSX createElement
- *  为 HTML 命名空间，SVG 不渲染）；空 span 在 SSR 序列化与水合认领下均安全。 */
+/** Built-in refresh icon: span + CSS mask (data URI, colored via currentColor).
+ *  Does not use @vobs/ui (captcha does not depend on it), nor the SVG namespace (vobs JSX
+ *  createElement is HTML-namespace; SVG would not render); an empty span is safe under both
+ *  SSR serialization and hydration claiming. */
 function createDefaultRetryIcon(): VobsNode {
   const icon = createElement('span')
   setAttribute(icon, 'class', 'vobs-captcha__retry-icon')
@@ -333,8 +337,8 @@ function createSliderChallenge(
   setAttribute(handle, 'class', `vobs-slider-captcha__handle${context.status === 'verified' ? ' vobs-slider-captcha__handle--verified' : ''}`)
   setAttribute(handle, 'type', 'button')
   setAttribute(handle, 'role', 'slider')
-  setAttribute(handle, 'aria-label', context.status === 'verified' ? '验证通过' : readValue(props, 'dragLabel', '>'))
-  insertBefore(trackPrompt, createText('向右拖动滑块完成拼图'), null)
+  setAttribute(handle, 'aria-label', context.status === 'verified' ? 'Verified' : readValue(props, 'dragLabel', '>'))
+  insertBefore(trackPrompt, createText('Drag the slider to complete the puzzle'), null)
   insertBefore(handle, handleText, null)
 
   const visualImageStyle = payload.image
@@ -396,25 +400,31 @@ function createSliderChallenge(
   })
 
   /*
-   * 拖拽用 pointer capture —— 这是标准实现，但**有一个必须知道的浏览器语义**
-   * （外部踩坑文档 U 条：「拖拽设 pointer capture 后子元素双击编辑失效」）。
+   * Dragging uses pointer capture — the standard implementation, but with **one browser
+   * semantic you must know about** (external pitfall doc item U: "after a drag sets pointer
+   * capture, double-click editing of child elements stops working").
    *
-   * `setPointerCapture(id)` 之后，该 pointer 的**后续事件全部重定向到捕获元素**，
-   * 子元素收不到 —— 这正是我们想要的（拖动时不管指针移到哪，`pointermove` 都回到这里），
-   * 但同一个机制也会吃掉子元素的 click / dblclick。
+   * After `setPointerCapture(id)`, all **subsequent events of that pointer are retargeted to
+   * the capturing element** and children receive none — exactly what we want (wherever the
+   * pointer goes while dragging, `pointermove` comes back here), but the same mechanism also
+   * swallows the children's click / dblclick.
    *
-   * 在本组件里没问题：`piece` 与 `handle` 上本来就没有需要独立响应的子控件。
-   * **如果你在自己的拖拽里遇到同类问题**（例如可编辑的表格单元格），
-   * 框架侧没有干预 pointer 语义 —— `addEventListener` 只是 `addEventListener`。
-   * 对策在调用方：
-   *   1. 指针按下时判断 `event.target` 是否落在"需要点击/双击的子元素"上，是则**跳过 capture**
-   *   2. 不捕获时把 `pointermove`/`pointerup` 挂到 `window` 上跟踪（避免移出元素就丢事件）
+   * In this component that is fine: `piece` and `handle` have no child controls that need to
+   * respond independently. **If you hit the same problem in your own drag code** (e.g. editable
+   * table cells), the framework does not intervene in pointer semantics — `addEventListener` is
+   * just `addEventListener`. Mitigations belong to the caller:
+   *   1. On pointer-down, check whether `event.target` lands on "a child element that needs
+   *      click/double-click"; if so, **skip capture**
+   *   2. Without capture, track `pointermove`/`pointerup` on `window` (so events are not lost
+   *      when the pointer moves off the element)
    *
-   * 两个容易踩的细节：
-   * - **不需要显式 `releasePointerCapture`**：浏览器在 `pointerup` / `pointercancel` 时
-   *   隐式释放，元素被移出文档时也会释放。多写一次不会错，但漏写**不是**泄漏。
-   * - `setPointerCapture` 在元素**未连接文档**时抛 `NotFoundError`。这里不会碰到
-   *   （`pointerdown` 只可能发生在已挂载的元素上），但自己写时要留意。
+   * Two easily-tripped details:
+   * - **No explicit `releasePointerCapture` needed**: the browser releases implicitly on
+   *   `pointerup` / `pointercancel`, and also when the element is removed from the document.
+   *   Writing it once more is not wrong, but omitting it is **not** a leak.
+   * - `setPointerCapture` throws `NotFoundError` when the element is **not connected to the
+   *   document**. That cannot happen here (`pointerdown` can only fire on a mounted element),
+   *   but watch out when writing your own.
    */
   for (const source of [piece, handle]) {
     addEventListener(source, 'pointerdown', event => {

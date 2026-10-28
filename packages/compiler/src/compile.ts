@@ -15,45 +15,45 @@ import type {
 } from './plugin'
 
 /**
- * 单次编译的全部可变状态。
+ * All mutable state for a single compilation.
  *
- * 每次 `compile` 调用创建**独立实例**并显式穿参（不用模块级变量）——
- * 嵌套调用（如插件内部再编译片段）与并发互不污染，编译器完全可重入。
+ * Every `compile` call creates an **independent instance** passed explicitly (no module-level variables) —
+ * nested calls (e.g. a plugin compiling a snippet) and concurrent calls never pollute each other; the compiler is fully reentrant.
  */
 interface CompileState {
-  /** 临时标识符计数器（_el0、_el1…）。 */
+  /** Counter for temporary identifiers (_el0, _el1, ...). */
   generatedId: number
   filename: string
-  /** 最初解析出的源文件。插件 program 变换后的树节点无法回溯原始位置时，用它兜底取行列。 */
+  /** The initially parsed source file. Fallback for line/column lookups when nodes transformed by a plugin program pass cannot be traced back to their original positions. */
   sourceFile: ts.SourceFile
-  /** 生成语句 → 原始源码位置，用于 source map 生成。 */
+  /** Generated statement → original source position, used for source map generation. */
   statementSources: WeakMap<ts.Statement, SourcePosition>
-  /** 源文件中已声明的绑定名（含嵌套作用域）：注入运行时 import 与生成临时变量时避开命名冲突。 */
+  /** Binding names declared anywhere in the source (including nested scopes): avoids name collisions when injecting runtime imports and generating temporary variables. */
   takenNames: Set<string>
-  /** 运行时 helper 的规范名 → 产物中的引用名（无冲突时与规范名相同）。 */
+  /** Canonical runtime helper name → reference name in the output (identical to the canonical name when there is no conflict). */
   helperAliases: Map<string, string>
-  /** 静态模板声明：HTML → 模块级模板变量，按内容去重，输出在 import 之后。 */
+  /** Static template declarations: HTML → module-level template variables, deduplicated by content, emitted after imports. */
   templates: Map<string, ts.Identifier>
-  /** 是否为组件调用生成源码位置（生产构建传 false 剔除，减小产物体积）。 */
+  /** Whether to emit source locations for component calls (pass false in production builds to strip them and shrink the bundle). */
   sourceLocation: boolean
-  /** 从 @vobs/reactivity / @vobs/vobs 导入的 `state` 别名（含 as 别名），用于 debugName 自动推断。 */
+  /** `state` aliases imported from @vobs/reactivity / @vobs/vobs (including `as` aliases), used for automatic debugName inference. */
   stateAliases: ReadonlySet<string>
-  /** 非 import 的本地声明绑定名：`state` 被本地声明遮蔽时禁用 debugName 推断。 */
+  /** Locally declared (non-import) binding names: disables debugName inference when `state` is shadowed by a local declaration. */
   localBindings: ReadonlySet<string>
-  /** 编译器自身产出的诊断（如不支持的 JSX 形态），与 TypeScript 解析诊断合并返回。 */
+  /** Diagnostics produced by the compiler itself (e.g. unsupported JSX shapes), merged with the TypeScript parse diagnostics in the result. */
   diagnostics: CompilerDiagnostic[]
-  /** HMR 模块标识：提供后模块顶层 state() 声明包装为 hmrStateRef，跨热更新保活信号。 */
+  /** HMR module id: when provided, module-top-level state() declarations are wrapped in hmrStateRef so signals survive hot updates. */
   hmrModuleId: string | null
-  /** 是否把完全静态的 DOM 子树提升为 HTML 模板（createTemplate 依赖 document，SSR/Node 构建必须关闭）。 */
+  /** Whether to hoist fully static DOM subtrees into HTML templates (createTemplate depends on document; must be off for SSR/Node builds). */
   hoistTemplates: boolean
   /**
-   * 当前正在编译的 DOM 子树是否位于 SVG 命名空间内（>0 表示是）。
+   * Whether the DOM subtree currently being compiled sits inside the SVG namespace (>0 means yes).
    *
-   * 标签名只能决定「SVG 专属标签」（svg/g/rect…，运行时按 SVG_TAGS 处理），但
-   * a / title / style / script 与 HTML 同名 —— 在 `<svg>` 里它们必须是 SVG 元素。
-   * 光看名字会把 `<svg><a href="…">` 建成 HTML 锚点（CHANGELOG 自认的已知问题）。
-   * 编译器知道祖先链，所以由它显式告诉运行时用哪个命名空间。
-   * `<foreignObject>` 会把它的子树切回 HTML，所以是「深度」而不是布尔。
+   * Tag names only identify "SVG-exclusive tags" (svg/g/rect..., handled by SVG_TAGS at runtime), but
+   * a / title / style / script share their names with HTML — inside `<svg>` they must be SVG elements.
+   * Judging by name alone would build `<svg><a href="…">` as an HTML anchor (a known issue the CHANGELOG admits to).
+   * The compiler knows the ancestor chain, so it explicitly tells the runtime which namespace to use.
+   * `<foreignObject>` switches its subtree back to HTML, hence a "depth" rather than a boolean.
    */
   svgDepth: number
 }
@@ -83,11 +83,11 @@ export function createCompiler(options: CompilerOptions = {}): VobsCompiler {
 }
 
 /**
- * 把「同一次编译里的全部错误」拼进一条消息。
+ * Combine "all errors from the same compilation" into one message.
  *
- * 原来 compile() / Vite 插件都只取第一条（`find`），于是文件里有 5 处错误时，
- * 开发者要构建 5 次、每次修一处才知道全貌 —— 诊断一次只给一条是最费时间的形态。
- * 主错误保留它的 location / codeFrame，其余以清单附在后面。
+ * Previously compile() and the Vite plugin both took only the first error (`find`), so with 5 errors in a file,
+ * a developer had to build 5 times, fixing one error per build, to see the whole picture — one diagnostic at a time is the most time-wasting shape.
+ * The primary error keeps its location / codeFrame; the rest are appended as a list.
  */
 export function describeDiagnostics(diagnostics: readonly CompilerDiagnostic[]): {
   readonly primary: CompilerDiagnostic
@@ -104,7 +104,7 @@ export function describeDiagnostics(diagnostics: readonly CompilerDiagnostic[]):
   })
   return {
     primary,
-    message: `${primary.message}\n\n同一文件还有 ${errors.length - 1} 处错误：\n${rest.join('\n')}`
+    message: `${primary.message}\n\n${errors.length - 1} more error(s) in the same file:\n${rest.join('\n')}`
   }
 }
 
@@ -175,8 +175,8 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
   }
   for (const plugin of plugins) sourceFile = transformPluginNodes(sourceFile, plugin, context)
 
-  // 顶层条件 return 的诊断必须在**转换前**做：转换后 JSX 已被改写成工厂调用，
-  // 三元表达式与 null 分支的原始形态不再可辨。
+  // Diagnostics for top-level conditional returns must run **before** the transform: afterwards the JSX has been
+  // rewritten into factory calls, and the original shapes of ternaries and null branches are no longer recognizable.
   reportTopLevelConditionalReturn(state)
   reportModuleTopLevelJsx(state)
   reportAsyncEffectCallback(state)
@@ -186,12 +186,12 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
   const statements = sourceFile.statements.map(statement =>
     ts.isImportDeclaration(statement) ? rebuildImport(state, statement) : transformStatement(state, statement, true)
   )
-  // 残留 JSX（主转换未覆盖的早返回/嵌套分支）必须先于 runtime import 与模板声明转换：
-  // 兜底过程会注册新的 helper 别名（如 insertDynamicValue）与 _tpl 模板声明，
-  // 若在其之后才构建 import 与声明，生成的引用将指向未定义的标识符（运行时 ReferenceError）。
+  // Residual JSX (early returns / nested branches missed by the main transform) must be rewritten before the
+  // runtime import and template declarations: the fallback pass registers new helper aliases (e.g.
+  // insertDynamicValue) and _tpl declarations; building the import after that would emit references to undefined identifiers (runtime ReferenceError).
   sourceFile = transformResidualJsx(state, ts.factory.updateSourceFile(sourceFile, statements))
-  // 模板声明必须先于 runtime import 生成：声明里的 createTemplate 依赖
-  // helperRef 注册别名，import 需要在别名全部就绪后再构建。
+  // Template declarations must be generated before the runtime import: createTemplate inside the declarations
+  // relies on helperRef registering aliases, so the import is built only once all aliases exist.
   const templateDeclarations = createTemplateDeclarations(state)
   const resultFile = ts.factory.updateSourceFile(sourceFile, [
     ...createRuntimeImports(state),
@@ -208,21 +208,21 @@ export function compileWithSourceMap(code: string, options: CompileOptions = {})
 }
 
 /**
- * `VOBS_C104`：组件顶层**裸条件 `return`**。
+ * `VOBS_C104`: a **bare conditional `return`** at the top level of a component.
  *
- * 形态是函数体里直接 `return cond ? <JSX/> : null`（或 `cond && <JSX/>`），
- * 而不是把条件放在 JSX 子节点位置。
+ * The shape is `return cond ? <JSX/> : null` (or `cond && <JSX/>`) written directly in the function body,
+ * instead of placing the condition at a JSX child position.
  *
- * 为什么必须报错：组件是 **run-once** 的 —— 函数体只执行一次，`cond` 在挂载那一刻
- * 定死。之后信号变化不会再执行这个 `return`，所以界面**永远不会切换**。
- * 这与「JSX 里 `{cond ? <A/> : <B/>}`」完全不同（后者由编译期生成条件工厂，是响应式的），
- * 而两种写法长得很像，靠人眼区分极难。
+ * Why it must be reported: components are **run-once** — the function body executes once and `cond` is pinned
+ * at mount time. Later signal changes never re-run this `return`, so the UI **never switches**.
+ * This is completely different from `{cond ? <A/> : <B/>}` inside JSX (the latter gets a compiler-generated
+ * conditional factory and is reactive), yet the two look nearly identical and are very hard to tell apart by eye.
  *
- * 更贵的一次事故（Labelune 2026-09-30 发版黑屏）：`return cond ? <JSX/> : null` 的
- * `null` 分支曾被当成 `nodeOwners` 这个 WeakMap 的 key，直接抛
- * `Invalid value used as weak map key`，App 挂载即崩且无崩溃日志。
- * 运行时已修（返回空值时归一化成空注释节点），但**语义仍然是错的** ——
- * 组件不会切换，所以这里在编译期就说清楚。
+ * A costlier incident (Labelune 2026-09-30 release black screen): the `null` branch of `return cond ? <JSX/> : null`
+ * was once used as a WeakMap key in `nodeOwners`, throwing
+ * `Invalid value used as weak map key` — the app crashed on mount with no crash log.
+ * The runtime has been fixed (empty values are normalized into an empty comment node), but the **semantics are still wrong** —
+ * the component never switches — so this rule says it at compile time.
  */
 function reportTopLevelConditionalReturn(state: CompileState): void {
   const sourceFile = state.sourceFile
@@ -234,27 +234,27 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
       || (ts.isIdentifier(node) && node.text === 'undefined')
       || node.kind === ts.SyntaxKind.FalseKeyword)
 
-  /** 该值本身是不是"空"（`null` / `undefined` / `false`）。 */
+  /** Whether the value itself is "empty" (`null` / `undefined` / `false`). */
   const describeEmpty = (node: ts.Expression): string =>
     node.kind === ts.SyntaxKind.NullKeyword ? 'null'
       : node.kind === ts.SyntaxKind.FalseKeyword ? 'false'
         : 'undefined'
 
   /**
-   * 这个表达式是不是**渲染节点**（JSX 元素 / 组件 / fragment）。
+   * Whether this expression is a **render node** (JSX element / component / fragment).
    *
-   * ⚠️ 这条判据**必须收窄到渲染节点** —— 不检查返回值是不是节点的话，纯数据函数的
-   * `return cond && value`、`return x ? x : null` 会被全部当成"组件顶层条件 return"
-   * 报出来。实战反馈：**18 处命中里约 16 处是纯数据函数**
-   * （`T | null` 是正常的空值建模），而这条曾是 **error** —— 直接挡构建。
+   * ⚠️ This test **must be narrowed to render nodes** — without checking that the return value is a node, a pure
+   * data function's `return cond && value` / `return x ? x : null` would all be reported as a "top-level conditional
+   * return in a component". Field feedback: **about 16 of 18 hits were pure data functions**
+   * (`T | null` is normal null modeling), and this rule used to be an **error** — blocking builds outright.
    *
-   * 立论只在"返回值会被渲染"时成立：组件 run-once 导致那个 return 永不重算；
-   * 纯数据函数每次调用都执行，条件 return 完全正常。
+   * The argument only holds when "the return value will be rendered": component run-once means that return never re-evaluates;
+   * a pure data function runs on every call, where conditional returns are perfectly fine.
    *
-   * 判据只认 **JSX 语法**，不认 `createElement(...)` 之类的调用形态：猜一个调用的
-   * 结果是不是节点必然引入新的误报，而"漏报一个 createElement 形态"比"误报一片
-   * 数据函数"代价小得多。静态规则只在**位置类**问题上可靠，这条本质是启发式 ——
-   * 所以它也从 error 降成了 warning（与 C105 同一处理）。
+   * The test only accepts **JSX syntax**, not call shapes like `createElement(...)`: guessing whether a call produces a
+   * node inevitably introduces new false positives, and "missing one createElement shape" costs far less than
+   * "false-positiving a swath of data functions". Static rules are only reliable for **positional** problems; this one is inherently heuristic —
+   * hence it was also downgraded from error to warning (same treatment as C105).
    */
   const isRenderNode = (node: ts.Expression | undefined): boolean =>
     node !== undefined
@@ -266,43 +266,43 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
       code: 'VOBS_C104',
       severity: 'warning',
       message: hasEmpty === null
-        ? '这个条件 return 返回的是渲染节点，而函数体只执行一次：组件是 run-once 的，'
-          + '之后信号变化不会再执行这个 return，界面永远不会切换。'
-        : `这个条件 return 返回的是渲染节点，而且这里会返回 ${hasEmpty} —— `
-          + '函数体只执行一次：组件是 run-once 的，之后信号变化不会再执行这个 return，界面永远不会切换。',
+        ? 'This conditional return returns a render node, and the function body runs only once: the component is run-once, '
+          + 'so later signal changes never re-run this return and the UI never switches.'
+        : `This conditional return returns a render node, and it returns ${hasEmpty} here — `
+          + 'the function body runs only once: the component is run-once, later signal changes never re-run this return, and the UI never switches.',
       location: { file: state.filename, line, column },
       codeFrame,
       /*
-       * fix 文案**不推荐手拼工具类**：`cond ? 'is-on' : 'is-off'` 需要一个**全局**
-       * `.is-off` 工具类，而项目里往往只有组合选择器——照着改会得到
-       * "类名加上了但样式不生效"。`Show` 与 `classList` 都不需要预先存在工具类。
+       * The fix text deliberately does **not** recommend hand-rolled utility classes: `cond ? 'is-on' : 'is-off'` needs a **global**
+       * `.is-off` utility class, while projects usually only have compound selectors — following it verbatim yields
+       * "the class is applied but the styles never take effect". `Show` and `classList` need no pre-existing utility classes.
        */
-      fix: '路由分支用 `<RouterView/>`（声明式处理路由切换）；'
-        + '要保留挂载、只切可见性用 `<Show when={cond}><A/></Show>`；'
-        + "只切类名用 `<A classList={{ 'is-off': !cond }} />`（只贡献自己那部分，不依赖预先存在的工具类）；"
-        + '其它条件渲染把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`，编译期生成响应式条件工厂）。'
-        + '**把三元提到组件顶层 return 处不管用** —— 那里没有 parent/anchor，两支都是 JSX 也一样冻结。'
+      fix: 'Use `<RouterView/>` for route branches (declarative route switching); '
+        + 'to keep the subtree mounted and only toggle visibility, use `<Show when={cond}><A/></Show>`; '
+        + "to toggle only a class name, use `<A classList={{ 'is-off': !cond }} />` (it only contributes its own part and depends on no pre-existing utility class); "
+        + 'for other conditional rendering, put the condition at a JSX child position (`<div>{cond ? <A/> : <B/>}</div>`; the compiler generates a reactive conditional factory). '
+        + '**Hoisting the ternary to the component top-level return does not work** — there is no parent/anchor there; both branches being JSX still freezes.'
     })
   }
 
-  /** 在函数体里找**直接属于该函数**的 return（不下钻嵌套函数/箭头函数）。 */
+  /** Find returns **directly owned by the function** inside its body (does not descend into nested functions/arrow functions). */
   const scanReturn = (node: ts.Node, owner: ts.SignatureDeclaration): void => {
     if (node !== owner && (ts.isFunctionLike(node) || ts.isClassLike(node))) return
     if (ts.isReturnStatement(node) && node.expression) {
       const expression = node.expression
-      // 情况一：`return cond ? <A/> : null`
+      // Case 1: `return cond ? <A/> : null`
       if (ts.isConditionalExpression(expression)) {
         const emptyWhenTrue = isEmptyBranch(expression.whenTrue)
         const emptyWhenFalse = isEmptyBranch(expression.whenFalse)
-        // 收窄：至少一个分支是渲染节点，否则是纯数据函数（`T | null` 建模）
+        // Narrowing: at least one branch must be a render node, otherwise it is a pure data function (`T | null` modeling)
         const rendersANode = isRenderNode(expression.whenTrue) || isRenderNode(expression.whenFalse)
         if ((emptyWhenTrue || emptyWhenFalse) && rendersANode) {
           report(expression, describeEmpty(emptyWhenTrue ? expression.whenTrue : expression.whenFalse))
         }
         return
       }
-      // 情况二：`return cond && <A/>` —— **只有当右侧是渲染节点时**才报
-      // （1.8.0 是无条件报，于是纯数据函数的 `return a && b` 全部误报）
+      // Case 2: `return cond && <A/>` — **only reported when the right side is a render node**
+      // (1.8.0 reported unconditionally, so every `return a && b` in pure data functions false-positived)
       if (ts.isBinaryExpression(expression)
         && expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
         if (isRenderNode(expression.right)) report(expression, 'false')
@@ -321,140 +321,140 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
 }
 
 /**
- * `VOBS_C105`：**模块顶层**的 JSX。
+ * `VOBS_C105`: JSX at the **module top level**.
  *
- * 形态：`const MENU = <KitMenuItem />` 写在模块顶层（不在任何函数体里）。
+ * The shape: `const MENU = <KitMenuItem />` written at module top level (outside any function body).
  *
- * 为什么必须报错：模块顶层表达式在 **import 求值**时就执行，那**早于** `createVobs()`
- * 安装渲染器。于是 JSX 里的 `createElement` 会撞「渲染器未初始化」—— 而报错发生在
- * **运行时**、在某个看起来无关的模块被 import 的时候，堆栈跟真正的原因
- * （"这个常量写错位置了"）隔得很远，排查成本很高。
- * 外部踩坑文档 F 条就是这条（Labelune 的 KitLayout 菜单数组）。
+ * Why it must be reported: module-top-level expressions execute during **import evaluation**, which is **before**
+ * `createVobs()` installs the renderer. So the `createElement` inside the JSX hits "renderer not initialized" — and
+ * the error occurs at **runtime**, while some seemingly unrelated module is being imported, with a stack trace far away
+ * from the real cause ("this constant is written in the wrong place"), making it very expensive to diagnose.
+ * Item F of the external pitfall docs is exactly this one (Labelune's KitLayout menu array).
  */
 /**
- * `VOBS_C106`：把 **async 函数**交给 effect / 生命周期。
+ * `VOBS_C106`: handing an **async function** to effect / lifecycle hooks.
  *
- * ## 为什么这是坑（真实项目 2026-10-02 踩坑 3）
+ * ## Why this is a trap (real project, pitfall 3, 2026-10-02)
  *
- * async 函数在**首个 await 之前**的代码是**同步执行**的，所以在 effect 追踪作用域里
- * 调用它 = effect **亲自**读了那些信号。最典型的命中面是「守卫读 + 状态机写」：
+ * Code in an async function **before the first await** runs **synchronously**, so calling it inside an effect's
+ * tracking scope = the effect itself **personally** reads those signals. The most typical hit surface is "guard read + state-machine write":
  *
  * ```ts
  * effect(async () => {
- *   if (!entSync.value.syncing) return     // ← 读，于是 effect 订阅了 ent.sync
- *   entSync.set({ syncing: true })          // ← 写自己依赖的信号 → 无限重跑
+ *   if (!entSync.value.syncing) return     // ← read, so the effect subscribes to ent.sync
+ *   entSync.set({ syncing: true })          // ← writes a signal it depends on → infinite re-run
  * })
  * ```
  *
- * 另一面：`effect` **不等待**返回的 Promise —— 那个 async 函数之后的代码跑在 effect
- * 追踪作用域**之外**（时机也不确定），于是"清理函数"这类契约也对不上。
+ * The other side: `effect` does **not await** the returned Promise — code after it in that async function runs
+ * **outside** the effect's tracking scope (at an uncertain time too), so contracts like a "cleanup function" also break down.
  *
- * ## 只检测**直接**的 async 回调（这是有意的边界）
+ * ## Only **direct** async callbacks are detected (an intentional boundary)
  *
- * `effect(async () => …)` 这种形态**纯语法**就能看出来（回调节点带 async 修饰符），
- * 零成本、零误报 —— 与 Svelte 5 对 `$effect` 里 `await` 的处理同一思路。
+ * The shape `effect(async () => …)` is visible from **pure syntax** (the callback node carries the async modifier):
+ * zero cost, zero false positives — the same approach as Svelte 5's handling of `await` inside `$effect`.
  *
- * **间接形态检测不了**：`effect(() => { void someAsyncFn() })` 里 `someAsyncFn` 的
- * async-ness 在**另一个模块**，纯 AST 看不出来。要检测它必须引入 `ts.Program` +
- * `TypeChecker` —— 而 Vite 的 transform 是**逐文件**的，那会破坏现有架构并大幅拖慢构建。
- * 这种形态交给**运行时护栏**（VOBS_C210 / C211）—— 它们定位准确，是同行少有的能力。
+ * **Indirect shapes cannot be detected**: in `effect(() => { void someAsyncFn() })`, `someAsyncFn`'s
+ * async-ness lives in **another module**, invisible to a pure AST. Detecting it would require `ts.Program` +
+ * `TypeChecker` — but Vite's transform is **per-file**, so that would break the current architecture and slow builds down considerably.
+ * Such shapes are left to the **runtime guardrails** (VOBS_C210 / C211) — they locate the problem precisely, a rare capability among peers.
  *
- * ## 修法
+ * ## Fixes
  *
- * - 只想声明依赖 → `effect(on(deps, () => { void fn() }))`（`on` 让回调里的读取不订阅）
- * - 只想跑一次副作用 → 逻辑放 `onMount` 里，异步取数用 `@vobs/resource`
- * - 确实要保留这个写法 → `untrack(() => { void fn() })`
+ * - Only want to declare dependencies → `effect(on(deps, () => { void fn() }))` (`on` keeps reads inside the callback from subscribing)
+ * - Only want a one-shot side effect → put the logic in `onMount`; use `@vobs/resource` for async data fetching
+ * - Really need to keep this shape → `untrack(() => { void fn() })`
  */
 /**
- * `VOBS_C107`：**组件体里的 `return` 读了信号**（run-once 冻结）。
+ * `VOBS_C107`: a **`return` in the component body reads a signal** (run-once freezing).
  *
- * ## 为什么需要它（真实项目 2026-10-02 踩坑 4）
+ * ## Why it exists (real project, pitfall 4, 2026-10-02)
  *
- * 组件体只执行一次，所以组件体里任何**读了信号的 `return`** 都只在挂载时求值一次，
- * 之后信号变化**永远不会**重新分支。三种写法**坏得一模一样**（实测编译产物确认）：
+ * The component body runs once, so any **signal-reading `return`** in the body is evaluated exactly once at mount;
+ * later signal changes **never** re-branch. Three shapes break **identically** (confirmed against real compile output):
  *
  * ```ts
- * // ① 根级三元，两支均 JSX
- * return cond.value ? <A/> : <B/>        // → cond.value 求值一次，返回具体节点
- * // ② if 早退式
- * if (cond.value) return <A/>; return <B/>   // → 同样只求值一次
- * // ③ 根级三元，一侧 null/false（C104 也报这个）
+ * // (1) Root-level ternary, both branches JSX
+ * return cond.value ? <A/> : <B/>        // → cond.value evaluated once, a concrete node returned
+ * // (2) Early-return if
+ * if (cond.value) return <A/>; return <B/>   // → likewise evaluated only once
+ * // (3) Root-level ternary with a null/false side (C104 also reports this)
  * return cond.value ? <A/> : null
  * ```
  *
- * 三者的编译产物里**都没有** `insertDynamic` / `createBlock` —— 因为**组件顶层 `return`
- * 处没有 parent/anchor**，而响应式条件渲染需要一个能换内容的位置。返回值**就是**那个节点本身。
+ * None of the three compile outputs contain `insertDynamic` / `createBlock` — because there is **no parent/anchor at
+ * the component's top-level `return`**, and reactive conditional rendering needs a slot where content can be swapped. The return value **is** the node itself.
  *
- * ## 与 C104 的分工
+ * ## Division of labor with C104
  *
- * C104 只认「三元 + 空分支」这个**子集**（它的立论是"返回空值"，判据是空字面量）。
- * 于是它**默许**了 ① 与 ②，而这两者运行时同样是冻结的 —— 这正是踩坑 4 的形态。
- * C104 保留（空分支形态有额外的空值语义），本规则覆盖更宽的真隐患类。
+ * C104 only recognizes the **subset** "ternary + empty branch" (its argument is "returns an empty value"; its test is empty literals).
+ * So it **tolerates** (1) and (2), which are just as frozen at runtime — exactly pitfall 4's shape.
+ * C104 stays (the empty-branch shape carries extra null semantics); this rule covers the wider class of real hazards.
  *
- * ## 关键：**只报 JSX 之外**的读取
+ * ## Key point: **only reads outside JSX** are reported
  *
- * 这两个长得像、后果完全相反：
+ * These two look alike with opposite outcomes:
  *
  * ```ts
- * return cond.value ? <A/> : <B/>              // ❌ 读在 return 表达式层 → 冻结
- * return <div>{cond.value ? <A/> : <B/>}</div> // ✅ 读在 JSX 子节点位置 → 响应式
+ * return cond.value ? <A/> : <B/>              // ❌ read at the return-expression level → frozen
+ * return <div>{cond.value ? <A/> : <B/>}</div> // ✅ read at a JSX child position → reactive
  * ```
  *
- * 子节点位置由编译期生成条件工厂（`insertDynamic`），**是正确写法**。
- * 所以判据是「在 return 表达式里、**且不在任何 JSX 子树内**读到了 `.value`」——
- * 走进 JSX 就停，那里的读取安全。
+ * Child positions get a compiler-generated conditional factory (`insertDynamic`) — **the correct form**.
+ * So the test is "a `.value` read inside the return expression, **and not inside any JSX subtree**" —
+ * the walk stops at JSX; reads there are safe.
  *
- * ## 与 C104 同一取舍
+ * ## Same trade-off as C104
  *
- * 仍是 **warning**（静态判不出"这个函数是不是组件"），仍然只认 **JSX 语法**
- * （`createElement(...)` 之类的调用形态不猜）。真正会坏的东西由运行时护栏兜底。
+ * Still a **warning** (statics cannot tell "is this function a component"), and still only accepts **JSX syntax**
+ * (call shapes like `createElement(...)` are not guessed). What actually breaks is backstopped by the runtime guardrails.
  */
 /**
- * `VOBS_C108`：**JSX 被存进变量**（节点被急切创建）。
+ * `VOBS_C108`: **JSX stored in a variable** (the node is created eagerly).
  *
- * ## 为什么是坑（真实项目崩溃场景）
- *
- * ```ts
- * const node = <ElementVarPicker el={pickerElement.value} />   // ← 组件体，急切创建
- * return open.value ? node : null                              // ← 条件在创建之后
- * ```
- *
- * **组件在变量赋值那一刻就被 `createComponent` 实例化并跑了 body** ——
- * 那时 `pickerElement.value` 可能已经是 `null`，于是组件读 `.content` 崩。
- *
- * 关键区分：**属性表达式不是被编译器提升的**。标准形态
- * `<div>{open.value ? <Picker el={picker.value}/> : null}</div>` 的产物是安全的
- * （`createComponent` 在条件内部、prop 是 getter）。真正的差异是
- * **JSX 被写在了条件外面**。
- *
- * ## 它同时覆盖用户文档里两条"靠纪律"的禁区
- *
- * 这两条**没有任何诊断**，是典型的静默失败：
- * 编译通过、类型通过、运行期偶发崩。
- *
- * 1. 「组件体 run-once 派生节点」—— 组件体只跑一次，这个节点身份被固化
- * 2. 「JSX 存进数据常量」—— `<Picker el={picker.value} />`、`const items = [{icon: <X/>}]`
- *    会进 SSG 序列化（产物出现 `[object Xxx]`）
- *
- * 对 LLM 尤其致命：React 里 `const node = <X/>; return cond ? node : null` **完全合法**，
- * 所以它是模型最容易写出来的形状之一。
- *
- * ## 判据与边界
- *
- * 只报**函数体内**的变量声明，且初始化式里含 JSX；**走进函数就停** ——
- * 因为下面这条是**推荐写法**，必须不报：
+ * ## Why it is a trap (real project crash scenario)
  *
  * ```ts
- * const render = () => <Picker el={picker.value} />   // ✅ 延迟求值，不报
+ * const node = <ElementVarPicker el={pickerElement.value} />   // ← component body, eager creation
+ * return open.value ? node : null                              // ← condition comes after creation
  * ```
  *
- * 模块顶层不归它管（那是 `VOBS_C105` 的地盘，避免同一处报两条）。
+ * **The component is instantiated by `createComponent` and its body runs at the very moment of variable assignment** —
+ * at that point `pickerElement.value` may already be `null`, so the component crashes reading `.content`.
  *
- * ## 严重度：warning
+ * Key distinction: **prop expressions are not hoisted by the compiler**. The standard shape
+ * `<div>{open.value ? <Picker el={picker.value}/> : null}</div>` compiles to safe output
+ * (`createComponent` sits inside the condition; the prop is a getter). The real difference is
+ * **the JSX was written outside the condition**.
  *
- * `const icon = <I/>` 只用一次其实**能跑**（节点只插一次），属于"能跑但脆弱"；
- * 上面那个 `?:` 形态才是真崩。所以不用 error —— **C104 那次的教训：误报会摧毁信任，
- * 而信任一没，之后所有告警都会被无视。**
+ * ## It also covers two "discipline-only" forbidden zones from the user docs
+ *
+ * These two have **no diagnostic at all** — textbook silent failures:
+ * compilation passes, types pass, occasional runtime crashes.
+ *
+ * 1. "run-once derived node in the component body" — the body runs once and that node identity is frozen
+ * 2. "JSX stored in data constants" — `<Picker el={picker.value} />`, `const items = [{icon: <X/>}]`
+ *    end up in SSG serialization (the output contains `[object Xxx]`)
+ *
+ * Especially lethal for LLMs: in React, `const node = <X/>; return cond ? node : null` is **perfectly legal**,
+ * so this is one of the shapes models most easily produce.
+ *
+ * ## Test and boundary
+ *
+ * Only variable declarations **inside function bodies** whose initializer contains JSX are reported; **the walk stops at functions** —
+ * because the following is the **recommended form** and must not be reported:
+ *
+ * ```ts
+ * const render = () => <Picker el={picker.value} />   // ✅ lazy evaluation, not reported
+ * ```
+ *
+ * Module top level is not its business (that is `VOBS_C105`'s territory, avoiding two diagnostics for one spot).
+ *
+ * ## Severity: warning
+ *
+ * `const icon = <I/>` used once actually **works** (the node is inserted once) — it is "works but fragile";
+ * the `?:` shape above is the real crash. Hence not an error — **the lesson from the C104 episode: false positives destroy trust,
+ * and once trust is gone, every later warning gets ignored.**
  */
 function reportEagerJsxInVariable(state: CompileState): void {
   const sourceFile = state.sourceFile
@@ -465,44 +465,44 @@ function reportEagerJsxInVariable(state: CompileState): void {
     state.diagnostics.push({
       code: 'VOBS_C108',
       severity: 'warning',
-      message: 'JSX 被存进了变量，所以这个节点在**这一行就被创建了** —— '
-        + '之后的条件判断、复用都发生在创建之后。组件是 run-once 的，'
-        + '节点身份会被固化；如果这时读到的状态还是空的（如 `el` 为 null），'
-        + '组件会在带空值的情况下渲染并崩。',
+      message: 'The JSX is stored in a variable, so this node is created **on this very line** — '
+        + 'any later conditionals or reuse happen after creation. The component is run-once, '
+        + 'so the node identity is frozen; if the state read at this point is still empty (e.g. `el` is null), '
+        + 'the component renders with the empty value and crashes.',
       location: { file: state.filename, line, column },
       codeFrame,
       /*
-       * fix 必须**按使用位置分情况** —— 第一版只说了"写到使用位置"，实测发现
-       * 那**只对 JSX 子节点位置成立**：
+       * The fix must be **branched by usage site** — the first version only said "write it at the usage site", and
+       * testing showed that **only holds for JSX child positions**:
        *
-       *   用在 JSX 子位置   → 产物有 insertDynamic，真的响应式，零诊断 ✅
-       *   用在组件顶层 return → 产物**没有** insertDynamic，仍然冻结，
-       *                        而且会同时命中 C104 + C107 ❌
+       *   Used at a JSX child position → output has insertDynamic, genuinely reactive, zero diagnostics ✅
+       *   Used at the component top-level return → output has **no** insertDynamic, still frozen,
+       *                        and it hits both C104 + C107 ❌
        *
-       * 顶层 return 处没有 parent/anchor，条件不会被编译成响应式 —— 所以那里
-       * 该用 Show / RouterView，不是三元。照第一版建议改的人会从"运行时崩"
-       * 变成"界面不切换"，**更隐蔽**。
+       * The top-level return has no parent/anchor, so the condition is not compiled into anything reactive —
+       * there one should use Show / RouterView, not a ternary. Following the first version's advice turns "crashes at runtime"
+       * into "the UI never switches", which is **more insidious**.
        */
-      fix: '① 若它用在 **JSX 子节点位置**：把 JSX 直接写在那里 —— '
-        + '`<div>{open.value ? <Picker el={picker.value}/> : null}</div>`'
-        + '（编译期生成响应式条件工厂，条件为假时组件根本不会被创建）。'
-        + '② 若它用在**组件顶层 `return`**：**别改成三元** —— 那里没有 parent/anchor，'
-        + '两支都是 JSX 也一样冻结（会命中 C107）。改用 `<Show when={open.value}>` '
-        + '或路由场景用 `<RouterView/>`。'
-        + '③ 要复用就用**返回节点的函数**：'
-        + '`const renderPicker = () => <Picker el={picker.value}/>`（延迟求值，本规则不报）。'
-        + '④ **JSX 也别存进数据常量**（数组/对象里的节点会进 SSG 序列化）。'
-        + '⑤ **组件有值得保留的内部状态时**（输入内容、滚动位置、画布现场）：'
-        + '常驻挂载 + 把状态对象传进去、**组件内部判空** —— 这样既不崩，也不会因条件翻转'
-        + '而销毁重建（① 虽然修了崩溃，但每次翻转都会重建子树，'
-        + '等于把"崩"换成"状态丢失"，而那是另一个已记录的坑）。代价是组件内部要判空。'
+      fix: '(1) If it is used at a **JSX child position**: write the JSX directly there — '
+        + '`<div>{open.value ? <Picker el={picker.value}/> : null}</div>` '
+        + '(the compiler generates a reactive conditional factory; when the condition is false the component is never created). '
+        + '(2) If it is used at the **component top-level `return`**: **do not turn it into a ternary** — there is no parent/anchor there, '
+        + 'and both branches being JSX still freezes (it would hit C107). Use `<Show when={open.value}>` instead, '
+        + 'or `<RouterView/>` for route scenarios. '
+        + '(3) To reuse, use a **function that returns the node**: '
+        + '`const renderPicker = () => <Picker el={picker.value}/>` (lazy evaluation; this rule does not report it). '
+        + '(4) **Do not store JSX in data constants either** (nodes inside arrays/objects end up in SSG serialization). '
+        + '(5) **When the component has internal state worth keeping** (input content, scroll position, canvas state): '
+        + 'keep it permanently mounted, pass the state object in, and **null-check inside the component** — this neither crashes nor destroys and recreates '
+        + 'the subtree on condition flips ((1) fixes the crash, but every flip rebuilds the subtree, '
+        + 'trading "crash" for "lost state" — another documented pitfall). The cost is a null check inside the component.'
     })
   }
 
   /**
-   * 初始化式里是否有**急切创建**的 JSX。
+   * Whether the initializer contains **eagerly created** JSX.
    *
-   * **走进函数体就停** —— `() => <X/>` 是延迟求值，是推荐的替代写法。
+   * **The walk stops at function bodies** — `() => <X/>` is lazy evaluation, the recommended alternative.
    */
   const hasEagerJsx = (root: ts.Node): boolean => {
     let found = false
@@ -512,7 +512,7 @@ function reportEagerJsxInVariable(state: CompileState): void {
         found = true
         return
       }
-      // 函数体内的 JSX 不是急切的
+      // JSX inside a function body is not eager
       if (ts.isFunctionLike(node)) return
       ts.forEachChild(node, walk)
     }
@@ -520,14 +520,14 @@ function reportEagerJsxInVariable(state: CompileState): void {
     return found
   }
 
-  /** `inFunction` 为真时才算"函数体内"—— 模块顶层留给 C105。 */
+  /** Only counts as "inside a function body" when `inFunction` is true — module top level is left to C105. */
   const walk = (node: ts.Node, inFunction: boolean): void => {
     if (inFunction && ts.isVariableStatement(node)) {
       for (const declaration of node.declarationList.declarations) {
         if (declaration.initializer && hasEagerJsx(declaration.initializer)) report(declaration.initializer)
       }
     }
-    // 进入函数之后，其内部所有语句都算"函数体内"
+    // Once inside a function, all of its statements count as "inside a function body"
     const nextInFunction = inFunction || ts.isFunctionLike(node)
     ts.forEachChild(node, child => { walk(child, nextInFunction) })
   }
@@ -544,31 +544,31 @@ function reportFrozenReactiveReturn(state: CompileState): void {
       code: 'VOBS_C107',
       severity: 'warning',
       message: emptyGuard
-        ? '这个**空值守卫**（`if (信号) return null`）在组件体里固化了 —— 函数体只执行一次，'
-          + '挂载后信号恢复也不会重新分支：界面永远停在首次走到的那个分支（空白、或首次的内容）。'
-          + '顶层 return 处没有 parent/anchor，任何据此 return 的分支都只求值一次。'
-        : '这里在**组件体**里读了信号并据此 `return` 节点。组件体只执行一次，'
-        + '所以这个分支在挂载时就被固化，之后信号变化不会再切换 —— 编译期合法、运行期冻结。',
+        ? 'This **empty-value guard** (`if (signal) return null`) is frozen inside the component body — the function body runs only once, '
+          + 'so even after the signal recovers post-mount it never re-branches: the UI stays on whichever branch it took first (blank, or the first content). '
+          + 'The top-level return has no parent/anchor; any branch returned from here is evaluated only once.'
+        : 'This reads a signal in the **component body** and returns a node based on it. The component body runs only once, '
+        + 'so this branch is frozen at mount and later signal changes never switch it — legal at compile time, frozen at runtime.',
       location: { file: state.filename, line, column },
       codeFrame,
       fix: emptyGuard
-        ? '把守卫下放进 JSX 子节点位置：`return <div>{loading.value ? null : content}</div>`；'
-          + '要保留挂载、只切可见性用 `<Show when={!loading.value} fallback={null}><Content/></Show>`。'
-          + '组件顶层 return 处没有 parent/anchor —— 提前 return（无论 null 还是 JSX）都只求值一次。'
-        : '路由分支用 `<RouterView/>`（它内部用 insertDynamic + resetKey，声明式处理）；'
-          + '其它条件渲染把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`），'
-          + '或用 `<Show when={cond}>` 保留挂载只切可见性。'
-          + '**注意：把三元提到组件顶层 return 处不管用** —— 那里没有 parent/anchor，'
-          + '两支都是 JSX 也一样冻结。'
+        ? 'Move the guard down into a JSX child position: `return <div>{loading.value ? null : content}</div>`; '
+          + 'to keep the subtree mounted and only toggle visibility, use `<Show when={!loading.value} fallback={null}><Content/></Show>`. '
+          + 'The component top-level return has no parent/anchor — an early return (null or JSX alike) is evaluated only once.'
+        : 'Use `<RouterView/>` for route branches (it uses insertDynamic + resetKey internally, handled declaratively); '
+          + 'for other conditional rendering put the condition at a JSX child position (`<div>{cond ? <A/> : <B/>}</div>`), '
+          + 'or use `<Show when={cond}>` to keep the subtree mounted and only toggle visibility. '
+          + '**Note: hoisting the ternary to the component top-level return does not work** — there is no parent/anchor there, '
+          + 'and both branches being JSX still freezes.'
     })
   }
 
-  /** 该子树的 JSX 里是否出现 `.value`（或 `['value']`）读取；**走进 JSX 就停**。 */
+  /** Whether this subtree reads `.value` (or `['value']`) outside JSX; **the walk stops at JSX**. */
   const readsReactiveValueOutsideJsx = (root: ts.Node): boolean => {
     let found = false
     const walk = (node: ts.Node): void => {
       if (found) return
-      // 走进 JSX 就停：子节点/属性位置的读取由编译期生成条件工厂，是安全的
+      // Stop at JSX: reads at child/attribute positions get compiler-generated conditional factories and are safe
       if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) return
       if (ts.isPropertyAccessExpression(node) && node.name.text === 'value') { found = true; return }
       if (ts.isElementAccessExpression(node)
@@ -581,7 +581,7 @@ function reportFrozenReactiveReturn(state: CompileState): void {
     return found
   }
 
-  /** 该表达式里是否**含 JSX**（产出节点的信号，与 C104 同一判据）。 */
+  /** Whether the expression **contains JSX** (a signal that produces nodes; same test as C104). */
   const containsJsx = (root: ts.Node): boolean => {
     let found = false
     const walk = (node: ts.Node): void => {
@@ -593,7 +593,7 @@ function reportFrozenReactiveReturn(state: CompileState): void {
     return found
   }
 
-  /** `if` 的某个分支里有没有 `return <JSX/>`（只找直属的，不下钻嵌套函数）。 */
+  /** Whether some branch of the `if` contains `return <JSX/>` (direct children only; does not descend into nested functions). */
   const branchReturnsNode = (statement: ts.Node): boolean => {
     let found = false
     const walk = (node: ts.Node): void => {
@@ -606,7 +606,7 @@ function reportFrozenReactiveReturn(state: CompileState): void {
     return found
   }
 
-  /** 分支里有没有**空守卫 return**（`return null` / `undefined` / `false` / 裸 `return`；不下钻嵌套函数）。 */
+  /** Whether a branch contains an **empty-guard return** (`return null` / `undefined` / `false` / bare `return`; does not descend into nested functions). */
   const branchReturnsEmpty = (statement: ts.Node): boolean => {
     let found = false
     const walk = (node: ts.Node): void => {
@@ -627,12 +627,12 @@ function reportFrozenReactiveReturn(state: CompileState): void {
   }
 
   /**
-   * 从 `if` 向上找最近的函数宿主：它体内是否存在**含 JSX 的 return**。
+   * From the `if`, walk up to the nearest function host: does its body contain a **JSX-returning return**.
    *
-   * 这是空守卫判据的**函数级收窄**：`if (信号) return null` 在纯数据函数里只是
-   * 普通的空值建模（`T | null`），不渲染就谈不上冻结 —— 只有「函数里另有 JSX return」
-   * （即它确实是渲染函数）才可能把组件固化在空分支上。这个收窄把最大的一类误报面
-   * （数据函数的空守卫）整个排除，剩余误报面与情况二完全同构（跨文件渲染 helper）。
+   * This is the **function-level narrowing** of the empty-guard test: `if (signal) return null` inside a pure data
+   * function is just ordinary null modeling (`T | null`); without rendering there is no freezing — only "the function
+   * also has a JSX return elsewhere" (i.e. it really is a render function) can freeze a component on an empty branch. This
+   * narrowing eliminates the largest false-positive class entirely (empty guards in data functions); the remaining surface is isomorphic to Case 2 (cross-file render helpers).
    */
   const hostFunctionHasJsxReturn = (from: ts.Node): boolean => {
     let current: ts.Node = from
@@ -656,17 +656,17 @@ function reportFrozenReactiveReturn(state: CompileState): void {
   }
 
   const visit = (node: ts.Node): void => {
-    // 情况一：`return <读了信号的表达式>`
+    // Case 1: `return <a signal-reading expression>`
     if (ts.isReturnStatement(node) && node.expression) {
       const expression = node.expression
       if (containsJsx(expression) && readsReactiveValueOutsideJsx(expression)) {
         if (!isJsxOnlyCaller(node)) report(expression, false)
       }
     }
-    // 情况二：`if (<读了信号>) return <JSX/>` —— 读取在 if 的 test 上，不在 return 表达式里
-    // 情况三（2026-10-28，silent-failures 最后一条静默收编）：`if (<读了信号>) return null`
-    //   —— return null 不含 JSX，情况二抓不到。收窄：宿主函数体内另有 JSX return
-    //   （渲染函数）才报，纯数据函数的空守卫不报；豁免沿用 isJsxOnlyCaller。
+    // Case 2: `if (<signal read>) return <JSX/>` — the read sits on the if's test, not in the return expression
+    // Case 3 (2026-10-28, the last silent failure absorbed from silent-failures): `if (<signal read>) return null`
+    //   — return null has no JSX, so Case 2 cannot catch it. Narrowing: only report when the host function body
+    //   also has a JSX return (a render function); empty guards in pure data functions are not reported; the exemption reuses isJsxOnlyCaller.
     if (ts.isIfStatement(node) && readsReactiveValueOutsideJsx(node.expression)) {
       const returnsNode = branchReturnsNode(node.thenStatement)
         || (node.elseStatement !== undefined && branchReturnsNode(node.elseStatement))
@@ -681,24 +681,24 @@ function reportFrozenReactiveReturn(state: CompileState): void {
   ts.forEachChild(sourceFile, visit)
 
   /**
-   * 豁免判断：被标记的分支若是包在一个**有名函数**里、且该名字在全文件的调用点
-   * **全部**位于 JSX 子树内（求值发生在 JSX 的响应式作用域里，会随信号重算），则不报。
+   * Exemption check: if the flagged branch is wrapped in a **named function** and every call site of that name
+   * in the whole file sits **entirely** inside JSX subtrees (evaluation happens in JSX's reactive scope and re-runs with the signals), do not report.
    *
-   * 动机（真实项目 2026-10-12）：账号页订阅分区的 `groupCards()`——组件体里定义
-   * `const groupCards = () => { if (planGroup.value) return <卡组A/>; … }`，
-   * 唯一调用点在 JSX 子节点位置 `{groupCards()}`。分支求值发生在响应式作用域内，
-   * 切页签正常重算 —— 不冻结，但命中了本规则（编译器只做函数内匹配，看不见调用点）。
+   * Motivation (real project, 2026-10-12): the accounts page's subscription section `groupCards()` — defined in the component body as
+   * `const groupCards = () => { if (planGroup.value) return <GroupA/>; … }`,
+   * with its only call site at a JSX child position `{groupCards()}`. Branch evaluation happens inside the reactive scope and
+   * re-runs normally on tab switches — not frozen, yet it hit this rule (the compiler only matches within the function and cannot see call sites).
    *
-   * 保守边界（宁可误报不可漏报 —— 漏报 = 冻结 bug 静默上线）：
-   * - 匿名函数（内联回调、方法链中间态）拿不到名字 → 照报
-   * - 全文件**找不到任何调用点**（组件本身、仅被当作值传递、跨文件使用）→ 照报
-   * - 存在**任何一个**非 JSX 上下文的调用点（组件体同步调用、effect 回调、
-   *   JSX 内嵌套函数里的调用——那种调用发生在事件期而非 JSX 求值期）→ 照报
-   * - 同名函数多处定义时不做作用域区分：按文件级名字收集，任何一处危险调用
-   *   都会让所有同名函数照报（方向安全，只可能"多报"不可能"漏报"）
+   * Conservative boundary (prefer false positives over misses — a miss = a frozen bug shipping silently):
+   * - Anonymous functions (inline callbacks, mid-chain states) have no name → report anyway
+   * - **No call site found anywhere in the file** (the component itself, passed around as a value, used cross-file) → report anyway
+   * - **Any single** call site in a non-JSX context (a synchronous call in a component body, an effect callback,
+   *   a call inside a nested function within JSX — those run during events, not during JSX evaluation) → report anyway
+   * - Same-named functions defined in multiple places are not scope-distinguished: collected by file-level name, so any one
+   *   dangerous call makes all same-named functions report (safe direction: can only "over-report", never "miss")
    */
   function isJsxOnlyCaller(node: ts.Node): boolean {
-    // 最近一层函数宿主的声明名：`const x = () => {}` / `function x() {}` / 类方法
+    // The declaration name of the nearest function host: `const x = () => {}` / `function x() {}` / class method
     let current: ts.Node = node
     let name: string | null = null
     while (current.parent !== undefined && current !== sourceFile) {
@@ -719,8 +719,8 @@ function reportFrozenReactiveReturn(state: CompileState): void {
     }
     if (name === null) return false
 
-    // 全文件收集对该名字的调用点并分类。调用点上下文 = 从调用处向上遇到的第一道边界：
-    // JSX 节点（属性/子节点都在绑定 effect / getter 里求值）→ 安全；函数/类边界 → 其它
+    // Collect call sites of that name across the file and classify them. Call-site context = the first boundary
+    // encountered walking up from the call: a JSX node (attributes/children evaluate inside bound effects / getters) → safe; a function/class boundary → anything else
     let sawCall = false
     let dangerous = false
     const isJsxKind = (n: ts.Node): boolean =>
@@ -735,7 +735,7 @@ function reportFrozenReactiveReturn(state: CompileState): void {
           || (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name) && callee.name.text === name)
         if (matches) {
           sawCall = true
-          // 从调用点向上找第一道边界：先遇 JSX → 求值在响应式作用域；先遇函数/类 → 同步调用
+          // Walk up from the call site to the first boundary: JSX first → evaluation in a reactive scope; function/class first → synchronous call
           let up: ts.Node = n
           while (up.parent !== undefined && up !== sourceFile) {
             if (isJsxKind(up.parent)) break
@@ -756,7 +756,7 @@ function reportAsyncEffectCallback(state: CompileState): void {
   const sourceFile = state.sourceFile
   if (!sourceFile) return
 
-  /** 这些 API 的第一个参数是"在追踪作用域里同步执行"的回调。 */
+  /** The first argument of these APIs is a callback that "runs synchronously inside the tracking scope". */
   const TRACKED_CALLBACK_APIS = new Set(['effect', 'renderEffect', 'memo', 'on', 'onMount'])
 
   const report = (target: ts.Node): void => {
@@ -764,14 +764,14 @@ function reportAsyncEffectCallback(state: CompileState): void {
     state.diagnostics.push({
       code: 'VOBS_C106',
       severity: 'warning',
-      message: '这个回调是 async 的，但它会在**追踪作用域内同步执行到首个 await** —— '
-        + '那之前的守卫读与状态机写都算作本 effect 的依赖，极易造成自订阅与无限重跑。'
-        + '而且 effect 不会等待返回的 Promise，其后的代码与清理契约都对不上。',
+      message: 'This callback is async, yet it runs **synchronously inside the tracking scope up to the first await** — '
+        + 'guard reads and state-machine writes before that point all count as dependencies of this effect, easily causing self-subscription and infinite re-runs. '
+        + 'Moreover the effect never awaits the returned Promise, so later code and cleanup contracts misalign.',
       location: { file: state.filename, line, column },
       codeFrame,
-      fix: '只想声明依赖用 effect(on(deps, () => { void fn() }))；'
-        + '只想跑一次副作用放 onMount 里，异步取数用 @vobs/resource；'
-        + '确实要保留就显式包一层 untrack(() => { void fn() })。'
+      fix: 'To only declare dependencies, use effect(on(deps, () => { void fn() })); '
+        + 'for a one-shot side effect use onMount, and @vobs/resource for async data fetching; '
+        + 'if you really must keep this shape, wrap it explicitly in untrack(() => { void fn() }).'
     })
   }
 
@@ -780,7 +780,7 @@ function reportAsyncEffectCallback(state: CompileState): void {
       if (TRACKED_CALLBACK_APIS.has(node.expression.text)) {
         const first = node.arguments[0]
         if (first && (ts.isArrowFunction(first) || ts.isFunctionExpression(first))) {
-          // 只认直接写在参数位置的 async 回调；间接调用看不出来（见上面的注释）
+          // Only async callbacks written directly in the argument position; indirect calls are invisible (see the comment above)
           if (first.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)) report(first)
         }
       }
@@ -799,16 +799,16 @@ function reportModuleTopLevelJsx(state: CompileState): void {
     state.diagnostics.push({
       code: 'VOBS_C105',
       severity: 'warning',
-      message: '模块顶层的 JSX 会在 import 求值时执行，那早于 createVobs() 安装渲染器，'
-        + '运行时会报「渲染器未初始化」—— 而且堆栈指向 import 它的地方，与真正原因离得很远。',
+      message: 'JSX at the module top level executes during import evaluation, before createVobs() installs the renderer, '
+        + 'so the runtime reports "renderer not initialized" — and the stack points at the importing site, far from the real cause.',
       location: { file: state.filename, line, column },
       codeFrame,
-      fix: '把这段 JSX 移进组件体；需要「数据 + 节点」的常量请改用返回节点的函数'
-        + '（`const menu = () => [<Item/>]`），或在渲染时用 getter 求值。'
+      fix: 'Move this JSX into a component body; for constants that need "data + nodes", switch to a function that returns nodes '
+        + '(`const menu = () => [<Item/>]`), or evaluate via a getter at render time.'
     })
   }
 
-  /** 在「顶层求值会立即执行」的子树里找 JSX；遇到函数/类就停（那是延迟求值）。 */
+  /** Find JSX inside subtrees that "execute immediately at top-level evaluation"; stop at functions/classes (those are lazy). */
   const scan = (node: ts.Node): void => {
     if (ts.isFunctionLike(node) || ts.isClassLike(node)) return
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) {
@@ -842,15 +842,15 @@ function toCompilerDiagnostic(
   }
 }
 
-/** 制表符展开宽度：只为让 codeFrame 里的 ^ 对齐，不改动源码本身。 */
+/** Tab expansion width: only to align the ^ in codeFrames; the source itself is never modified. */
 const CODE_FRAME_TAB_WIDTH = 4
 
 /**
- * 插入符要按**显示宽度**定位，不是字符数。
+ * The caret must be positioned by **display width**, not character count.
  *
- * `lineText` 里的 tab 在终端里占多列，而原来按字符数 `' '.repeat(character)` 补位，
- * 带缩进的代码（用 tab 缩进的仓库很常见）会把 `^` 指到右边好几列之外 —— 诊断里最关键的
- * 那个定位就废了。展开 tab 并同步计数即可。
+ * Tabs in `lineText` occupy several columns in a terminal, while the old code padded by character count with `' '.repeat(character)`:
+ * for tab-indented code (very common in repositories) the `^` would land several columns too far right, ruining the single
+ * most important thing in a diagnostic: the position. Expanding tabs and counting in step fixes it.
  */
 function displayWidthOf(text: string, end: number): number {
   let width = 0
@@ -886,30 +886,30 @@ function buildCodeFrame(
 }
 
 /**
- * 不支持的 JSX 标签形态（成员表达式 `<Foo.Bar>`、命名空间 `<svg:rect>` 等）。
- * 诊断以 error 级返回，compile() 与 Vite 插件会直接失败，不再静默产出无效 DOM 标签。
+ * Unsupported JSX tag shapes (member expressions `<Foo.Bar>`, namespaces `<svg:rect>`, etc.).
+ * The diagnostic is returned with error severity, so compile() and the Vite plugin fail outright instead of silently emitting invalid DOM tags.
  */
 function reportUnsupportedTag(state: CompileState, tagName: ts.JsxTagNameExpression): void {
   const sourceFile = tagName.getSourceFile() ?? state.sourceFile
   if (!sourceFile) return
   const label = tagName.getText()
-  const kindNote = tagName.kind === ts.SyntaxKind.JsxNamespacedName ? '（JSX 命名空间标签）' : ''
+  const kindNote = tagName.kind === ts.SyntaxKind.JsxNamespacedName ? ' (a JSX namespaced tag)' : ''
   const { line, column, codeFrame } = buildCodeFrame(sourceFile, tagName.getStart(sourceFile), tagName.getWidth(sourceFile))
   state.diagnostics.push({
     code: 'VOBS_C101',
     severity: 'error',
-    message: `不支持的 JSX 标签形态：<${label}>${kindNote}。组件必须是大写开头的标识符，DOM 元素必须是小写标签名。`,
+    message: `Unsupported JSX tag shape: <${label}>${kindNote}. Components must be identifiers starting with an uppercase letter; DOM elements must use lowercase tag names.`,
     location: { file: state.filename, line, column },
     codeFrame,
-    fix: `把 <${label}> 改为 <Component /> 形式的组件或小写 DOM 标签；Fragment 请使用 <Fragment> 或 <>...</>。`
+    fix: `Change <${label}> to a component in the <Component /> form or a lowercase DOM tag; use <Fragment> or <>...</> for fragments.`
   })
 }
 
 /**
- * `on*` 属性名的诊断。
+ * Diagnostics for `on*` attribute names.
  *
- * 只在**不可能是对**的情况下报 error；能工作与自定义事件都只报警告 ——
- * 目的不是拦人，而是把「绑到不存在的事件上、回调永不触发且毫无声音」这件事说出来。
+ * error is only reported when the name **cannot possibly be right**; working names and custom events only get warnings —
+ * the goal is not to block anyone but to surface "bound to a nonexistent event, the callback never fires, and nothing ever says a word".
  */
 function reportEventName(state: CompileState, attribute: ts.JsxAttribute, name: string): void {
   const resolved = resolveEventNameForDiagnostics(name)
@@ -923,20 +923,20 @@ function reportEventName(state: CompileState, attribute: ts.JsxAttribute, name: 
   let fix: string
 
   if (!camelCase && !known) {
-    // once → "ce"：既不符合驼峰约定，又不是任何已知事件 —— 一定是写错了属性名
+    // once → "ce": neither matches the camelCase convention nor any known event — the attribute name is definitely wrong
     severity = 'error'
-    message = `"${name}" 被当成事件处理器，绑到的事件名是 "${eventName}"：既不符合 on + 大写字母的约定，也不是已知的 DOM 事件。回调永远不会触发，而且不会有任何报错。`
-    fix = `事件处理器写成 on + 大写字母开头（如 onClick / onDoubleClick）；若这本来不是事件处理器，请换个属性名，或在 effect 里用 addEventListener 显式绑定。`
+    message = `"${name}" is treated as an event handler bound to the event name "${eventName}": it matches neither the on + uppercase-letter convention nor any known DOM event. The callback will never fire, and nothing will ever report an error.`
+    fix = `Write event handlers as on + an uppercase letter (e.g. onClick / onDoubleClick); if this was never meant to be an event handler, rename the attribute, or bind explicitly with addEventListener inside an effect.`
   } else if (!camelCase) {
-    // onclick → "click"：能工作，但不是约定写法
+    // onclick → "click": works, but is not the conventional form
     severity = 'warning'
-    message = `"${name}" 能工作（绑到 "${eventName}"），但事件属性按约定要写成 on + 大写字母开头。小写形式只是碰巧对得上，换个名字就会静默失效（"once" 会绑到 "ce"）。`
-    fix = `改成 on${name.slice(2, 3).toUpperCase()}${name.slice(3)}。`
+    message = `"${name}" works (bound to "${eventName}"), but event attributes conventionally start with on + an uppercase letter. The lowercase form only happens to match; rename it and it silently stops working ("once" would bind to "ce").`
+    fix = `Change it to on${name.slice(2, 3).toUpperCase()}${name.slice(3)}.`
   } else if (!known) {
-    // onFoo → "foo"：可能是自定义事件，也可能是拼错
+    // onFoo → "foo": could be a custom event, or a typo
     severity = 'warning'
-    message = `"${name}" 绑到的事件名 "${eventName}" 不是已知的 DOM 事件。若是自定义事件（dispatchEvent）可以忽略；若是拼写错误，回调不会触发且不会有任何报错。`
-    fix = `确认事件名拼写，或确认 "${eventName}" 确实由你的代码 dispatchEvent 出来。`
+    message = `"${name}" is bound to the event name "${eventName}", which is not a known DOM event. Ignore it if it is a custom event (dispatchEvent); if it is a typo, the callback will never fire and nothing will report an error.`
+    fix = `Verify the event name spelling, or confirm that "${eventName}" really is dispatched by your own code.`
   } else {
     return
   }
@@ -1096,8 +1096,8 @@ function encodeVlq(value: number): string {
 function validatePlugins(plugins: readonly CompilerPlugin[]): void {
   const names = new Set<string>()
   for (const plugin of plugins) {
-    if (!plugin.name) throw new VobsError({ code: 'VOBS_C007', layer: 'compiler', message: '编译器插件必须提供 name', fix: '为插件添加稳定且唯一的 name。' })
-    if (names.has(plugin.name)) throw new VobsError({ code: 'VOBS_C007', layer: 'compiler', message: `检测到重复插件: ${plugin.name}`, fix: '为每个编译器插件使用唯一的 name。' })
+    if (!plugin.name) throw new VobsError({ code: 'VOBS_C007', layer: 'compiler', message: 'Compiler plugins must provide a name', fix: 'Add a stable, unique name to the plugin.' })
+    if (names.has(plugin.name)) throw new VobsError({ code: 'VOBS_C007', layer: 'compiler', message: `Duplicate plugin detected: ${plugin.name}`, fix: 'Use a unique name for each compiler plugin.' })
     names.add(plugin.name)
   }
 }
@@ -1143,7 +1143,7 @@ function collectDeclaredNames(sourceFile: ts.SourceFile): Set<string> {
   return names
 }
 
-/** 收集从 @vobs/reactivity / @vobs/vobs 导入的 `state` 绑定名（含 `as` 别名）。 */
+/** Collect `state` binding names imported from @vobs/reactivity / @vobs/vobs (including `as` aliases). */
 function collectStateAliases(sourceFile: ts.SourceFile): Set<string> {
   const aliases = new Set<string>()
   for (const statement of sourceFile.statements) {
@@ -1161,7 +1161,7 @@ function collectStateAliases(sourceFile: ts.SourceFile): Set<string> {
   return aliases
 }
 
-/** 与 collectDeclaredNames 相同，但跳过 import 声明：用于判断 helper 名是否被本地声明遮蔽。 */
+/** Same as collectDeclaredNames but skips import declarations: used to tell whether a helper name is shadowed by a local declaration. */
 function collectLocallyDeclaredNames(sourceFile: ts.SourceFile): Set<string> {
   const names = new Set<string>()
   const visit = (node: ts.Node): void => {
@@ -1173,11 +1173,11 @@ function collectLocallyDeclaredNames(sourceFile: ts.SourceFile): Set<string> {
   return names
 }
 
-/** 标识符是否为某个声明的绑定名（import、变量、函数、参数、类成员等）。 */
+/** Whether the identifier is the binding name of some declaration (import, variable, function, parameter, class member, etc.). */
 function isBindingName(node: ts.Identifier): boolean {
   const parent = node.parent
   if (!parent) return false
-  // 属性访问（document.createElement）与 JSX 属性名不是绑定名
+  // Property accesses (document.createElement) and JSX attribute names are not binding names
   if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false
   if (ts.isQualifiedName(parent) && parent.right === node) return false
   if (ts.isJsxAttribute(parent)) return false
@@ -1277,7 +1277,7 @@ function transformVariableStatement(state: CompileState, node: ts.VariableStatem
     if (containsJsx(nextInitializer)) {
       nextInitializer = transformEmbeddedExpression(state, nextInitializer)
     } else if (moduleScope && state.hmrModuleId !== null) {
-      // HMR 状态保鲜仅限模块顶层：函数内局部 state 每次调用都应创建新信号
+      // HMR state preservation applies only at module top level: function-local state should create a fresh signal on every call
       nextInitializer = wrapStateWithHmrRef(state, declaration, nextInitializer) ?? nextInitializer
     }
     if (nextInitializer === initializer) return declaration
@@ -1302,10 +1302,10 @@ function transformVariableStatement(state: CompileState, node: ts.VariableStatem
 }
 
 /**
- * `const name = state(initial)` 在未显式传入 debugName 时从变量名推断：
- * `const username = state('')` → `state('', 'username')`，使 DevTools 信号名称与源码命名一致。
- * 仅当 `state` 确认来自 @vobs/reactivity / @vobs/vobs、未被本地声明遮蔽、
- * 且调用只带一个参数时启用；其余形态保持原样。
+ * When no debugName is passed explicitly, `const name = state(initial)` infers it from the variable name:
+ * `const username = state('')` → `state('', 'username')`, so DevTools signal names match the source naming.
+ * Enabled only when `state` verifiably comes from @vobs/reactivity / @vobs/vobs, is not shadowed by a local declaration,
+ * and the call has exactly one argument; all other shapes stay untouched.
  */
 function inferStateDebugName(
   state: CompileState,
@@ -1332,11 +1332,11 @@ function inferStateDebugName(
 }
 
 /**
- * HMR 状态保鲜：模块热更新重执行时，模块级 state() 会创建全新信号实例，与未重执行的
- * 导入方持有旧实例并存，形成"两份状态"（症状：编辑不生效、页面半边失灵，全量刷新也无法
- * 消除）。开启 hmrModuleId 后，模块顶层的 state 声明改经运行时注册表取值：
- * `const x = state(init)` → `const x = hmrStateRef(moduleId, 'x', () => state(init, 'x'))`。
- * 首次执行照常创建；模块重执行时直接复用既有信号，模块逻辑（副作用、导出绑定）照常重跑。
+ * HMR state preservation: when a hot update re-executes a module, module-level state() creates brand-new signal instances that
+ * coexist with the old instances held by importers that did not re-execute — "two copies of the state" (symptoms: edits have no
+ * effect, half the page misbehaves, and even a full refresh cannot clear it). With hmrModuleId enabled, module-top-level state
+ * declarations fetch through a runtime registry instead: `const x = state(init)` → `const x = hmrStateRef(moduleId, 'x', () => state(init, 'x'))`.
+ * The first execution creates as usual; on module re-execution the existing signal is reused, while module logic (side effects, exported bindings) re-runs as usual.
  */
 function wrapStateWithHmrRef(
   state: CompileState,
@@ -1412,8 +1412,8 @@ function transformElement(
 ): ts.Expression {
   if (isFragmentTag(tagName)) return transformFragment(state, children)
   if (!ts.isIdentifier(tagName)) {
-    // <Foo.Bar>、<svg:rect> 等形态此前会静默编译成无效 DOM 标签（createElement("Foo.Bar")）。
-    // 报结构化诊断后按原路径继续，保证产物结构稳定；compile()/Vite 插件会因 error 诊断直接失败。
+    // Shapes like <Foo.Bar> and <svg:rect> used to compile silently into invalid DOM tags (createElement("Foo.Bar")).
+    // A structured diagnostic is reported, then the original path continues to keep output structure stable; compile()/the Vite plugin fail on the error diagnostic.
     reportUnsupportedTag(state, tagName)
   }
   if (ts.isIdentifier(tagName) && tagName.text === 'ResourceBoundary') {
@@ -1437,19 +1437,19 @@ function transformElement(
       ]),
       createComponentProps(state, attributes, children)
     ]
-    // 源码位置仅用于错误定位与 DevTools；生产构建可整体剔除（错误仍带组件名，定位走 source map）。
+    // Source locations are only for error locating and DevTools; production builds can strip them entirely (errors still carry the component name; positioning goes through the source map).
     if (state.sourceLocation) args.push(createSourceLocation(tagName))
     return ts.factory.createCallExpression(helperRef(state, 'createComponent'), undefined, args)
   }
 
-  // 静态模板提升：完全静态的 DOM 子树（无事件/动态绑定/spread/property 属性）序列化为
-  // 模块级模板，运行时一次 cloneNode 替代 createElement + setStaticProps + 逐子插入。
-  // hoistTemplates=false（SSR/Node 构建）时跳过：createTemplate 依赖 document。
+  // Static template hoisting: fully static DOM subtrees (no events/dynamic bindings/spread/property attributes) are
+  // serialized into module-level templates; at runtime one cloneNode replaces createElement + setStaticProps + per-child insertion.
+  // Skipped when hoistTemplates=false (SSR/Node builds): createTemplate depends on document.
   //
-  // SVG 子树内一律不提升：模板串是**用 HTML 解析器**解析的，`<g>`/`<rect>` 会变成
-  // HTMLUnknownElement、`<a>`/`<title>` 会变成 HTML 元素 —— 都是静默不渲染/渲染错。
-  // （isStaticElement 只会因标签名是 SVG 专属标签而拒绝，而 a/title/style 与 HTML 同名，
-  // 名字这条线索不足以判断，所以在这里按编译器已知的命名空间整体关掉。）
+  // SVG subtrees are never hoisted: template strings are parsed **by the HTML parser**, so `<g>`/`<rect>` become
+  // HTMLUnknownElement and `<a>`/`<title>` become HTML elements — all silently not rendering or rendering wrong.
+  // (isStaticElement only rejects on SVG-exclusive tag names, while a/title/style share their names with HTML —
+  // the name alone is not enough to decide, so hoisting is switched off wholesale by the compiler-known namespace here.)
   if (state.hoistTemplates && state.svgDepth === 0 && isStaticElement(tagName, attributes, children)) {
     return ts.factory.createCallExpression(
       helperRef(state, 'cloneTemplate'),
@@ -1461,9 +1461,9 @@ function transformElement(
   const elementName = tagName.getText()
   const elementId = nextIdentifier(state, '_el')
   /*
-   * 命名空间由编译器决定（见 CompileState.svgDepth 的说明）：
-   * 在 SVG 子树里、但名字不是 SVG 专属标签的（a / title / style / script），
-   * 必须显式走 SVG 创建，否则会建出 HTML 元素 —— 而且不报错。
+   * The namespace is decided by the compiler (see the CompileState.svgDepth notes):
+   * elements inside an SVG subtree whose names are not SVG-exclusive tags (a / title / style / script)
+   * must be created explicitly via SVG, otherwise HTML elements get built — silently.
    */
   const createHelper = state.svgDepth > 0 && !isSvgTag(elementName) ? 'createSvgElement' : 'createElement'
   const statements: ts.Statement[] = [
@@ -1481,7 +1481,7 @@ function transformElement(
 
   appendAttributes(state, statements, elementId, attributes)
 
-  // <svg> 的子树进入 SVG 命名空间；<foreignObject> 的子树切回 HTML；其余继承。
+  // Subtrees of <svg> enter the SVG namespace; subtrees of <foreignObject> switch back to HTML; everything else inherits.
   const outerSvgDepth = state.svgDepth
   if (elementName === 'svg') state.svgDepth = outerSvgDepth + 1
   else if (elementName === 'foreignObject') state.svgDepth = 0
@@ -1530,11 +1530,11 @@ function transformFragment(state: CompileState, children: readonly ts.JsxChild[]
 }
 
 /**
- * 边界组件缺少必需属性。
+ * A boundary component is missing a required prop.
  *
- * 原来直接 `throw new VobsError` —— 于是 `compileWithSourceMap`（非抛出版本的 API）
- * 会抛异常而不是返回诊断，诊断里既没有位置，也一次只能看到这一个问题。
- * 改成推一条带位置的诊断并让编译继续，与其它诊断走同一条路径。
+ * This used to `throw new VobsError` directly — so `compileWithSourceMap` (the non-throwing API) threw
+ * instead of returning diagnostics: no location, and only one problem visible at a time.
+ * It now pushes one located diagnostic and lets compilation continue, taking the same path as other diagnostics.
  */
 function reportMissingBoundaryProp(
   state: CompileState,
@@ -1550,7 +1550,7 @@ function reportMissingBoundaryProp(
   state.diagnostics.push({
     code: 'VOBS_C002',
     severity: 'error',
-    message: `${component} 必须提供 ${prop} 属性。`,
+    message: `${component} must provide the ${prop} prop.`,
     location: { file: state.filename, line, column },
     codeFrame,
     fix
@@ -1565,7 +1565,7 @@ function transformResourceBoundary(
 ): ts.Expression {
   const resource = getAttributeExpression(attributes, 'resource')
   if (!resource) {
-    reportMissingBoundaryProp(state, node, 'ResourceBoundary', 'resource', '为 ResourceBoundary 添加 resource={resource}。')
+    reportMissingBoundaryProp(state, node, 'ResourceBoundary', 'resource', 'Add resource={resource} to the ResourceBoundary.')
     return ts.factory.createNull()
   }
   const options: ts.ObjectLiteralElementLike[] = [
@@ -1586,7 +1586,7 @@ function transformErrorBoundary(
 ): ts.Expression {
   const fallback = getAttributeExpression(attributes, 'fallback')
   if (!fallback) {
-    reportMissingBoundaryProp(state, node, 'ErrorBoundary', 'fallback', '为 ErrorBoundary 添加 fallback={(error, retry) => ...}。')
+    reportMissingBoundaryProp(state, node, 'ErrorBoundary', 'fallback', 'Add fallback={(error, retry) => ...} to the ErrorBoundary.')
     return ts.factory.createNull()
   }
   return createBoundaryFragment(state, node, 'insertErrorBoundary', [
@@ -1603,7 +1603,7 @@ function transformAsyncBoundary(
 ): ts.Expression {
   const promise = getAttributeExpression(attributes, 'promise')
   if (!promise) {
-    reportMissingBoundaryProp(state, node, 'AsyncBoundary', 'promise', '为 AsyncBoundary 添加 promise={promise}。')
+    reportMissingBoundaryProp(state, node, 'AsyncBoundary', 'promise', 'Add promise={promise} to the AsyncBoundary.')
     return ts.factory.createNull()
   }
   const options: ts.ObjectLiteralElementLike[] = [
@@ -1629,7 +1629,7 @@ function transformProfiler(
     : idAttribute && ts.isJsxAttribute(idAttribute) && idAttribute.initializer && ts.isJsxExpression(idAttribute.initializer)
       ? idAttribute.initializer.expression
       : null
-  if (!id) throw new VobsError({ code: 'VOBS_C002', layer: 'compiler', message: 'Profiler 必须提供 id 属性', fix: '为 Profiler 添加 id="ComponentName"。' })
+  if (!id) throw new VobsError({ code: 'VOBS_C002', layer: 'compiler', message: 'Profiler must provide the id prop', fix: 'Add id="ComponentName" to the Profiler.' })
   const options: ts.ObjectLiteralElementLike[] = [
     ts.factory.createPropertyAssignment('id', transformEmbeddedExpression(state, id)),
     ts.factory.createPropertyAssignment('children', createBoundaryFactory(state, children))
@@ -1760,11 +1760,11 @@ function transformResidualJsx(state: CompileState, sourceFile: ts.SourceFile): t
 }
 
 /**
- * 静态元素判定：DOM 标签 + 全部属性为字符串字面量或无值 + 全部子节点为文本或递归静态元素。
- * 保守排除项（语义或序列化等价性无把握，走原路径）：
- * - property 属性（value/checked/disabled 等）：HTML attribute 与 setProperty 初始语义存在差异；
- * - 事件（on*）、ref、spread、key：本身是动态行为；
- * - 嵌套组件/Fragment/Boundary：不是纯 DOM 子树。
+ * Static element test: DOM tag + all attributes are string literals or valueless + all children are text or recursively static elements.
+ * Conservative exclusions (semantic or serialization equivalence not guaranteed; the original path is kept):
+ * - property attributes (value/checked/disabled etc.): HTML attribute and setProperty initial semantics differ;
+ * - events (on*), ref, spread, key: dynamic behavior by nature;
+ * - nested components/Fragments/Boundaries: not pure DOM subtrees.
  */
 function isStaticElement(
   tagName: ts.JsxTagNameExpression,
@@ -1773,12 +1773,12 @@ function isStaticElement(
 ): boolean {
   if (!ts.isIdentifier(tagName) || !/^[a-z]/.test(tagName.text)) return false
   /*
-   * SVG 子树不能提升成模板。
+   * SVG subtrees must not be hoisted into templates.
    *
-   * 模板走的是 HTML 解析器（<template>.innerHTML），`<g>`、`<rect>` 解析出来是
-   * HTMLUnknownElement —— 命名空间错了，整棵图形都不渲染，而且**没有任何报错**。
-   * createElement 那条路径（ops.ts）已经按标签名走 createElementNS，唯独提升这条漏了。
-   * 任一后代是 SVG 标签就整棵不提升，递归天然覆盖这一点。
+   * Templates go through the HTML parser (<template>.innerHTML), where `<g>` and `<rect>` parse into
+   * HTMLUnknownElement — wrong namespace, the whole graphic never renders, and **nothing reports an error**.
+   * The createElement path (ops.ts) already routes by tag name to createElementNS; hoisting was the one path that missed it.
+   * If any descendant is an SVG tag the whole tree is not hoisted; recursion covers this naturally.
    */
   if (isSvgTag(tagName.text)) return false
   for (const attribute of attributes.properties) {
@@ -1822,16 +1822,16 @@ function serializeStaticElement(
   for (const attribute of attributes.properties) {
     if (!ts.isJsxAttribute(attribute)) continue
     /*
-     * 必须走**运行期那张表**（`domAttributeName`），不能只手工特判 className。
+     * Must go through the **runtime table** (`domAttributeName`), not just a hand-written className special case.
      *
-     * 此前这里只写 `=== 'className' ? 'class' : 原名`，于是 `htmlFor` 被原样拼进模板串，
-     * HTML 解析器按大小写不敏感把它读成 `htmlfor="name"` —— 而 `for` 不是 `htmlfor`
-     * 的大小写变体，是**另一个名字**，label 与控件的关联因此静默断开。
-     * 动态路径（`bindAttribute(_el0, "for", …)`，见下面的 emit）产出的是正确的 `for`，
-     * 于是同一个属性名在静态/动态两条路径下行为不一致 —— 实测：
+     * This used to be only `=== 'className' ? 'class' : keep as-is`, so `htmlFor` was spliced verbatim into the template string,
+     * and the HTML parser, being case-insensitive, read it as `htmlfor="name"` — and `for` is not a case variant of `htmlfor`;
+     * it is a **different name**, so the label-to-control association silently broke.
+     * The dynamic path (`bindAttribute(_el0, "for", …)`, see the emit below) produces the correct `for`,
+     * so the same attribute name behaved differently on the static vs dynamic paths — measured:
      *   <label htmlFor="name">        → <label htmlfor="name">   ✗
      *   <label htmlFor={f}>           → <label for="name">       ✓
-     * 修法：两条路径共用 `domAttributeName`（编译期与运行期判断同源，正是 dom-props.ts 的设计意图）。
+     * Fix: both paths share `domAttributeName` (compile-time and runtime decisions from one source — exactly the intent of dom-props.ts).
      */
     const attributeName = domAttributeName(attribute.name.getText())
     const initializer = attribute.initializer
@@ -1847,7 +1847,7 @@ function serializeStaticElement(
 
   for (const child of children) {
     if (ts.isJsxText(child)) {
-      // 与 appendChildren 共用同一套规范化（含元素之间那个合法空格），保证提升前后一致。
+      // Shares the same normalization as appendChildren (including the legitimate space between elements), keeping hoisted and non-hoisted output consistent.
       const text = transformJsxText(child.text)
       if (text !== '') html += escapeHtmlText(text)
       continue
@@ -1908,12 +1908,12 @@ function appendAttributes(
   for (const attribute of attributes.properties) {
     if (ts.isJsxSpreadAttribute(attribute)) {
       /*
-       * `{...props}` 绑成**响应式**的。
+       * `{...props}` is bound **reactively**.
        *
-       * 原来只发射 `spreadProps` —— 创建时应用一次就完了，于是「改了 props 不生效」和
-       * 「对象里删掉的键永远留在 DOM 上」两个问题都不报错（静默失效）。
-       * bindSpreadProps 每轮增量应用：变了的键写进去、消失的键移除（attribute 删、
-       * property 复位、事件摘监听）。
+       * This used to emit only `spreadProps` — applied once at creation and done, so "changing props has no effect"
+       * and "keys deleted from the object stay on the DOM forever" both failed silently.
+       * bindSpreadProps applies incrementally each round: changed keys are written, vanished keys are removed (attribute deleted,
+       * property reset, event listener detached).
        */
       statements.push(callStatement(state, 'bindSpreadProps', [element, createGetter(attribute.expression)], attribute))
       continue
@@ -1933,7 +1933,7 @@ function appendAttributes(
     if (name.startsWith('on') && initializer && ts.isJsxExpression(initializer) && initializer.expression) {
       const resolved = resolveEventNameForDiagnostics(name)
       if (resolved === undefined) {
-        // 只有 "on" 本身：既不是事件属性也不是有意义的名字
+        // Just "on" by itself: neither an event attribute nor a meaningful name
         reportEventName(state, attribute, name)
         continue
       }
@@ -1987,18 +1987,18 @@ function createStaticProperty(name: string, value: ts.Expression): ts.PropertyAs
 
 
 /**
- * JSX 文本节点的空白规范化 —— 按 Babel/React 的规则，**不是简单 trim**。
+ * Whitespace normalization for JSX text nodes — following the Babel/React rules, **not a plain trim**.
  *
- * 原来三处都用 `replace(/\s+/g, ' ').trimStart()`，于是
+ * All three places used to run `replace(/\s+/g, ' ').trimStart()`, so in
  *   <p><b>a</b> <i>b</i></p>
- * 里那个**合法的空格**被删掉，渲染成 "ab"，而 React / Solid 都渲染 "a b"。
- * 静态提升路径与动态路径都这么干，所以两边的注释虽然写着「逐字相同」，
- * 保的是一致的错语义。
+ * that **legitimate space** was deleted, rendering "ab", while React / Solid render "a b".
+ * Both the static hoisting path and the dynamic path did this, so although the comments on both sides said "identical word for word",
+ * what they preserved was a consistently wrong semantic.
  *
- * 正确规则：
- *   - 不含换行的文本**原样保留**（元素之间的一个空格属于这类）
- *   - 含换行的：逐行 trim、空行丢弃、保留下来的行之间用一个空格连接
- * 于是缩进换行会被吃掉（与 React 一致），而单行内的空格保住。
+ * Correct rules:
+ *   - Text without line breaks is **kept as-is** (a single space between elements belongs to this class)
+ *   - Text with line breaks: trim each line, drop empty lines, join the kept lines with a single space
+ * So indentation line breaks are eaten (matching React) while within-line spaces survive.
  */
 export function transformJsxText(raw: string): string {
   if (!raw.includes('\n') && !raw.includes('\r')) return raw
@@ -2061,8 +2061,8 @@ function appendChildren(
       }
       const show = transformShowListExpression(state, expression)
       if (show) {
-        // C232 根治（2026-10-28）：三元/`&&` 分支里的 keyed 列表编译为 insertShow ——
-        // cond 只管容器挂载/卸载，列表在容器内走标准 insertList（keyed 复用），不再整列重建。
+        // C232 root fix (2026-10-28): keyed lists inside ternary/`&&` branches compile to insertShow —
+        // cond only manages container mount/unmount, while the list uses standard insertList inside the container (keyed reuse); no more whole-list rebuilds.
         statements.push(callStatement(state, 'insertShow', [
           element,
           anchor,
@@ -2076,10 +2076,10 @@ function appendChildren(
         statements.push(callStatement(state, 'insertDynamic', [element, anchor, dynamic], child))
         continue
       }
-      // 其余表达式（函数调用、成员访问、字面量、标识符……）一律走 insertDynamicValue
-      // 多态插入：值类型在运行时分发——字符串/数值命中自建文本节点的原地更新快路径
-      // （等价 bindText 性能），节点/Fragment/数组正确挂载。编译期不猜测调用返回类型，
-      // 返回节点的辅助函数（如 renderXxx()）与返回字符串的 t('...') 同样安全。
+      // All other expressions (function calls, member accesses, literals, identifiers, ...) go through insertDynamicValue
+      // polymorphic insertion: value types dispatch at runtime — strings/numbers hit the in-place update fast path of self-built
+      // text nodes (equivalent to bindText performance), while nodes/Fragments/arrays mount correctly. The compiler never guesses a call's
+      // return type, so helpers returning nodes (e.g. renderXxx()) and string-returning t('...') are equally safe.
       const value = transformEmbeddedExpression(state, expression)
       statements.push(callStatement(state, 'insertDynamicValue', [element, anchor, createGetter(value)], child))
     }
@@ -2137,12 +2137,12 @@ function transformDynamicExpression(state: CompileState, expression: ts.Expressi
 }
 
 /**
- * 把产出节点的动态表达式（`cond ? <A/> : <B/>`、`cond && <A/>`，含任意嵌套组合）
- * 转换为条件表达式树；各分支中的 JSX 递归编译为节点工厂，由 insertDynamic 挂载/卸载。
+ * Converts node-producing dynamic expressions (`cond ? <A/> : <B/>`, `cond && <A/>`, with arbitrary nesting)
+ * into a conditional expression tree; the JSX in each branch is recursively compiled into node factories that insertDynamic mounts/unmounts.
  *
- * **只有所有分支都能产出节点时**才走这条快路径。任一分支是列表（`.map`）、文本、
- * 数值等非节点表达式时整体返回 null，由调用方回落 insertDynamicValue 多态插入 ——
- * 否则那个分支会被编译成 `null`，内容**静默消失**。
+ * This fast path is taken **only when every branch can produce a node**. If any branch is a list (`.map`), text,
+ * a number, or another non-node expression, the whole thing returns null and the caller falls back to insertDynamicValue polymorphic insertion —
+ * otherwise that branch would compile to `null` and its content would **vanish silently**.
  */
 function convertDynamicNodeExpression(state: CompileState, expression: ts.Expression): ts.ConditionalExpression | null {
   if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
@@ -2150,8 +2150,8 @@ function convertDynamicNodeExpression(state: CompileState, expression: ts.Expres
     if (isJsxExpression(right)) {
       return createNodeConditional(expression.left, transformJsxExpression(state, right), null)
     }
-    // 右侧是嵌套的动态节点表达式（如 cond && (sub ? <A/> : <B/>)）时递归转换，
-    // 转换失败（列表/文本分支）则整体回落为动态值绑定，保持语义可静态判定。
+    // When the right side is a nested dynamic node expression (e.g. cond && (sub ? <A/> : <B/>)), convert recursively;
+    // if conversion fails (list/text branch), fall back entirely to dynamic value binding, keeping the semantics statically decidable.
     const convertedRight = convertDynamicNodeExpression(state, right)
     if (convertedRight) return createNodeConditional(expression.left, convertedRight, null)
     return null
@@ -2177,11 +2177,11 @@ function convertDynamicNodeExpression(state: CompileState, expression: ts.Expres
 }
 
 /**
- * 该分支是否**保证**能编译成节点工厂。
+ * Whether this branch is **guaranteed** to compile into a node factory.
  *
- * 只有 JSX、显式的 null/false、以及内部每一层都满足这个条件的嵌套三元/`&&` 才算。
- * 列表表达式（`.map`）、文本、数值一律不算 —— 它们必须交给 insertDynamicValue，
- * 否则会被写成 `null` 分支而丢失。
+ * Only JSX, explicit null/false, and nested ternaries/`&&` whose every internal level satisfies this count.
+ * List expressions (`.map`), text, and numbers never count — they must go to insertDynamicValue,
+ * otherwise they would be written as a `null` branch and lost.
  */
 function isDynamicNodeBranch(expression: ts.Expression): boolean {
   const branch = unwrapExpression(expression)
@@ -2211,9 +2211,9 @@ function createNodeConditional(
 }
 
 /**
- * 转换单个分支：JSX → 节点工厂；null/false 原样保留；嵌套的三元与 `&&`
- * 动态节点表达式递归转换（嵌套三元的**每一个**分支都必须转换，漏一个就是静默丢分支）。
- * 其余表达式（字符串、数值等）返回 null，由调用方回落为 null 分支。
+ * Converts a single branch: JSX → node factory; null/false kept as-is; nested ternaries and `&&` dynamic
+ * node expressions converted recursively (**every** branch of a nested ternary must be converted — missing one silently drops a branch).
+ * Other expressions (strings, numbers, etc.) return null, and the caller falls back to a null branch.
  */
 function transformDynamicBranch(state: CompileState, expression: ts.Expression): ts.Expression | null {
   const branch = unwrapExpression(expression)
@@ -2227,12 +2227,12 @@ function transformDynamicBranch(state: CompileState, expression: ts.Expression):
 }
 
 /**
- * C232 根治（2026-10-28）：三元 / `&&` 分支里的 keyed 列表 —— 编译为 insertShow。
+ * C232 root fix (2026-10-28): keyed lists inside ternary / `&&` branches — compiled to insertShow.
  *
- * cond 与列表拆成两层订阅：cond 只管容器挂载/卸载；列表在容器内走标准 insertList
- * （keyed 复用/移动），cond 抖动不再整列重建。只处理 routeShowList 命中的形态
- * （list 分支 + null/false 分支，含嵌套条件合并）；节点与 list 混排的复杂形态
- * 返回 null 回落多态插入（C232 警告继续提示人工改写）。
+ * cond and the list are split into two subscription layers: cond only manages container mount/unmount, while the list uses
+ * standard insertList inside the container (keyed reuse/move), so cond flapping no longer rebuilds the whole list. Only shapes hit
+ * by routeShowList are handled (a list branch + a null/false branch, including merged nested conditions); complex shapes mixing
+ * nodes and lists return null and fall back to polymorphic insertion (the C232 warning keeps prompting a manual rewrite).
  */
 function transformShowListExpression(
   state: CompileState,
@@ -2267,7 +2267,7 @@ function transformListExpression(
   const callback = expression.arguments[0]
   if (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) return null
 
-  // 回调体：单个 JSX 表达式，或块体里恰好一个 return
+  // Callback body: a single JSX expression, or a block body with exactly one return
   const rawBody = ts.isBlock(callback.body) ? singleReturnExpression(callback.body) : unwrapExpression(callback.body)
   if (rawBody === null) {
     const reason = listDegradeReason(callback.body)
@@ -2349,10 +2349,10 @@ function findKeyExpression(node: ts.JsxElement | ts.JsxSelfClosingElement): ts.E
 }
 
 /**
- * 剥掉对运行时取值没有影响的包装：括号、`as` / `satisfies` 断言、非空断言。
+ * Strips wrappers that have no effect on runtime value extraction: parentheses, `as` / `satisfies` assertions, non-null assertions.
  *
- * 漏剥 `as any` / `satisfies`（很常见，用来压住类型报错）会让编译器认不出列表，
- * 静默退化成多态插入 —— keyed 复用与 key 一起失效。
+ * Missing an `as any` / `satisfies` (very common, added to silence type errors) makes the compiler fail to recognize the list,
+ * silently degrading to polymorphic insertion — keyed reuse and key both stop working.
  */
 function unwrapExpression(node: ts.Expression | ts.ConciseBody): ts.Expression {
   let current = node as ts.Expression
@@ -2369,7 +2369,7 @@ function unwrapExpression(node: ts.Expression | ts.ConciseBody): ts.Expression {
   }
 }
 
-/** 块体里「恰好一个 return」→ 那个表达式；否则 null。 */
+/** "Exactly one return" in a block body → that expression; otherwise null. */
 function singleReturnExpression(block: ts.Block): ts.Expression | null {
   if (block.statements.length !== 1) return null
   const only = block.statements[0]
@@ -2377,8 +2377,8 @@ function singleReturnExpression(block: ts.Block): ts.Expression | null {
 }
 
 /**
- * 列表退化的原因 —— 只在「看起来该是列表、却没被识别」时返回原因，报警告用。
- * 返回字符串/数值的 map（`items.map(i => i.name)`）本来就不是节点列表，不算退化。
+ * Why a list degraded — returns a reason only when it "looked like a list but was not recognized", for the warning.
+ * Maps returning strings/numbers (`items.map(i => i.name)`) are not node lists to begin with and do not count as degradation.
  */
 function listDegradeReason(body: ts.ConciseBody): 'fragment' | 'statements' | null {
   if (!ts.isBlock(body)) {
@@ -2393,10 +2393,10 @@ function listDegradeReason(body: ts.ConciseBody): 'fragment' | 'statements' | nu
 }
 
 /**
- * 列表退化告警。
+ * List degradation warning.
  *
- * 退化成多态插入后**功能仍然正常**，但每一项每轮重建、key 与 keyed 复用全部失效 ——
- * 长列表性能会差一个量级，而且没有任何提示。这里把沉默去掉（只警告，不阻断编译）。
+ * After degrading to polymorphic insertion **functionality still works**, but every item rebuilds every round and key + keyed reuse
+ * stop working entirely — long-list performance drops by an order of magnitude with no hint whatsoever. This removes the silence (warn only; compilation is not blocked).
  */
 function reportListDegrade(
   state: CompileState,
@@ -2406,8 +2406,8 @@ function reportListDegrade(
   const sourceFile = call.getSourceFile() ?? state.sourceFile
   if (!sourceFile) return
   const message = reason === 'fragment'
-    ? '列表项是 Fragment：这个 .map 会退化成多态插入（每轮重建每一项），key 与 keyed 复用全部失效。把 Fragment 里的内容并进单个元素即可。'
-    : 'map 回调体里有多个语句：编译器只认「单个 JSX 表达式」或「恰好一个 return」，因此这个列表退化成多态插入，key 与 keyed 复用全部失效。把计算提到 map 之外，或让回调体只返回一个元素。'
+    ? 'The list item is a Fragment: this .map degrades to polymorphic insertion (every item rebuilt every round), and key + keyed reuse stop working entirely. Merge the Fragment content into a single element.'
+    : 'The map callback body has multiple statements: the compiler only accepts "a single JSX expression" or "exactly one return", so this list degrades to polymorphic insertion and key + keyed reuse stop working entirely. Hoist computation out of the map, or make the callback body return a single element.'
   const { line, column, codeFrame } = buildCodeFrame(sourceFile, call.getStart(sourceFile), call.getWidth(sourceFile))
   state.diagnostics.push({
     code: 'VOBS_C103',
@@ -2416,8 +2416,8 @@ function reportListDegrade(
     location: { file: state.filename, line, column },
     codeFrame,
     fix: reason === 'fragment'
-      ? `用一个元素替代 Fragment，例如 <li>…</li> 而不是 <><li>…</li></>。`
-      : `把 map 回调改成单个 JSX 表达式（或恰好一个 return），计算搬到 map 外面。`
+      ? `Replace the Fragment with a single element, e.g. <li>…</li> instead of <><li>…</li></>.`
+      : `Rewrite the map callback as a single JSX expression (or exactly one return), moving computation outside the map.`
   })
 }
 
@@ -2488,7 +2488,7 @@ function tagStatement<T extends ts.Statement>(state: CompileState, statement: T,
 }
 
 function positionOfNode(state: CompileState, node: ts.Node): SourcePosition | null {
-  // ts.transform 产生的节点副本可能丢失 sourceFile 引用，回退到当前编译的源文件。
+  // Node copies produced by ts.transform may lose their sourceFile reference; fall back to the source file of the current compilation.
   const sourceFile = node.getSourceFile() ?? state.sourceFile
   if (!sourceFile || node.pos < 0) return null
   const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))

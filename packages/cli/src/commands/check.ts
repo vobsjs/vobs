@@ -1,30 +1,38 @@
 /**
- * `vobs check` —— 不跑应用就能给出的源码问题清单。
+ * `vobs check` — the list of source problems it can produce without running the app.
  *
- * 为什么需要它：vobs 里最容易犯的错是**不发声**的错（effect 自订阅、列表写进三元分支
- * 后失去 keyed 复用）。运行时护栏（`@vobs/vobs/dev`）能抓到，但那要求先把应用跑起来；
- * 静态检查让你（和 AI）在**写完之后、运行之前**就知道哪里不对。
+ * Why it is needed: the easiest mistakes to make in vobs are the **silent** ones
+ * (effect self-subscription, a list placed inside a ternary branch losing keyed reuse).
+ * The runtime guardrails (`@vobs/vobs/dev`) can catch those, but that requires booting the
+ * app first; static checking lets you (and AI) know what is wrong **after writing,
+ * before running**.
  *
- * 产出与框架其余部分同一套词汇（code / severity / fix），字段直接对应
- * `@vobs/runtime/error` 的 `VobsError`，因此能直接喂给开发台面板或 AI。
+ * The output shares one vocabulary with the rest of the framework (code / severity / fix);
+ * the fields map directly onto `VobsError` from `@vobs/runtime/error`, so it can be fed
+ * straight into a devtools panel or an AI.
  *
- * 规则的高精度是刻意的：宁可少报，也不要误报 —— 误报会让 AI 去改本来正确的代码。
+ * The high precision of the rules is deliberate: rather under-report than mis-report —
+ * false positives make AI "fix" code that was already correct.
  *
- * ## 已知限制
+ * ## Known limitations
  *
- * 三条规则都是**启发式**的（靠名字与形状判断），所以会撞到合法代码：
+ * All the rules are **heuristics** (based on names and shapes), so they can hit legal code:
  *
- * - `VOBS_C210`：把「同一个 `X.value` 的读写」当作信号自订阅。**分不清信号与恰好叫 `value`
- *   的普通字段** —— `entry.value = x`（DTO / ref / 配置对象）会被误报。收窄成「只认裸标识符」
- *   会连 `props.name.value` 这种真信号一起放过，所以保持现状 + 提供行内抑制。
- * - `VOBS_C232` / `VOBS_C118`：前者看的是「列表表达式是否写在分支里」，后者看「组件体里
- *   是否把信号读取存进了局部变量」。都只看形状，不做类型推断。
- * - `VOBS_C233`：数组原地变异（`list.value.push(...)`）只对**名字确实绑定到
- *   `state(...)`** 的接收者报警 —— 这条绑定分析让它成为四条里误报风险最低的；
- *   自定义 store 工厂产出的数组不认（漏报不误报）。
+ * - `VOBS_C210`: treats "read + write of the same `X.value`" as signal self-subscription.
+ *   It **cannot tell a signal apart from an ordinary field that happens to be named `value`**
+ *   — `entry.value = x` (DTO / ref / config object) gets mis-reported. Narrowing it to
+ *   "bare identifiers only" would also let real signals like `props.name.value` slip
+ *   through, so it stays as-is + offers inline suppression.
+ * - `VOBS_C232` / `VOBS_C118`: the former checks "whether the list expression sits inside a
+ *   branch", the latter "whether the component body stores a signal read into a local
+ *   variable". Both are shape-only; no type inference.
+ * - `VOBS_C233`: in-place array mutation (`list.value.push(...)`) only warns for receivers
+ *   whose **name is verifiably bound to `state(...)`** — this binding analysis makes it the
+ *   lowest false-positive risk of the four; arrays produced by custom store factories are
+ *   not recognized (false negatives, never false positives).
  *
- * 撞上误报时的正规做法是**行内抑制**（`// vobs-check-ignore-next-line`），
- * 而不是关掉整条规则或改写本来正确的代码。
+ * When you hit a false positive, the sanctioned remedy is **inline suppression**
+ * (`// vobs-check-ignore-next-line`), not disabling the whole rule or rewriting correct code.
  */
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { compileWithSourceMap } from '@vobs/compiler'
@@ -36,50 +44,54 @@ import { logger } from '../utils/logger.js'
 export interface CheckOptions {
   readonly dir?: string
   readonly json?: boolean
-  /** 把结果写到 `<root>/.vobs/check.json`（开发台面板读这个文件显示「项目」页）。 */
+  /** Write the report to `<root>/.vobs/check.json` (the devtools panel reads this file for the "project" page). */
   readonly write?: boolean
-  /** 把测试文件也纳入检查（默认跳过：fixture 里常有意为之的写法会淹没真问题）。 */
+  /** Include test files in the check (skipped by default: intentional patterns in fixtures would drown real problems). */
   readonly includeTests?: boolean
   /**
-   * 同时跑**编译器**诊断（默认 true）。
+   * Also run **compiler** diagnostics (default true).
    *
-   * 为什么必须合并编译器：`vobs check` 若只跑 `analyzeSource`（C118/C210/C232），
-   * 编译器的五条诊断（C104/C105/C106/C107/C108）就会**在批量入口隐形**——
-   * 一个模块顶层 JSX 的文件会报「检查通过」。**通道不通，等于诊断不存在。**
+   * Why the compiler must be merged: if `vobs check` only runs `analyzeSource`
+   * (C118/C210/C232), the compiler's five diagnostics (C104/C105/C106/C107/C108) become
+   * **invisible in the batch entry** — a file with module-top-level JSX would report
+   * "check passed". **A silent channel means the diagnostic does not exist.**
    *
-   * 代价是每个文件多跑一次编译 —— 需要更快可用 `--no-compiler`。
+   * The cost is one extra compile per file — use `--no-compiler` when you need speed.
    */
   readonly compiler?: boolean
 }
 
-/** 检查报告的固定落点，相对被检查的根目录。 */
+/** Fixed report location, relative to the checked root directory. */
 export const REPORT_PATH = '.vobs/check.json'
 
-/** 测试文件默认跳过。 */
+/** Test files are skipped by default. */
 const TEST_FILE = /(?:^|\/)(?:[^/]*\.(?:test|spec)\.tsx?|__tests__\/)/u
 
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'lib', 'build', '.git', '.vobs', 'coverage'])
 
 /**
- * 收集目标下的 .ts/.tsx。
+ * Collect .ts/.tsx files under the target.
  *
- * **根目录**读不到时**必须抛错**，不能返回空数组：`catch { return }` 会把
- * 不存在的目录、以及"误传一个文件进来"都变成 `0 个文件` + exit 0 ——
- * CI 里把路径写错就是**永久绿灯**，比报错更危险（一个检查工具在最该失败的场景下静默通过）。
+ * When the **root directory** cannot be read it **must throw**, never return an empty
+ * array: `catch { return }` would turn a nonexistent directory, or "a file passed in by
+ * mistake", into `0 files` + exit 0 — a mistyped path in CI then means a **permanent green
+ * light**, which is more dangerous than an error (a checker silently passing in exactly
+ * the scenario where it should fail).
  *
- * 子目录读不到仍然跳过（权限不足/竞态删除不该让整次检查失败）——那是有意的容错，
- * 与"根目录不存在"不是一回事。
+ * Unreadable subdirectories are still skipped (permission issues / racy deletion should not
+ * fail the whole check) — that is intentional tolerance, and not the same thing as
+ * "the root does not exist".
  */
 async function collectSources(root: string): Promise<string[]> {
   let rootStat
   try {
     rootStat = await stat(root)
   } catch {
-    throw new Error(`路径不存在：${root}`)
+    throw new Error(`Path does not exist: ${root}`)
   }
   if (!rootStat.isDirectory()) {
-    throw new Error(`不是目录：${root}（vobs check 接受一个目录）`)
+    throw new Error(`Not a directory: ${root} (vobs check accepts a directory)`)
   }
 
   const found: string[] = []
@@ -88,9 +100,9 @@ async function collectSources(root: string): Promise<string[]> {
     try {
       entries = await readdir(dir, { withFileTypes: true })
     } catch (error) {
-      // 根目录在第一次 stat 之后消失（竞态）也必须暴露，而不是混进"0 个文件"
+      // The root vanishing after the first stat (race) must also surface, not blend into "0 files"
       if (dir === root) {
-        throw new Error(`无法读取目录：${root}（${error instanceof Error ? error.message : String(error)}）`)
+        throw new Error(`Cannot read directory: ${root} (${error instanceof Error ? error.message : String(error)})`)
       }
       return
     }
@@ -109,9 +121,9 @@ async function collectSources(root: string): Promise<string[]> {
   return found.sort()
 }
 
-/* ------------------------------------------------------------------ 工具 */
+/* ------------------------------------------------------------------ utils */
 
-/** 该节点是否返回 JSX（函数体里出现 JSX 元素/片段）。 */
+/** Compile diagnostics for one file. */
 function compileDiagnostics(text: string, file: string, existing: readonly CheckDiagnostic[]): CheckDiagnostic[] {
   let result: ReturnType<typeof compileWithSourceMap>
   try {
@@ -125,15 +137,15 @@ function compileDiagnostics(text: string, file: string, existing: readonly Check
   for (const item of result.diagnostics) {
     const { line, column } = item.location
     const key = `${item.code}|${file}|${line}|${column}`
-    // 与 analyzeSource 的结果去重（两套规则偶有重叠码）
+    // Deduplicate against analyzeSource results (the two rule sets occasionally share codes)
     if (seen.has(key)) continue
     seen.add(key)
     out.push({
       code: item.code,
       severity: item.severity,
       message: item.message,
-      // fix 是必填字段：编译器没给时也要有可执行的方向，不能留空
-      fix: item.fix ?? '见该诊断码的说明（`vobs explain` 或框架文档）。',
+      // fix is a required field: when the compiler gives none, still provide an actionable direction
+      fix: item.fix ?? 'See the guide for this diagnostic code (`vobs explain` or the framework docs).',
       file,
       line,
       column,
@@ -149,7 +161,7 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
   try {
     all = await collectSources(root)
   } catch (error) {
-    // 路径无效必须是**失败**，不能是"0 个文件，检查通过"（见 collectSources 注释）
+    // An invalid path must be a **failure**, never "0 files, check passed" (see collectSources note)
     logger.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1
     return
@@ -171,11 +183,14 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
   const report = { root, files: files.length, skippedTests: skipped, diagnostics }
 
   /*
-   * 契约版本对齐（元原则：随框架版本分发的契约，一致性必须是可验证的事实）。
-   * agent-doc --check 是独立命令，AI / CI 的主入口在这里 —— 契约漂移若只有
-   * 主动跑 --check 才能发现，就是「诊断存在但主通道不可见」的同款问题。
-   * 只对已生成过契约的项目提示（drifted）；missing / no-block 不是漂移，静默。
-   * warning 级：不改变 exit code，与「文档漂移不挡构建」的严重度一致。
+   * Contract version sync (meta-principle: for a contract that ships with the framework
+   * version, consistency must be a verifiable fact). agent-doc --check is a standalone
+   * command, but this is the main entry for AI / CI — if contract drift were only
+   * discoverable by proactively running --check, it would repeat the "the diagnostic
+   * exists but the main channel cannot see it" problem. Only projects that already
+   * generated a contract get the notice (drifted); missing / no-block are not drift — stay
+   * silent. Warning level: does not change the exit code, matching "doc drift does not
+   * block the build".
    */
   const contractSync = checkContractSync(root)
   const contractWarnings = contractSync.status === 'drifted' ? contractSync.problems : []
@@ -184,8 +199,8 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
     const target = path.join(root, REPORT_PATH)
     await mkdir(path.dirname(target), { recursive: true })
     await writeFile(target, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
-    // --json 时 stdout 必须只剩 JSON，所以这行提示走 logger（stderr）
-    logger.info(`报告写入 ${REPORT_PATH}（开发台面板读它显示「项目」页）`)
+    // With --json, stdout must contain only JSON, so this notice goes through logger (stderr)
+    logger.info(`Report written to ${REPORT_PATH} (the devtools panel reads it for the "project" page)`)
   }
 
   if (options.json === true) {
@@ -195,8 +210,8 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
   }
 
   if (diagnostics.length === 0) {
-    logger.success(`检查通过 —— ${files.length} 个文件${skipped > 0 ? `（跳过 ${skipped} 个测试文件）` : ''}，没有发现问题`)
-    for (const problem of contractWarnings) logger.warn(`${problem}\n  → 跑 \`vobs agent-doc --write\` 同步契约`)
+    logger.success(`Check passed — ${files.length} files${skipped > 0 ? ` (${skipped} test files skipped)` : ''}, no problems found`)
+    for (const problem of contractWarnings) logger.warn(`${problem}\n  → run \`vobs agent-doc --write\` to sync the contract`)
     return
   }
 
@@ -211,15 +226,15 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
   }
   const warnings = diagnostics.length - errors.length
   console.log(
-    `  ${errors.length} 个错误 · ${warnings} 个警告 · 共检查 ${files.length} 个文件`
-    + `${skipped > 0 ? `（跳过 ${skipped} 个测试文件，用 --include-tests 纳入）` : ''}\n`
+    `  ${errors.length} errors · ${warnings} warnings · checked ${files.length} files`
+    + `${skipped > 0 ? ` (${skipped} test files skipped; include them with --include-tests)` : ''}\n`
   )
-  for (const problem of contractWarnings) logger.warn(`${problem}\n  → 跑 \`vobs agent-doc --write\` 同步契约`)
+  for (const problem of contractWarnings) logger.warn(`${problem}\n  → run \`vobs agent-doc --write\` to sync the contract`)
 
   if (errors.length > 0) process.exitCode = 1
 }
 
 
-// 搬迁到 @vobs/compiler 后继续从这里再导出，避免既有导入方失效
+// Re-exported from here after the move to @vobs/compiler, so existing importers keep working
 export { analyzeSource, VOBS_C118, VOBS_C120, VOBS_C210, VOBS_C232, VOBS_C233, VOBS_C234 } from '@vobs/compiler'
 export type { CheckDiagnostic } from '@vobs/compiler'

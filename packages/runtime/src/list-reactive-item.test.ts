@@ -8,19 +8,22 @@ setRenderer(createDOMRenderer())
 const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 
 /**
- * `insertList` 的 renderItem 拿到的是"响应式条目代理"：属性读取转发到 item 信号，
- * 所以行内 effect 能读到同 key 顶替后的新条目。
+ * `insertList`'s renderItem receives a "reactive item proxy": property reads are forwarded
+ * to the item signal, so the row's effect can read the new entry after a same-key
+ * replacement.
  *
- * 这个代理原来的目标是**创建时的原始条目**。只要条目被 Object.freeze 过
- * （@vobs/notification 每条通知都冻结），目标上就留着"不可配置、不可写"的自有属性，
- * get 陷阱返回新值时违反 Proxy 不变量，实测直接抛：
+ * This proxy's target used to be the **entry as of creation time**. As soon as an entry
+ * was Object.freeze'd (@vobs/notification freezes every notification), the target kept
+ * "non-configurable, non-writable" own properties, and the get trap returning the new
+ * value violated the Proxy invariant — measured, it throws outright:
  *
  *   TypeError: 'get' on proxy: property 'label' is a read-only and non-configurable data
  *   property on the proxy target but the proxy did not return its actual value
  *
- * 于是冻结条目的行根本无法原地刷新。首轮渲染时 item.value === 目标，值相同，看不出来。
+ * So frozen entries' rows could not be refreshed in place at all. On first render
+ * item.value === target, same value, so nothing showed.
  */
-describe('insertList 的响应式条目代理', () => {
+describe('insertList\'s reactive item proxy', () => {
   function mount<T>(rows: { value: readonly T[] }, keyOf: (item: T) => unknown) {
     const host = document.createElement('div')
     const root = createElement('ul')
@@ -32,7 +35,7 @@ describe('insertList 的响应式条目代理', () => {
       const li = createElement('li')
       const text = createText('')
       insertBefore(li, text, null)
-      // 在 effect 内读条目：顶替后必须拿到新值
+      // Read the entry inside an effect: must get the new value after replacement
       bindText(text, () => String((item as { label?: unknown }).label ?? item))
       node = li
       return li
@@ -40,7 +43,7 @@ describe('insertList 的响应式条目代理', () => {
     return { host, captured, getNode: () => node }
   }
 
-  it('冻结条目顶替后行内 effect 读到新值，且行被原地复用', async () => {
+  it('after a frozen entry is replaced, the row effect reads the new value and the row is reused in place', async () => {
     const rows = state<readonly { id: number; label: string }[]>([Object.freeze({ id: 1, label: 'a' })])
     const { host, getNode, captured } = mount(rows, (item: { id: number }) => item.id)
     await flush()
@@ -50,16 +53,16 @@ describe('insertList 的响应式条目代理', () => {
     rows.value = [Object.freeze({ id: 1, label: 'b' })]
     await flush()
 
-    expect(host.textContent).toBe('b')          // 修复前这一行直接抛 TypeError
-    expect(getNode()).toBe(first)               // keyed 调和：同一个 DOM 行
-    // 冻结条目的描述符不变量：Object.keys / 展开 / in 也不能抛
+    expect(host.textContent).toBe('b')          // before the fix this line threw a TypeError outright
+    expect(getNode()).toBe(first)               // keyed reconcile: the same DOM row
+    // Frozen entry's descriptor invariant: Object.keys / spread / in must not throw either
     const item = captured[captured.length - 1] as { id: number; label: string }
     expect(Object.keys(item)).toEqual(['id', 'label'])
     expect({ ...item }).toEqual({ id: 1, label: 'b' })
     expect('label' in item).toBe(true)
   })
 
-  it('未冻结条目与数组条目保持原有语义（原型 / Array.isArray / 长度）', async () => {
+  it('unfrozen entries and array entries keep their original semantics (prototype / Array.isArray / length)', async () => {
     class Row {
       constructor(readonly label: string) {}
     }

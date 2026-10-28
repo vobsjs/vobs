@@ -7,18 +7,18 @@ import { bindAttribute, bindProperty, setProperty, setStaticProps, spreadProps }
 setRenderer(createDOMRenderer())
 
 describe('select value sync', () => {
-  it('option 子节点就绪后重放 value 赋值（微任务）', async () => {
+  it('replays the value assignment once the option children are ready (microtask)', async () => {
     const select = document.createElement('select') as HTMLSelectElement
-    // 模拟编译产物顺序：先设置 value，后插入 option 子节点
+    // Simulate compiled-output order: set value first, insert option children after
     setProperty(select, 'value', 'b')
     select.innerHTML = '<option value="a">A</option><option value="b">B</option>'
-    // 子节点插入使 value 回落到首个 option
+    // The children insertion makes value fall back to the first option
     expect(select.value).toBe('a')
     await Promise.resolve()
     expect(select.value).toBe('b')
   })
 
-  it('setStaticProps 的 value 走同一重放路径', async () => {
+  it('setStaticProps\'s value goes through the same replay path', async () => {
     const select = document.createElement('select') as HTMLSelectElement
     setStaticProps(select, { value: 'x' })
     select.innerHTML = '<option value="x">X</option>'
@@ -27,7 +27,7 @@ describe('select value sync', () => {
     expect(select.value).toBe('x')
   })
 
-  it('同一微任务内多次赋值以最后一次为准', async () => {
+  it('multiple assignments within the same microtask: the last one wins', async () => {
     const select = document.createElement('select') as HTMLSelectElement
     setProperty(select, 'value', 'a')
     setProperty(select, 'value', 'c')
@@ -66,7 +66,7 @@ describe('static and spread prop application', () => {
     const node = document.createElement('input') as HTMLInputElement
     node.disabled = true
     spreadProps(node, { disabled: null, title: undefined })
-    // null/undefined 表示“不提供值”，保持现状语义
+    // null/undefined mean "no value provided": keep the status quo
     expect(node.disabled).toBe(true)
     expect(node.hasAttribute('title')).toBe(false)
   })
@@ -86,17 +86,18 @@ describe('static and spread prop application', () => {
 })
 
 /*
- * null / undefined 不该被 String() 成字面量写进 DOM。
+ * null / undefined must not be String()'d into literals written to the DOM.
  *
- * bindText 早就把 null/undefined 当 ''，静态路径 setStaticProps 也跳过它们，
- * 只有响应式的 bindAttribute / bindProperty 漏了 —— 于是 placeholder={undefined}
- * 会写进 "undefined"，input.value = undefined 也会被 DOM 强转成字符串。
+ * bindText has long treated null/undefined as ''; the static path setStaticProps skips
+ * them too; only the reactive bindAttribute / bindProperty missed it — so
+ * placeholder={undefined} would write "undefined", and input.value = undefined would be
+ * coerced into a string by the DOM.
  */
-describe('绑定 null / undefined', () => {
-  // vobs 的更新是微任务批处理：写完要让它跑一轮，断言才成立
+describe('binding null / undefined', () => {
+  // vobs updates are microtask-batched: after writing, let a round run before asserting
   const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 
-  it('bindAttribute 不把 undefined 写成字面量', async () => {
+  it('bindAttribute does not write undefined as a literal', async () => {
     const input = document.createElement('input')
     const source = state<unknown>('提示')
     bindAttribute(input, 'placeholder', source)
@@ -112,7 +113,7 @@ describe('绑定 null / undefined', () => {
     expect(input.getAttribute('placeholder')).toBe('ok')
   })
 
-  it('bindProperty 不把 undefined 写成字面量，但 false 必须透传', async () => {
+  it('bindProperty does not write undefined as a literal, but false must pass through', async () => {
     const input = document.createElement('input')
     const source = state<unknown>('a')
     bindProperty(input, 'value', source)
@@ -132,7 +133,7 @@ describe('绑定 null / undefined', () => {
     expect(input.disabled).toBe(false)
   })
 
-  it('null 同样被挡住', async () => {
+  it('null is blocked the same way', async () => {
     const div = document.createElement('div')
     const source = state<unknown>('x')
     bindAttribute(div, 'title', source)

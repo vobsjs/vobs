@@ -10,23 +10,26 @@ setRenderer(createDOMRenderer())
 const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 
 /*
- * 两条都是"编译期与运行期各写一份、且不一致"的老问题（.artifacts/reports/runtime.supplement.md 缺点 2/3）。
- * `dom-props.ts:1-8` 自称两边已收拢成单一来源，但那只覆盖**属性名**，没覆盖**事件名**，
- * 而属性名表里 `autofocus` 又用 DOM 小写、与同表的 readOnly/tabIndex 约定相反。
+ * Both are the old problem of "compile-time and runtime each writing their own copy, and
+ * disagreeing" (.artifacts/reports/runtime.supplement.md drawbacks 2/3).
+ * `dom-props.ts:1-8` claims both sides have been consolidated into a single source, but
+ * that only covered **prop names**, not **event names**, and in the prop-name table
+ * `autofocus` used DOM lowercase, contradicting the same table's readOnly/tabIndex
+ * convention.
  */
-describe('on* 事件名：运行期必须与编译期用同一张别名表', () => {
-  it('onDoubleClick 展开后挂的是 dblclick，不是不存在的 doubleclick', async () => {
+describe('on* event names: the runtime must use the same alias table as the compiler', () => {
+  it('spread onDoubleClick attaches dblclick, not the nonexistent doubleclick', async () => {
     const calls: string[] = []
     const props = { onDoubleClick: () => calls.push('dbl') }
     const el = createElement('div')
     spreadProps(el, props)
 
     el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
-    // 修复前：真实事件名是 "doubleclick"，dblclick 命中 0 次（回调永不触发且静默）
+    // Before the fix: the real event name was "doubleclick", dblclick hit 0 times (callback never fires, silently)
     expect(calls).toEqual(['dbl'])
   })
 
-  it('onDoubleClick 的"隐藏监听"不存在（不会再挂到 doubleclick 上）', () => {
+  it('onDoubleClick\'s "hidden listener" doesn\'t exist (nothing attaches to doubleclick anymore)', () => {
     const calls: string[] = []
     const el = createElement('div')
     spreadProps(el, { onDoubleClick: () => calls.push('dbl') })
@@ -34,7 +37,7 @@ describe('on* 事件名：运行期必须与编译期用同一张别名表', () 
     expect(calls).toEqual([])
   })
 
-  it('自定义事件 onMyEvent 保留大小写语义（不把 myEvent 降成 myevent 之外的东西）', () => {
+  it('custom event onMyEvent keeps case semantics (lowercases myEvent to myevent, nothing else)', () => {
     const calls: string[] = []
     const el = createElement('div')
     spreadProps(el, { onMyEvent: () => calls.push('custom') })
@@ -42,7 +45,7 @@ describe('on* 事件名：运行期必须与编译期用同一张别名表', () 
     expect(calls).toEqual(['custom'])
   })
 
-  it('身份稳定的展开里替换 onDoubleClick 时，旧监听被摘掉', async () => {
+  it('replacing onDoubleClick in an identity-stable spread detaches the old listener', async () => {
     const calls: string[] = []
     const first = state<() => void>(() => calls.push('first'))
     const props = { get onDoubleClick() { return first.value } }
@@ -59,8 +62,8 @@ describe('on* 事件名：运行期必须与编译期用同一张别名表', () 
     expect(calls).toEqual(['first', 'second'])
   })
 
-  it('编译产物直接跑：onDoubleClick 真的能用', () => {
-    // 注意 compile() 直接返回**代码字符串**（不是 { code }）
+  it('compiled output runs directly: onDoubleClick really works', () => {
+    // Note compile() returns the **code string** directly (not { code })
     const output = compile(
       'export const A = (props) => <div onDoubleClick={props.hit} />',
       { filename: 'a.tsx' }
@@ -70,36 +73,39 @@ describe('on* 事件名：运行期必须与编译期用同一张别名表', () 
   })
 })
 
-describe('autoFocus={false} 不得让元素自动聚焦', () => {
+describe('autoFocus={false} must not auto-focus the element', () => {
   /*
-   * 判据是**属性存在与否**，不是 `el.autofocus`：
-   * 实测 jsdom 与真实 DOM 的 IDL 都不反射 autofocus（`el.autofocus = true` 是 no-op，
-   * 既不建属性也不改值），所以 property 通道在这里是静默失败 —— 修法必须走 attribute 通道。
-   * 而 autofocus 的语义是"**属性存在**就聚焦"，与属性的值无关，
-   * 所以 `String(false)` 写出的 `autofocus="false"` 会让 `autoFocus={false}` **真的自动聚焦**。
+   * The criterion is **attribute presence**, not `el.autofocus`:
+   * measured — the IDL of both jsdom and real DOM doesn't reflect autofocus
+   * (`el.autofocus = true` is a no-op: creates no attribute, changes no value), so the
+   * property channel silently fails here — the fix must go through the attribute channel.
+   * And autofocus's semantics are "focus when the **attribute is present**", regardless
+   * of its value, so `String(false)` writing `autofocus="false"` would make
+   * `autoFocus={false}` **really auto-focus**.
    */
-  it('autoFocus={false} 不得留下 autofocus 属性', () => {
+  it('autoFocus={false} must not leave an autofocus attribute', () => {
     const node = document.createElement('input') as HTMLInputElement
     setStaticProps(node, { autoFocus: false })
-    // 修复前：走 attribute 通道 → String(false) → autofocus="false" → 仍然自动聚焦
+    // Before the fix: attribute channel → String(false) → autofocus="false" → still auto-focused
     expect(node.hasAttribute('autofocus')).toBe(false)
   })
 
-  it('autoFocus 为真时属性存在（属性存在即聚焦）', () => {
+  it('the attribute exists when autoFocus is true (presence = focus)', () => {
     const node = document.createElement('input') as HTMLInputElement
     setStaticProps(node, { autoFocus: true })
     expect(node.hasAttribute('autofocus')).toBe(true)
   })
 
-  it('autoFocus 走 property 通道，且映射到全小写的 IDL 名', () => {
+  it('autoFocus goes through the property channel and maps to the all-lowercase IDL name', () => {
     /*
-     * 这里曾经断言 `domAttributeName('autoFocus') === 'autofocus'`（走 attribute 别名）。
-     * 那个做法是**错的**：`autofocus` 是布尔属性，attribute 通道会把 false 序列化成
-     * `autofocus="false"`，而"属性存在即聚焦" → `autoFocus={false}` 反而真的聚焦。
-     * 正解是走 property 通道（属性随 IDL 反射被正确移除）。
+     * This once asserted `domAttributeName('autoFocus') === 'autofocus'` (an attribute
+     * alias). That approach was **wrong**: `autofocus` is a boolean attribute, and the
+     * attribute channel serializes false into `autofocus="false"` — "presence = focus"
+     * meant `autoFocus={false}` would really focus. The correct path is the property
+     * channel (the attribute is correctly removed via IDL reflection).
      */
     expect(isPropertyName('autoFocus')).toBe(true)
-    // 但 IDL 名是全小写 `autofocus` —— 直接用驼峰 Reflect.set 只会挂 expando（静默无效）
+    // But the IDL name is all-lowercase `autofocus` — Reflect.set with the camelCase name only hangs an expando (silently ineffective)
     const el = document.createElement('input') as HTMLInputElement
     setProperty(el, 'autoFocus', true)
     expect(el.hasAttribute('autofocus')).toBe(true)
@@ -109,22 +115,22 @@ describe('autoFocus={false} 不得让元素自动聚焦', () => {
     expect(el.autofocus).toBe(false)
   })
 
-  it('展开里值为 false 时不设置属性（初始与增量都算）', async () => {
+  it('false values in a spread don\'t set the attribute (both initial and incremental)', async () => {
     const flag = state(false)
     const props = { get autoFocus() { return flag.value } }
     const el = createElement('input')
     bindSpreadProps(el, () => props)
     await flush()
-    // 这是缺陷的本体：修复前 `String(false)` 会写出 autofocus="false" → 仍然自动聚焦
+    // This is the defect itself: before the fix `String(false)` wrote autofocus="false" → still auto-focused
     expect(el.hasAttribute('autofocus')).toBe(false)
 
-    // 真值时属性存在（属性存在即聚焦）
+    // The attribute exists when truthy (presence = focus)
     flag.value = true
     await flush()
     expect(el.hasAttribute('autofocus')).toBe(true)
   })
 
-  it('展开里删掉 autoFocus 键时属性被移除', async () => {
+  it('removing the autoFocus key from a spread removes the attribute', async () => {
     const present = state(true)
     const props = new Proxy({} as Record<string, unknown>, {
       ownKeys: () => (present.value ? ['autoFocus'] : []),
@@ -141,7 +147,7 @@ describe('autoFocus={false} 不得让元素自动聚焦', () => {
     expect(el.hasAttribute('autofocus')).toBe(false)
   })
 
-  it('小写 autofocus 同样走属性通道（老写法不能是另一套语义）', () => {
+  it('lowercase autofocus also goes through the property channel (the legacy spelling can\'t be a different semantic)', () => {
     const node = document.createElement('input') as HTMLInputElement
     setStaticProps(node, { autofocus: false })
     expect(node.hasAttribute('autofocus')).toBe(false)

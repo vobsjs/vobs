@@ -12,10 +12,11 @@ import {
 } from './index'
 
 /**
- * 轮询等待条件成立。
+ * Poll until the condition holds.
  *
- * 固定 `setTimeout(n)` 在并行全量测试下不可靠（机器有负载时定时器会晚）——
- * 这类测试偶发失败会让人不再信任门禁，比没有门禁更糟。
+ * A fixed `setTimeout(n)` is unreliable under a parallel full test run (timers fire late when the
+ * machine is loaded) — tests failing sporadically like that make people distrust the gate, which
+ * is worse than having no gate.
  */
 async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
   const deadline = Date.now() + timeoutMs
@@ -23,13 +24,13 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
     if (predicate()) return
     await new Promise(resolve => setTimeout(resolve, 5))
   }
-  throw new Error(`waitFor 超时（${timeoutMs}ms）`)
+  throw new Error(`waitFor timed out (${timeoutMs}ms)`)
 }
 
 /**
- * 让出两个宏任务：effect flush 是微任务，`saveDebounce: 0` 的定时器排在它之后，
- * 所以两个 0ms 宏任务足以覆盖"flush 已跑 + 防抖定时器已排上"。
- * 不用固定墙钟睡眠 —— 并行负载下那才是偶发红的来源。
+ * Yield two macrotasks: effect flush is a microtask and the `saveDebounce: 0` timer is queued
+ * after it, so two 0ms macrotasks suffice to cover "flush has run + the debounce timer is queued".
+ * No fixed wall-clock sleep — under parallel load that is the actual source of sporadic reds.
  */
 async function settle(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 0))
@@ -44,7 +45,7 @@ const schema = definePreferences({
 })
 
 describe('@vobs/preferences', () => {
-  it('提供类型化响应式字段、更新、重置和保存', () => {
+  it('provides typed reactive fields, updates, resets, and saving', () => {
     const storage = createStorage({ storage: createMemoryStorage(), prefix: 'pref:' })
     const preferences = createPreferences({ preferences: schema, storage, autoSave: false })
     preferences.set('theme', 'dark')
@@ -61,7 +62,7 @@ describe('@vobs/preferences', () => {
     storage.dispose()
   })
 
-  it('恢复持久化值，非法值回退默认值并报告错误', () => {
+  it('restores persisted values, falls back to defaults for invalid values, and reports errors', () => {
     const backend = createMemoryStorage()
     const storage = createStorage({ storage: backend, prefix: 'pref:' })
     storage.set('global', { version: 1, values: { theme: 'dark', pageSize: 'large' } })
@@ -74,7 +75,7 @@ describe('@vobs/preferences', () => {
     storage.dispose()
   })
 
-  it('支持版本迁移并在变更后自动防抖保存', async () => {
+  it('supports version migration and auto-saves with debounce after changes', async () => {
     const storage = createStorage({ storage: createMemoryStorage(), prefix: 'pref:' })
     storage.set('global', { version: 1, values: { theme: 'dark', locale: 'zh-CN' } })
     const preferences = createPreferences({
@@ -87,10 +88,10 @@ describe('@vobs/preferences', () => {
     expect(preferences.pageSize.value).toBe(3)
     preferences.set('theme', 'light')
     /*
-     * 不能写 `await setTimeout(20)` 这种固定墙钟等待：saveDebounce 是 10ms，
-     * 并行跑全量测试时机器有负载，定时器可能来不及在 20ms 内跑完 ——
-     * 于是这条测试偶发失败（实测单独跑 3/3 通过、全量下偶发红）。
-     * 轮询到条件成立即返回，上限给足余量。
+     * Never write a fixed wall-clock wait like `await setTimeout(20)`: saveDebounce is 10ms, and
+     * when the full suite runs in parallel the machine is loaded, so the timer may not fire within
+     * 20ms — this test then fails sporadically (measured: 3/3 in isolation, occasionally red in
+     * the full run). Poll until the condition holds; the cap leaves plenty of headroom.
      */
     await waitFor(() => {
       const saved = storage.get('global') as { values?: { theme?: string } } | undefined
@@ -102,17 +103,18 @@ describe('@vobs/preferences', () => {
   })
 
   /*
-   * restore() 之后、flush（微任务）之前的真实 set() 会被 `skipNextSave` 一起跳过：
-   * 实测 `restore(); set('pageSize', 99)` → 内存 99 / 盘上仍是 50，且没有任何报错。
-   * 这条用例钉住"恢复之后同一个同步任务里的用户写入必须落盘"。
+   * A real set() after restore() but before the flush (a microtask) got skipped together via
+   * `skipNextSave`: measured `restore(); set('pageSize', 99)` → memory 99 / disk still 50, with no
+   * error at all. This test pins "a user write in the same synchronous task after restore must
+   * reach disk".
    */
-  it('restore() 之后同一批 flush 里的真实 set 仍然落盘', async () => {
+  it('a real set within the same flush batch after restore() still persists to disk', async () => {
     const storage = createStorage({ storage: createMemoryStorage(), prefix: 'pref:' })
     storage.set('global', { version: 1, values: { pageSize: 50 } })
     const preferences = createPreferences({ preferences: schema, storage, saveDebounce: 0 })
     expect(preferences.pageSize.value).toBe(50)
 
-    // 应用里的常见写法：先按存储重放，再应用一次用户改动 —— 两者在同一个同步任务里。
+    // The common app pattern: replay from storage first, then apply a user change — both in the same synchronous task.
     preferences.restore()
     preferences.set('pageSize', 99)
     await settle()
@@ -124,11 +126,12 @@ describe('@vobs/preferences', () => {
   })
 
   /*
-   * 待触发的防抖定时器不被 restore() 取消：另一标签页 removeItem 之后，旧定时器把刚恢复的
-   * 默认值写回盘上 —— 对方的清空被复活（实测 `[backend.setItem] vobs:pref:global = {...theme:"light"...}`）。
-   * 这条用例钉住"外部清空之后本标签页不再把该键写回"。
+   * A pending debounce timer is not cancelled by restore(): after another tab's removeItem, the
+   * old timer writes the just-restored defaults back to disk — the other side's clearing gets
+   * resurrected (measured: `[backend.setItem] vobs:pref:global = {...theme:"light"...}`).
+   * This test pins "after an external clear, this tab must not write the key back".
    */
-  it('另一标签页清空后，待触发的防抖保存不会把该键写回', async () => {
+  it('after another tab clears the key, a pending debounced save does not write it back', async () => {
     const physicalKey = 'resurrect:global'
     window.localStorage.removeItem(physicalKey)
     const preferences = createPreferences({
@@ -137,9 +140,9 @@ describe('@vobs/preferences', () => {
       saveDebounce: 100
     })
     preferences.set('theme', 'dark')
-    await settle() // flush 已跑，100ms 防抖定时器已排上但还没触发
+    await settle() // flush has run; the 100ms debounce timer is queued but not yet fired
 
-    // 另一个标签页清空同一个键（真实浏览器里以 storage 事件到达本标签页）。
+    // Another tab clears the same key (in a real browser this arrives in this tab as a storage event).
     window.localStorage.removeItem(physicalKey)
     window.dispatchEvent(new StorageEvent('storage', {
       key: physicalKey,
@@ -154,7 +157,7 @@ describe('@vobs/preferences', () => {
     window.localStorage.removeItem(physicalKey)
   })
 
-  it('用户隔离并在用户变化时恢复对应数据', () => {
+  it('isolates per user and restores the matching data when the user changes', () => {
     const storage = createStorage({ storage: createMemoryStorage(), prefix: 'pref:' })
     const user = state<string | null>('one')
     storage.set('one', { version: 1, values: { theme: 'dark' } })
@@ -177,7 +180,7 @@ describe('@vobs/preferences', () => {
     })
   })
 
-  it('跨标签页变化恢复响应式字段，并通知订阅者', () => {
+  it('restores reactive fields from cross-tab changes and notifies subscribers', () => {
     const storage = createStorage({ prefix: 'pref:' })
     const preferences = createPreferences({ preferences: schema, storage, autoSave: false })
     const changes: string[] = []
@@ -198,7 +201,7 @@ describe('@vobs/preferences', () => {
     storage.dispose()
   })
 
-  it('插件注入上下文，并在应用销毁后清理', () => {
+  it('the plugin injects the context and cleans up after app destruction', () => {
     setRenderer(createDOMRenderer())
     let injected: ReturnType<typeof createPreferences> | undefined
     const app = createVobs({
@@ -211,10 +214,10 @@ describe('@vobs/preferences', () => {
     })
     expect(injected).toBeDefined()
     app.destroy()
-    expect(() => injected?.get('theme')).toThrow('已销毁')
+    expect(() => injected?.get('theme')).toThrow('disposed')
   })
 
-  it('未安装插件时 usePreferences 给出明确错误', () => {
+  it('usePreferences gives a clear error when the plugin is not installed', () => {
     const app = createVobs({ render: () => {
       usePreferences()
       return createText('')

@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
 
 /**
- * CLI 版本号的**单一来源**：直接读本包的 `package.json` ——
- * banner、`--help` 头部、脚手架产物三处都从这里取，**禁止再硬编码版本字符串**。
+ * The **single source** of the CLI version: reads this package's `package.json` directly —
+ * the banner, the `--help` header, and scaffold outputs all take it from here.
+ * **Hard-coding version strings elsewhere is forbidden.**
  */
 let cached: string | undefined
 
@@ -14,7 +15,7 @@ export function cliVersion(): string {
     ) as { version?: string }
     cached = manifest.version ?? '0.0.0'
   } catch {
-    // 读不到 package.json（被打包成单文件等）时不要谎报一个像真版本号的常量
+    // When package.json cannot be read (bundled into a single file, etc.), never lie with a constant that looks like a real version
     cached = '0.0.0'
   }
   return cached

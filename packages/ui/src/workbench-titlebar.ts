@@ -23,7 +23,7 @@ import type { VuiChildren, VuiCommonProps } from './types'
 export interface WorkbenchTitlebarProps extends VuiCommonProps {
   readonly mode?: string
   readonly modeIcon?: VuiChildren
-  /** 三个窗口按钮（关闭/最小化/最大化）的可读标签。默认英文，需要本地化时传入。 */
+  /** Readable labels for the three window buttons (close/min/max). Defaults to English; pass one to localize. */
   readonly windowControlLabel?: (kind: 'close' | 'min' | 'max') => string
   readonly project?: string
   readonly projectIcon?: VuiChildren
@@ -103,7 +103,7 @@ function createWindowLight(
   const light = createElement('button')
   setAttribute(light, 'class', `vui-wbtitlebar__light vui-wbtitlebar__light--${kind}`)
   setAttribute(light, 'type', 'button')
-  // 标签可本地化（默认英文常量；原来写死）
+  // Labels are localizable (English constants by default; this used to be hardcoded)
   const controlLabel = readProp<((kind: 'close' | 'min' | 'max') => string) | undefined>(props, 'windowControlLabel', undefined)
   setAttribute(light, 'aria-label', controlLabel
     ? controlLabel(kind)

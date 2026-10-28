@@ -10,7 +10,7 @@ import { KitResourcePage } from './resource-page'
 describe('@vobs/kit KitResourcePage', () => {
   beforeEach(() => setRenderer(createDOMRenderer()))
 
-  it('组合五个基础上下文并渲染 Resource 表格', async () => {
+  it('composes the five base contexts and renders the resource table', async () => {
     const client = createResourceClient()
     const resource = client.resource({ key: ['users'], fetcher: () => Promise.resolve([{ id: 1, name: 'Ada' }]) })
     const auth = createAuth({ session: state<Session | null>({
@@ -52,7 +52,7 @@ describe('@vobs/kit KitResourcePage', () => {
     theme.dispose()
   })
 
-  it('未授权时使用 unauthorized 内容且不渲染表格', () => {
+  it('uses the unauthorized content and renders no table when not allowed', () => {
     const auth = createAuth({ session: state<Session | null>({
       user: { id: '1', roles: [], permissions: [] }
     }) })

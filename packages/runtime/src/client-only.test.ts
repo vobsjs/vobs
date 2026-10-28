@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 /*
- * `<ClientOnly>` —— 只在客户端渲染的子树（外部踩坑文档 D 条的后一半）。
+ * `<ClientOnly>` — a subtree rendered only on the client (the second half of external
+ * postmortem doc item D).
  *
- * 这个组件唯一需要想清楚的地方是**两阶段**：朴素实现（服务端渲染空、客户端渲染 children）
- * 会造成**水合不匹配**。所以首轮两侧都渲染 fallback，挂载后才换入 children。
+ * The only thing that needs careful thought here is the **two-phase** design: the naive
+ * implementation (server renders nothing, client renders children) causes a **hydration
+ * mismatch**. So both sides render fallback in the first pass, and children are swapped
+ * in only after mount.
  *
- * 本文件的核心判据就是**水合能对上**（`strictHydration` 不报差异），
- * 以及换入之后内容真的出现了。
+ * This file's core criterion is that **hydration matches** (`strictHydration` reports no
+ * difference), and that the content really appears after the swap.
  */
 import { describe, expect, it } from 'vitest'
 import { scheduler } from '@vobs/reactivity'
@@ -35,7 +38,7 @@ function mountClientOnly(extra: Record<string, unknown> = {}) {
         },
         ...extra
       } as never)
-      // ClientOnly 返回的是 fragment，必须由 insertBefore 挂载（它会处理 fragment）
+      // ClientOnly returns a fragment, which must be mounted via insertBefore (it handles fragments)
       insertBefore(wrap, child, null)
       return wrap as unknown as VobsNode
     }
@@ -45,18 +48,18 @@ function mountClientOnly(extra: Record<string, unknown> = {}) {
 }
 
 describe('ClientOnly', () => {
-  it('挂载后换入 children', async () => {
+  it('swaps in children after mount', async () => {
     const view = mountClientOnly()
     flush()
-    // 首轮：还没有
+    // First pass: not yet
     expect(view.host.textContent).toBe('')
     await microtasks()
     flush()
-    expect(view.host.textContent, '挂载后没有换入 children').toBe('CLIENT')
+    expect(view.host.textContent, 'children were not swapped in after mount').toBe('CLIENT')
     view.cleanup()
   })
 
-  it('服务端渲染不产出 children（SSG 阶段不会碰浏览器 API）', () => {
+  it('server rendering does not produce children (the SSG phase never touches browser APIs)', () => {
     const tree = () => {
       const wrap = createElement('div')
       const child = createComponent(ClientOnly, {
@@ -70,10 +73,10 @@ describe('ClientOnly', () => {
       return wrap as unknown as VobsNode
     }
     const html = renderToString(tree)
-    expect(html, 'SSR 产物里出现了只在客户端才该有的内容').not.toContain('CLIENT')
+    expect(html, 'client-only content appeared in the SSR output').not.toContain('CLIENT')
   })
 
-  it('**水合对得上**（strictHydration 不报差异）—— 这是两阶段设计的理由', async () => {
+  it('**hydration matches** (strictHydration reports no difference) — the reason for the two-phase design', async () => {
     const tree = () => {
       const wrap = createElement('div')
       const child = createComponent(ClientOnly, {
@@ -88,7 +91,7 @@ describe('ClientOnly', () => {
       return wrap as unknown as VobsNode
     }
     document.body.innerHTML = renderToString(tree)
-    // 服务端产物里是 fallback
+    // The server output contains the fallback
     expect(document.body.textContent).toBe('placeholder')
 
     let error: unknown
@@ -100,27 +103,27 @@ describe('ClientOnly', () => {
     }
     expect(
       error,
-      `水合报出了差异：${JSON.stringify((error as { vobsHydration?: unknown })?.vobsHydration)}`
+      `hydration reported a difference: ${JSON.stringify((error as { vobsHydration?: unknown })?.vobsHydration)}`
     ).toBeUndefined()
 
-    // 水合首轮仍是 fallback（与产物一致），之后才换成 children
+    // The hydration first pass still shows the fallback (matching the output); children come after
     expect(document.body.textContent).toBe('placeholder')
     await microtasks()
     flush()
-    expect(document.body.textContent, '水合后没有换入 children').toBe('CLIENT')
+    expect(document.body.textContent, 'children were not swapped in after hydration').toBe('CLIENT')
 
     app?.destroy()
     document.body.innerHTML = ''
   })
 
-  it('fallback 在首轮渲染（服务端与客户端一致）', () => {
+  it('fallback renders in the first pass (server and client agree)', () => {
     const view = mountClientOnly({ fallback: () => createText('loading') })
     flush()
     expect(view.host.textContent).toBe('loading')
     view.cleanup()
   })
 
-  it('组件在微任务之前被卸载 → 不翻转、不抛错', async () => {
+  it('component unmounted before the microtask → no flip, no throw', async () => {
     const view = mountClientOnly()
     view.cleanup()
     await microtasks()
@@ -129,7 +132,7 @@ describe('ClientOnly', () => {
     expect(view.host.isConnected).toBe(false)
   })
 
-  it('卸载后没有残留（fragment 节点被清掉）', async () => {
+  it('no residue after unmount (fragment nodes cleared)', async () => {
     const view = mountClientOnly()
     await microtasks()
     flush()

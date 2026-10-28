@@ -83,7 +83,7 @@ function CheckoutButton() {
 | `createPagePay(client)` | Computer website payment (`alipay.trade.page.pay`). Returns the POST form HTML via `pageExecute()`. |
 | `createQuery(client)` | Trade query (`alipay.trade.query`) with `isSuccessful()` helper. |
 | `createRefund(client)` | Refund lifecycle: `refund()` (`alipay.trade.refund`), `queryRefund()` (`alipay.trade.fastpay.refund.query`), `close()` (`alipay.trade.close`). |
-| `createNotifyHandler(client)` | Async notification helpers: `verify(params, raw?)` signature check, **`validate(params, expected)` business-field check（`expected` 必填，见下）**, `successResponse()` / `failResponse()`. |
+| `createNotifyHandler(client)` | Async notification helpers: `verify(params, raw?)` signature check, **`validate(params, expected)` business-field check (`expected` is required, see below)**, `successResponse()` / `failResponse()`. |
 | `alipayPlugin(options)` | Vobs plugin that registers the Alipay client in the plugin context. Disposes only self-created clients on uninstall. |
 | `useAlipay()` | Returns the Alipay client from the vobs plugin context. |
 
@@ -126,11 +126,12 @@ if (!check.valid) {
 return notify.successResponse() // exactly "success"
 ```
 
-> **`expected` 是必填的两项**（`outTradeNo` + `totalAmount`），缺任何一项都会返回 `valid: false`
-> 并给出明确 `errors`，**不会**退化成"只校验了 app_id 就算通过"。
-> 早期版本的参数类型是 `expected?` 且两项都写成可选链，于是最省事的调用姿势
-> `validate(params)` 直接返回 `valid: true` —— 任何订单号、任何金额都能过关（失败开放）。
-> 如果你是从旧版本升级且依赖过那种行为，请显式传入两项期望值。
+> **Both entries of `expected` are required** (`outTradeNo` + `totalAmount`); missing either returns
+> `valid: false` with explicit `errors`, and it does **not** degrade into "only validated app_id and
+> called it passed". In earlier versions the parameter type was `expected?` with both entries accessed
+> via optional chaining, so the laziest call `validate(params)` returned `valid: true` directly — any
+> order number with any amount would get through (fail open). If you are upgrading from an old version
+> and relied on that behavior, pass both expected values explicitly.
 
 ### WeChat
 
@@ -168,7 +169,7 @@ import { createNotifyHandler } from '@vobs/payment/wechat'
 const notify = createNotifyHandler(wechatClient)
 
 if (!notify.verify(headers, rawBody)) {
-  return notify.failResponse('签名校验失败')
+  return notify.failResponse('Signature verification failed')
 }
 
 const payload = notify.decrypt(resource)
@@ -181,7 +182,7 @@ if (!check.valid) {
 return notify.successResponse() // {"code":"SUCCESS"}
 ```
 
-Amounts in the WeChat v3 API are integers in **fen** (分).
+Amounts in the WeChat v3 API are integers in **fen** (Chinese cents).
 
 ## Types
 

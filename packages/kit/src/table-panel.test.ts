@@ -5,7 +5,7 @@ import { KitTablePanel } from './table-panel'
 describe('@vobs/kit KitTablePanel', () => {
   beforeEach(() => setRenderer(createDOMRenderer()))
 
-  it('默认外壳：子内容直接落在面板内', () => {
+  it('default shell: children land directly inside the panel', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitTablePanel, { children: 'table content' })
@@ -19,7 +19,7 @@ describe('@vobs/kit KitTablePanel', () => {
     app.destroy()
   })
 
-  it('pad 修饰类：内边距自滚卡片', () => {
+  it('pad modifier: padded self-scrolling card', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitTablePanel, { pad: true, children: 'list' })
@@ -30,7 +30,7 @@ describe('@vobs/kit KitTablePanel', () => {
     app.destroy()
   })
 
-  it('scroll 模式：子内容包进内部滚动层', () => {
+  it('scroll mode: children wrapped in an inner scroll layer', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitTablePanel, { scroll: true, children: 'bare list' })

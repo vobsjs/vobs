@@ -1,20 +1,20 @@
 // @vitest-environment node
 /*
- * sourcemap **位置正确性**。
+ * sourcemap **position correctness**.
  *
- * 此前只被确认"会产出 sourcemap"（`sources` 正确、`mappings` 非空），
- * 但**位置对不对从未验证** —— DevTools 的报错定位完全依赖它，映射偏了完全无声。
+ * Previously it was only confirmed that "a sourcemap is produced" (`sources` correct, `mappings` non-empty),
+ * but **whether the positions are right was never verified** — DevTools' error locating depends entirely on it, and a skewed mapping is completely silent.
  *
- * 判据（经过一次自我修正，见下）：
- * 1) 每个**语句/表达式的起点**都要有精确映射（列一致）
- * 2) 映射不得越界（源码行/列范围内）、不得为负
- * 3) 产物里由编译器引入的位置（注入的 import、生成的 IIFE 等）可以无映射，
- *    但不能映射到错误的位置
+ * Tests (after one self-correction, see below):
+ * 1) every **statement/expression start** must have an exact mapping (column matches)
+ * 2) mappings must stay in bounds (within source line/column range) and never be negative
+ * 3) positions the compiler introduces into the output (injected imports, generated IIFEs, etc.) may go unmapped,
+ *    but must not map to a wrong position
  *
- * ⚠️ 我第一版判据要求"**每个标识符**都有独立映射段"，结果 8 处报不精确 ——
- * 那是**判据错了**：sourcemap 是段式的，段标记起点，文档与 DevTools 都按
- * "该段覆盖到下一段"来解释。实测产物 `insertDynamicValue(_el0, null, () => countSignal.value)`
- * 里 `countSignal` 位置(列 48)是落在映射到源码 `4:9` 的那一段里的 —— 正确。
+ * ⚠️ My first version of the tests demanded "an independent mapping segment for **every identifier**", and 8 spots came out imprecise —
+ * the **tests were wrong**: a sourcemap is segment-based; segments mark starts, and both the spec and DevTools interpret
+ * "this segment covers up to the next one". In the measured output `insertDynamicValue(_el0, null, () => countSignal.value)`,
+ * `countSignal` at (column 48) falls inside the segment mapped to source `4:9` — correct.
  */
 import { describe, expect, it } from 'vitest'
 import { compileWithSourceMap } from './index'
@@ -24,7 +24,7 @@ const CHAR_TO_INT = new Map<string, number>([...BASE64].map((c, i) => [c, i]))
 
 interface Segment { genLine: number; genCol: number; srcLine: number; srcCol: number }
 
-/** 按 sourcemap v3 规范解码 mappings（相对量 + VLQ）。 */
+/** Decode mappings per the sourcemap v3 spec (relative deltas + VLQ). */
 function decodeMappings(mappings: string): Segment[] {
   const segments: Segment[] = []
   let genLine = 1
@@ -42,7 +42,7 @@ function decodeMappings(mappings: string): Segment[] {
       let value = 0
       for (const char of segText) {
         const digit = CHAR_TO_INT.get(char)
-        if (digit === undefined) throw new Error(`mappings 里有非法 base64 字符: ${JSON.stringify(char)}`)
+        if (digit === undefined) throw new Error(`illegal base64 character in mappings: ${JSON.stringify(char)}`)
         const cont = digit & 32
         value += (digit & 31) << shift
         if (cont) { shift += 5; continue }
@@ -68,7 +68,7 @@ function decodeMappings(mappings: string): Segment[] {
   return segments
 }
 
-/** 源里所有"语句/表达式起点"的位置：`const <name>`、`return `、`export `、`(` 后的表达式。 */
+/** Positions of all "statement/expression starts" in the source: `const <name>`, `return `, `export `, expressions after `(`. */
 function statementStarts(source: string): Array<{ token: string; line: number; col: number }> {
   const out: Array<{ token: string; line: number; col: number }> = []
   const lines = source.split('\n')
@@ -87,12 +87,12 @@ function statementStarts(source: string): Array<{ token: string; line: number; c
 
 const CASES: Array<{ name: string; source: string; anchor: { line: number; col: number; label: string } }> = [
   {
-    name: '静态元素',
+    name: 'static element',
     source: ['export const A = () => {', '  return <div>hi</div>', '}'].join('\n'),
     anchor: { line: 2, col: 2, label: 'return' }
   },
   {
-    name: '响应式文本绑定',
+    name: 'reactive text binding',
     source: [
       'import { state } from "@vobs/reactivity"',
       'export const A = () => {',
@@ -100,84 +100,84 @@ const CASES: Array<{ name: string; source: string; anchor: { line: number; col: 
       '  return <span>{countSignal.value}</span>',
       '}'
     ].join('\n'),
-    // JSX 里表达式 `{...}` 的起点（列 9 = `{` 之后一个空格）
-    anchor: { line: 4, col: 9, label: 'JSX 表达式起点' }
+    // The start of the `{...}` expression inside JSX (column 9 = one space after `{`)
+    anchor: { line: 4, col: 9, label: 'JSX expression start' }
   },
   {
-    name: '事件处理器',
+    name: 'event handler',
     source: [
       'export const A = () => {',
       '  const handleClick = () => console.log("c")',
       '  return <button onClick={handleClick}>Go</button>',
       '}'
     ].join('\n'),
-    anchor: { line: 3, col: 9, label: 'onClick 表达式' }
+    anchor: { line: 3, col: 9, label: 'onClick expression' }
   },
   {
-    name: '列表',
+    name: 'list',
     source: [
       'export const A = (props: { items: string[] }) => {',
       '  return <ul>{props.items.map(itemValue => <li>{itemValue}</li>)}</ul>',
       '}'
     ].join('\n'),
-    anchor: { line: 2, col: 13, label: '列表表达式起点' }
+    anchor: { line: 2, col: 13, label: 'list expression start' }
   }
 ]
 
-describe('compiler sourcemap 位置正确性', () => {
+describe('compiler sourcemap position correctness', () => {
   for (const testCase of CASES) {
-    it(`${testCase.name}：位置精确且不越界`, () => {
+    it(`${testCase.name}: positions exact and in bounds`, () => {
       const { map } = compileWithSourceMap(testCase.source, { filename: `${testCase.name}.tsx` })
-      expect(map, '没有产出 sourcemap').toBeTruthy()
+      expect(map, 'no sourcemap was produced').toBeTruthy()
       expect(map!.sources).toEqual([`${testCase.name}.tsx`])
 
       const segments = decodeMappings(map!.mappings!)
       const mapped = segments.filter(s => s.srcLine > 0)
-      expect(mapped.length, '没有任何带源码位置的映射段').toBeGreaterThan(0)
+      expect(mapped.length, 'no segment carries a source position').toBeGreaterThan(0)
 
       const sourceLines = testCase.source.split('\n').length
-      // 判据 2：不得越界、不得负列
+      // Test 2: in bounds, no negative columns
       for (const s of mapped) {
-        expect(s.srcLine, `产物 ${s.genLine}:${s.genCol} 映射到越界行 ${s.srcLine}`)
+        expect(s.srcLine, `output ${s.genLine}:${s.genCol} maps to out-of-bounds line ${s.srcLine}`)
           .toBeGreaterThanOrEqual(1)
         expect(s.srcLine).toBeLessThanOrEqual(sourceLines)
-        expect(s.srcCol, `产物 ${s.genLine}:${s.genCol} 映射到负列`).toBeGreaterThanOrEqual(0)
+        expect(s.srcCol, `output ${s.genLine}:${s.genCol} maps to a negative column`).toBeGreaterThanOrEqual(0)
         expect(s.genCol).toBeGreaterThanOrEqual(0)
       }
 
-      // 判据 1：锚点（语句/表达式起点）必须有精确映射
+      // Test 1: anchors (statement/expression starts) must have exact mappings
       const anchorLine = testCase.source.split('\n')[testCase.anchor.line - 1]!
-      expect(anchorLine, `锚点行 ${testCase.anchor.line} 内容不符预期`).toBeTruthy()
+      expect(anchorLine, `anchor line ${testCase.anchor.line} does not match the expectation`).toBeTruthy()
       const anchor = testCase.anchor
       const hit = mapped.find(s => s.srcLine === anchor.line && s.srcCol === anchor.col)
       expect(
         hit,
-        `${testCase.name}：源码 ${anchor.line}:${anchor.col}（${anchor.label}）没有精确映射；` +
-        `该行已有列 ${JSON.stringify([...new Set(mapped.filter(s => s.srcLine === anchor.line).map(s => s.srcCol))])}`
+        `${testCase.name}: source ${anchor.line}:${anchor.col} (${anchor.label}) has no exact mapping; ` +
+        `that line already has columns ${JSON.stringify([...new Set(mapped.filter(s => s.srcLine === anchor.line).map(s => s.srcCol))])}`
       ).toBeTruthy()
     })
   }
 
-  it('语句起点普遍有映射（不是只有个别巧合）', () => {
+  it('statement starts are broadly mapped (not a few lucky coincidences)', () => {
     const source = CASES[1]!.source
     const { map } = compileWithSourceMap(source, { filename: 'starts.tsx' })
     const mapped = decodeMappings(map!.mappings!).filter(s => s.srcLine > 0)
     const starts = statementStarts(source)
-    expect(starts.length, '没找到任何语句起点（测试自身有问题）').toBeGreaterThan(0)
+    expect(starts.length, 'no statement starts found (the test itself is broken)').toBeGreaterThan(0)
     let covered = 0
     for (const start of starts) {
       if (mapped.some(s => s.srcLine === start.line && s.srcCol === start.col)) covered++
     }
-    // 起点是 DevTools 断点与报错定位的落点，要求全部覆盖
-    expect(covered, `语句起点只有 ${covered}/${starts.length} 有精确映射`).toBe(starts.length)
+    // Starts are where DevTools breakpoints and error locating land; full coverage is required
+    expect(covered, `only ${covered}/${starts.length} statement starts have exact mappings`).toBe(starts.length)
   })
 
-  it('编译器引入的位置可以有映射，但不能指向不存在的源码行', () => {
+  it('compiler-introduced positions may be mapped, but must not point at nonexistent source lines', () => {
     const source = CASES[3]!.source
     const { map } = compileWithSourceMap(source, { filename: 'injected.tsx' })
     const sourceLines = source.split('\n').length
     const mapped = decodeMappings(map!.mappings!).filter(s => s.srcLine > 0)
     const bad = mapped.filter(s => s.srcLine > sourceLines)
-    expect(bad, `有 ${bad.length} 段映射到了不存在的源码行`).toEqual([])
+    expect(bad, `${bad.length} segment(s) map to nonexistent source lines`).toEqual([])
   })
 })

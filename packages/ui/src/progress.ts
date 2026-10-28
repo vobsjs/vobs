@@ -18,16 +18,16 @@ import type { VuiChildren, VuiCommonProps } from './types'
 export type ProgressTone = 'brand' | 'ok' | 'warn' | 'bad'
 
 export interface ProgressBarProps extends VuiCommonProps {
-  /** 进度 0-100（越界自动截断） */
+  /** Progress 0-100 (clamped automatically). */
   readonly v?: number
   readonly tone?: ProgressTone
-  /** 条高（数字按 px，默认 6） */
+  /** Bar height (number as px, default 6). */
   readonly height?: number
-  /** 无障碍名 */
+  /** Accessible name. */
   readonly label?: string
 }
 
-/** 线性进度条 */
+/** Linear progress bar. */
 export function ProgressBar(props: ProgressBarProps = {}): VobsNode {
   const root = createElement('div')
   bindClassList(root, props, () => [
@@ -52,18 +52,18 @@ export function ProgressBar(props: ProgressBarProps = {}): VobsNode {
 }
 
 export interface ProgressRingProps extends VuiCommonProps {
-  /** 进度 0-100（越界自动截断） */
+  /** Progress 0-100 (clamped automatically). */
   readonly v?: number
   readonly tone?: ProgressTone
-  /** 外径（默认 44） */
+  /** Outer diameter (default 44). */
   readonly size?: number
-  /** 描边宽（默认 4） */
+  /** Stroke width (default 4). */
   readonly stroke?: number
-  /** 环心内容（缺省显示 `N%`） */
+  /** Ring-center content (defaults to `N%`). */
   readonly children?: VuiChildren
 }
 
-/** 环形进度（SVG 双圆弧，中心可放文本/图标） */
+/** Ring progress (SVG double arc; the center can hold text/icons). */
 export function ProgressRing(props: ProgressRingProps = {}): VobsNode {
   const root = createElement('div')
   bindClassList(root, props, () => ['vui-ring'])

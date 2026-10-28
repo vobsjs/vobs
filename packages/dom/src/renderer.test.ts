@@ -16,13 +16,13 @@ describe('dom', () => {
     setRenderer(createDOMRenderer())
   })
 
-  it('创建文本节点', () => {
+  it('creates a text node', () => {
     const text = createText('hello')
 
     expect(text.textContent).toBe('hello')
   })
 
-  it('创建元素并插入', () => {
+  it('creates an element and inserts into it', () => {
     const parent = createElement('div')
     const child = createElement('span')
     const text = createText('内容')
@@ -33,7 +33,7 @@ describe('dom', () => {
     expect(parent.innerHTML).toBe('<span>内容</span>')
   })
 
-  it('bindText 响应式更新', async () => {
+  it('bindText updates reactively', async () => {
     const count = state(0)
     const text = createText('')
 
@@ -47,7 +47,7 @@ describe('dom', () => {
     expect(text.textContent).toBe('5')
   })
 
-  it('动态 getter 会追踪读取到的 state', async () => {
+  it('dynamic getters track the states they read', async () => {
     const count = state(0)
     const text = createText('')
 
@@ -58,7 +58,7 @@ describe('dom', () => {
     expect(text.textContent).toBe('count: 2')
   })
 
-  it('条件块切换时创建和销毁节点', async () => {
+  it('creates and destroys nodes when a conditional block toggles', async () => {
     const show = state(true)
     const parent = createElement('div')
     let disposed = 0
@@ -79,7 +79,7 @@ describe('dom', () => {
     expect(disposed).toBe(1)
   })
 
-  it('keyed 列表复用节点、更新内容并保留顺序', async () => {
+  it('keyed list reuses nodes, updates content and preserves order', async () => {
     const items = state([
       { id: 1, name: 'A' },
       { id: 2, name: 'B' }
@@ -114,7 +114,7 @@ describe('dom', () => {
     expect(parent.textContent).toContain('B updated')
   })
 
-  it('keyed 列表在复用带 index 的渲染项时使用新索引', async () => {
+  it('keyed list uses the new index when reusing render items that capture index', async () => {
     const items = state([{ id: 'a' }, { id: 'b' }])
     const parent = createElement('ul')
 
@@ -138,7 +138,7 @@ describe('dom', () => {
     expect(parent.textContent).toBe('b:0a:1')
   })
 
-  it('列表项删除时销毁其 Owner', async () => {
+  it('destroys the owner when a list item is removed', async () => {
     const items = state([{ id: 1 }])
     const parent = createElement('ul')
     let disposed = false

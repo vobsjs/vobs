@@ -33,9 +33,9 @@ interface GroupEntry extends TransitionEntry {
 }
 
 /**
- * Delays branch disposal until the leave lifecycle has completed. It accepts
- * Any rendered root is accepted; the default CSS driver animates element roots
- * inside a Vobs fragment and leaves non-DOM renderers to complete immediately.
+ * Delays branch disposal until the leave lifecycle has completed. Any rendered
+ * root is accepted; the default CSS driver animates element roots inside a
+ * Vobs fragment and lets non-DOM renderers complete immediately.
  */
 export function Transition(props: TransitionProps = {}): VobsFragment {
   return createFragment((parent, anchor) => {
@@ -156,7 +156,7 @@ export function TransitionGroup<Item>(props: TransitionGroupProps<Item>): VobsFr
 function validateGroupDescriptors(descriptors: readonly GroupDescriptor[]): void {
   const seen = new Set<unknown>()
   for (const descriptor of descriptors) {
-    if (seen.has(descriptor.key)) throw new Error(`TransitionGroup: 检测到重复 key: ${String(descriptor.key)}`)
+    if (seen.has(descriptor.key)) throw new Error(`TransitionGroup: duplicate key detected: ${String(descriptor.key)}`)
     seen.add(descriptor.key)
   }
 }
@@ -176,7 +176,7 @@ function createGroupEntry(descriptor: GroupDescriptor): GroupEntry {
   }
   if (!node) {
     owner.dispose()
-    throw new Error('TransitionGroup: renderItem 必须返回节点')
+    throw new Error('TransitionGroup: renderItem must return a node')
   }
   return {
     key: descriptor.key,
@@ -203,7 +203,7 @@ function refreshGroupEntry(parent: Node, entry: GroupEntry, descriptor: GroupDes
 
 function renderGroupNode(signal: Signal<unknown>, descriptor: GroupDescriptor, owner: Owner): VobsNode {
   const node = owner.run(() => createBlock(() => resolveChildren(descriptor.render(toReactiveItem(signal, descriptor.item), descriptor.index))))
-  if (!node) throw new Error('TransitionGroup: renderItem 必须返回节点')
+  if (!node) throw new Error('TransitionGroup: renderItem must return a node')
   return node
 }
 
@@ -220,7 +220,7 @@ function readGroupDescriptors<Item>(props: TransitionGroupProps<Item>): GroupDes
     const keyOf = readProp<TransitionGroupProps<Item>['keyOf']>(props, 'keyOf', undefined)
     const renderItem = readProp<TransitionGroupProps<Item>['renderItem']>(props, 'renderItem', undefined)
     if (typeof keyOf !== 'function' || typeof renderItem !== 'function') {
-      throw new Error('TransitionGroup: 提供 items 时必须同时提供 keyOf 和 renderItem')
+      throw new Error('TransitionGroup: providing items requires keyOf and renderItem as well')
     }
     return items.map((item, index) => ({
       key: keyOf(item, index),
@@ -339,8 +339,10 @@ function invoke(callback: ((element: Element) => void) | undefined, element: Ele
 
 function toReactiveItem<Item>(signal: Signal<Item>, initialValue: Item): Item {
   if (typeof initialValue !== 'object' || initialValue === null) return initialValue
-  // 与 runtime/src/dynamic.ts 的 toReactiveItem 同一处修复（含 reactiveProxyTarget 的理由）：
-  // 目标不能带不可配置的自有属性，否则 Object.freeze 过的条目会让 get 陷阱违反 Proxy 不变量。
+  // Same fix as toReactiveItem in runtime/src/dynamic.ts (including the reason
+  // for reactiveProxyTarget): the target must not own non-configurable
+  // properties, otherwise an Object.freeze-ed entry would make the get trap
+  // violate Proxy invariants.
   return new Proxy(reactiveProxyTarget(initialValue), {
     get(_target, property, receiver) {
       return Reflect.get(signal.value as object, property, receiver)
@@ -360,7 +362,7 @@ function toReactiveItem<Item>(signal: Signal<Item>, initialValue: Item): Item {
   }) as Item
 }
 
-/** 见 runtime/src/dynamic.ts 的同名函数（这段是它的副本）。 */
+/** See the same-named function in runtime/src/dynamic.ts (this is a copy of it). */
 function reactiveProxyTarget(value: object): object {
   if (Object.isExtensible(value)) {
     let allConfigurable = true

@@ -3,77 +3,86 @@ import path from 'node:path'
 import { logger } from '../utils/logger.js'
 
 /**
- * `vobs api [query]` —— 框架导出的**可查询索引**。
+ * `vobs api [query]` — a **queryable index** of the framework's exports.
  *
- * ## 为什么需要它
+ * ## Why it is needed
  *
- * LLM 报错的大头是**猜错 API 形状**。这一轮里我自己就栽过三次"能力已存在却不知道"
- * （差点重复实现 `inferStateDebugName`、差点把 `LayoutChildren` 做成破坏性变更、
- * 不知道 `vobs check` 全量扫描）—— 而我有**源码访问权**。GLM 连猜的资格都更差。
+ * The biggest share of LLM errors is **guessing API shapes wrong**. This round alone I
+ * stumbled three times over "the capability existed but I didn't know" (nearly
+ * re-implementing `inferStateDebugName`, nearly turning `LayoutChildren` into a breaking
+ * change, not knowing `vobs check` scans everything) — and I have **source access**. GLM's
+ * guessing odds are even worse.
  *
- * 与其让它猜，不如给它查。这比任何文档都直接：**模型可以查，不用猜。**
+ * Rather than let it guess, let it query. This beats any documentation: **the model can
+ * look it up instead of guessing.**
  *
- * ## 数据来源：**已构建的 `dist/*.d.ts`**
+ * ## Data source: the **built `dist/*.d.ts`**
  *
- * 读的是**随包发布**的类型声明，所以：
- * - 与用户实际拿到的一致（不是源码的近似）
- * - 版本准确（升级框架后索引自动跟着变）
+ * It reads the type declarations **shipped with the package**, so:
+ * - it matches what users actually get (not an approximation of the source)
+ * - versions are accurate (after upgrading the framework the index follows automatically)
  *
- * ## 只做名字索引（刻意的范围）
+ * ## Name index only (a deliberate scope)
  *
- * 这一版只回答「**哪个包导出了什么名字**」—— 那是最常被猜错的一环，
- * 且能纯静态抽取、零误报。签名/参数（更重、需要类型解析）留作后续。
+ * This version only answers "**which package exports which name**" — the most commonly
+ * guessed-wrong link, extractable purely statically with zero false positives.
+ * Signatures/parameters (heavier, needs type resolution) are left for later.
  *
- * ## 已知限制
+ * ## Known limitations
  *
- * **还有约 0.7% 的条目不显示种类**（实测 1359 项里 10 项 unknown）。
- * 逐个看过，它们**不是解析缺陷，而是 bundler 的去冲突改名残留**：
+ * **About 0.7% of entries show no kind** (measured: 10 of 1359 are unknown).
+ * Inspected one by one, they are **not parser defects but bundler de-confliction rename
+ * residue**:
  *
  * ```
  * captcha/index.d.ts:2   export { C as Captcha, a as CaptchaAnswer, b as CaptchaChallenge, … }
  * payment/index.d.ts:1   export { i as alipay } from './index-B1aUR7Vt.js'
  * ```
  *
- * 也就是 `a`/`b`/`alipay` 这些名字**确实在导出列表里**（列出来是准确的），
- * 只是它们指向的本地声明（`i` 之类）没有可识别的声明头。
+ * That is, names like `a`/`b`/`alipay` **do appear in the export list** (listing them is
+ * accurate); the local declarations they point at (`i` and friends) just have no
+ * recognizable declaration header.
  *
- * **刻意不过滤单字母名**：那能让输出更好看，但会变成"我猜哪些导出不算 API" ——
- * 而这个索引的价值恰恰在于"名字与包名是准的，不编"。
+ * **Single-letter names are deliberately not filtered**: that would make the output
+ * prettier but would turn into "I guess which exports don't count as API" — the value of
+ * this index is exactly that "names and package names are accurate, nothing invented".
  *
- * **输出里 unknown 不显示那一列**（显示一列"没解析出来"会让人以为工具坏了）；
- * `--json` 仍保留该字段供工具消费。
+ * **The unknown kind is hidden from text output** (a column saying "unresolved" would make
+ * people think the tool is broken); `--json` still keeps the field for tooling.
  *
- * （演进：单遍 → **1353/1355 全 unknown**；两遍法 → 196/1359 = 14%；
- * 补上**别名映射**（`index_X as X`）与**跨包种类回退** → **10/1359 = 0.7%**。
- * 两条修法的原因都写在上面的 `exportAliases` 与 `globalKinds` 注释里。）
+ * (Evolution: single pass → **1353/1355 all unknown**; two-pass → 196/1359 = 14%;
+ * adding **alias mapping** (`index_X as X`) and **cross-package kind fallback** →
+ * **10/1359 = 0.7%**. The rationale for both fixes is in the `exportAliases` and
+ * `globalKinds` comments above.)
  *
- * **不 import 任何工作区包**：只用 node:fs / node:path。
- * 这一轮已经有两次"import 了 workspace 包但没声明依赖"的坑（cwd 一换就炸），
- * 这个命令从设计上避开它。
+ * **No workspace package is imported**: only node:fs / node:path. This round already had
+ * two incidents of "imported a workspace package without declaring the dependency"
+ * (explodes the moment cwd changes); this command avoids that by design.
  */
 export interface ApiOptions {
-  /** 查询串（子串匹配，大小写不敏感）。省略时列出全部。 */
+  /** Query string (substring match, case-insensitive). Lists everything when omitted. */
   readonly query?: string
-  /** 机器可读输出（给 AI 与工具消费）。 */
+  /** Machine-readable output (for AI and tools). */
   readonly json?: boolean
-  /** 仓库根目录，默认当前工作目录。 */
+  /** Repository root; defaults to the current working directory. */
   readonly dir?: string
 }
 
 export interface ApiEntry {
-  /** 包名，如 `@vobs/runtime`。 */
+  /** Package name, e.g. `@vobs/runtime`. */
   readonly package: string
-  /** 导出名，如 `state`。 */
+  /** Export name, e.g. `state`. */
   readonly name: string
-  /** 导出种类（函数 / 类型 / 常量 / 类 / 未知）。 */
+  /** Export kind (function / type / const / class / unknown). */
   readonly kind: 'function' | 'type' | 'const' | 'class' | 'unknown'
 }
 
 /**
- * **第一遍**：这一行里被**导出**的名字（不管它是什么）。
+ * **First pass**: names that are **exported** on this line (whatever they are).
  *
- * 只关心"对外可见"—— 因为打包出来的类型声明绝大多数是**再导出桶**
- * （`export { a, b } from './x'`），真正的声明在子文件里，两处不在同一行。
+ * Only "externally visible" matters — because built type declarations are mostly
+ * **re-export barrels** (`export { a, b } from './x'`); the real declarations live in child
+ * files, not on the same line.
  */
 function exportedNames(line: string): string[] {
   const text = line.trim()
@@ -98,22 +107,23 @@ function exportedNames(line: string): string[] {
 }
 
 /**
- * **别名映射**：`export { 本地名 as 公开名 }` 里的 `公开名 → 本地名`。
+ * **Alias mapping**: `publicName → localName` from `export { localName as publicName }`.
  *
- * ## 为什么必须有它（实测出来的 14% 的主因之一）
+ * ## Why it is required (measured: one of the main causes of the 14% unknown rate)
  *
- * 打包器会**改名**。`@vobs/payment/dist/index-B1aUR7Vt.d.ts` 实测：
+ * Bundlers **rename**. Measured in `@vobs/payment/dist/index-B1aUR7Vt.d.ts`:
  *
  * ```ts
  * import { AlipaySdkConfig } from 'alipay-sdk'
- * declare const index_AlipaySdkConfig: typeof AlipaySdkConfig     // ← 声明叫 index_…
+ * declare const index_AlipaySdkConfig: typeof AlipaySdkConfig     // ← declared as index_…
  * ```
  *
- * 而导出列表里写的是 `export { index_AlipaySdkConfig as AlipaySdkConfig }`。
- * `exportedNames` 解析出的是**公开名**（`AlipaySdkConfig`），
- * `declarationKinds` 记的是**本地名**（`index_AlipaySdkConfig`）—— 于是永远 join 不上 → `unknown`。
+ * While the export list says `export { index_AlipaySdkConfig as AlipaySdkConfig }`.
+ * `exportedNames` extracts the **public name** (`AlipaySdkConfig`);
+ * `declarationKinds` records the **local name** (`index_AlipaySdkConfig`) — so they never
+ * join → `unknown`.
  *
- * 修法是先把别名记下来，join 时用 `公开名 → 本地名 → 种类` 走两步。
+ * The fix: record aliases first, then join via `public name → local name → kind`, two hops.
  */
 function exportAliases(line: string): Array<[publicName: string, localName: string]> {
   const text = line.trim()
@@ -129,13 +139,15 @@ function exportAliases(line: string): Array<[publicName: string, localName: stri
 }
 
 /**
- * **第二遍**：名字 → 种类。
+ * **Second pass**: name → kind.
  *
- * 这里**不要求 `export` 前缀** —— 打包出来的声明常常就是
- * `declare function state(...)`，由文件末尾的 `export { state }` 统一导出。
+ * No `export` prefix is **required** here — built declarations are often just
+ * `declare function state(...)`, exported together by `export { state }` at the end of the
+ * file.
  *
- * 之前只有一遍、且要求 `export declare …`，于是实测 **1355 项里 1353 项是
- * `unknown`**（见文件头的已知限制）。两遍法把这个数字降下来。
+ * Previously there was only one pass, and it required `export declare …`; measured, **1353
+ * of 1355 entries were `unknown`** (see the known limitations in the file header). The
+ * two-pass approach brings that number down.
  */
 function declarationKinds(text: string): Map<string, ApiEntry['kind']> {
   const kinds = new Map<string, ApiEntry['kind']>()
@@ -154,7 +166,7 @@ function declarationKinds(text: string): Map<string, ApiEntry['kind']> {
   return kinds
 }
 
-/** 收集一个包 `dist` 下全部 `.d.ts`。 */
+/** Collect every .d.ts under a package's dist. */
 function declarationFiles(distDir: string): string[] {
   const out: string[] = []
   const walk = (dir: string, depth: number): void => {
@@ -171,25 +183,27 @@ function declarationFiles(distDir: string): string[] {
   return out
 }
 
-/** 建立索引：读每个包的 package.json 拿到真名，再扫它的 dist 类型声明。 */
+/** Build the index: read each package's package.json for the real name, then scan its dist type declarations. */
 export function buildApiIndex(root: string): ApiEntry[] {
   const packagesDir = path.join(root, 'packages')
   if (!existsSync(packagesDir)) return []
   const index: ApiEntry[] = []
-  /** 已收录的「包|名字」（去重）。 */
+  /** Collected "package|name" keys (deduplication). */
   const exported = new Set<string>()
-  /** 「包|名字」→ 种类（第二遍收集，最后 join 回 index）。 */
+  /** "package|name" → kind (collected in the second pass, joined back into the index at the end). */
   const kinds = new Map<string, ApiEntry['kind']>()
-  /** 「包|公开名」→ 本地名（`export { 本地 as 公开 }`，见 exportAliases 的注释）。 */
+  /** "package|public name" → local name (`export { local as public }`, see exportAliases note). */
   const aliases = new Map<string, string>()
   /**
-   * **跨包**的名字 → 种类（不带包名）。
+   * **Cross-package** name → kind (no package name).
    *
-   * 为什么要它：`@vobs/vobs` 是一整行再导出列表（`export { AsyncBoundary, … }`），
-   * 而这些名字的声明在**兄弟包**（`@vobs/dom` / `@vobs/kit`）的 dist 里。
-   * 按包收集的映射永远查不到 → 实测 `@vobs/vobs` 有 100 条 unknown（占全部 196 的一半）。
+   * Why it exists: `@vobs/vobs` is one long re-export line (`export { AsyncBoundary, … }`),
+   * while the declarations of those names live in **sibling packages** (`@vobs/dom` /
+   * `@vobs/kit`) dists. A per-package mapping can never find them → measured, `@vobs/vobs`
+   * had 100 unknowns (half of all 196).
    *
-   * 只作**回退**用：先查本包（更精确，能区分同名不同包），查不到才用全局。
+   * Used only as a **fallback**: the per-package map is consulted first (more precise, can
+   * tell same-named exports apart across packages); the global map only when that fails.
    */
   const globalKinds = new Map<string, ApiEntry['kind']>()
   for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
@@ -197,7 +211,7 @@ export function buildApiIndex(root: string): ApiEntry[] {
     const pkgDir = path.join(packagesDir, entry.name)
     let manifest: { name?: string; private?: boolean }
     try { manifest = JSON.parse(readFileSync(path.join(pkgDir, 'package.json'), 'utf8')) } catch { continue }
-    // 内部/未发布的包不进索引（用户装不到它们）
+    // Internal/unpublished packages stay out of the index (users cannot install them)
     if (manifest.name === undefined || manifest.private === true) continue
     const distDir = path.join(pkgDir, 'dist')
     if (!existsSync(distDir)) continue
@@ -205,11 +219,12 @@ export function buildApiIndex(root: string): ApiEntry[] {
       let text: string
       try { text = readFileSync(file, 'utf8') } catch { continue }
       /*
-       * **两遍法**：
-       *  1. 先收「这个名字是什么」（声明常常不带 export 前缀 → 之前全被漏掉）
-       *  2. 再收「这个名字被导出了」（导出列表与声明不在同一行）
-       *  3. 最后 join：导出名 → 种类
-       * 顺序无所谓（各写各的 map），但**必须两遍** —— 只有一遍时 1353/1355 是 unknown。
+       * **Two passes**:
+       *  1. collect "what is this name" (declarations often lack an export prefix → all missed before)
+       *  2. collect "which names are exported" (the export list and the declaration are not on the same line)
+       *  3. finally join: export name → kind
+       * Order does not matter (each writes its own map), but there **must be two passes** —
+       * with one pass, 1353/1355 were unknown.
        */
       for (const [name, kind] of declarationKinds(text)) {
         kinds.set(`${manifest.name}|${name}`, kind)
@@ -229,17 +244,18 @@ export function buildApiIndex(root: string): ApiEntry[] {
     }
   }
   /*
-   * join：导出名 → 种类。三步回退，每一步都只在前一步失败时才用：
-   *   ① 本包同名声明（最精确）
-   *   ② 解别名后的本包声明（bundler 改名，如 `index_AlipaySdkConfig as AlipaySdkConfig`）
-   *   ③ 全局同名声明（跨包再导出，如 vobs → dom/kit）
-   * 都查不到就保持 unknown —— **不编造**。
+   * Join: export name → kind. Three-step fallback, each used only when the previous fails:
+   *   ① same-named declaration in this package (most precise)
+   *   ② this package's declaration after resolving the alias (bundler renames, e.g.
+   *      `index_AlipaySdkConfig as AlipaySdkConfig`)
+   *   ③ global same-named declaration (cross-package re-exports, e.g. vobs → dom/kit)
+   * If none match, it stays unknown — **nothing invented**.
    */
   for (const item of index) {
     const direct = kinds.get(`${item.package}|${item.name}`)
     if (direct !== undefined) { (item as { kind: ApiEntry['kind'] }).kind = direct; continue }
     let localName = aliases.get(`${item.package}|${item.name}`)
-    // 别名可能链式（a as b、b as c）；解析几轮足够，避免环导致的死循环
+    // Aliases can chain (a as b, b as c); a few rounds of resolution suffice, avoiding an infinite loop via cycles
     for (let hop = 0; hop < 4 && localName !== undefined; hop++) {
       const byAlias = kinds.get(`${item.package}|${localName}`)
       if (byAlias !== undefined) { (item as { kind: ApiEntry['kind'] }).kind = byAlias; break }
@@ -256,7 +272,7 @@ export async function apiCommand(options: ApiOptions = {}): Promise<void> {
   const root = path.resolve(options.dir ?? process.cwd())
   const index = buildApiIndex(root)
   if (index.length === 0) {
-    logger.error('没有找到索引数据。先构建：pnpm run build:packages')
+    logger.error('No index data found. Build first: pnpm run build:packages')
     process.exitCode = 1
     return
   }
@@ -274,19 +290,19 @@ export async function apiCommand(options: ApiOptions = {}): Promise<void> {
   }
 
   if (hits.length === 0) {
-    logger.error(`没有匹配 "${query}" 的导出。`)
-    console.log('（索引来自已构建的 dist 类型声明 —— 若刚加了导出，先 pnpm run build:packages。）')
+    logger.error(`No exports match "${query}".`)
+    console.log('(The index comes from built dist type declarations — if you just added an export, run pnpm run build:packages first.)')
     process.exitCode = 1
     return
   }
 
   console.log(query === undefined || query === ''
-    ? `框架导出索引（${index.length} 项，按名排序）：\n`
-    : `匹配 "${query}" 的导出（${hits.length}/${index.length}）：\n`)
+    ? `Framework export index (${index.length} entries, sorted by name):\n`
+    : `Exports matching "${query}" (${hits.length}/${index.length}):\n`)
   for (const item of hits) {
-    // kind 为 unknown 时不显示那一列 —— 它是'没解析出来'，不是'这个导出没有种类'
+    // When kind is unknown the column is hidden — it means "unresolved", not "this export has no kind"
     const kind = item.kind === 'unknown' ? '' : item.kind
     console.log(`  ${item.name.padEnd(34)} ${item.package.padEnd(22)} ${kind}`.trimEnd())
   }
-  if (hits.length > 60) console.log(`\n（还有 ${hits.length - 60} 项，用 --json 拿全量）`)
+  if (hits.length > 60) console.log(`\n(${hits.length - 60} more entries; use --json for the full list)`)
 }

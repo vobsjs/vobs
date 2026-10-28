@@ -37,20 +37,20 @@ export interface CompilerOptions {
 export interface CompileOptions extends CompilerOptions {
   filename?: string
   /**
-   * 是否为组件调用生成源码位置（{ file, line, column }，用于错误定位与 DevTools）。
-   * 默认 true。生产构建应传 false 以减小产物体积，省略后错误仍带组件名，定位走 source map。
+   * Whether to emit source locations for component calls ({ file, line, column }; used for error locating and DevTools).
+   * Defaults to true. Production builds should pass false to shrink the bundle; errors still carry the component name and positioning goes through the source map.
    */
   sourceLocation?: boolean
   /**
-   * 是否把完全静态的 DOM 子树提升为 HTML 模板（createTemplate/cloneTemplate，
-   * 运行时依赖 document）。默认 true；SSR/Node 构建（vite build --ssr）必须传 false，
-   * 否则产物在无 DOM 环境加载即崩溃。
+   * Whether to hoist fully static DOM subtrees into HTML templates (createTemplate/cloneTemplate,
+   * which depend on document at runtime). Defaults to true; SSR/Node builds (vite build --ssr) must pass false,
+   * otherwise the output crashes on load in a DOM-less environment.
    */
   hoistTemplates?: boolean
   /**
-   * HMR 模块标识（dev 由 Vite 插件注入，通常为模块绝对路径）。提供后，模块顶层的
-   * state() 声明会包装为 hmrStateRef(...)：热更新重执行模块时复用既有信号实例，
-   * 避免"新旧两份模块实例、两份状态"导致的页面半边失灵。
+   * HMR module id (injected by the Vite plugin in dev, usually the module's absolute path). When provided, module-top-level
+   * state() declarations are wrapped in hmrStateRef(...): on hot-update module re-execution the existing signal instances are reused,
+   * avoiding the half-broken page caused by "two module instances, two copies of state".
    */
   hmrModuleId?: string
 }

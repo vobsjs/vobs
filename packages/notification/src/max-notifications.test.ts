@@ -2,24 +2,29 @@ import { describe, expect, it } from 'vitest'
 import { createNotification } from './index'
 
 /*
- * 报告 notification §15.3 说 `maxNotifications: Infinity` 被"放行"是缺陷（实测 3000 条 → 长度 3000）。
- * 核实结论：**这是刻意的"不设上限"**，证据就是校验函数自己 ——
- * `validateMaxNotifications`（`index.ts:318-323`）写成
+ * Report notification §15.3 claims `maxNotifications: Infinity` being "allowed through" is a
+ * defect (measured: 3000 entries → length 3000).
+ * Verification conclusion: **this is a deliberate "no upper bound"**, and the evidence is the
+ * validator itself —
+ * `validateMaxNotifications` (`index.ts:318-323`) is written as
  *   `if (value !== Infinity && (!Number.isInteger(value) || value <= 0)) throw ...`
- * 连报错文案都写着"必须是正整数或 **或 Infinity**"。所以这条报告不成立（第 15 条不准确记录）。
+ * even the error copy says "must be a positive integer **or Infinity**". So the report does not
+ * hold (item 15 is an inaccurate record).
  *
- * 这条用例的作用是把**契约**钉住：Infinity = 不设上限；有限值按上限裁剪且淘汰最旧的。
- * 免得以后有人"照报告修 bug"把它改成拒绝 Infinity —— 那会破坏一个公开选项的既有语义。
+ * This test pins the **contract**: Infinity = no upper bound; finite values are trimmed to the
+ * cap with the oldest evicted.
+ * That way nobody later "fixes the bug per the report" by rejecting Infinity — which would
+ * break the established semantics of a public option.
  */
-describe('@vobs/notification maxNotifications 契约', () => {
-  it('Infinity 表示不设上限', () => {
+describe('@vobs/notification maxNotifications contract', () => {
+  it('Infinity means no upper bound', () => {
     const notification = createNotification({ maxNotifications: Infinity, defaultDuration: 0 })
     for (let index = 0; index < 30; index += 1) notification.info(`m${index}`)
     expect(notification.notifications.value).toHaveLength(30)
     notification.dispose()
   })
 
-  it('有限值按上限裁剪，淘汰最旧的（reason 为 overflow）', () => {
+  it('finite values are trimmed to the cap, evicting the oldest (reason overflow)', () => {
     const reasons: string[] = []
     const notification = createNotification({
       maxNotifications: 3,
@@ -34,7 +39,7 @@ describe('@vobs/notification maxNotifications 契约', () => {
     notification.dispose()
   })
 
-  it('非法值仍然被拒（0 / 负数 / 小数）', () => {
+  it('invalid values are still rejected (0 / negative / fractional)', () => {
     for (const value of [0, -1, 1.5]) {
       expect(() => createNotification({ maxNotifications: value }))
         .toThrowError(expect.objectContaining({ code: 'INVALID_MAX_NOTIFICATIONS' }))

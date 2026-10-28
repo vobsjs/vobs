@@ -37,7 +37,7 @@ export function getDebugHooks(): ReactivityDebugHooks | null {
   return activeDebugHooks
 }
 
-/** 热路径守卫：无 hooks 时跳过 invokeDebug 调用，避免 rest 参数数组分配。 */
+/** Hot-path guard: skip the invokeDebug call when no hooks are set, avoiding rest-parameter array allocation. */
 export function hasDebugHooks(): boolean {
   return activeDebugHooks !== null
 }

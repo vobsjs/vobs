@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
-// JSX 编译产物 + runtime 集成回归：复现 Labelune 侧报过的两个场景
-// ③ 列表内动态 style 表达式（品牌色板：动态 style 渲染不出来 → 全透明）
-// ④ 列表条目内「节点↔null」条件（信号已 set 但节点不出现/不移除）
+// JSX compiled output + runtime integration regressions: reproduces two scenarios
+// reported from the Labelune side
+// ③ dynamic style expression inside a list (brand color palette: dynamic style failed to
+//    render → fully transparent)
+// ④ "node ↔ null" condition inside list items (signal was set but the node didn't
+//    appear/didn't get removed)
 import { describe, expect, it } from 'vitest'
 import { compile } from '@vobs/compiler'
 import { createDOMRenderer } from '@vobs/vobs'
@@ -24,11 +27,11 @@ import {
 } from '@vobs/runtime'
 import { state } from '@vobs/reactivity'
 
-/** 编译 JSX 源码并执行：helper 以运行时实现注入（与 vite-plugin 编译路径等价） */
+/** Compile JSX source and execute it: helpers are injected as the runtime implementations (equivalent to the vite-plugin compile path) */
 function runJsx(source: string): unknown {
   const compiled = compile(source, { filename: 'integration.tsx' }) as unknown as string
   const imports = compiled.match(/import \{([^}]+)\} from "@vobs\/vobs";/)
-  if (!imports) throw new Error('编译产物缺少 runtime 导入')
+  if (!imports) throw new Error('compiled output is missing the runtime import')
   const code = compiled.replace(imports[0], '')
   const names = imports[1]!.split(',').map(name => name.trim()).filter(Boolean)
   const impls: Record<string, unknown> = {
@@ -38,14 +41,14 @@ function runJsx(source: string): unknown {
     setAttribute, addEventListener, spreadProps, setRef
   }
   const args = names.map(name => {
-    if (!(name in impls)) throw new Error(`未注入的 runtime helper: ${name}`)
+    if (!(name in impls)) throw new Error(`runtime helper not injected: ${name}`)
     return impls[name]
   })
   return new Function(...names, `"use strict";\n${code}; return el;`)(...args)
 }
 
-describe('JSX 编译 × runtime 集成回归', () => {
-  it('③ 列表内动态 style 表达式正常着色（品牌色板场景）', () => {
+describe('JSX compile × runtime integration regressions', () => {
+  it('③ dynamic style expression inside a list colors correctly (brand palette scenario)', () => {
     setRenderer(createDOMRenderer())
     const el = runJsx(`
       const colors = [{ hex: '#10b981', label: '绿' }, { hex: '#f97316', label: '橙' }]
@@ -59,7 +62,7 @@ describe('JSX 编译 × runtime 集成回归', () => {
     expect((dots[0] as HTMLElement).style.background).not.toBe('')
   })
 
-  it('④ 列表条目内「节点↔null」条件响应外部信号', async () => {
+  it('④ "node ↔ null" condition inside list items responds to external signals', async () => {
     setRenderer(createDOMRenderer())
     const el = runJsx(`
       const active = { value: 'a' }
@@ -71,12 +74,13 @@ describe('JSX 编译 × runtime 集成回归', () => {
         </div>
       ))}</div>
     `) as HTMLElement
-    // 注意：源码里的 active 被编译产物捕获为普通对象，外部信号驱动需通过行内 effect 订阅的信号
-    // 这里直接验证初次渲染 + 条件分支两种初始形态
+    // Note: the source's active is captured by the compiled output as a plain object;
+    // driving by an external signal needs a signal subscribed by the in-row effect.
+    // Here we just verify the first render with both initial conditional shapes.
     expect(el.querySelectorAll('.dot-on').length).toBe(1)
   })
 
-  it('④b 列表条目内「节点↔null」条件随真实信号翻转', async () => {
+  it('④b "node ↔ null" condition inside list items flips with a real signal', async () => {
     setRenderer(createDOMRenderer())
     const active = state('a')
     const el = runJsxWith(`
@@ -96,7 +100,7 @@ describe('JSX 编译 × runtime 集成回归', () => {
     expect((el.querySelectorAll('.row')[0] as HTMLElement).querySelector('.dot-on')).toBeNull()
   })
 
-  it('④c 列表条目内「节点↔null」条件随列表项对象属性翻转（item 信号驱动）', async () => {
+  it('④c "node ↔ null" condition inside list items flips with a list item object property (item signal driven)', async () => {
     setRenderer(createDOMRenderer())
     const items = state([
       { id: 'a', label: 'A', on: true },
@@ -121,7 +125,7 @@ describe('JSX 编译 × runtime 集成回归', () => {
     expect((el.querySelectorAll('.row')[0] as HTMLElement).querySelector('.dot-on')).toBeNull()
   })
 
-  it('② 指针事件编译为 pointerdown 监听并可触发', () => {
+  it('② pointer events compile to pointerdown listeners and can be triggered', () => {
     setRenderer(createDOMRenderer())
     const el = runJsx(`
       const el = <div onPointerDown={() => { window.__downs = (window.__downs ?? 0) + 1 }} />
@@ -130,7 +134,7 @@ describe('JSX 编译 × runtime 集成回归', () => {
     expect((window as unknown as { __downs?: number }).__downs).toBe(1)
   })
 
-  it('⑤ role/spellCheck/autoComplete 属性正确落 DOM', () => {
+  it('⑤ role/spellCheck/autoComplete props land on the DOM correctly', () => {
     setRenderer(createDOMRenderer())
     const el = runJsx(`
       const el = <div>
@@ -146,7 +150,7 @@ describe('JSX 编译 × runtime 集成回归', () => {
     expect((el.querySelector('td') as HTMLTableCellElement).colSpan).toBe(2)
   })
 
-  it('⑥ select 绑定 value 时选项异步到达自动重同步（不再需要 ref 兜底）', async () => {
+  it('⑥ select value binding auto-resyncs when options arrive asynchronously (no ref fallback needed)', async () => {
     setRenderer(createDOMRenderer())
     const items = state<string[]>([])
     const el = runJsxWith(`
@@ -159,7 +163,7 @@ describe('JSX 编译 × runtime 集成回归', () => {
     expect(el.value).toBe('b')
   })
 
-  it('⑥b select 选项经 optgroup 插入同样重同步', async () => {
+  it('⑥b select options inserted via optgroup resync the same way', async () => {
     setRenderer(createDOMRenderer())
     interface Group { readonly label: string; readonly options: readonly string[] }
     const groups = state<readonly Group[]>([])
@@ -176,11 +180,11 @@ describe('JSX 编译 × runtime 集成回归', () => {
   })
 })
 
-/** runJsx 变体：额外注入外部依赖（真实信号等），供编译产物闭包引用 */
+/** runJsx variant: injects extra external dependencies (real signals etc.) for the compiled output's closure to reference */
 function runJsxWith(source: string, deps: Record<string, unknown> = {}): unknown {
   const compiled = compile(source, { filename: 'integration-deps.tsx' }) as unknown as string
   const imports = compiled.match(/import \{([^}]+)\} from "@vobs\/vobs";/)
-  if (!imports) throw new Error('编译产物缺少 runtime 导入')
+  if (!imports) throw new Error('compiled output is missing the runtime import')
   const code = compiled.replace(imports[0], '')
   const names = imports[1]!.split(',').map(name => name.trim()).filter(Boolean)
   const impls: Record<string, unknown> = {
@@ -191,7 +195,7 @@ function runJsxWith(source: string, deps: Record<string, unknown> = {}): unknown
   }
   const argNames = [...names, ...Object.keys(deps)]
   const args = [...names.map(name => {
-    if (!(name in impls)) throw new Error(`未注入的 runtime helper: ${name}`)
+    if (!(name in impls)) throw new Error(`runtime helper not injected: ${name}`)
     return impls[name]
   }), ...Object.values(deps)]
   return new Function(...argNames, `"use strict";\n${code}; return el;`)(...args)

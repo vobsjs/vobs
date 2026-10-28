@@ -2,25 +2,27 @@ import { createCLI, KNOWN_SUBCOMMANDS } from './cli.js'
 import { showBanner } from './banner.js'
 import { startRepl } from './repl.js'
 
-/** 帮助/版本文本里出现的 flag —— 它们不是"未知 flag"。 */
+/** Flags appearing in help/version text — they are not "unknown flags". */
 const META_FLAGS = new Set(['--help', '-h', '--version', '-V'])
 
 /**
- * 该 flag 是否属于**顶层**用法（相对"某个子命令的 flag"而言）。
+ * Whether the flag is **top-level** usage (as opposed to "a subcommand's flag").
  *
- * `vobs --port 3000` 里的 `--port` 不是顶层 flag（它属于 `dev`），
- * 所以这里只认 `-`/`--` 开头的未知项，交由调用方按"有没有子命令"决定是不是错误。
+ * The `--port` in `vobs --port 3000` is not a top-level flag (it belongs to `dev`),
+ * so only unknown items starting with `-`/`--` are recognized here; the caller decides
+ * whether that is an error based on "is there a subcommand".
  */
 function isFlag(token: string): boolean {
   return token.startsWith('-') && token !== '-'
 }
 
 /**
- * 单命令分发。
+ * Single-command dispatch.
  *
- * cac 对"没有命令匹配"**不做任何兜底**：既不报错、也不输出、退出码还是 0
- * —— `vobs chekc`（拼错）会在 CI 里静默成功。这里补上兜底：
- * 未知子命令与未知顶层 flag 都进 stderr 且 **exit 1**。
+ * cac provides **no fallback at all** for "no command matched": no error, no output, and
+ * the exit code is still 0 — `vobs chekc` (typo) would silently succeed in CI. This adds
+ * the fallback: unknown subcommands and unknown top-level flags go to stderr with
+ * **exit 1**.
  */
 export async function start(args: string[]): Promise<void> {
   // No args (or explicit `cli`) → launch the interactive REPL
@@ -33,8 +35,9 @@ export async function start(args: string[]): Promise<void> {
   const hasSubcommand = KNOWN_SUBCOMMANDS.includes(first)
 
   /*
-   * `--version` / `-V` 只有在**没有子命令**时才表示"打印版本"——
-   * 任何位置都匹配的话，`vobs check --version` 会只打 banner、check 根本没跑。
+   * `--version` / `-V` only mean "print the version" when there is **no subcommand** —
+   * if it matched anywhere, `vobs check --version` would only print the banner while
+   * check never runs.
    */
   if (!hasSubcommand && (args.includes('--version') || args.includes('-V'))) {
     showBanner()
@@ -42,22 +45,22 @@ export async function start(args: string[]): Promise<void> {
   }
 
   if (!hasSubcommand && !isFlag(first)) {
-    process.stderr.write(`✖ 未知命令：${first}\n\n`)
+    process.stderr.write(`✖ Unknown command: ${first}\n\n`)
     try {
       createCLI().parse(['node', 'vobs', '--help'])
     } catch {
-      // 帮助输出失败不应掩盖真正的错误：错误已写进 stderr、退出码才是判据
+      // A failed help print must not mask the real error: the error is on stderr, the exit code is the verdict
     }
     process.exitCode = 1
     return
   }
 
   if (!hasSubcommand && isFlag(first) && !META_FLAGS.has(first)) {
-    process.stderr.write(`✖ 未知选项：${first}\n\n`)
+    process.stderr.write(`✖ Unknown option: ${first}\n\n`)
     try {
       createCLI().parse(['node', 'vobs', '--help'])
     } catch {
-      // 同上
+      // Same as above
     }
     process.exitCode = 1
     return
@@ -68,8 +71,9 @@ export async function start(args: string[]): Promise<void> {
     createCLI().parse()
   } catch (error) {
     /*
-     * cac 对**已匹配子命令**的未知选项/缺值会抛 `CACError` —— 不在这里接住，
-     * 用户看到的就是半屏 Node 栈而不是一句可读的错误。
+     * cac throws `CACError` for unknown options / missing values on an **already-matched
+     * subcommand** — without catching it here, users see half a screen of Node stack
+     * instead of one readable error line.
      */
     const message = error instanceof Error ? error.message : String(error)
     process.stderr.write(`✖ ${message}\n`)

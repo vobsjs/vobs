@@ -3,24 +3,27 @@ import { createOwner, onDispose, untrack } from '@vobs/reactivity'
 export type DismissEvent = 'mousedown' | 'pointerdown'
 
 export interface DismissOptions {
-  /** 监听的事件（默认 `mousedown`——与 @vobs/table rowMenu 等既有浮层一致）。 */
+  /** The event to listen for (default `mousedown` — consistent with existing overlays like @vobs/table rowMenu). */
   readonly event?: DismissEvent
-  /** 额外视为「内部」的节点（触发按钮等——点它不关闭，由它自己的 handler 决定开合）。 */
+  /** Extra nodes treated as "inside" (trigger buttons etc. — clicking them doesn't close; their own handler decides open/close). */
   readonly also?: readonly Node[]
-  /** Escape 关闭（默认开启）。 */
+  /** Close on Escape (enabled by default). */
   readonly escape?: boolean
   /**
-   * 浮层**内部** mousedown 时 preventDefault（默认关闭）。
+   * preventDefault on mousedown **inside** the overlay (disabled by default).
    *
-   * 用途：菜单项按下时保持输入框焦点/选区不被移走（编辑菜单 execCommand 场景）——
-   * preventDefault 阻止的是焦点转移，click 仍正常触发。浮层内部含输入框时勿开
-   * （点击输入框将无法获得焦点）。
+   * Purpose: keep the input's focus/selection when a menu item is pressed
+   * (edit-menu execCommand scenario) — preventDefault blocks the focus shift,
+   * click still fires normally. Do not enable this when the overlay contains
+   * inputs (clicking an input would no longer focus it).
    */
   readonly keepFocusInside?: boolean
 }
 
 /**
- * 浮层「点外关闭」标准原语——把 Finora 死穴 §8 的两连坑变成**结构上写不出来**。
+ * The standard "close on outside click" primitive for overlays — turns the two
+ * recurring pitfalls of Finora pitfall list §8 into **something you can't
+ * structurally write anymore**.
  *
  * ```ts
  * effect(() => {
@@ -29,22 +32,29 @@ export interface DismissOptions {
  * })
  * ```
  *
- * ## 根治的两类坑（手写 document mousedown capture 监听时高频复发）
+ * ## The two pitfalls it cures (frequently reintroduced by hand-written document
+ * mousedown capture listeners)
  *
- * 1. **菜单项点击全部无效**：手写 `document mousedown` capture 监听做「点外关闭」，
- *    点菜单项时捕获先于 click、立即 close() 把浮层 DOM 连根移除 → click 落死节点。
- *    本原语**内部命中即 return**——浮层内的 mousedown 永不触发关闭，菜单项由自身
- *    onclick 执行后自关。
- * 2. **编辑菜单 execCommand 全失效**：mousedown 默认行为把输入框焦点移走、选区清空。
- *    `keepFocusInside: true` 时浮层内 mousedown preventDefault（保焦点/选区）。
+ * 1. **Menu item clicks all dead**: a hand-written `document mousedown` capture listener
+ *    for "close on outside click" fires before click when a menu item is pressed, and an
+ *    immediate close() removes the overlay DOM at the root → click lands on a dead node.
+ *    This primitive **returns on inside hits** — a mousedown inside the overlay never
+ *    triggers a close; menu items run their own onclick and close themselves.
+ * 2. **Edit-menu execCommand completely broken**: mousedown's default behavior moves
+ *    focus away from the input and clears the selection. With `keepFocusInside: true`,
+ *    mousedown inside the overlay gets preventDefault (keeping focus/selection).
  *
- * ## 语义
+ * ## Semantics
  *
- * - 判定用 `contains`（含浮层自身）——与 @vobs/table rowMenu 弹层一致
- * - `close()` 在 **untrack** 里执行：回调内写信号不建立订阅（结构性免疫 C210）
- * - Escape 关闭默认开启（可关）
- * - 生命周期：内部自建 Owner，**自动挂到调用处的组件 Owner**（组件卸载级联清理）；
- *   close 触发后 Owner 自释放（浮层已关，监听不再需要）。重复 close 幂等
+ * - Inside detection uses `contains` (including the overlay itself) — consistent with
+ *   the @vobs/table rowMenu popup
+ * - `close()` runs in **untrack**: signal writes inside the callback establish no
+ *   subscription (structurally immune to C210)
+ * - Escape-to-close is enabled by default (can be turned off)
+ * - Lifecycle: creates its own Owner internally, **automatically attached to the calling
+ *   component's Owner** (cascade cleanup on unmount); after close fires, the Owner
+ *   disposes itself (the overlay is closed, listeners no longer needed). Repeated
+ *   close is idempotent
  */
 export function useDismiss(popup: Node, close: () => void, options: DismissOptions = {}): void {
   const type: DismissEvent = options.event ?? 'mousedown'

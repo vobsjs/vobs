@@ -24,7 +24,7 @@ import type { VuiChildren, VuiCommonProps, VuiEventHandler } from './types'
 
 export type InputType = 'date' | 'email' | 'number' | 'password' | 'search' | 'text' | 'url'
 
-/** bind 传入 Signal 时组件建立双向绑定：信号→DOM property、用户输入→信号写回。 */
+/** When bind receives a Signal the component sets up two-way binding: signal → DOM property, user input → write back to the signal. */
 function bindSignalProp<T>(props: object): Signal<T> | undefined {
   const value = readProp<Signal<T> | undefined>(props, 'bind', undefined)
   return value && typeof value === 'object' && 'value' in value ? value : undefined
@@ -40,9 +40,9 @@ export interface InputProps extends VuiCommonProps {
   readonly readOnly?: boolean
   readonly required?: boolean
   readonly icon?: VobsNode | (() => VobsNode | null | undefined)
-  /** 控件前缀内容（如货币符号）；纯展示 */
+  /** Content before the control (e.g. a currency symbol); display only. */
   readonly prefix?: VuiChildren
-  /** 控件后缀内容（如单位）；纯展示 */
+  /** Content after the control (e.g. a unit); display only. */
   readonly suffix?: VuiChildren
   readonly onInput?: VuiEventHandler<InputEvent>
   readonly onChange?: VuiEventHandler<Event>
@@ -214,7 +214,7 @@ export interface ChoiceProps extends VuiCommonProps {
   readonly value?: string
   readonly checked?: boolean
   readonly bind?: Signal<boolean>
-  /** 仅 checkbox：半选（indeterminate）态——子项部分选中时父项展示，再次点击进入全选 */
+  /** Checkbox only: the indeterminate state — shown on a parent when children are partially selected; clicking again selects all. */
   readonly mixed?: boolean
   readonly disabled?: boolean
   readonly required?: boolean
@@ -261,7 +261,7 @@ function createChoice(type: 'checkbox' | 'radio', props: ChoiceProps): VobsNode 
     bindPropertyValue(control, 'checked', () => readProp(props, 'checked', false))
   }
   if (type === 'checkbox') {
-    // 半选态：indeterminate 是 DOM property（非 attribute），视觉态同步到 data-mixed 供样式选择
+    // Indeterminate: a DOM property (not an attribute); the visual state syncs to data-mixed for style selectors
     effect(() => {
       const mixed = readProp(props, 'mixed', false)
       setProperty(control, 'indeterminate', mixed)
@@ -306,8 +306,8 @@ export function Switch(props: SwitchProps = {}): VobsNode {
     'onChange'
   ])
   setAttribute(thumb, 'class', 'vui-switch__thumb')
-  // 与 Alert 同一个坑：原来把 `role` 放进 skip 再硬编码，作者传的 role 会被静默吞掉。
-  // role 本来就属于 bindCommonAttributes 的通用通道，这里只在作者没给时兜底。
+  // Same pit as Alert: role used to be put in the skip list and then hardcoded, silently swallowing the author's role.
+  // role already belongs to bindCommonAttributes' generic channel; fall back here only when the author didn't provide one.
   if (!hasProp(props, 'role')) setAttribute(root, 'role', 'switch')
   const bind = bindSignalProp<boolean>(props)
 

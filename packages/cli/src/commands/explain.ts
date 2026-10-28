@@ -4,34 +4,36 @@ import { DIAGNOSTIC_GUIDES, findDiagnosticGuide } from '@vobs/runtime'
 import { logger } from '../utils/logger.js'
 
 /**
- * `vobs explain [code]` —— 诊断码的**可查询说明**（Rust 的 `rustc --explain` 模式）。
+ * `vobs explain [code]` — **queryable explanations** for diagnostic codes
+ * (Rust's `rustc --explain` pattern).
  *
- * ## 为什么需要
+ * ## Why it is needed
  *
- * 这一轮里 `C104`–`C108` 的规则都是**读源码**才知道的；AI 只看到错误信息那一句。
- * Rust 生态被认为"对人不友好但 AI 友好"，很大程度就是因为规则**可以查，不用猜**。
+ * The `C104`–`C108` rules in this round are only knowable by **reading the source**;
+ * an AI sees just the one error line. The Rust ecosystem is considered
+ * "unfriendly to humans but AI-friendly" largely because its rules **can be queried, not guessed**.
  *
- * ## 三种用法
+ * ## Three usages
  *
  * ```
- * vobs explain VOBS_C210     # 单个码：是什么 / 为什么 / 正确写法 / 反例
- * vobs explain               # 列出全部已收录的码
- * vobs explain --json        # 机器可读（给 AI 与工具消费）
- * vobs explain --missing     # 列出**源码里存在但没有条目**的码（诚实标注覆盖缺口）
+ * vobs explain VOBS_C210     # single code: what / why / correct form / counter-example
+ * vobs explain               # list all covered codes
+ * vobs explain --json        # machine-readable (for AI and tools)
+ * vobs explain --missing     # list codes that **exist in the source but have no entry** (honestly marking coverage gaps)
  * ```
  *
- * `--missing` 是刻意加的：**猜的文档比没有文档更糟**，所以缺口要能被看见，
- * 而不是让使用者以为"框架只有这几个码"。
+ * `--missing` is deliberate: **guessed documentation is worse than none**, so gaps must
+ * stay visible instead of letting users believe "the framework only has these codes".
  */
 export interface ExplainOptions {
   readonly code?: string
   readonly json?: boolean
   readonly missing?: boolean
-  /** 源码根目录（`--missing` 用），默认当前工作目录。 */
+  /** Source root directory (used by `--missing`); defaults to the current working directory. */
   readonly dir?: string
 }
 
-/** 从框架源码里扫出全部 `VOBS_C\d+`（用于 `--missing`）。 */
+/** Scan all `VOBS_C\d+` codes out of the framework source (used by `--missing`). */
 function collectCodesFromSource(root: string): string[] {
   const found = new Set<string>()
   const walk = (dir: string, depth: number): void => {
@@ -63,10 +65,10 @@ export async function explainCommand(options: ExplainOptions = {}): Promise<void
       process.stdout.write(`${JSON.stringify({ covered: [...covered].sort(), missing }, null, 2)}\n`)
       return
     }
-    console.log(`已收录 ${covered.size} 个码；源码里还有 ${missing.length} 个没有条目：`)
+    console.log(`${covered.size} codes covered; ${missing.length} codes in the source still have no entry:`)
     for (const code of missing) console.log(`  ${code}`)
     if (missing.length > 0) {
-      console.log('\n（这些码目前只在源码里有 message。缺口是**已知**的，不假装覆盖。）')
+      console.log('\n(These codes currently only have a message in the source. The gap is **known** — coverage is not faked.)')
     }
     return
   }
@@ -74,20 +76,21 @@ export async function explainCommand(options: ExplainOptions = {}): Promise<void
   if (options.code === undefined) {
     if (options.json === true) {
       /*
-       * **schema 稳定契约**（2026-10-28）：本输出的字段集合（code/severity/title/
-       * why/correct/wrong/rewrites）与诊断码同级稳定 —— additive-only，不在 minor
-       * 内移除或改形。AI 可以信任 `vobs explain --json <code>` 的结构直接解析
-       * `rewrites[].wrong → .correct` 做机械替换（guide-verification 保证
-       * after 形态零诊断）。
+       * **Stable schema contract** (2026-10-28): the field set of this output
+       * (code/severity/title/why/correct/wrong/rewrites) is as stable as the diagnostic
+       * codes themselves — additive-only; nothing is removed or reshaped within a minor
+       * release. AI can trust the structure of `vobs explain --json <code>` and parse
+       * `rewrites[].wrong → .correct` for mechanical rewrites (guide-verification
+       * guarantees the after form yields zero diagnostics).
        */
       process.stdout.write(`${JSON.stringify(DIAGNOSTIC_GUIDES, null, 2)}\n`)
       return
     }
-    console.log('vobs 诊断码说明（vobs explain <code> 看详情）：\n')
+    console.log('vobs diagnostic code reference (run vobs explain <code> for details):\n')
     for (const item of DIAGNOSTIC_GUIDES) {
       console.log(`  ${item.code}  [${item.severity}]  ${item.title}`)
     }
-    console.log('\n机器可读：vobs explain --json ｜ 覆盖缺口：vobs explain --missing')
+    console.log('\nMachine-readable: vobs explain --json | Coverage gaps: vobs explain --missing')
     return
   }
 
@@ -96,9 +99,9 @@ export async function explainCommand(options: ExplainOptions = {}): Promise<void
     : `VOBS_${options.code.toUpperCase()}`
   const guide = findDiagnosticGuide(code)
   if (guide === undefined) {
-    logger.error(`${code} 没有说明条目。`)
-    console.log('（没有条目时**不编** —— 猜的文档比没有文档更糟。）')
-    console.log('已收录的码：')
+    logger.error(`${code} has no explanation entry.`)
+    console.log('(When there is no entry, we **do not invent one** — guessed documentation is worse than none.)')
+    console.log('Covered codes:')
     for (const item of DIAGNOSTIC_GUIDES) console.log(`  ${item.code}`)
     process.exitCode = 1
     return
@@ -110,10 +113,10 @@ export async function explainCommand(options: ExplainOptions = {}): Promise<void
   }
   console.log(`${guide.code}  [${guide.severity}]`)
   console.log(`\n${guide.title}\n`)
-  console.log('为什么是坑：')
+  console.log('Why it is a trap:')
   console.log(`  ${guide.why}`)
-  console.log('\n正确写法：')
+  console.log('\nCorrect form:')
   console.log(`  ${guide.correct}`)
-  console.log('\n反例：')
+  console.log('\nCounter-example:')
   console.log(`  ${guide.wrong}`)
 }

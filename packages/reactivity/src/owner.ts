@@ -15,22 +15,23 @@ export interface Owner {
   addCleanup(cleanup: () => void): void
   onDispose(cleanup: () => void): void
   /**
-   * 撤销一个**已注册**的清理函数（按函数身份匹配）。
+   * Remove a **registered** cleanup (matched by function identity).
    *
-   * 用途：把"同一个逻辑资源"的清理**替换**掉，而不是每次重建都追加一条。
-   * 典型场景是 `ref` —— 同一个 ref 对象被先后绑到不同节点时，
-   * 旧那条清理会把新值清成 `null`（见 runtime/src/ref.ts）。
+   * Purpose: **replace** the cleanup of "the same logical resource" instead of
+   * appending a new entry on every rebuild. The typical case is `ref` — when the
+   * same ref object is bound to different nodes in sequence, the stale entry would
+   * reset the new value to `null` on dispose (see runtime/src/ref.ts).
    *
-   * 语义：只删第一条身份相同的项；没找到就什么都不做（幂等）。
-   * 已 dispose 的 Owner 上是 no-op。
+   * Semantics: remove only the first identity-equal entry; a miss is a no-op
+   * (idempotent). No-op on a disposed Owner.
    */
   removeCleanup(cleanup: () => void): void
   onError(handler: (error: unknown) => void): () => void
   handleError(error: unknown): boolean
   dispose(): void
-  /** 记录当前清理/子 Owner 注册位置，供 disposeSince 成对使用（渲染作用域）。 */
+  /** Records the current cleanup/child-Owner registration position, to be paired with disposeSince (render scopes). */
   mark(): OwnerScopeMark
-  /** 释放 mark 之后注册的清理与期间创建的子 Owner，Owner 自身保活。 */
+  /** Releases cleanups registered after the mark and child Owners created since then; the Owner itself stays alive. */
   disposeSince(mark: OwnerScopeMark): void
 }
 
@@ -39,25 +40,27 @@ let nextOwnerId = 1
 const ownerNames = new WeakMap<Owner, string>()
 
 /**
- * Owner 实现。
+ * Owner implementation.
  *
- * **这里为什么是 class 而不是对象字面量**（实测数据，同一台机器、同一轮循环）：
+ * **Why a class here instead of an object literal** (measured, same machine, same loop):
  *
- *   createOwner()（原字面量实现）        1314 ns/次
- *   只用数据字段                         155 ns
- *   ＋ 对象字面量里的 `get disposed()`      500 ns
- *   ＋ 3 个逐实例闭包方法                 1095 ns
- *   （对象字面量 11 个方法时就是上面那个 1314）
+ *   createOwner() (original literal impl)     1314 ns/op
+ *   data fields only                          155 ns
+ *   + `get disposed()` on the literal          500 ns
+ *   + 3 per-instance closure methods          1095 ns
+ *   (the literal with 11 methods is that 1314 figure)
  *
- * 两个原因：
- * 1. **字面量里的访问器会让 V8 把每个实例降级成字典模式**（属性访问从此走慢路径）。
- *    单是这一项就 +345ns。所以 `disposed` 是**普通数据字段**，不是 getter ——
- *    对外读法 `owner.disposed` 完全不变。
- * 2. **逐实例的闭包方法**每个都要新建一个函数对象（11 个 ≈ +800ns）。
- *    放到原型上就只分配一份。
+ * Two reasons:
+ * 1. **Accessors on a literal demote every instance to dictionary mode in V8**
+ *    (property access takes the slow path from then on). That alone costs +345 ns.
+ *    So `disposed` is a **plain data field**, not a getter — the external read
+ *    `owner.disposed` is unchanged.
+ * 2. **Per-instance closure methods** each allocate a new function object
+ *    (11 of them ≈ +800 ns). On the prototype they are allocated once.
  *
- * 这一条热路径不常见：`insertDynamicValue` 的原始值快路径**每轮**都要建一个 Owner
- * 再销毁（`dynamic.ts:65`），也就是每次文本更新都付这份钱。
+ * This is not a rare hot path: `insertDynamicValue`'s primitive fast path creates
+ * and destroys an Owner **every round** (`dynamic.ts:65`), i.e. every text update
+ * pays this cost.
  */
 class OwnerImpl implements Owner {
   readonly id: string
@@ -77,7 +80,7 @@ class OwnerImpl implements Owner {
   }
 
   run<T>(fn: () => T): T {
-    if (this.disposed) throw new Error('Vobs: 已销毁的 Owner 不能继续运行')
+    if (this.disposed) throw new Error('Vobs: cannot run inside a disposed Owner')
     const previous = currentOwner
     currentOwner = this
     try {
@@ -100,13 +103,15 @@ class OwnerImpl implements Owner {
   }
 
   /**
-   * 撤销一条已注册的清理。
+   * Remove one registered cleanup.
    *
-   * 用 `splice` 而不是"标记失效"：标记法会让数组继续增长（本包已经因为
-   * `Owner.cleanups` 只增不减吃过一次亏 —— runtime 的事件重绑），
-   * 而这个 API 的语义就是"替换掉旧的"，就该真的从数组里去掉。
+   * `splice` instead of "mark as stale": the marking approach would let the array
+   * keep growing (this package has already been burned once by `Owner.cleanups`
+   * growing without bound — the runtime's event rebinding), and this API's
+   * semantics is "replace the old one", so it should really leave the array.
    *
-   * 复杂度 O(n)，但调用场景是"同一资源被重新绑定"，不是热路径上的每帧操作。
+   * O(n), but the call site is "the same resource gets rebound", not a per-frame
+   * hot-path operation.
    */
   removeCleanup(cleanup: () => void): void {
     const index = this.cleanups.indexOf(cleanup)
@@ -137,12 +142,14 @@ class OwnerImpl implements Owner {
     this.disposed = true
     let firstError: unknown
     /*
-     * 子 Owner 的清理抛错**不能中断级联销毁**。
+     * A child Owner's cleanup throwing must **not interrupt the cascading dispose**.
      *
-     * 这里原来是裸调 `child.dispose()`：一个子级 cleanup 抛错就让兄弟 Owner 全不销毁、
-     * 父自身的 cleanup 也不跑（实测复现：父 cleanup 未执行、第二个子 owner 仍存活）。
-     * 那是资源泄漏 —— effect 不解绑、监听不移除。与下面清理循环同样逐个隔离，
-     * 收集首个错误最后重抛。
+     * This used to call `child.dispose()` bare: one child cleanup throwing meant
+     * sibling Owners were never disposed and the parent's own cleanups never ran
+     * (reproduced: parent cleanup not executed, second child owner still alive).
+     * That is a resource leak — effects stay bound, listeners stay attached.
+     * Isolated one by one like the cleanup loop below; the first error is
+     * collected and re-thrown at the end.
      */
     for (const child of [...this.children]) {
       try {
@@ -178,10 +185,11 @@ class OwnerImpl implements Owner {
 
   disposeSince(mark: OwnerScopeMark): void {
     if (this.disposed) return
-    // 先释放 mark 之后创建的子 Owner（dispose 会自行从 children 摘除），
-    // 再逆序执行 mark 之后注册的清理，顺序语义与 dispose 一致。
+    // Dispose child Owners created after the mark first (dispose removes them from
+    // children on its own), then run the cleanups registered after the mark in
+    // reverse order — same ordering semantics as dispose.
     let firstError: unknown
-    // 同 dispose：子 Owner 抛错不能打断级联
+    // Same as dispose: a child Owner throwing must not break the cascade
     for (const child of this.children.slice(mark.children)) {
       try {
         child.dispose()
@@ -231,6 +239,6 @@ export function runWithOwner<T>(owner: Owner, fn: () => T): T {
 
 export function onDispose(cleanup: () => void): void {
   const owner = getCurrentOwner()
-  if (!owner) throw new Error('Vobs: onDispose 必须在 Owner 作用域内调用')
+  if (!owner) throw new Error('Vobs: onDispose must be called inside an Owner scope')
   owner.onDispose(cleanup)
 }

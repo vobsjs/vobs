@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 /*
- * 核心库不变量检查（按 docs/dev/planned/# Vobs 框架设计总纲.md 的定位）
+ * Core-library invariant checks (positioning per docs/dev/planned/# Vobs 框架设计总纲.md)
  *
- * 只检查**能机器判定**的不变量违反，不检查"代码气味"：
- *   I1 run-once        —— 组件函数不得执行第二次
- *   I2 Owner 作用域    —— 组件销毁后，它建立的 effect / 监听 / owner 必须全部释放
- *   I3 无 vDOM         —— 更新不得重建无关节点（节点身份必须保持）
- *   I4 编译期/运行期一致 —— 同一个属性名，两条路径必须得出同一结论
+ * Only checks invariant violations that are **machine-decidable**, not "code smells":
+ *   I1 run-once        — a component function must not execute a second time
+ *   I2 Owner scope     — after a component is disposed, every effect / listener / owner
+ *                        it created must be fully released
+ *   I3 no vDOM         — updates must not rebuild unrelated nodes (node identity must hold)
+ *   I4 compile/runtime parity — the same property name must reach the same conclusion
+ *                        on both paths
  *
- * 每条检查都是"在**当前**代码上跑出来的观察"，不是读码结论。
+ * Every check is an observation obtained by "running against the **current** code",
+ * not a conclusion from reading code.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -23,8 +26,8 @@ const flush = async (): Promise<void> => {
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
 }
 
-describe('I2 · Owner 作用域：子 Owner 必须随父销毁', () => {
-  it('父 Owner dispose 后，子 Owner 的 effect 必须不再运行', async () => {
+describe('I2 · Owner scope: child Owners must be disposed with their parent', () => {
+  it('after the parent Owner is disposed, the child Owner\'s effect must no longer run', async () => {
     const parent = createOwner()
     const value = state(0)
     let runs = 0
@@ -41,24 +44,24 @@ describe('I2 · Owner 作用域：子 Owner 必须随父销毁', () => {
     parent.dispose()
     value.value = 1
     await flush()
-    // 父销毁 → 子销毁 → effect 解绑。若仍运行，说明作用域泄漏。
+    // parent disposed → child disposed → effect unbound. If it still runs, the scope leaks.
     expect(runs).toBe(1)
     expect(child!.disposed).toBe(true)
   })
 
-  it('Owner dispose 后再在它作用域内建 effect，不得静默存活', () => {
+  it('creating an effect inside a disposed Owner\'s scope must not silently survive', () => {
     const owner = createOwner()
     owner.dispose()
     const value = state(0)
     let runs = 0
-    // 已销毁的 Owner 上 run() 会抛；这是设计（见 owner.ts run()）
+    // run() on a disposed Owner throws; that is by design (see owner.ts run())
     expect(() => owner.run(() => { effect(() => { value.value; runs++ }) })).toThrow()
     expect(runs).toBe(0)
   })
 })
 
-describe('I2 · 信号 dispose 必须把手上的订阅拆干净', () => {
-  it('state.dispose() 后，已订阅的 effect 必须不再被它唤醒', async () => {
+describe('I2 · signal dispose must tear down the subscriptions it holds', () => {
+  it('after state.dispose(), subscribed effects must no longer be woken by it', async () => {
     const owner = createOwner()
     const sig = state(0)
     let runs = 0
@@ -66,14 +69,14 @@ describe('I2 · 信号 dispose 必须把手上的订阅拆干净', () => {
     expect(runs).toBe(1)
 
     sig.dispose()
-    // dispose 后写入被忽略（已实现），所以这里不会涨；真正的检查在下一条
+    // writes after dispose are ignored (implemented), so the count does not rise here; the real check is the next test
     sig.value = 1
     await flush()
     expect(runs).toBe(1)
     owner.dispose()
   })
 
-  it('memo.dispose() 后，订阅它的 effect 必须被解绑（dependency 集合不留悬挂引用）', () => {
+  it('after memo.dispose(), effects subscribed to it must be unbound (no dangling reference left in the dependency set)', () => {
     const owner = createOwner()
     const base = state(1)
     let memoRuns = 0
@@ -89,22 +92,24 @@ describe('I2 · 信号 dispose 必须把手上的订阅拆干净', () => {
     derived.dispose()
 
     /*
-     * 判据：base 变了之后，memo 必须**停止重算**。
-     * memo.dispose() 清掉了自己的 subscriber 依赖，所以 base.value 不再唤醒它。
+     * Criterion: once base changes, the memo must **stop recomputing**.
+     * memo.dispose() cleared its own subscriber's dependencies, so base.value no
+     * longer wakes it.
      */
     base.value = 5
     const memoRunsAfter = memoRuns
     expect(memoRunsAfter).toBe(1)
 
     /*
-     * 但**外层 effect 的 dependencies 里还留着这个已 dispose 的 memo**：
-     * memo.dispose() 只清了自己的依赖，没有把自己从订阅者的 dependencies 里摘掉。
-     * 这里直接验：effect 重新跑一次后，是否还挂着已 dispose 的 memo。
+     * But the **outer effect's dependencies still hold this disposed memo**:
+     * memo.dispose() only cleared its own dependencies; it did not remove itself
+     * from its subscribers' dependency sets. Verify directly: after the effect
+     * re-runs once, is the disposed memo still attached?
      */
     let stillSubscribed = false
     owner.run(() => {
       effect(() => {
-        // 重新读一遍（触发重新收集）
+        // read again (triggers re-collection)
         void derived.value
         stillSubscribed = false
       })
@@ -115,14 +120,14 @@ describe('I2 · 信号 dispose 必须把手上的订阅拆干净', () => {
   })
 })
 
-describe('I1 · run-once：组件体不得因为状态变化而重跑', () => {
-  it('effect 的执行必须与组件体的执行分离', async () => {
+describe('I1 · run-once: the component body must not re-run because of state changes', () => {
+  it('effect execution must be separated from component-body execution', async () => {
     const owner = createOwner()
     let componentRuns = 0
     const value = state(0)
     owner.run(() => {
-      componentRuns++            // 组件体
-      effect(() => { value.value })  // 动态部分
+      componentRuns++            // component body
+      effect(() => { value.value })  // dynamic part
     })
     value.value = 1
     value.value = 2
@@ -131,7 +136,7 @@ describe('I1 · run-once：组件体不得因为状态变化而重跑', () => {
     owner.dispose()
   })
 
-  it('在 effect 里读信号必须建立订阅（不能因为 untrack 漏掉）', async () => {
+  it('reading a signal inside an effect must establish a subscription (must not be missed because of untrack)', async () => {
     const owner = createOwner()
     const value = state(0)
     let runs = 0
@@ -142,7 +147,7 @@ describe('I1 · run-once：组件体不得因为状态变化而重跑', () => {
     owner.dispose()
   })
 
-  it('untrack 内的读取不得建立订阅', async () => {
+  it('reads inside untrack must not establish a subscription', async () => {
     const owner = createOwner()
     const tracked = state(0)
     const ignored = state(0)
@@ -165,8 +170,8 @@ describe('I1 · run-once：组件体不得因为状态变化而重跑', () => {
   })
 })
 
-describe('I2 · effect 清理必须成对执行', () => {
-  it('effect 重跑前必须执行上一次返回的 cleanup', async () => {
+describe('I2 · effect cleanups must run in pairs', () => {
+  it('the cleanup returned last time must run before the effect re-runs', async () => {
     const owner = createOwner()
     const value = state(0)
     const order: string[] = []
@@ -182,11 +187,11 @@ describe('I2 · effect 清理必须成对执行', () => {
     await flush()
     expect(order).toEqual(['run:0', 'cleanup:0', 'run:1'])
     owner.dispose()
-    // Owner 销毁也必须跑最后一次 cleanup
+    // Owner disposal must also run the final cleanup
     expect(order).toEqual(['run:0', 'cleanup:0', 'run:1', 'cleanup:1'])
   })
 
-  it('cleanup 抛错不得阻断其它 cleanup 与 effect 的执行', () => {
+  it('a cleanup throwing must not block other cleanups and effects from running', () => {
     const owner = createOwner()
     const a = state(0)
     const b = state(0)
@@ -207,20 +212,21 @@ describe('I2 · effect 清理必须成对执行', () => {
     expect(bRuns).toBe(1)
 
     /*
-     * 直接驱动 a 的 effect 重跑（不经调度器微任务）：
-     * 上一次的 cleanup 抛错，但 (1) 它自己的 callback 仍必须跑，
-     * (2) 兄弟 effect 不受影响。
-     * 注意 run() 开头有 `if (disposed || !dirty) return`，所以要先把它标脏。
+     * Drive a's effect re-run directly (not through the scheduler microtask):
+     * the previous cleanup throws, but (1) its own callback must still run,
+     * (2) sibling effects are unaffected.
+     * Note run() starts with `if (disposed || !dirty) return`, so mark it dirty first.
      */
     const runsBefore = bRuns
-    a.value = 1                       // 标脏 a 的 effect（不 flush）
+    a.value = 1                       // mark a's effect dirty (no flush)
     expect(() => effectA!.run()).toThrow('cleanup boom')
     expect(bRuns).toBe(runsBefore)
 
     /*
-     * Owner 销毁：一个 cleanup 抛错**不能**让兄弟 cleanup 不执行。
-     * `dispose()` 按设计把首个错误最后重抛（owner.ts:147），所以这里必须 try 住，
-     * 但两个 cleanup 都必须已经跑过 —— 这条才是"隔离"的判据。
+     * Owner disposal: one cleanup throwing must **not** stop sibling cleanups from
+     * running. `dispose()` re-throws the first error at the end by design
+     * (owner.ts:147), so it must be caught here — but both cleanups must already
+     * have run; that is the actual criterion for "isolation".
      */
     cleanups.length = 0
     expect(() => owner.dispose()).toThrow('cleanup boom')

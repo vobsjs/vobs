@@ -5,23 +5,23 @@ import type { Signal } from './index'
 import { state as stateFromSubpath } from '@vobs/reactivity/state'
 
 describe('reactivity', () => {
-  it('仅公开 state 创建 API', () => {
+  it('only exposes the state creation API', () => {
     expect(reactivity.state).toBeTypeOf('function')
     expect('signal' in reactivity).toBe(false)
   })
 
-  it('支持 state 子路径导入', () => {
+  it('supports the state subpath import', () => {
     expect(stateFromSubpath(1).value).toBe(1)
   })
 
-  it('state 读写', () => {
+  it('state read and write', () => {
     const count = state(0)
     expect(count.value).toBe(0)
     count.value = 1
     expect(count.value).toBe(1)
   })
 
-  it('set 与 .value = 赋值语义一致', async () => {
+  it('set is semantically identical to .value = assignment', async () => {
     const count = state(0)
     const fn = vi.fn(() => { void count.value })
     effect(fn)
@@ -30,34 +30,34 @@ describe('reactivity', () => {
     expect(count.value).toBe(1)
     expect(fn).toHaveBeenCalledTimes(2)
 
-    // Object.is 判等短路：相同值不触发订阅者
+    // Object.is equality short-circuit: identical values do not notify subscribers
     count.set(1)
     await Promise.resolve()
     expect(fn).toHaveBeenCalledTimes(2)
   })
 
-  it('set 可脱离对象直接作为回调传递', () => {
+  it('set can be passed directly as a detached callback', () => {
     const count = state(0)
     const setCount: (next: number) => void = count.set
     setCount(5)
     expect(count.value).toBe(5)
   })
 
-  it('memo 没有 set，写入派生值被运行时拒绝', () => {
+  it('memo has no set; writing a derived value is rejected at runtime', () => {
     const count = state(0)
     const doubled = memo(() => count.value * 2)
     expect('set' in doubled).toBe(false)
     expect(() => { (doubled as unknown as { value: number }).value = 10 }).toThrow()
   })
 
-  it('支持创建时设置调试名称且不影响 state 行为', () => {
+  it('supports setting a debug name at creation without affecting state behavior', () => {
     const named = state(0, 'dashboard.lastAction')
     expect(reactivity.getSignalDebugName(named)).toBe('dashboard.lastAction')
     named.value = 1
     expect(named.value).toBe(1)
   })
 
-  it('effect 响应 state 变化', async () => {
+  it('effect responds to state changes', async () => {
     const count = state(0)
     const fn = vi.fn(() => { void count.value })
     effect(fn)
@@ -67,7 +67,7 @@ describe('reactivity', () => {
     expect(fn).toHaveBeenCalledTimes(2)
   })
 
-  it('effect 动态依赖切换', async () => {
+  it('effect switches dynamic dependencies', async () => {
     const a = state(0)
     const b = state(0)
     const flag = state(true)
@@ -83,7 +83,7 @@ describe('reactivity', () => {
     expect(fn).toHaveBeenCalledTimes(3)
   })
 
-  it('memo 在首次读取时惰性求值', () => {
+  it('memo evaluates lazily on first read', () => {
     const count = state(0)
     const fn = vi.fn(() => count.value * 2)
     const doubled = memo(fn)
@@ -95,7 +95,7 @@ describe('reactivity', () => {
     expect(fn).toHaveBeenCalledTimes(2)
   })
 
-  it('owner 级联销毁', () => {
+  it('owner cascading disposal', () => {
     const parent = createOwner()
     let childOwner = createOwner()
     parent.run(() => { childOwner = createOwner() })
@@ -104,7 +104,7 @@ describe('reactivity', () => {
     expect(childOwner.disposed).toBe(true)
   })
 
-  it('owner 销毁后 effect 不再执行', async () => {
+  it('effects no longer run after the owner is disposed', async () => {
     const owner = createOwner()
     const count = state(0)
     const callback = vi.fn(() => { void count.value })
@@ -115,9 +115,10 @@ describe('reactivity', () => {
     expect(callback).toHaveBeenCalledTimes(1)
   })
 
-  it('state 不随 owner 销毁：作用域释放后信号仍可写、可被新效果订阅', async () => {
-    // 方案 A 语义锁定：信号寿命 = 可达性。事件处理器经 owner.run 执行时创建的
-    // state（如 store 数据），在触发它的 UI 作用域（如菜单下拉）销毁后必须仍有效。
+  it('state survives owner disposal: the signal stays writable and subscribable by new effects after the scope is released', async () => {
+    // Plan A semantics pinned: signal lifetime = reachability. State created while an
+    // event handler runs via owner.run (e.g. store data) must remain valid after the
+    // triggering UI scope (e.g. a menu dropdown) is disposed.
     const owner = createOwner()
     let created!: Signal<number>
     owner.run(() => { created = state(1, 'scoped.state') })
@@ -133,7 +134,7 @@ describe('reactivity', () => {
     expect(callback).toHaveBeenCalledTimes(2)
   })
 
-  it('显式 dispose 后写入被忽略并警告一次（含调试名）', () => {
+  it('writes after an explicit dispose are ignored and warn once (including the debug name)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const count = state(0, 'legacy.count')
@@ -148,7 +149,7 @@ describe('reactivity', () => {
     }
   })
 
-  it('batch 内多次修改只 flush 一次', () => {
+  it('multiple writes inside a batch flush only once', () => {
     const count = state(0)
     const callback = vi.fn(() => { void count.value })
     effect(callback)
@@ -160,7 +161,7 @@ describe('reactivity', () => {
     expect(callback).toHaveBeenCalledTimes(2)
   })
 
-  it('memo 失效后通知依赖它的 effect', async () => {
+  it('after a memo is invalidated, effects depending on it are notified', async () => {
     const count = state(1)
     const doubled = memo(() => count.value * 2)
     const values: number[] = []
@@ -170,7 +171,7 @@ describe('reactivity', () => {
     expect(values).toEqual([2, 4])
   })
 
-  it('effect 重新执行和销毁时运行清理函数', async () => {
+  it('cleanups run on effect re-execution and disposal', async () => {
     const count = state(0)
     const owner = createOwner()
     const cleanups: number[] = []
@@ -184,7 +185,7 @@ describe('reactivity', () => {
     expect(cleanups).toEqual([0, 1])
   })
 
-  it('cleanup 异常由 Owner 边界处理，不会阻止下一次 effect 执行', async () => {
+  it('cleanup errors are handled at the Owner boundary and do not block the next effect run', async () => {
     const count = state(0)
     const owner = createOwner()
     const errors: unknown[] = []
@@ -202,7 +203,7 @@ describe('reactivity', () => {
     owner.dispose()
   })
 
-  it('Scheduler 隔离单个 effect 异常并继续执行同一轮其他 effect', () => {
+  it('the Scheduler isolates a single effect error and keeps running the other effects in the same round', () => {
     const source = state(0)
     const calls: string[] = []
     effect(() => {
@@ -217,7 +218,7 @@ describe('reactivity', () => {
     expect(calls).toEqual(['second', 'second'])
   })
 
-  it('state 对象和数组采用替换触发更新的浅层语义', async () => {
+  it('state objects and arrays use shallow replace-to-update semantics', async () => {
     const model = state({ count: 0 })
     const values: number[] = []
     effect(() => { values.push(model.value.count) })
@@ -228,7 +229,7 @@ describe('reactivity', () => {
     expect(values).toEqual([0, 2])
   })
 
-  it('嵌套 effect 不会丢失外层依赖追踪', async () => {
+  it('nested effects do not lose outer dependency tracking', async () => {
     const outer = state(0)
     const inner = state(0)
     const callback = vi.fn(() => {
@@ -241,7 +242,7 @@ describe('reactivity', () => {
     expect(callback).toHaveBeenCalledTimes(2)
   })
 
-  it('Owner 销毁会从调度队列移除 effect', async () => {
+  it('disposing the Owner removes the effect from the scheduling queue', async () => {
     const count = state(0)
     const owner = createOwner()
     const callback = vi.fn(() => { void count.value })
@@ -252,7 +253,7 @@ describe('reactivity', () => {
     expect(callback).toHaveBeenCalledTimes(1)
   })
 
-  it('异步 continuation 可显式重新进入捕获的 Owner', async () => {
+  it('an async continuation can explicitly re-enter a captured Owner', async () => {
     const owner = createOwner()
     let observed: ReturnType<typeof createOwner> | null = null
     await Promise.resolve()

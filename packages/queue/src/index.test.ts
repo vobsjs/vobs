@@ -9,7 +9,7 @@ import {
 } from './index'
 
 describe('@vobs/queue', () => {
-  it('按优先级调度任务，并暴露响应式统计', async () => {
+  it('schedules tasks by priority and exposes reactive statistics', async () => {
     const calls: string[] = []
     const queue = createTaskQueue({ concurrency: 1 })
     const first = queue.add(async () => {
@@ -37,7 +37,7 @@ describe('@vobs/queue', () => {
     queue.dispose()
   })
 
-  it('限制并发，并在暂停期间不启动新任务', async () => {
+  it('limits concurrency and does not start new tasks while paused', async () => {
     const resolvers: Array<() => void> = []
     let running = 0
     let maxRunning = 0
@@ -66,7 +66,7 @@ describe('@vobs/queue', () => {
     queue.dispose()
   })
 
-  it('失败后按 retry 和 retryDelay 重试，最终拒绝并通知错误', async () => {
+  it('retries with retry and retryDelay after failure, ultimately rejects, and notifies the error', async () => {
     let attempts = 0
     const onError = vi.fn()
     const queue = createTaskQueue({ onError })
@@ -84,7 +84,7 @@ describe('@vobs/queue', () => {
     queue.dispose()
   })
 
-  it('取消排队和运行中的任务，并允许失败任务重新提交', async () => {
+  it('cancels queued and running tasks and allows resubmitting failed ones', async () => {
     let resolveRunning: (() => void) | undefined
     let aborted = false
     const queue = createTaskQueue({ concurrency: 1 })
@@ -115,7 +115,7 @@ describe('@vobs/queue', () => {
     queue.dispose()
   })
 
-  it('clear 只取消排队任务，插件注入并在应用销毁后清理上下文', async () => {
+  it('clear only cancels queued tasks; the plugin injects and cleans up the context after app destruction', async () => {
     let injected: ReturnType<typeof createTaskQueue> | undefined
     const app = createVobs({
       render: () => createText('queue'),
@@ -135,62 +135,71 @@ describe('@vobs/queue', () => {
   })
 
   /*
-   * 报告 §2「任务 id 永久唯一、无淘汰、没有 remove()」判为**契约**，不是缺陷。证据三条：
+   * Report §2 "task ids are permanently unique, never evicted, and there is no remove()" was judged
+   * a **contract**, not a defect. Three pieces of evidence:
    *
-   *  - 默认 id 来自只增不减的计数器（index.ts:114 `let nextId = 0`、index.ts:131 `task-${++nextId}`），
-   *    探针连跑 500 个任务得到 task-1..task-500，一次都没撞 —— 报告说的「长会话必然撞 id」
-   *    只对**调用方自带** `id`/`idFactory` 成立（index.ts:131 的 `taskOptions.id ??` 优先级）。
-   *  - 公开面没有 remove/delete：接口 index.ts:42-55、实现 index.ts:117-183 只有
-   *    add/pause/resume/clear/dispose；`tasks.value` 只追加（index.ts:140），
-   *    `clear()` 只取消排队任务（index.ts:160-165），只有 `dispose()` 清空
-   *    `tasks`/`ownedTasks`（index.ts:172-174）。已结束任务在 dispose 前一直被强引用
-   *    （探针：505 个已 success 的任务全部留在 `tasks.value` 里，堆差 +2.77MB）。
-   *  - 已结束任务的 id 不能复用：去重检查 index.ts:135-137 抛 `INVALID_QUEUE_OPTIONS`，
-   *    而它查的正是只追加的 `tasks.value`。
+   *  - Default ids come from a grow-only counter (index.ts:114 `let nextId = 0`, index.ts:131
+   *    `task-${++nextId}`); a probe running 500 tasks produced task-1..task-500 with zero
+   *    collisions — the report's "long sessions will inevitably collide on id" only holds for
+   *    **caller-supplied** `id`/`idFactory` (the `taskOptions.id ??` precedence at index.ts:131).
+   *  - The public surface has no remove/delete: interface index.ts:42-55 and implementation
+   *    index.ts:117-183 offer only add/pause/resume/clear/dispose; `tasks.value` only appends
+   *    (index.ts:140), `clear()` only cancels queued tasks (index.ts:160-165), and only
+   *    `dispose()` empties `tasks`/`ownedTasks` (index.ts:172-174). Finished tasks stay strongly
+   *    referenced until dispose (probe: all 505 succeeded tasks remained in `tasks.value`,
+   *    +2.77MB heap delta).
+   *  - Finished tasks' ids could not be reused: the dedup check at index.ts:135-137 threw
+   *    `INVALID_QUEUE_OPTIONS`, and what it checked was exactly the append-only `tasks.value`.
    *
-   * 为什么**不**做 id 复用、也**不**加 `remove(id)`（写清楚，免得后人当缺陷顺手补）：
+   * Why we do **not** enable id reuse and do **not** add `remove(id)` (written down so nobody
+   * later "fixes" this as a defect):
    *
-   *  1. `tasks` 是订阅者共享的 id 空间。同一 id 前后指向两个不同任务对象时，按 id 做的
-   *     订阅/持久化（「upload-1 的结果」）就串味了：旧任务与新任务同时在 `tasks` 里，
-   *     `tasks.find(t => t.id === 'upload-1')` 谁也说不清指哪一个。
-   *  2. 复用 id 只有两条路：允许重复（= 上面的歧义）或静默顶掉旧任务 —— 后者等于让
-   *     `add()` 悄悄撤销一个调用方还持有引用的任务，破坏 `cancel()/retry()/promise` 的所有权。
-   *  3. 「释放任务」在本模块是**整体**语义：`dispose()` 会 cancel + abort + 销毁统计信号
-   *     （index.ts:167-182），那才是回收路径。补一个只允许移除已终结任务的 `remove(id)`，
-   *     等于新增一个与 `tasks`/`total` 订阅者语义打架的面，doc 与测试都得跟着长。
+   *  1. `tasks` is a shared id space across subscribers. When the same id points to two different
+   *     task objects over time, id-based subscriptions/persistence ("the result of upload-1") get
+   *     crossed: old and new tasks are both in `tasks`, and
+   *     `tasks.find(t => t.id === 'upload-1')` is ambiguous.
+   *  2. Reusing an id has only two paths: allow duplicates (= the ambiguity above) or silently
+   *     evict the old task — the latter means `add()` quietly retracts a task the caller still
+   *     holds a reference to, breaking ownership of `cancel()/retry()/promise`.
+   *  3. "Releasing a task" is a **whole-queue** semantic in this module: `dispose()` does
+   *     cancel + abort + destroys the stat signals (index.ts:167-182); that is the reclamation
+   *     path. Adding a `remove(id)` that only allows removing finished tasks would introduce a new
+   *     surface fighting the semantics of `tasks`/`total` subscribers, with doc and tests to match.
    *
-   * 所以「已结束任务留到 dispose」是刻意选择：代价是内存保留，替代路径是短生命周期队列
-   * 或 `dispose()` 后重建。本用例把这三件事钉住，动了任何一条都会红。
+   * So "finished tasks stay until dispose" is a deliberate choice: the cost is memory retention;
+   * the alternatives are short-lived queues or rebuilding after `dispose()`. This test pins all
+   * three; breaking any of them goes red.
    */
-    it('任务 id 单调唯一；已结束任务移出列表（id 因此可以复用）', async () => {
+    it('task ids are monotonically unique; finished tasks are removed from the list (so ids become reusable)', async () => {
       const queue = createTaskQueue({ concurrency: 2 })
       const settled = [queue.add(() => 1), queue.add(() => 2), queue.add(() => 3)]
       await Promise.all(settled.map(task => task.promise))
       await new Promise(resolve => setTimeout(resolve, 0))
 
-      // 1) 默认 id 单调递增、互不相同（计数器不复用）
+      // 1) Default ids increase monotonically and never collide (the counter is never reused)
       expect(settled.map(task => task.id)).toEqual(['task-1', 'task-2', 'task-3'])
 
       /*
-       * 2) 已结束任务**被移出** tasks。
+       * 2) Finished tasks **are removed** from tasks.
        *
-       * 旧契约是"任务永不摘除、tasks 只追加"。它有一个真实代价：按业务键生成 id 的应用
-       * （\`idFactory: () => 'upload:' + fileId\`）在第一次任务结束后再提交同名任务就会抛
-       * "已存在任务 <id>"，而且长会话里 tasks 无界增长。
-       * README 把 \`tasks\` 与 \`pending/completed/total\` 并列描述为 **Reactive queue statistics**
-       * （不是历史记录）—— 历史语义由累计的 \`completed\`/\`failed\` 承担，所以这里改的是行为，
-       * 不是把测试改到能过。
+       * The old contract was "tasks are never evicted; tasks is append-only". It had a real cost:
+       * an app generating ids from business keys (\`idFactory: () => 'upload:' + fileId\`) threw
+       * "task <id> already exists" when submitting a same-named task after the first finished, and
+       * tasks grew without bound in long sessions. The README lists \`tasks\` alongside
+       * \`pending/completed/total\` as **Reactive queue statistics** (not a history) — history
+       * semantics are carried by the cumulative \`completed\`/\`failed\` counters, so this changed
+       * behavior rather than bending the test to pass.
        */
-      expect(queue.tasks.value, '已结束任务应当被移出列表').toHaveLength(0)
-      // total 是状态计数之和（见实现注释）：3 个已完成 → 3
+      expect(queue.tasks.value, 'finished tasks should be removed from the list').toHaveLength(0)
+      // total is the sum of the status counters (see implementation comments): 3 finished → 3
       expect(queue.total.value).toBe(3)
-      expect(queue.completed.value, 'completed 是累计计数，不随移除掉回 0').toBe(3)
+      expect(queue.completed.value, 'completed is cumulative and does not drop back to 0 on removal').toBe(3)
 
-      // 3) 公开 API 依然没有移除单个任务的能力，只有整体 clear()/dispose()
+      // 3) The public API still has no per-task removal, only whole-queue clear()/dispose()
       expect('remove' in queue).toBe(false)
       expect('delete' in queue).toBe(false)
 
-      // 4) 完成过的显式 id **可以复用**（原契约明确禁止 —— 那正是要修的缺陷）
+      // 4) A finished explicit id **can be reused** (the old contract forbade it — exactly the defect being fixed)
       const upload = queue.add(() => 'uploaded', { id: 'upload-1' })
       await upload.promise
       await new Promise(resolve => setTimeout(resolve, 0))
@@ -198,18 +207,18 @@ describe('@vobs/queue', () => {
       await expect(again.promise).resolves.toBe('again')
       await new Promise(resolve => setTimeout(resolve, 0))
 
-      // 5) clear() 只取消排队任务；id 计数器依然单调（下一个是 task-4）
+      // 5) clear() only cancels queued tasks; the id counter stays monotonic (the next is task-4)
       queue.clear()
       const afterClear = queue.add(() => 'after-clear')
       expect(afterClear.id).toBe('task-4')
       await afterClear.promise
       await new Promise(resolve => setTimeout(resolve, 0))
 
-      // 6) dispose() 之后 tasks 为空（本来就如此）
+      // 6) After dispose(), tasks is empty (it always was)
       queue.dispose()
       expect(queue.tasks.value).toHaveLength(0)
 
-      // 7) 长跑：id 单调唯一，结束后列表为空（不再无界增长）
+      // 7) Long run: ids monotonically unique, the list empties when done (no more unbounded growth)
       const long = createTaskQueue({ concurrency: 8 })
       const batch = Array.from({ length: 64 }, () => long.add(() => 'ok'))
       await Promise.all(batch.map(task => task.promise))
@@ -218,19 +227,20 @@ describe('@vobs/queue', () => {
       expect(new Set(ids).size).toBe(64)
       expect(ids[0]).toBe('task-1')
       expect(ids[63]).toBe('task-64')
-      expect(long.tasks.value, '64 个任务结束后不该还留在列表里').toHaveLength(0)
+      expect(long.tasks.value, '64 finished tasks should not still be in the list').toHaveLength(0)
       expect(long.completed.value).toBe(64)
       long.dispose()
       expect(long.tasks.value).toHaveLength(0)
     })
 
   /*
-   * 取消/清空/销毁都会 reject 任务 promise（`:232`/`:160`/`:170`）。调用方完全可能只关心
-   * `add()` 的返回值、从没碰过 `.promise` —— 那在 Node 里就是**进程级 unhandledRejection**：
-   * 清理阶段把进程带走，而 line 129 那条 `void first.promise.catch(...)` 就是这个约束的证据
-   * （README 从没写过）。
+   * cancel/clear/dispose all reject the task promise (`:232`/`:160`/`:170`). The caller may
+   * perfectly well only care about `add()`'s return value and never touch `.promise` — in Node
+   * that is a **process-level unhandledRejection**: it kills the process during cleanup. The
+   * `void first.promise.catch(...)` at line 129 is evidence of exactly this constraint (the README
+   * never documented it).
    */
-  it('clear()/dispose() 取消未完成任务不产生进程级 unhandledRejection', async () => {
+  it('clear()/dispose() cancelling unfinished tasks produces no process-level unhandledRejection', async () => {
     const unhandled: unknown[] = []
     const onUnhandled = (reason: unknown): void => { unhandled.push(reason) }
     process.on('unhandledRejection', onUnhandled)
@@ -240,12 +250,12 @@ describe('@vobs/queue', () => {
       queue.add(() => 'queued')
       await vi.waitFor(() => expect(running.status.value).toBe('running'))
 
-      queue.clear()   // 取消"排队"的那个：它的 promise 没人接
+      queue.clear()   // Cancel the "queued" one: nobody is attached to its promise
       await new Promise(resolve => setTimeout(resolve, 20))
       expect(unhandled).toEqual([])
       expect(running.status.value).toBe('running')
 
-      queue.dispose() // 取消"运行中"的那个：同样没人接
+      queue.dispose() // Cancel the "running" one: likewise unattached
       await new Promise(resolve => setTimeout(resolve, 20))
       expect(unhandled).toEqual([])
     } finally {
@@ -254,14 +264,15 @@ describe('@vobs/queue', () => {
   })
 
   /*
-   * dispose 之后，**在途**任务的收尾仍会走到 refreshStats()：原来会往已销毁的
-   * pending/processing/completed/failed/total 写值 → 每条信号刷一条
-   * `[vobs] 写入已 dispose 的 state` 告警（探针实测 5 条，与报告一致）。
+   * After dispose, the wrap-up of **in-flight** tasks still reaches refreshStats(): it used to
+   * write to the already-disposed pending/processing/completed/failed/total → one
+   * `[vobs] write to a disposed state` warning per signal (probe measured 5, matching the report).
    *
-   * ⚠️ 这条用例必须**等够微任务**：告警发生在 in-flight 任务结算之后的好几跳里，
-   * 只推 2 轮看不到（我第一版就是这样，误判"守卫无效"并把改动回退了）。
+   * ⚠️ This test must **wait enough microtasks**: the warning fires several hops after the
+   * in-flight task settles; pushing only 2 rounds won't see it (my first version did exactly that
+   * and wrongly concluded "the guard doesn't work" and reverted the change).
    */
-  it('dispose 后在途任务的收尾不再往已销毁的统计信号写值', async () => {
+  it('after dispose, in-flight task wrap-up no longer writes to the disposed stat signals', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       const queue = createTaskQueue({ concurrency: 1 })
@@ -280,11 +291,13 @@ describe('@vobs/queue', () => {
   })
 
   /*
-   * `drain()` 由 `add()` 同步调用 → 原来 `task.fn(...)` 在 `add()` 返回**之前**就跑了，
-   * 紧接着 `cancel()` 根本来不及：副作用已经发生，而状态却报 cancelled、result 为 null
-   * （报告实测 ran=true / status=cancelled）。起步延后一跳后，"add 完立刻 cancel" 能真正阻止执行。
+   * `drain()` is called synchronously from `add()` → `task.fn(...)` used to run **before** `add()`
+   * returned, so an immediately following `cancel()` had no chance: the side effects had already
+   * happened while the status reported cancelled and result stayed null (measured in the report:
+   * ran=true / status=cancelled). Deferring the start one hop makes "cancel right after add"
+   * actually prevent execution.
    */
-  it('add() 之后立刻 cancel() 能让任务根本不执行', async () => {
+  it('cancelling immediately after add() prevents the task from running at all', async () => {
     const queue = createTaskQueue({ concurrency: 1 })
     let ran = false
     const task = queue.add(() => {
@@ -301,7 +314,7 @@ describe('@vobs/queue', () => {
     queue.dispose()
   })
 
-  it('未安装插件时 useQueue 给出明确错误', () => {
+  it('useQueue gives a clear error when the plugin is not installed', () => {
     const app = createVobs({ render: () => {
       useQueue()
       return createText('')

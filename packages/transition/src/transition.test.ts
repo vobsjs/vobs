@@ -19,7 +19,7 @@ describe('@vobs/transition', () => {
     vi.unstubAllGlobals()
   })
 
-  it('在节点插入后执行 enter class 生命周期并清理 class', () => {
+  it('runs the enter class lifecycle after the node is inserted and cleans up classes', () => {
     const stages: string[] = []
     const container = document.createElement('main')
     const app = createVobs({
@@ -46,7 +46,7 @@ describe('@vobs/transition', () => {
     app.destroy()
   })
 
-  it('使用 from/to 样式，并在 transitionend 后恢复原始 inline style', () => {
+  it('uses from/to styles and restores the original inline style after transitionend', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(Transition, {
@@ -81,7 +81,7 @@ describe('@vobs/transition', () => {
     app.destroy()
   })
 
-  it('leave 完成前保留节点与 Owner，完成后才移除', () => {
+  it('keeps the node and owner until leave completes, removing only afterwards', () => {
     const shown = state(true)
     const stages: string[] = []
     const disposals: string[] = []
@@ -116,7 +116,7 @@ describe('@vobs/transition', () => {
     app.destroy()
   })
 
-  it('遵循 prefers-reduced-motion 并立即完成 enter 和 leave', () => {
+  it('honors prefers-reduced-motion and completes enter/leave immediately', () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }))
     const shown = state(true)
     const stages: string[] = []
@@ -145,7 +145,7 @@ describe('@vobs/transition', () => {
     app.destroy()
   })
 
-  it('show 在 leave 期间恢复时取消离开并保持同一节点', () => {
+  it('cancels the leave and keeps the same node when show is restored mid-leave', () => {
     const shown = state(true)
     const events: string[] = []
     const container = document.createElement('main')
@@ -174,7 +174,7 @@ describe('@vobs/transition', () => {
     app.destroy()
   })
 
-  it('TransitionGroup 以 key 追踪条目并在 leave 后删除', () => {
+  it('TransitionGroup tracks entries by key and removes them after leave', () => {
     const people = state([
       { id: 'ada', name: 'Ada' },
       { id: 'lin', name: 'Lin' }
@@ -204,7 +204,7 @@ describe('@vobs/transition', () => {
     app.destroy()
   })
 
-  it('重复 key 在列表提交前报错并保留上一轮 DOM', () => {
+  it('throws on duplicate keys before committing and keeps the previous DOM', () => {
     const people = state([
       { id: 'ada', name: 'Ada' },
       { id: 'lin', name: 'Lin' }
@@ -224,12 +224,12 @@ describe('@vobs/transition', () => {
       { id: 'ada', name: 'Ada 2' },
       { id: 'ada', name: 'Ada 3' }
     ]
-    expect(() => app.update()).toThrow('重复 key')
+    expect(() => app.update()).toThrow('duplicate key')
     expect([...container.querySelectorAll('span')].map(node => node.textContent)).toEqual(['Ada', 'Lin'])
     app.destroy()
   })
 
-  it('renderItem 使用 index 时在重排后刷新索引', () => {
+  it('refreshes the index after reordering when renderItem uses index', () => {
     const people = state([
       { id: 'ada', name: 'Ada' },
       { id: 'lin', name: 'Lin' }
@@ -251,7 +251,7 @@ describe('@vobs/transition', () => {
     app.destroy()
   })
 
-  it('SSR 不访问 DOM，并直接输出当前可见分支', () => {
+  it('SSR never touches the DOM and emits the currently visible branch directly', () => {
     const visible = renderToString(() => createComponent(Transition, {
       show: true,
       name: 'fade',
@@ -267,7 +267,7 @@ describe('@vobs/transition', () => {
     expect(hidden).not.toContain('hidden content')
   })
 
-  it('children 数组入口可以保持稳定节点并执行 leave', () => {
+  it('children array entries keep stable nodes and run leave', () => {
     const first = textNode('first')
     const second = textNode('second')
     const children = state<readonly Element[]>([first, second])

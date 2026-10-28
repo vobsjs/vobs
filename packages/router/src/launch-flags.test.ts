@@ -2,19 +2,21 @@
 import { describe, expect, it, vi } from 'vitest'
 
 /*
- * 启动开关（hasLaunchFlag / readLaunchQuery）——Finora 死穴「URL 开关参数」的标准件。
+ * Launch flags (hasLaunchFlag / readLaunchQuery) — the standard part for Finora's "URL switch
+ * params" pit.
  *
- * 语义：模块加载时捕获一次（SPA 内跳转改写 URL 不影响已捕获值）；
- * history 形态（/?cloud）与 hash 形态（/#/path?cloud）都识别。
- * 模块级捕获 = 测试用 vi.resetModules + 动态 import 重求值。
+ * Semantics: captured once at module load (SPA-internal navigation rewriting the URL does not
+ * affect the captured values); both history form (/?cloud) and hash form (/#/path?cloud) are
+ * recognized.
+ * Module-level capture = tests use vi.resetModules + dynamic import to re-evaluate.
  */
 const freshImport = async (): Promise<typeof import('./index')> => {
   vi.resetModules()
   return await import('./index')
 }
 
-describe('启动开关（hasLaunchFlag / readLaunchQuery）', () => {
-  it('history 形态：search 里的开关被捕获', async () => {
+describe('launch flags (hasLaunchFlag / readLaunchQuery)', () => {
+  it('history form: flags in search are captured', async () => {
     window.history.replaceState(null, '', '/?cloud&shell=cockpit')
     const { hasLaunchFlag, readLaunchQuery } = await freshImport()
     expect(hasLaunchFlag('cloud')).toBe(true)
@@ -23,31 +25,31 @@ describe('启动开关（hasLaunchFlag / readLaunchQuery）', () => {
     expect(readLaunchQuery('nonexistent')).toBeNull()
   })
 
-  it('hash 形态：#/path?cloud 同样识别', async () => {
+  it('hash form: #/path?cloud is recognized as well', async () => {
     window.history.replaceState(null, '', '/#/workbench?cloud')
     const { hasLaunchFlag, readLaunchQuery } = await freshImport()
     expect(hasLaunchFlag('cloud')).toBe(true)
     expect(readLaunchQuery('cloud')).toBe('')
   })
 
-  it('search 与 hash 段同时存在时都可读', async () => {
+  it('readable from both when search and hash segments exist simultaneously', async () => {
     window.history.replaceState(null, '', '/?cloud#/path?shell=cockpit')
     const { hasLaunchFlag, readLaunchQuery } = await freshImport()
     expect(hasLaunchFlag('cloud')).toBe(true)
     expect(readLaunchQuery('shell')).toBe('cockpit')
   })
 
-  it('捕获一次语义：SPA 内跳转改写 URL 后开关不漂移', async () => {
+  it('capture-once semantics: flags do not drift after SPA navigation rewrites the URL', async () => {
     window.history.replaceState(null, '', '/?cloud')
     const { hasLaunchFlag } = await freshImport()
     expect(hasLaunchFlag('cloud')).toBe(true)
 
-    // 路由跳转（pushState 改 URL、丢掉 query）——已捕获的开关不受影响
+    // Route navigation (pushState rewrites the URL, dropping the query) — captured flags are unaffected
     window.history.replaceState(null, '', '/accounts')
     expect(hasLaunchFlag('cloud')).toBe(true)
   })
 
-  it('无开关时全部返回否定', async () => {
+  it('all return negative when no flags are present', async () => {
     window.history.replaceState(null, '', '/plain')
     const { hasLaunchFlag, readLaunchQuery } = await freshImport()
     expect(hasLaunchFlag('cloud')).toBe(false)

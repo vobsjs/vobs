@@ -91,13 +91,15 @@ export interface RequirePermissionsProps extends AuthBoundaryProps {
 }
 
 /**
- * 从 session 里取一个"字符串数组"字段 —— 形状不对就当**没有**（缺省拒绝）。
+ * Read a "string array" field from the session — treat a malformed shape as **absent** (deny by default).
  *
- * 原来判定直接 `session.value?.user.permissions.includes(...)`，有两个坑：
- *  1. session 少了字段（水合不完整、`{}` 这种）就抛 TypeError —— 挂载期崩，**更新期被 effect 吞掉**，
- *     而吞掉之后旧的授权内容会留在页面上：最放行的路径恰恰是最安静的那条；
- *  2. 字段若是字符串，`.includes` 会退化成**子串匹配**（`roles: 'editor'` 让 `hasRole('e')` 为真）。
- * 所以只认字符串数组：不是就当空数组 → 一律拒绝。
+ * The original check was a direct `session.value?.user.permissions.includes(...)`, which had two pitfalls:
+ *  1. If the session is missing fields (incomplete hydration, `{}`, etc.) it throws a TypeError — the crash
+ *     lands during mount, but during updates it gets swallowed by an effect. After it is swallowed, the old
+ *     authorized content stays on the page: the most permissive path is precisely the quietest one.
+ *  2. If the field is a string, `.includes` degrades into **substring matching** (`roles: 'editor'` makes
+ *     `hasRole('e')` true).
+ * So only accept string arrays: anything else counts as an empty array → always deny.
  */
 function readSessionList(session: Session | null, field: 'roles' | 'permissions'): readonly string[] {
   const user: unknown = session?.user
@@ -111,8 +113,9 @@ export function createAuth<C extends Credentials = Credentials>(options: AuthOpt
   const session = options.session ?? ownedSession!
   const status = memo<AuthStatus>(() => session.value ? 'authenticated' : 'anonymous')
   /**
-   * 世代计数：登出/销毁会推进它，此后落地的 in-flight 登录结果一律作废。
-   * 照 resource 的 revision 模式（jwt-auth 的 `6736eaf` 是同一处修复）。
+   * Generation counter: logout/dispose advances it, and any in-flight login result landing afterwards
+   * is discarded unconditionally. Follows the resource revision pattern (jwt-auth's `6736eaf` is the
+   * same fix applied there).
    */
   let generation = 0
   let disposed = false
@@ -134,17 +137,18 @@ export function createAuth<C extends Credentials = Credentials>(options: AuthOpt
     async login(credentials: C): Promise<void> {
       ensureActive()
       if (!options.loginHandler) {
-        throw new AuthError('LOGIN_NOT_CONFIGURED', 'Vobs Auth: 未配置 loginHandler')
+        throw new AuthError('LOGIN_NOT_CONFIGURED', 'Vobs Auth: loginHandler is not configured')
       }
       const issued = generation
       const nextSession = await options.loginHandler(credentials)
       validateSession(nextSession)
       /*
-       * 原来这里**无条件**写 session：await 期间用户点了登出（或上下文被销毁），
-       * 登录结果一落地就把人重新登入 —— 一次"安全退出"被一个迟到的响应撤销。
+       * The original code wrote the session **unconditionally**: if the user clicked logout while the
+       * await was pending (or the context was disposed), the login result would sign them right back in
+       * the moment it landed — a "secure logout" silently undone by one late response.
        */
       if (disposed || generation !== issued) {
-        throw new AuthError('LOGIN_SUPERSEDED', 'Vobs Auth: 登录结果已过期（期间发生了登出或销毁）')
+        throw new AuthError('LOGIN_SUPERSEDED', 'Vobs Auth: login result is stale (logout or dispose happened in the meantime)')
       }
       session.value = nextSession
     },
@@ -158,14 +162,14 @@ export function createAuth<C extends Credentials = Credentials>(options: AuthOpt
     requirePermission(permission: Permission): void {
       ensureActive()
       if (!context.hasPermission(permission)) {
-        throw new AuthError('PERMISSION_DENIED', `Vobs Auth: 缺少权限 ${permission}`)
+        throw new AuthError('PERMISSION_DENIED', `Vobs Auth: missing permission ${permission}`)
       }
     },
 
     requireRole(role: string): void {
       ensureActive()
       if (!context.hasRole(role)) {
-        throw new AuthError('PERMISSION_DENIED', `Vobs Auth: 缺少角色 ${role}`)
+        throw new AuthError('PERMISSION_DENIED', `Vobs Auth: missing role ${role}`)
       }
     },
 
@@ -181,7 +185,7 @@ export function createAuth<C extends Credentials = Credentials>(options: AuthOpt
   return context
 
   function ensureActive(): void {
-    if (disposed) throw new AuthError('AUTH_CONTEXT_MISSING', 'Vobs Auth: 上下文已销毁')
+    if (disposed) throw new AuthError('AUTH_CONTEXT_MISSING', 'Vobs Auth: context has been disposed')
   }
 }
 
@@ -200,7 +204,7 @@ export function authPlugin<C extends Credentials = Credentials>(options: AuthPlu
 export function useAuth(): AuthContext {
   const auth = inject(AUTH_KEY)
   if (!auth) {
-    throw new AuthError('AUTH_CONTEXT_MISSING', 'Vobs Auth: 找不到上下文，请安装 authPlugin')
+    throw new AuthError('AUTH_CONTEXT_MISSING', 'Vobs Auth: context not found, install authPlugin first')
   }
   return auth
 }
@@ -228,8 +232,9 @@ export function RequireAnyPermission(props: RequirePermissionsProps): VobsNode {
 export function RequireAllPermissions(props: RequirePermissionsProps): VobsNode {
   return createAuthBoundary(
     useAuth,
-    // `[].every(...)` **恒真** → 空列表会把受保护内容放给任何人（含匿名）。空列表按"未满足"处理，
-    // 与 RequireAnyPermission([])（`[].some` 恒假）结论一致：Guard 一律 fail closed。
+    // `[].every(...)` is **always true** → an empty list would hand protected content to anyone
+    // (including anonymous). Treat an empty list as "not satisfied", consistent with
+    // RequireAnyPermission([]) (`[].some` is always false): guards always fail closed.
     auth => props.permissions.length > 0
       && props.permissions.every(permission => auth.hasPermission(permission)),
     props
@@ -252,10 +257,10 @@ function createAuthBoundary(
 
 function validateSession(value: Session): void {
   if (!value || typeof value !== 'object' || !value.user || typeof value.user !== 'object') {
-    throw new AuthError('INVALID_SESSION', 'Vobs Auth: loginHandler 返回了无效 session')
+    throw new AuthError('INVALID_SESSION', 'Vobs Auth: loginHandler returned an invalid session')
   }
   const user = value.user
   if (typeof user.id !== 'string' || !Array.isArray(user.roles) || !Array.isArray(user.permissions)) {
-    throw new AuthError('INVALID_SESSION', 'Vobs Auth: session.user 必须包含 id、roles 和 permissions')
+    throw new AuthError('INVALID_SESSION', 'Vobs Auth: session.user must contain id, roles and permissions')
   }
 }

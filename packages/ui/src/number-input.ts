@@ -21,19 +21,19 @@ import type { Signal } from '@vobs/reactivity'
 import type { VuiCommonProps } from './types'
 
 export interface NumberInputProps extends VuiCommonProps {
-  /** 受控当前值（与 bind 二选一；bind 优先） */
+  /** Controlled current value (mutually exclusive with bind; bind wins). */
   readonly value?: number
   readonly bind?: Signal<number>
   readonly min?: number
   readonly max?: number
   readonly step?: number
-  /** 后缀单位（如「天」） */
+  /** Suffix unit (e.g. "days"). */
   readonly suffix?: string
   readonly disabled?: boolean
   readonly onChange?: (value: number) => void
 }
 
-/** 数字步进输入：− / + 按钮与键入双向同步，越界自动收敛到 [min, max] */
+/** Numeric stepper input: − / + buttons and typing stay in sync; out-of-range values clamp into [min, max]. */
 export function NumberInput(props: NumberInputProps = {}): VobsNode {
   const root = createElement('div')
   const minus = createElement('button')

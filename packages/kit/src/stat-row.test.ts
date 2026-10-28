@@ -5,7 +5,7 @@ import { KitStatRow } from './stat-row'
 describe('@vobs/kit KitStatRow', () => {
   beforeEach(() => setRenderer(createDOMRenderer()))
 
-  it('默认 3 列', () => {
+  it('defaults to 3 columns', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitStatRow, { children: 'stat' })
@@ -18,7 +18,7 @@ describe('@vobs/kit KitStatRow', () => {
     app.destroy()
   })
 
-  it('cols=4 换档', () => {
+  it('cols=4 switches the variant', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitStatRow, { cols: 4, children: 'stat' })

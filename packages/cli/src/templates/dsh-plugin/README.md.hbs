@@ -1,54 +1,54 @@
 # {{displayName}}
 
-用 [vobs](https://github.com/vobsjs/vobs) 渲染的 DeepSeek Harness 插件。
+A DeepSeek Harness plugin rendered with [vobs](https://github.com/vobsjs/vobs).
 
-## 开发
+## Develop
 
 ```bash
 pnpm install
-pnpm dev      # 本地预览：不用装进 DSH，浏览器里就能看到面板
-pnpm build    # 产出 lib/{index,client}.js
-pnpm check    # 装前一致性校验
+pnpm dev      # local preview: see the panel in a browser without installing into DSH
+pnpm build    # produces lib/{index,client}.js
+pnpm check    # pre-install consistency check
 ```
 
-## 安装进 DSH
+## Install into DSH
 
-产物**必须提交进 Git** —— DSH 安装时不会构建你的包。
+The build output **must be committed to Git** — DSH does not build your package at install time.
 
 ```bash
 git add -A && git commit -m "feat: {{displayName}}" && git tag v0.1.0 && git push --tags
 ```
 
-然后在 DSH 侧边栏「插件」页填：
+Then fill in on DSH's sidebar "Plugins" page:
 
 ```text
-github:<owner>/<repo>#v0.1.0&path:/<本包在仓库中的路径>
+github:<owner>/<repo>#v0.1.0&path:/<this package's path within the repo>
 ```
 
-`&path:` 是 pnpm 的 Git 仓库子目录语法。**Windows 上用命令行时要注意**：
-`dsh.cmd` 是 batch 包装，`&` 会被 `cmd.exe` 吃掉而静默装错包，PowerShell 里要写
-`dsh --% plugin --profile desktop add "…"`。
+`&path:` is pnpm's Git-repo subdirectory syntax. **Watch out on the Windows command line**:
+`dsh.cmd` is a batch wrapper, `&` gets eaten by `cmd.exe` and the wrong package is silently
+installed; in PowerShell write `dsh --% plugin --profile desktop add "…"`.
 
-装完完全退出 DSH 再打开。
+Fully quit DSH and reopen it after installing.
 
-## 结构
+## Layout
 
 ```
 src/
-├── host/index.ts        Host 侧 cordis 插件（只负责「被挂载」）
+├── host/index.ts        Host-side cordis plugin (only needs to "be mounted")
 └── client/
-    ├── index.tsx        defineDshOverlay：挂到哪个 slot、渲染什么
-    ├── panel.tsx        面板主体（vobs 组件，只执行一次）
-    └── styles.ts        注入 shadow root 的样式
-cordis.patch.yml         把自己的行插进 profile 的 cordis 树
-lib/                     构建产物（提交进 Git）
+    ├── index.tsx        defineDshOverlay: which slot to mount into, what to render
+    ├── panel.tsx        panel body (a vobs component, executes exactly once)
+    └── styles.ts        styles injected into the shadow root
+cordis.patch.yml         inserts this plugin's own row into the profile's cordis tree
+lib/                     build output (committed to Git)
 ```
 
-## 换一种挂法
+## Alternative mounting styles
 
-`src/client/index.tsx` 里的 `defineDshOverlay` 可以换成：
+The `defineDshOverlay` in `src/client/index.tsx` can be swapped for:
 
-- `defineDshPanel({ key, label, sidebarEntry })` —— 占满主区域的整页 + 左侧栏入口
-- `defineDshPlugin({ setup(ctx) { … } })` —— 自己写 apply，挂到适配层还没封装的 slot
+- `defineDshPanel({ key, label, sidebarEntry })` — a full main-area page + a sidebar entry
+- `defineDshPlugin({ setup(ctx) { … } })` — write your own apply, mount into slots the adapter has not wrapped yet
 
-可用的 slot 与字段见 [`@vobs/dsh` 的 README](https://github.com/vobsjs/vobs/tree/main/packages/dsh)。
+For available slots and fields see [the `@vobs/dsh` README](https://github.com/vobsjs/vobs/tree/main/packages/dsh).

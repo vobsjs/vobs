@@ -74,7 +74,7 @@ export async function scaffoldProject(
 ): Promise<void> {
   const templateDir = resolve(TEMPLATES_ROOT, template)
   if (!existsSync(templateDir)) {
-    throw new Error(`模板不存在: ${template}（可用模板见 ${TEMPLATES_ROOT}）`)
+    throw new Error(`Template not found: ${template} (available templates: ${TEMPLATES_ROOT})`)
   }
   ensureDir(targetDir)
   await copyDirRecursive(templateDir, targetDir, context)

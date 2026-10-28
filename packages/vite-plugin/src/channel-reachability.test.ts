@@ -1,29 +1,35 @@
 /*
- * **通道可达性**：每个诊断码在它声明的通道上必须真的能报出来。
+ * **Channel reachability**: every diagnostic code must actually be reportable on the
+ * channels it declares.
  *
- * ## 为什么需要这个测试
+ * ## Why this test exists
  *
- * 「诊断存在，但某条通道上不可见」在这一轮出现了**三次**：
+ * "A diagnostic exists but is invisible on a particular channel" happened **three times**
+ * in one round:
  *
- * 1. `vite build` 只报第一个含错文件就停
- * 2. `describeDiagnostics` 只过滤 `error` → warning 静默（1.8.2 修）
- * 3. `vobs check` **不跑编译器** → C104–C108 隐形（`6e3a891` 修）
- *    以及**反向**：分析器诊断（C118/C232/C210）在 `vite build` 里隐形（`6f73032` 修）
+ * 1. `vite build` stops after the first file containing an error
+ * 2. `describeDiagnostics` filtered only `error` → warnings silent (fixed in 1.8.2)
+ * 3. `vobs check` **did not run the compiler** → C104–C108 invisible (fixed in `6e3a891`)
+ *    and the **reverse**: analyzer diagnostics (C118/C232/C210) invisible in
+ *    `vite build` (fixed in `6f73032`)
  *
- * 三次都是**人肉发现的**。这个测试把「通道完整性」变成可验证的资产 ——
- * 第四次会在 CI 里变红，而不是在生产里被发现。
+ * All three were found **by hand**. This test turns "channel integrity" into a verifiable
+ * asset — the fourth occurrence will turn CI red instead of being discovered in production.
  *
- * ## 声明式矩阵
+ * ## Declarative matrix
  *
- * 每个码声明它**必须**在哪些通道可见。新增码时**必须**同时补一条夹具，
- * 否则这个测试不会覆盖它（下面有一条"矩阵完整性"的检查兜住这点）。
+ * Each code declares the channels where it **must** be visible. When adding a code you
+ * **must** also add a fixture, otherwise this test will not cover it (a "matrix
+ * completeness" check below enforces this).
  *
- * ## 两处刻意的取舍
+ * ## Two deliberate trade-offs
  *
- * - **CLI 通道只 spawn 一次**：8 个夹具写进同一个临时目录、跑一次 `vobs check`。
- *   每个夹具一次 spawn 会让这个测试慢十几秒，而诊断是按文件归属的，一次就够。
- * - **vite 通道在进程内调 `transform`**：走的是插件真实代码路径（同一个函数），
- *   比起一次完整 `vite build` 快得多，且不需要临时项目的依赖。
+ * - **The CLI channel spawns only once**: all 8 fixtures are written into the same temp
+ *   directory and `vobs check` runs once. Spawning per fixture would make this test
+ *   ten-odd seconds slower, and diagnostics are attributed per file, so once is enough.
+ * - **The vite channel calls `transform` in-process**: it exercises the plugin's real
+ *   code path (the same function), much faster than a full `vite build`, and needs no
+ *   temp-project dependencies.
  */
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -34,9 +40,9 @@ import { vobsPlugin } from './index'
 
 interface Fixture {
   readonly code: string
-  /** 触发该码的最小源码（写进 `<code>.tsx`）。 */
+  /** Minimal source that triggers the code (written into `<code>.tsx`). */
   readonly source: string
-  /** 必须能看到它的通道。留空表示它只在运行时/配置层出现，静态通道本就不该报。 */
+  /** Channels where it must be visible. Empty means it only appears at runtime/config level — static channels should not report it. */
   readonly channels: readonly ('check' | 'vite')[]
 }
 
@@ -48,7 +54,7 @@ const FIXTURES: readonly Fixture[] = [
   },
   {
     code: 'VOBS_C105',
-    source: 'export const MENU = <div>模块顶层</div>',
+    source: 'export const MENU = <div>module top level</div>',
     channels: ['check', 'vite']
   },
   {
@@ -100,10 +106,11 @@ const FIXTURES: readonly Fixture[] = [
     channels: ['check', 'vite']
   },
   /*
-   * 以下码**刻意声明为空**：它们不在静态通道上出现，所以不该被要求可见。
-   * 显式列出来，是为了让"矩阵完整性"检查能区分"没声明"与"声明为不可见"。
+   * The codes below are **deliberately declared empty**: they do not appear on static
+   * channels, so they should not be required to be visible. Listed explicitly so the
+   * "matrix completeness" check can distinguish "not declared" from "declared invisible".
    */
-  { code: 'VOBS_C211', source: '// 运行时护栏（burst），静态通道不报', channels: [] }
+  { code: 'VOBS_C211', source: '// runtime guardrail (burst), static channels do not report it', channels: [] }
 ]
 
 const dir = mkdtempSync(join(tmpdir(), 'vobs-channels-'))
@@ -113,7 +120,7 @@ for (const fixture of FIXTURES) {
   writeFileSync(join(dir, `${fixture.code}.tsx`), fixture.source, 'utf8')
 }
 
-/** 通道 A：跑真实的 `vobs check`（一次），按码归集。 */
+/** Channel A: run the real `vobs check` (once), grouped by code. */
 function checkChannel(): Map<string, Set<string>> {
   const cli = resolve(process.cwd(), 'packages/cli/bin/vobs.js')
   let stdout = ''
@@ -124,8 +131,9 @@ function checkChannel(): Map<string, Set<string>> {
     })
   } catch (error) {
     /*
-     * 检查发现问题时 CLI 会 exit 1 —— 这是**正确行为**，不该让测试失败。
-     * `execFileSync` 在这种情况下抛出，stdout 挂在 error 上。
+     * The CLI exits 1 when the check finds problems — that is **correct behavior** and
+     * must not fail the test. `execFileSync` throws in that case, with stdout attached
+     * to the error.
      */
     const captured = (error as { stdout?: string }).stdout
     if (typeof captured !== 'string' || captured.trim() === '') throw error
@@ -140,11 +148,11 @@ function checkChannel(): Map<string, Set<string>> {
   return byCode
 }
 
-/** 通道 B：进程内调插件的 `transform`（插件真实代码路径），按码归集。 */
+/** Channel B: call the plugin's `transform` in-process (the plugin's real code path), grouped by code. */
 function viteChannel(fixture: Fixture): Set<string> {
   const plugin = vobsPlugin()
   const transform = plugin.transform
-  if (typeof transform !== 'function') throw new Error('缺少 transform 钩子')
+  if (typeof transform !== 'function') throw new Error('missing transform hook')
   const warn = vi.fn()
   vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   try {
@@ -153,7 +161,8 @@ function viteChannel(fixture: Fixture): Set<string> {
       `src/${fixture.code}.tsx`
     )
   } catch {
-    // 编译器 error 会抛 —— 那也算"报出来了"，从 console 兜底路径拿不到，用 warn 判断
+    // Compiler errors throw — that still counts as "reported"; the console fallback path
+    // can't be read here, so detection goes through warn
   } finally {
     vi.restoreAllMocks()
   }
@@ -163,37 +172,37 @@ function viteChannel(fixture: Fixture): Set<string> {
   return found
 }
 
-// CLI 通道三次 spawn 太慢，只跑一次并复用
+// Three spawns of the CLI channel would be too slow; run once and reuse
 let cachedCheck: Map<string, Set<string>> | undefined
 const checkResults = (): Map<string, Set<string>> => (cachedCheck ??= checkChannel())
 
-describe('通道可达性：每个码必须在声明的通道上可见', () => {
-  it('矩阵完整性：每个码都声明了通道（显式空数组也算声明）', () => {
+describe('channel reachability: every code must be visible on its declared channels', () => {
+  it('matrix completeness: every code declares channels (an explicit empty array counts as a declaration)', () => {
     for (const fixture of FIXTURES) {
-      expect(fixture.channels, `${fixture.code} 没声明 channels`).toBeDefined()
+      expect(fixture.channels, `${fixture.code} does not declare channels`).toBeDefined()
     }
   })
 
   for (const fixture of FIXTURES.filter(item => item.channels.includes('check'))) {
-    it(`${fixture.code} → vobs check 能报`, () => {
+    it(`${fixture.code} → reportable via vobs check`, () => {
       const hits = checkResults().get(fixture.code)
-      expect(hits, `${fixture.code} 在 vobs check 通道上不可见`).toBeDefined()
+      expect(hits, `${fixture.code} is invisible on the vobs check channel`).toBeDefined()
       expect([...hits!].some(file => file.includes(fixture.code))).toBe(true)
     })
   }
 
   for (const fixture of FIXTURES.filter(item => item.channels.includes('vite'))) {
-    it(`${fixture.code} → vite 通道能报`, () => {
+    it(`${fixture.code} → reportable on the vite channel`, () => {
       const found = viteChannel(fixture)
-      expect(found.has(fixture.code), `${fixture.code} 在 vite 通道上不可见`).toBe(true)
+      expect(found.has(fixture.code), `${fixture.code} is invisible on the vite channel`).toBe(true)
     })
   }
 
-  it('**声明为不可见的码不该在静态通道上出现**（反向也验，否则"到处都报"也能通过）', () => {
+  it('**codes declared invisible must not appear on static channels** (the reverse is verified too, otherwise "report everywhere" would also pass)', () => {
     for (const fixture of FIXTURES.filter(item => item.channels.length === 0)) {
       expect(
         checkResults().has(fixture.code),
-        `${fixture.code} 声明为静态通道不可见，却在 vobs check 里出现了`
+        `${fixture.code} was declared invisible on static channels but appeared in vobs check`
       ).toBe(false)
     }
   })

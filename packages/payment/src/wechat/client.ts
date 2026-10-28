@@ -3,20 +3,20 @@ import { WechatConfig } from './config'
 import type { WechatClientOptions } from './types'
 
 /**
- * 微信支付客户端封装
+ * WeChat Pay client wrapper
  *
- * 封装官方 wechatpay-axios-plugin 的 Wechatpay 实例，提供统一的生命周期管理。
- * 可独立使用，也可通过 wechatPlugin 注册到 vobs 框架。
+ * Wraps the official wechatpay-axios-plugin Wechatpay instance with unified lifecycle
+ * management. Can be used standalone or registered into the vobs framework via wechatPlugin.
  *
  * @example
  * ```ts
  * const client = new WechatClient({
  *   mchid: '1900000000',
- *   serial: '商户API证书序列号',
+ *   serial: 'merchant API certificate serial number',
  *   privateKey: '-----BEGIN PRIVATE KEY-----...',
  *   certs: { 'PUB_KEY_ID_xxx': '-----BEGIN PUBLIC KEY-----...' },
  *   appid: 'wx1234567890',
- *   apiv3Key: '32字节APIv3密钥',
+ *   apiv3Key: '32-byte APIv3 key',
  *   notifyUrl: 'https://your-domain.com/wechat/notify'
  * })
  * ```
@@ -31,20 +31,20 @@ export class WechatClient {
     this._sdk = this.createSdk(options)
   }
 
-  /** 获取底层 Wechatpay 实例（链式 API：client.sdk.v3.pay.transactions.jsapi.post(...)） */
+  /** Underlying Wechatpay instance (chained API: client.sdk.v3.pay.transactions.jsapi.post(...)) */
   get sdk(): Wechatpay {
     this.ensureActive()
     return this._sdk
   }
 
-  /** 更新配置并重建 SDK 实例 */
+  /** Update config and rebuild the SDK instance */
   updateConfig(patch: Partial<WechatClientOptions>): void {
     this.ensureActive()
     this.config.update(patch)
     this._sdk = this.createSdk(this.config.options as WechatClientOptions)
   }
 
-  /** 销毁客户端 */
+  /** Dispose the client */
   dispose(): void {
     this._disposed = true
     ;(this._sdk as any) = null
@@ -62,7 +62,7 @@ export class WechatClient {
 
   private ensureActive(): void {
     if (this._disposed) {
-      throw new Error('WechatClient: 客户端已销毁')
+      throw new Error('WechatClient: client has been disposed')
     }
   }
 }

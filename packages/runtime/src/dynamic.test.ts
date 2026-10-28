@@ -37,7 +37,7 @@ describe('array dynamic child disposal', () => {
     const log: string[] = []
     let mountCount = 0
     function Inner(): Node {
-      // 按实例打标：数组替换后新组件的 effect 也会合法运行，不能共享计数
+      // Tag per instance: after an array swap the new component's effect legitimately runs too; don't share the counter
       const instance = ++mountCount
       effect(() => {
         log.push(`run:${instance}`)
@@ -52,7 +52,7 @@ describe('array dynamic child disposal', () => {
 
     items.value = [2]
     await new Promise(resolve => setTimeout(resolve, 0))
-    // 旧组件的 effect 必须被清理，而不是继续订阅信号写已脱离的 DOM
+    // The old component's effect must be cleaned up, not left subscribing to signals and writing to detached DOM
     expect(log).toContain('cleanup:1')
     expect(log).toContain('run:2')
     expect(log).not.toContain('cleanup:2')
@@ -88,7 +88,7 @@ describe('array dynamic child disposal', () => {
 
     counter.value = 1
     await new Promise(resolve => setTimeout(resolve, 0))
-    // 幽灵 effect 不允许再被触发
+    // Ghost effects must not fire again
     expect(first.runs).toBe(1)
   })
 
@@ -117,8 +117,8 @@ describe('array dynamic child disposal', () => {
 })
 
 describe('primitive list item updates', () => {
-  // 模拟编译产物：{item} 编译为 insertDynamicValue(() => item)，
-  // 原始值被静态捕获，不订阅 item 信号。
+  // Simulate compiled output: {item} compiles to insertDynamicValue(() => item);
+  // the primitive is statically captured and doesn't subscribe to the item signal.
   function compiledRow(item: string): Node {
     const span = document.createElement('span')
     const text = document.createTextNode('')
@@ -148,7 +148,7 @@ describe('primitive list item updates', () => {
 
     items.value = ['a', 'c']
     await new Promise(resolve => setTimeout(resolve, 0))
-    // 原始类型项无法通过 item 信号刷新视图，必须重建该行
+    // Primitive items can't refresh their view via the item signal; the row must be rebuilt
     expect(parent.textContent).toBe('ac')
   })
 
@@ -209,7 +209,7 @@ describe('primitive list item updates', () => {
         const span = document.createElement('span')
         const text = document.createTextNode('')
         span.append(text)
-        // 模拟编译产物：{user.name} 经代理转发 item.value，在行内 effect 中被追踪
+        // Simulate compiled output: {user.name} is forwarded through the proxy to item.value, tracked inside the row effect
         insertDynamicValue(span, null, () => user.name)
         return span
       },
@@ -253,8 +253,9 @@ describe('keyed list minimal-move reconciliation', () => {
     return { parent, source, rows, order }
   }
 
-  // name → 稳定 id 映射：重排 name 顺序 = 真正的 key 重排
-  // （若用数组下标当 id，重排后 key 顺序不变，keyed reconcile 正确地零移动）
+  // name → stable id mapping: reordering the names = a real key reorder
+  // (using array indices as ids would leave the key order unchanged after reorder,
+  // and keyed reconcile would correctly do zero moves)
   const ids = new Map<string, number>()
   const rows = (names: string[]): Row[] => names.map(name => {
     if (!ids.has(name)) ids.set(name, ids.size)
@@ -270,7 +271,7 @@ describe('keyed list minimal-move reconciliation', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(order()).toEqual(['a', 'c', 'b'])
-    // 最小移动：行节点复用，不整行重建；保留行不被移除
+    // Minimal moves: row nodes reused, no whole-row rebuilds; kept rows are not removed
     expect(rowMap.get(1)).toBe(nodeB)
     expect(rowMap.get(2)).toBe(nodeC)
     expect(parent.contains(nodeB!)).toBe(true)
@@ -298,7 +299,7 @@ describe('keyed list minimal-move reconciliation', () => {
     const { source, rows: rowMap, order } = setup(rows(['a', 'b', 'c']))
     const nodesBefore = [rowMap.get(0), rowMap.get(1), rowMap.get(2)]
 
-    // 全新对象、相同 key、相同顺序：应当零移动零重建
+    // Brand-new objects, same keys, same order: should be zero moves and zero rebuilds
     source.value = [{ id: 0, name: 'a' }, { id: 1, name: 'b' }, { id: 2, name: 'c' }]
     await new Promise(resolve => setTimeout(resolve, 0))
 
@@ -309,7 +310,7 @@ describe('keyed list minimal-move reconciliation', () => {
   it('handles mixed remove + insert + move in one update', async () => {
     const { source, order } = setup(rows(['a', 'b', 'c', 'd', 'e']))
 
-    // 移除 b、新增 f、d 前移，同时 a 挪到末尾
+    // Remove b, add f, move d forward, and move a to the end
     source.value = [
       { id: 2, name: 'c' },
       { id: 3, name: 'd' },
@@ -369,14 +370,14 @@ describe('keyed list minimal-move reconciliation', () => {
 
     source.value = rows(['c', 'a', 'b'])
     await new Promise(resolve => setTimeout(resolve, 0))
-    // index 参与渲染的行移动时必须重建，索引值正确
+    // Rows whose index participates in rendering must be rebuilt when they move; index values correct
     expect(parent.textContent).toBe('c:0a:1b:2')
   })
 
   it('falls back to indexed reconcile when keys are missing', async () => {
     setRenderer(createDOMRenderer())
     const parent = document.createElement('div')
-    // 原始类型项：keyOf 对 'b' 返回 null → 回退 indexed 调和
+    // Primitive items: keyOf returns null for 'b' → fall back to indexed reconcile
     const source = state(['a', 'b', 'c'])
     insertList(
       parent,
@@ -401,14 +402,15 @@ describe('keyed list minimal-move reconciliation', () => {
 describe('component render isolation (untrack)', () => {
   const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
-  it('组件体内的信号读取不成为 insertDynamic 的结构依赖', async () => {
+  it('signal reads in the component body do not become insertDynamic structural dependencies', async () => {
     setRenderer(createDOMRenderer())
     const visible = state(false)
     const unrelated = state(0)
     let builds = 0
     function Panel(): Node {
       builds += 1
-      // 组件体读取信号：修复前会被追踪为祖先 effect 依赖，触发整树重建
+      // The component body reads a signal: before the fix this was tracked as an ancestor
+      // effect dependency and triggered a whole-tree rebuild
       unrelated.value
       return document.createElement('input')
     }
@@ -423,17 +425,17 @@ describe('component render isolation (untrack)', () => {
 
     unrelated.value = 99
     await flush()
-    // 无关信号变化不重建子树
+    // An unrelated signal change must not rebuild the subtree
     expect(builds).toBe(1)
 
     visible.value = false
     await flush()
-    // 条件工厂自身的依赖仍然生效
+    // The conditional factory's own dependencies still work
     expect(parent.querySelector('input')).toBeNull()
     expect(builds).toBe(1)
   })
 
-  it('动态组件的事件监听在信号变化后持续可用', async () => {
+  it('event listeners of dynamic components stay functional after signal changes', async () => {
     setRenderer(createDOMRenderer())
     const visible = state(true)
     const content = state('')
@@ -453,7 +455,7 @@ describe('component render isolation (untrack)', () => {
     input.dispatchEvent(new Event('input'))
     expect(content.value).toBe('hello')
 
-    // 触发一次渲染期读取过的信号变化后，事件监听依旧有效
+    // After triggering a change of a signal read during rendering, the event listener still works
     visible.value = true
     await flush()
     input.value = 'world'
@@ -462,10 +464,10 @@ describe('component render isolation (untrack)', () => {
   })
 })
 
-describe('polymorphic insertDynamicValue (Solid 式运行时多态)', () => {
+describe('polymorphic insertDynamicValue (Solid-style runtime polymorphism)', () => {
   const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
-  it('字符串更新原地改写文本节点（节点身份保持，bindText 级性能）', async () => {
+  it('string updates rewrite the text node in place (node identity preserved, bindText-level performance)', async () => {
     setRenderer(createDOMRenderer())
     const parent = document.createElement('div')
     const label = state('hello')
@@ -476,12 +478,12 @@ describe('polymorphic insertDynamicValue (Solid 式运行时多态)', () => {
 
     label.value = 'world'
     await flush()
-    // 快路径：同一个文本节点被复用，只改内容
+    // Fast path: the same text node is reused, only the content changes
     expect(parent.firstChild).toBe(textNode)
     expect(parent.textContent).toBe('world')
   })
 
-  it('数值子节点同样命中文本快路径', async () => {
+  it('numeric children hit the text fast path too', async () => {
     setRenderer(createDOMRenderer())
     const parent = document.createElement('div')
     const count = state(0)
@@ -495,9 +497,10 @@ describe('polymorphic insertDynamicValue (Solid 式运行时多态)', () => {
     expect(parent.textContent).toBe('42')
   })
 
-  // 回归（Labelune 踩坑备忘）：JSX 子节点里的函数调用返回 Fragment 曾被
-  // String() 成 "[object Object]"；多态插入后节点值正确挂载，且可与原始值互切。
-  it('函数调用返回 Fragment 正确挂载，并与字符串互切', async () => {
+  // Regression (Labelune postmortem): a function call in JSX child position returning a
+  // Fragment used to be String()'d into "[object Object]"; with polymorphic insertion the
+  // node value mounts correctly and can switch back and forth with primitives.
+  it('function call returning a Fragment mounts correctly and switches with strings', async () => {
     setRenderer(createDOMRenderer())
     const parent = document.createElement('div')
     const mode = state<'doc' | 'plain'>('doc')
@@ -520,7 +523,7 @@ describe('polymorphic insertDynamicValue (Solid 式运行时多态)', () => {
     expect(parent.textContent).toBe('条款正文')
   })
 
-  it('节点值变化时整体替换，旧子树 effect 被清理', async () => {
+  it('node value changes replace wholesale, old subtree effects cleaned up', async () => {
     setRenderer(createDOMRenderer())
     const log: string[] = []
     const version = state(0)
@@ -534,8 +537,10 @@ describe('polymorphic insertDynamicValue (Solid 式运行时多态)', () => {
       return el
     }
     const parent = document.createElement('div')
-    // 工厂读取 version 建立结构依赖：version 变化 → 工厂重跑 → 新组件替换旧子树
-    // （组件体 untrack，自身渲染不建立依赖——与编译产物的 insertDynamicValue 语义一致）
+    // The factory reads version to establish the structural dependency: version change →
+    // factory re-runs → new component replaces the old subtree
+    // (the component body is untracked, its own render establishes no dependency —
+    // matching the compiled output's insertDynamicValue semantics)
     insertDynamicValue(parent, null, () => {
       void version.value
       return createComponent(Panel, {})
@@ -549,7 +554,7 @@ describe('polymorphic insertDynamicValue (Solid 式运行时多态)', () => {
     expect(log).toContain('run:v1')
   })
 
-  it('null/undefined/boolean 清空文本与节点子树', async () => {
+  it('null/undefined/boolean clear text and node subtrees', async () => {
     setRenderer(createDOMRenderer())
     const parent = document.createElement('div')
     const value = state<DynamicChild>('text')
@@ -573,7 +578,7 @@ describe('polymorphic insertDynamicValue (Solid 式运行时多态)', () => {
     value.value = false
     await flush()
     expect(parent.contains(el)).toBe(false)
-    // 文本节点身份在字符串轮次间保持（此前的 textNode 已随 null 清除）
+    // Text node identity persists across string rounds (the earlier textNode was cleared with null)
     expect(parent.contains(textNode as Node)).toBe(false)
   })
 })

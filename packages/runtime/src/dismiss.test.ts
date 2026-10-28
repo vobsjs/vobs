@@ -9,10 +9,11 @@ const down = (target: Element): void => {
 }
 
 /*
- * useDismiss（浮层点外关闭标准原语，死穴 §8 根治）。
+ * useDismiss (the standard overlay "close on outside click" primitive; the §8 cure).
  *
- * 调用形态 = **组件体内**（Owner 自动挂组件树：组件卸载级联清理 document 监听）。
- * 测试统一走 createComponent 挂载，与真实用法同构。
+ * Call shape = **inside a component body** (the Owner is automatically attached to the
+ * component tree: unmounting the component cascade-cleans the document listeners).
+ * Tests uniformly mount via createComponent, isomorphic with real usage.
  */
 function mountPopup(options: Record<string, unknown> = {}): {
   host: HTMLElement
@@ -40,24 +41,24 @@ function mountPopup(options: Record<string, unknown> = {}): {
   return { host, popup, open, unmount: () => app.destroy() }
 }
 
-describe('useDismiss（浮层点外关闭标准原语，死穴 §8 根治）', () => {
-  it('外点关闭、浮层内点击不关闭（菜单项 click 不落死节点）', () => {
+describe('useDismiss (the standard overlay "close on outside click" primitive, §8 cure)', () => {
+  it('outside click closes; clicks inside the overlay do not (menu item click doesn\'t land on a dead node)', () => {
     const { host, popup, open, unmount } = mountPopup()
     const item = popup.querySelector('button') as HTMLElement
 
-    // 浮层内点击（含 mousedown）——不关闭；click 由菜单项自身 handler 处理
+    // Click inside the overlay (including mousedown) — no close; the menu item's own handler deals with click
     down(popup)
     down(item)
     expect(open.value).toBe(true)
     expect(host.contains(popup)).toBe(true)
 
-    // 外点——关闭
+    // Outside click — close
     down(document.body)
     expect(open.value).toBe(false)
     unmount()
   })
 
-  it('also 节点（触发按钮）视为内部——打开点击不会立即自关', () => {
+  it('also nodes (trigger buttons) count as inside — the opening click doesn\'t immediately self-close', () => {
     const host = document.createElement('div')
     document.body.append(host)
     const trigger = document.createElement('button')
@@ -85,20 +86,20 @@ describe('useDismiss（浮层点外关闭标准原语，死穴 §8 根治）', (
     host.remove()
   })
 
-  it('Escape 关闭（可关）', () => {
+  it('Escape closes (can be disabled)', () => {
     const { open, unmount } = mountPopup()
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }))
     expect(open.value).toBe(false)
     unmount()
 
-    // escape: false 时不响应
+    // No reaction when escape: false
     const second = mountPopup({ escape: false })
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }))
     expect(second.open.value).toBe(true)
     second.unmount()
   })
 
-  it('keepFocusInside：浮层内 mousedown preventDefault（保输入框选区），外点不拦', () => {
+  it('keepFocusInside: mousedown inside the overlay is preventDefault\'d (keeps the input selection), outside clicks are not intercepted', () => {
     const host = document.createElement('div')
     document.body.append(host)
     let prevented = 0
@@ -129,12 +130,13 @@ describe('useDismiss（浮层点外关闭标准原语，死穴 §8 根治）', (
     outside.remove()
   })
 
-  it('组件卸载级联清理 document 监听（外点不再触发 close）', () => {
+  it('component unmount cascade-cleans the document listeners (outside clicks no longer trigger close)', () => {
     const { open, unmount } = mountPopup()
     expect(open.value).toBe(true)
     unmount()
     down(document.body)
-    // Owner 已随组件卸载级联销毁：监听已移除，close 不再被触发（open 保持初始值）
+    // The Owner was cascade-destroyed with the component unmount: listeners removed, close
+    // no longer triggered (open keeps its initial value)
     expect(open.value).toBe(true)
   })
 })

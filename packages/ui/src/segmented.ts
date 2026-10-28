@@ -22,30 +22,33 @@ export type SegmentedTone = 'default' | 'brand' | 'success' | 'warning' | 'dange
 export interface SegmentedItem {
   readonly id: string
   readonly label: VuiChildren
-  /** 语义色调（如 收入=success / 支出=danger）；缺省跟随选中态 */
+  /** Semantic tone (e.g. income=success / expense=danger); defaults to following the selected state. */
   readonly tone?: SegmentedTone
 }
 
 /**
- * 快捷选项形态（2026-10-28，根治「Seg 的值 = 选项标签」死穴）：
- * - 字符串 = `{ id: s, label: s }`（选中写回该字符串——与既有 string 门面行为兼容）
- * - SegmentedItem = id 与 label 分离，**选中写回 id** 而非展示标签——
- *   `opts={[{id:'login', label:'登录'}]}` 的 onChange 拿到 `'login'`
+ * Shortcut option form (2026-10-28, cures the "Seg's value = option label"
+ * pitfall):
+ * - string = `{ id: s, label: s }` (selection writes back that string —
+ *   compatible with the existing string facade)
+ * - SegmentedItem separates id and label, and selection **writes back the id**
+ *   rather than the display label —
+ *   `opts={[{id:'login', label:'登录'}]}` gives onChange `'login'`
  */
 export type SegmentedOption = string | SegmentedItem
 
 export interface SegmentedProps extends VuiCommonProps {
-  /** 快捷形态：字符串直通 / 对象分离 id 与 label（与 items 二选一，items 优先） */
+  /** Shortcut form: strings pass through / objects separate id from label (mutually exclusive with items; items wins). */
   readonly opts?: readonly SegmentedOption[]
   readonly items?: readonly SegmentedItem[]
-  /** 受控当前值（与 bind 二选一；bind 优先） */
+  /** Controlled current value (mutually exclusive with bind; bind wins). */
   readonly value?: string
-  /** 双向绑定信号：选中写回、外部变更同步高亮 */
+  /** Two-way bound signal: selection writes back; external changes sync the highlight. */
   readonly bind?: Signal<string>
   readonly onChange?: (id: string) => void
 }
 
-/** 分段选择：互斥单选（区别于 Tabs 的页签语义），选中项带品牌底 */
+/** Segmented selector: mutually exclusive single choice (unlike Tabs' page semantics); the selected item gets the brand background. */
 export function Segmented(props: SegmentedProps = {}): VobsNode {
   const root = createElement('div')
   bindClassList(root, props, () => ['vui-seg'])

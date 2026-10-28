@@ -4,7 +4,7 @@ import { hasDebugHooks, invokeDebug } from './debug'
 export class Scheduler {
   private readonly dirtyEffects = new Set<Effect>()
   private readonly lowPriorityEffects = new Set<Effect>()
-  // flush 不可重入（flushing 标志保证），缓冲数组可在轮次间安全复用，避免每轮分配。
+  // flush is non-reentrant (guaranteed by the flushing flag); the buffer arrays can be safely reused across rounds, avoiding per-round allocation.
   private readonly normalBuffer: Effect[] = []
   private readonly lowBuffer: Effect[] = []
   private flushing = false
@@ -41,12 +41,13 @@ export class Scheduler {
   }
 
   /**
-   * 批处理：抑制调度，退出时同步 flush。
+   * Batch: suppress scheduling, flush synchronously on exit.
    *
-   * 注意**不要**把 flush 放进 `finally` —— 那样 `fn()` 抛错时，flush 自己再抛错
-   * 就会把原始错误顶掉（`finally` 里的 throw 会覆盖 try 里的 throw），
-   * 开发者看到的是一个和自己代码无关的错误。这里改成：原始错误优先，
-   * flush 的错误打出来但不顶替。
+   * Note: do **not** put the flush inside `finally` — then when `fn()` throws, an
+   * error thrown by flush itself would replace the original error (a throw in
+   * `finally` overrides the throw in `try`), and the developer sees an error
+   * unrelated to their own code. Instead: the original error wins; the flush error
+   * is logged but does not replace it.
    */
   batch<T>(fn: () => T): T {
     this.batchDepth++
@@ -67,8 +68,8 @@ export class Scheduler {
         this.flush()
       } catch (flushError) {
         if (!failed) throw flushError
-        // fn 自己抛的错优先。flush 的错也不能丢，但只能作为附带信息打出来。
-        console.error('[Vobs] 批处理刷新时又抛出一个错误（原始错误优先）:', flushError)
+        // The error thrown by fn itself wins. The flush error must not be lost either, but it can only be logged as supplementary information.
+        console.error('[Vobs] flush inside batch threw an additional error (original error takes priority):', flushError)
       }
     }
 
@@ -89,11 +90,12 @@ export class Scheduler {
         if (++rounds > 100) {
           this.dirtyEffects.clear()
           this.lowPriorityEffects.clear()
-          throw new Error('Vobs: 响应式更新超过 100 轮，可能存在循环依赖')
+          throw new Error('Vobs: reactive updates exceeded 100 rounds; a circular dependency is likely')
         }
 
-        // normal 先、low 后，两组分别排序：与旧的合并排序语义一致
-        // （旧比较器里 low 优先级本就高于 depth），但消除了比较器内的 Set 查找。
+        // normal first, then low; the two groups are sorted separately — same
+        // semantics as the old merged sort (in the old comparator, low priority
+        // already outranked depth), but without the Set lookups inside the comparator.
         this.collectRunnable(this.dirtyEffects, this.normalBuffer)
         this.collectRunnable(this.lowPriorityEffects, this.lowBuffer)
         sortEffects(this.normalBuffer)
@@ -132,7 +134,7 @@ export class Scheduler {
     if (hasError) throw firstError
   }
 
-  /** 收集未 disposed 的 effect 并清空源集合；run() 期间新调度的 effect 留给下一轮。 */
+  /** Collects non-disposed effects and clears the source set; effects scheduled during run() are left for the next round. */
   private collectRunnable(source: Set<Effect>, target: Effect[]): void {
     for (const effect of source) {
       if (!effect.disposed) target.push(effect)
@@ -141,7 +143,7 @@ export class Scheduler {
   }
 }
 
-/** depth 深的先跑（子 effect 先于父），同深度按创建顺序。 */
+/** Deeper effects run first (children before parents); at equal depth, creation order wins. */
 function sortEffects(effects: Effect[]): void {
   if (effects.length > 1) {
     effects.sort((a, b) => b.depth - a.depth || a.order - b.order)

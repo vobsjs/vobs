@@ -34,10 +34,10 @@ function setup() {
   return { container, session, cleanup: () => { app.destroy(); router.destroy(); resource.dispose(); client.clear(); auth.dispose() } }
 }
 
-describe('KitResourcePage 重建时机', () => {
+describe('KitResourcePage rebuild timing', () => {
   beforeEach(() => setRenderer(createDOMRenderer()))
 
-  it('权限不变、只换 session 对象时页面不重建', async () => {
+  it('does not rebuild when permissions are unchanged and only the session object is swapped', async () => {
     const { container, session, cleanup } = setup()
     await settle()
     const tableBefore = container.querySelector('.vobs-data-table')
@@ -48,7 +48,7 @@ describe('KitResourcePage 重建时机', () => {
     cleanup()
   })
 
-  it('权限真的变了才重建', async () => {
+  it('rebuilds only when permissions actually change', async () => {
     const { container, session, cleanup } = setup()
     await settle()
     expect(container.querySelector('.vobs-data-table')).toBeTruthy()

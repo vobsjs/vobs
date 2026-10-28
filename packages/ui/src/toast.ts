@@ -35,8 +35,10 @@ export function ToastHost(props: ToastHostProps = {}): VobsNode {
   ])
   bindCommonAttributes(root, props, ['notification', 'position', 'closeLabel', 'portal', 'portalTarget'])
   bindUserStyle(root, props)
-  // 作者传了 aria-label/role 就不覆盖：这两行原来无条件硬编码，
-  // 于是 bindCommonAttributes 刚写进去的作者值立刻被吞掉（与已修的 Alert/Switch 同型）。
+  // Don't override when the author passed aria-label/role: these two lines used
+  // to hardcode unconditionally, so the author values just written by
+  // bindCommonAttributes were instantly swallowed (same shape as the fixed
+  // Alert/Switch).
   if (readProp<string | undefined>(props, 'aria-label', undefined) === undefined) {
     setAttribute(root, 'aria-label', 'Notifications')
   }
@@ -66,9 +68,11 @@ function createToast(
   const messageText = createText('')
 
   /*
-   * 行会被 insertList 按 key 复用：同 key 顶替只写 item 信号、**不重建行**
-   * （runtime/src/dynamic.ts:341-351）。条目相关的写入必须放进 effect，
-   * 否则顶替后类型/role/标题/正文永久陈旧（对照 table/src/data-table.ts:241-282）。
+   * Rows are reused by key via insertList: a same-key replacement only writes
+   * the item signal and **does not rebuild the row**
+   * (runtime/src/dynamic.ts:341-351). Entry-dependent writes must go into
+   * effects, otherwise type/role/title/body go permanently stale after a
+   * replacement (see table/src/data-table.ts:241-282 for the same pattern).
    */
   bindAttribute(item, 'class', () => `vui-toast vui-toast--${notification.type}`)
   bindAttribute(item, 'data-notification-id', () => notification.id)
@@ -77,14 +81,14 @@ function createToast(
   setAttribute(close, 'class', 'vui-toast__close')
   setAttribute(close, 'type', 'button')
   setAttribute(close, 'aria-label', closeLabel)
-  // 事件里再取 id：id 是 key，正常不变，但读当前条目同样更安全
+  // Read the id at event time: it's the key and normally stable, but reading the current entry is safer anyway
   addEventListener(close, 'click', () => context.dismiss(notification.id))
 
   setAttribute(message, 'class', 'vui-toast__message')
   insertBefore(message, messageText, null)
   bindText(messageText, () => notification.content)
   insertBefore(content, message, null)
-  // 标题是条件块且来自条目：走动态槽位，顶替后能加/改/去掉
+  // The title is a conditional block coming from the entry: go through a dynamic slot so it can be added/changed/removed after a replacement
   insertDynamic(content, message, () => {
     const title = notification.title
     if (!title) return null

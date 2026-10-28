@@ -1,17 +1,17 @@
 /*
- * `VOBS_C104` 的**触发面收窄**（1.8.1）。
+ * The **trigger-surface narrowing** of `VOBS_C104` (1.8.1).
  *
- * 实战反馈（真实项目升级到 1.8.0）：这条在 18 处命中里约 **16 处是纯数据函数误报**，
- * 而它是 `error` —— 直接挡构建，升级期变成打地鼠。用户给的两类误报源都确认存在：
+ * Field feedback (a real project upgrading to 1.8.0): of 18 hits, about **16 were pure-data-function false positives**,
+ * and it was an `error` — blocking builds outright, turning the upgrade into whack-a-mole. Both false-positive sources reported by users were confirmed:
  *
- * 1. `return cond && value` —— 1.8.0 对**任何** `return &&` 无条件报，完全不看右值是什么
- * 2. `return x ? x : null` —— 只看分支是不是空，不看返回值是不是**渲染节点**，
- *    于是 `T | null` 这种正常的空值建模全被报成"组件顶层条件 return"
+ * 1. `return cond && value` — 1.8.0 reported **any** `return &&` unconditionally, ignoring what the right value was
+ * 2. `return x ? x : null` — only the branch's emptiness was checked, not whether the return value was a **render node**,
+ *    so normal null modeling like `T | null` was all reported as "a top-level conditional return in a component"
  *
- * 立论只在"返回值会被渲染"时成立：组件 run-once → 那个 return 永不重算；
- * 纯数据函数每次调用都执行，条件 return 完全正常。
+ * The argument only holds when "the return value will be rendered": component run-once → that return never re-evaluates;
+ * a pure data function runs on every call, where conditional returns are perfectly fine.
  *
- * 收窄后仍是启发式（"这个函数是不是组件"静态判不出来），所以同时从 error 降为 warning。
+ * After narrowing it is still heuristic (statics cannot tell "is this function a component"), so it was also downgraded from error to warning.
  */
 import { describe, expect, it } from 'vitest'
 import { compileWithSourceMap } from './index'
@@ -19,8 +19,8 @@ import { compileWithSourceMap } from './index'
 const c104 = (source: string) =>
   compileWithSourceMap(source, { filename: 'case.tsx' }).diagnostics.filter(d => d.code === 'VOBS_C104')
 
-describe('VOBS_C104 不该报的形态（纯数据函数 —— 报告里的误报源）', () => {
-  it('`return v ? v : null`（T | null 的正常空值建模）', () => {
+describe("VOBS_C104 shapes that must not be reported (pure data functions — the report's false-positive sources)", () => {
+  it('`return v ? v : null` (normal T | null null-modeling)', () => {
     expect(c104(`
       type User = { name: string }
       function pick(value: User | null): User | null {
@@ -29,7 +29,7 @@ describe('VOBS_C104 不该报的形态（纯数据函数 —— 报告里的误�
     `)).toEqual([])
   })
 
-  it('`return a && b`（纯数据，右值不是节点）', () => {
+  it('`return a && b` (pure data; the right value is not a node)', () => {
     expect(c104(`
       function nameOf(user: { name: string } | null): string | null {
         return user && user.name
@@ -45,14 +45,14 @@ describe('VOBS_C104 不该报的形态（纯数据函数 —— 报告里的误�
     `)).toEqual([])
   })
 
-  it('单表达式箭头里的数据条件', () => {
+  it('data conditionals inside single-expression arrows', () => {
     expect(c104(`
       const trim = (text: string | null) => text ? text.trim() : null
       const label = (n: number | null) => n && String(n)
     `)).toEqual([])
   })
 
-  it('`if` 早退式（本来就不报）', () => {
+  it('an `if` early return (never reported anyway)', () => {
     expect(c104(`
       function resolve(value: string | null): string {
         if (!value) return ''
@@ -61,7 +61,7 @@ describe('VOBS_C104 不该报的形态（纯数据函数 —— 报告里的误�
     `)).toEqual([])
   })
 
-  it('`Boolean()` 包裹（本来就不报）', () => {
+  it('a `Boolean()` wrapper (never reported anyway)', () => {
     expect(c104(`
       function has(value: unknown) {
         return Boolean(value) && true
@@ -69,7 +69,7 @@ describe('VOBS_C104 不该报的形态（纯数据函数 —— 报告里的误�
     `)).toEqual([])
   })
 
-  it('三元但两个分支都是数据（即使看起来像"返回空"）', () => {
+  it('a ternary whose both branches are data (even when it looks like "returning empty")', () => {
     expect(c104(`
       function pick(a: number | null, b: number | null): number | null {
         return a ? a : undefined
@@ -78,7 +78,7 @@ describe('VOBS_C104 不该报的形态（纯数据函数 —— 报告里的误�
   })
 })
 
-describe('VOBS_C104 该报的形态（真的会渲染）', () => {
+describe('VOBS_C104 shapes that must be reported (genuinely rendered)', () => {
   it('`return cond && <A/>`', () => {
     const found = c104(`
       export function Panel() {
@@ -106,7 +106,7 @@ describe('VOBS_C104 该报的形态（真的会渲染）', () => {
     `)).toHaveLength(1)
   })
 
-  it('**是 warning 而不是 error**（静态判不出"是不是组件"，不该挡构建）', () => {
+  it('**a warning, not an error** (statics cannot tell "is it a component"; it must not block builds)', () => {
     const found = c104(`
       export function Panel() {
         return open.value && <div>内容</div>
@@ -115,7 +115,7 @@ describe('VOBS_C104 该报的形态（真的会渲染）', () => {
     expect(found[0]!.severity).toBe('warning')
   })
 
-  it('fix 文案不再依赖全局工具类（指向 Show / classList）', () => {
+  it('the fix text no longer depends on global utility classes (points to Show / classList)', () => {
     const found = c104(`
       export function Panel() {
         return open.value && <div>内容</div>
@@ -125,19 +125,19 @@ describe('VOBS_C104 该报的形态（真的会渲染）', () => {
     expect(fix).toContain('Show')
     expect(fix).toContain('classList')
     /*
-     * 重点是**不用 `class=` 拼字符串**：1.8.0 的文案是
-     * `<A class={cond ? 'is-on' : 'is-off'} />`，那要求项目里预先存在一个
-     * **全局** `.is-off` 工具类；而真实项目往往只有组合选择器
-     * （`.seq-param-group.is-off`），照着改会得到"类名加上了但样式不生效"。
-     * `classList` 无需预先存在任何类。
+     * The point is **not stringing together `class=`**: the 1.8.0 text was
+     * `<A class={cond ? 'is-on' : 'is-off'} />`, which requires a pre-existing **global**
+     * `.is-off` utility class in the project; real projects usually only have compound selectors
+     * (`.seq-param-group.is-off`), and following it verbatim yields "the class is applied but the styles never take effect".
+     * `classList` needs no pre-existing classes at all.
      */
     expect(fix).not.toContain('class={')
   })
 })
 
-describe('VOBS_C104 嵌套与边界', () => {
-  it('不下钻嵌套函数（内层是它自己的作用域）', () => {
-    // 外层返回的是节点所以报；内层是数据函数所以不报 —— 只应有 1 条
+describe('VOBS_C104 nesting and boundaries', () => {
+  it('does not descend into nested functions (the inner one is its own scope)', () => {
+    // The outer returns a node so it is reported; the inner is a data function so it is not — there should be exactly 1
     const found = c104(`
       export function Panel() {
         const label = (u: {n: string} | null) => u ? u.n : null
@@ -147,7 +147,7 @@ describe('VOBS_C104 嵌套与边界', () => {
     expect(found).toHaveLength(1)
   })
 
-  it('JSX 子节点位置的三元**不该**报（那是正确写法）', () => {
+  it('a ternary at a JSX child position must **not** be reported (that is the correct form)', () => {
     expect(c104(`
       export function Panel() {
         return <div>{open.value ? <A/> : <B/>}</div>
@@ -155,7 +155,7 @@ describe('VOBS_C104 嵌套与边界', () => {
     `)).toEqual([])
   })
 
-  it('`return cond1 ? <A/> : <B/>` 两个分支都是节点，没有空分支 → 不报', () => {
+  it('`return cond1 ? <A/> : <B/>` — both branches are nodes, no empty branch → not reported', () => {
     expect(c104(`
       export function Panel() {
         return open.value ? <A/> : <B/>

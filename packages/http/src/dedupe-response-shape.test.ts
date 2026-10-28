@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 /*
- * 去重键必须包含**改变响应形态**的选项。
+ * The dedupe key must include options that **change the response shape**.
  *
- * 去重的语义是"共享同一个**响应**"，不是"共享同一个**请求**"。
- * 原来键只有 `METHOD url 凭据头` —— 同一个 URL 并发要 `responseType:'json'` 与 `'blob'` 时，
- * 后者根本不发请求、直接拿到前者解析好的对象：类型与内容都不对，而且**完全无声**。
+ * Dedupe's semantics are "share the same **response**", not "share the same **request**".
+ * The original key was just `METHOD url credential headers` — when the same URL concurrently asked
+ * for `responseType:'json'` and `'blob'`, the latter sent no request at all and directly received
+ * the former's already-parsed object: wrong type and wrong content, and **completely silent**.
  *
- * 判据用"适配器被调用几次"（与既有 `dedupe-identity.test.ts` 同一手法）：
- * 形态不同 → 必须各发一次；形态相同 → 必须只发一次。
+ * The criterion is "how many times the adapter was called" (same technique as the existing
+ * `dedupe-identity.test.ts`): different shapes → each must go out once; identical shapes → must go
+ * out only once.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { createHTTPClient } from './index'
@@ -17,7 +19,7 @@ const jsonResponse = (data: unknown): Response => new Response(JSON.stringify(da
   headers: { 'content-type': 'application/json' }
 })
 
-/** 可数调用次数的适配器。 */
+/** An adapter that counts its calls. */
 function countingAdapter(): { calls: () => number; adapter: unknown } {
   const spy = vi.fn(async () => {
     await sleep(5)
@@ -26,80 +28,80 @@ function countingAdapter(): { calls: () => number; adapter: unknown } {
   return { calls: () => spy.mock.calls.length, adapter: spy }
 }
 
-describe('http 去重键：响应形态不同不得合并', () => {
-  it('responseType 不同 → 各发一次', async () => {
+describe('http dedupe key: different response shapes must not be merged', () => {
+  it('different responseType → one request each', async () => {
     const { calls, adapter } = countingAdapter()
     const client = createHTTPClient({ adapter: adapter as never })
     await Promise.all([
       client.get('/same', { responseType: 'json', dedupe: true }),
       client.get('/same', { responseType: 'blob', dedupe: true })
     ])
-    expect(calls(), 'responseType 不同的两个请求被合并了').toBe(2)
+    expect(calls(), 'two requests with different responseType were merged').toBe(2)
   })
 
-  it('credentials 不同 → 各发一次', async () => {
+  it('different credentials → one request each', async () => {
     const { calls, adapter } = countingAdapter()
     const client = createHTTPClient({ adapter: adapter as never })
     await Promise.all([
       client.get('/same', { credentials: 'include', dedupe: true }),
       client.get('/same', { credentials: 'omit', dedupe: true })
     ])
-    expect(calls(), 'credentials 不同的两个请求被合并了').toBe(2)
+    expect(calls(), 'two requests with different credentials were merged').toBe(2)
   })
 
-  it('cache 不同 → 各发一次', async () => {
+  it('different cache → one request each', async () => {
     const { calls, adapter } = countingAdapter()
     const client = createHTTPClient({ adapter: adapter as never })
     await Promise.all([
       client.get('/same', { cache: 'default', dedupe: true }),
       client.get('/same', { cache: 'no-store', dedupe: true })
     ])
-    expect(calls(), 'cache 不同的两个请求被合并了').toBe(2)
+    expect(calls(), 'two requests with different cache were merged').toBe(2)
   })
 
-  it('形态完全相同 → 仍然只发一次（去重的价值没被破坏）', async () => {
+  it('identical shapes → still only one request (dedupe\'s value is not broken)', async () => {
     const { calls, adapter } = countingAdapter()
     const client = createHTTPClient({ adapter: adapter as never })
     const [a, b] = await Promise.all([
       client.get('/same', { responseType: 'json', dedupe: true }),
       client.get('/same', { responseType: 'json', dedupe: true })
     ])
-    expect(calls(), '形态相同的并发请求没有合并').toBe(1)
+    expect(calls(), 'concurrent requests with identical shapes were not merged').toBe(1)
     expect(a.data).toEqual(b.data)
   })
 
-  it('不写 responseType（默认 json）与显式 json 视为同形态 → 只发一次', async () => {
+  it('omitted responseType (default json) and explicit json count as the same shape → one request', async () => {
     const { calls, adapter } = countingAdapter()
     const client = createHTTPClient({ adapter: adapter as never })
     await Promise.all([
       client.get('/same', { dedupe: true }),
       client.get('/same', { responseType: 'json', dedupe: true })
     ])
-    expect(calls(), '默认值与显式值不该被当成不同形态').toBe(1)
+    expect(calls(), 'a default value and an explicit value must not count as different shapes').toBe(1)
   })
 
-  it('凭据头不同仍然各发一次（既有语义没被破坏）', async () => {
+  it('different credential headers still go out once each (existing semantics not broken)', async () => {
     const { calls, adapter } = countingAdapter()
     const client = createHTTPClient({ adapter: adapter as never })
     await Promise.all([
       client.get('/same', { headers: { authorization: 'Bearer a' }, dedupe: true }),
       client.get('/same', { headers: { authorization: 'Bearer b' }, dedupe: true })
     ])
-    expect(calls(), '凭据不同的两个请求被合并了（安全问题）').toBe(2)
+    expect(calls(), 'two requests with different credentials were merged (security issue)').toBe(2)
   })
 
-  it('显式 dedupeKey 仍然完全接管（由调用方负责语义）', async () => {
+  it('an explicit dedupeKey still takes over completely (the caller owns the semantics)', async () => {
     const { calls, adapter } = countingAdapter()
     const client = createHTTPClient({ adapter: adapter as never })
     await Promise.all([
       client.get('/a', { dedupeKey: 'shared', responseType: 'json' }),
       client.get('/b', { dedupeKey: 'shared', responseType: 'blob' })
     ])
-    // 显式指定 key 时语义由调用方决定：形态不同也合并（这是它的选择）
+    // With an explicit key the caller decides the semantics: different shapes are merged too (their choice)
     expect(calls()).toBe(1)
   })
 
-  it('dedupe: false 时不合并（不受形态指纹影响）', async () => {
+  it('no merging with dedupe: false (unaffected by the shape fingerprint)', async () => {
     const { calls, adapter } = countingAdapter()
     const client = createHTTPClient({ adapter: adapter as never })
     await Promise.all([
@@ -109,7 +111,7 @@ describe('http 去重键：响应形态不同不得合并', () => {
     expect(calls()).toBe(2)
   })
 
-  it('并发三个不同 responseType → 三次', async () => {
+  it('three concurrent requests with different responseType → three requests', async () => {
     const { calls, adapter } = countingAdapter()
     const client = createHTTPClient({ adapter: adapter as never })
     await Promise.all([
@@ -120,7 +122,7 @@ describe('http 去重键：响应形态不同不得合并', () => {
     expect(calls()).toBe(3)
   })
 
-  it('非并发（前一个已结束）本来就各发一次', async () => {
+  it('non-concurrent (the previous one already finished) naturally goes out once each', async () => {
     const { calls, adapter } = countingAdapter()
     const client = createHTTPClient({ adapter: adapter as never })
     await client.get('/same', { responseType: 'json', dedupe: true })

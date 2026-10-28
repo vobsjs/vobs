@@ -4,12 +4,13 @@ import { createDOMRenderer, createVobs } from '@vobs/vobs'
 import { DevToolsWidget } from './widget'
 
 /*
- * devtools-ui 此前**一个测试都没有**（106KB 的 panel 加上 widget 全是裸奔）。
- * 这里只做冒烟：能挂载、入口按钮在、点得开。真正的断言交给 panel 自身，但至少
- * 让「改坏了 import / 组件体里读信号 / 挂载即抛」这类问题在 CI 里立刻现形。
+ * devtools-ui previously had **no tests at all** (the 106KB panel plus widget ran bare).
+ * This is smoke-only: it mounts, the launcher button is present, and it opens. Real assertions
+ * belong to the panel itself, but at least problems like "breaking imports / reading signals in
+ * the component body / throwing on mount" now surface immediately in CI.
  */
-describe('DevToolsWidget 冒烟', () => {
-  it('挂载后出现入口按钮', () => {
+describe('DevToolsWidget smoke', () => {
+  it('shows the launcher button after mounting', () => {
     const host = document.createElement('div')
     const app = createVobs({
       renderer: createDOMRenderer(),
@@ -24,7 +25,7 @@ describe('DevToolsWidget 冒烟', () => {
     expect(host.childNodes.length).toBe(0)
   })
 
-  it('点击入口按钮会打开对话框', async () => {
+  it('clicking the launcher button opens the dialog', async () => {
     const host = document.createElement('div')
     const app = createVobs({
       renderer: createDOMRenderer(),
@@ -34,7 +35,7 @@ describe('DevToolsWidget 冒烟', () => {
 
     const button = host.querySelector('button')
     button?.dispatchEvent(new host.ownerDocument.defaultView!.MouseEvent('click', { bubbles: true }))
-    // 动态分支是微任务批处理，放开一轮再断言
+    // the dynamic branch is microtask-batched; let a round run before asserting
     await Promise.resolve()
     await Promise.resolve()
 

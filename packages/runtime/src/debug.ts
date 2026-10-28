@@ -50,9 +50,12 @@ export interface RuntimeDebugHooks {
   error?(event: RuntimeErrorEvent): void
   hydrationMismatch?(event: RuntimeHydrationMismatch): void
   /**
-   * 水合时**临时认领**了一个内容不为空的文本节点（服务端渲染了真实文本，客户端此刻要的是空文本：
-   * 只能先认领、等绑定 effect 覆写）。这一步过去完全无声 —— 服务端 "Ada" 遇上客户端忘传 state
-   * （会渲染 "loading"）时就静默变成了后者。给出可观测出口，便于工具发现这类"值被悄悄换掉"。
+   * A text node with non-empty content was **provisionally claimed** during hydration
+   * (the server rendered real text while the client wants empty text at this moment:
+   * we can only claim it first and let the binding effect overwrite it later). This
+   * step used to be completely silent — server "Ada" meeting a client that forgot to
+   * pass the state (rendering "loading") quietly became the latter. This hook gives
+   * tooling an observable outlet to discover such "values quietly swapped".
    */
   hydrationProvisionalText?(event: RuntimeProvisionalText): void
 }

@@ -1,19 +1,22 @@
 // @vitest-environment jsdom
 /*
- * 拖拽事件在 JSX 上的用法（真实项目 2026-10-02 踩坑 1）。
+ * Drag events on JSX (real project pitfall #1, 2026-10-02).
  *
- * 现象：`onDragOver` / `onDrop` 报
+ * Symptom: `onDragOver` / `onDrop` reported
  *   `Property 'onDragOver' does not exist on type 'VobsHTMLAttributes'`
- * 于是「拖入文件导入」只能退回 `ref` 回调 + 原生 `addEventListener`。
+ * so "drag in files to import" had to fall back to a `ref` callback + native
+ * `addEventListener`.
  *
- * 关键事实（本文件同时锁住）：**运行时本来就支持** ——
- * `resolveEventName` 对任何 `on*` 属性做 `slice(2).toLowerCase()`，
- * `onDragOver` 解析成 `dragover`。缺的只是**类型声明**。
+ * Key fact (also locked in by this file): **the runtime already supported it** —
+ * `resolveEventName` applies `slice(2).toLowerCase()` to any `on*` prop,
+ * so `onDragOver` resolves to `dragover`. What was missing was only the
+ * **type declarations**.
  *
- * 所以这个文件有两层验证：
- * 1. **类型层**：下面的 JSX 里直接写 `onDragOver`/`onDrop`，能通过 `pnpm run typecheck`
- *    （若类型缺失，这个文件自己就编译不过）
- * 2. **运行时层**：编译产物真的绑上了 `dragover`/`drop`，事件派发能触发回调
+ * This file therefore has two layers of verification:
+ * 1. **Type layer**: the JSX below uses `onDragOver`/`onDrop` directly and passes
+ *    `pnpm run typecheck` (with missing types this file itself wouldn't compile)
+ * 2. **Runtime layer**: the compiled output really binds `dragover`/`drop`, and
+ *    dispatching the events triggers the callbacks
  */
 import { describe, expect, it, vi } from 'vitest'
 import { scheduler } from '@vobs/reactivity'
@@ -23,8 +26,8 @@ import { compileWithSourceMap } from '@vobs/compiler'
 setRenderer(createDOMRenderer())
 const settle = (): void => { scheduler.flush() }
 
-describe('拖拽事件：类型层', () => {
-  it('编译器产出的代码走 bindEvent，事件名是 DOM 的 dragover/drop', () => {
+describe('drag events: type layer', () => {
+  it('the compiler emits bindEvent with the DOM event names dragover/drop', () => {
     const src = `
       export const UploadArea = () => (
         <div
@@ -36,46 +39,47 @@ describe('拖拽事件：类型层', () => {
     `
     const { code, diagnostics } = compileWithSourceMap(src, { filename: 'UploadArea.tsx' })
     expect(diagnostics.filter(d => d.severity === 'error')).toEqual([])
-    // 事件绑定落到 "dragover" / "drop"（不是原始的 onDragOver 字符串）
+    // Event binding lands on "dragover" / "drop" (not the raw onDragOver string)
     expect(code).toContain('"dragover"')
     expect(code).toContain('"drop"')
   })
 
-  it('事件名解析表里 drag 系走的是 toLowerCase 通配（说明运行时早就支持）', () => {
-    // 这里刻意不断言"别名表里有 dragover" —— 它**不在**别名表里，
-    // 靠的是 slice(2).toLowerCase() 的通配。这正是"类型缺失但运行时有"的原因。
+  it('drag family resolves via the toLowerCase wildcard in the event-name table (proving the runtime already supported it)', () => {
+    // Deliberately NOT asserting "the alias table contains dragover" — it **is not** in
+    // the alias table; the toLowerCase wildcard from slice(2) is what covers it.
+    // That is exactly why "types missing but runtime present".
     const src = `export const A = () => <div onDragStart={f} onDragEnd={g} onDragEnter={h} onDragLeave={i} />`
     const { code } = compileWithSourceMap(src, { filename: 'a.tsx' })
     for (const name of ['dragstart', 'dragend', 'dragenter', 'dragleave']) {
-      expect(code, `${name} 没被绑上`).toContain(`"${name}"`)
+      expect(code, `${name} was not bound`).toContain(`"${name}"`)
     }
   })
 })
 
-describe('拖拽事件：运行时层（真的能触发回调）', () => {
-  it('dragover / drop 派发都会调用对应的处理函数', async () => {
+describe('drag events: runtime layer (callbacks really fire)', () => {
+  it('dispatching dragover / drop calls the corresponding handlers', async () => {
     const { addEventListener } = await import('@vobs/runtime')
     const onDragOver = vi.fn()
     const onDrop = vi.fn()
 
     const zone = document.createElement('div')
     document.body.appendChild(zone)
-    // 与编译器产物同一条路径
+    // Same path as the compiler output
     addEventListener(zone, 'dragover', onDragOver)
     addEventListener(zone, 'drop', onDrop)
 
     zone.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }))
     settle()
-    expect(onDragOver, 'dragover 没触发 onDragOver').toHaveBeenCalledTimes(1)
+    expect(onDragOver, 'dragover did not trigger onDragOver').toHaveBeenCalledTimes(1)
 
     zone.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
     settle()
-    expect(onDrop, 'drop 没触发 onDrop').toHaveBeenCalledTimes(1)
+    expect(onDrop, 'drop did not trigger onDrop').toHaveBeenCalledTimes(1)
 
     zone.remove()
   })
 
-  it('onDrop 能拿到 dataTransfer（拖入文件的真实用法）', async () => {
+  it('onDrop receives dataTransfer (the real drag-in-files usage)', async () => {
     const { addEventListener } = await import('@vobs/runtime')
     const received: unknown[] = []
     const zone = document.createElement('div')
@@ -85,7 +89,7 @@ describe('拖拽事件：运行时层（真的能触发回调）', () => {
     const event = new Event('drop', { bubbles: true, cancelable: true })
     zone.dispatchEvent(event)
     settle()
-    expect(received, 'drop 回调没被调用').toHaveLength(1)
+    expect(received, 'the drop callback was never called').toHaveLength(1)
     zone.remove()
   })
 })

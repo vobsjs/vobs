@@ -5,7 +5,7 @@ import { KitToolbarBar } from './toolbar-bar'
 describe('@vobs/kit KitToolbarBar', () => {
   beforeEach(() => setRenderer(createDOMRenderer()))
 
-  it('左区右区各归其位，类名成对出现', () => {
+  it('left and right regions land in place with paired class names', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitToolbarBar, { left: 'filters', right: 'actions' })
@@ -19,7 +19,7 @@ describe('@vobs/kit KitToolbarBar', () => {
     app.destroy()
   })
 
-  it('只传 left 不产生空 right 区', () => {
+  it('left only produces no empty right region', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitToolbarBar, { left: 'only' })
@@ -32,7 +32,7 @@ describe('@vobs/kit KitToolbarBar', () => {
     app.destroy()
   })
 
-  it('作者的 class 与基类合并', () => {
+  it('the author\'s class merges with the base class', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitToolbarBar, { class: 'my-page-toolbar' })

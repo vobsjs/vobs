@@ -7,13 +7,16 @@ export type BoundaryRetry = () => void | Promise<unknown>
 export type BoundaryFallback = (error: Error, retry: BoundaryRetry) => ReturnType<NodeFactory>
 
 /**
- * 边界捕获到的错误必须有人看得见。
+ * Errors captured by a boundary must be visible to someone.
  *
- * 原来只调 `invokeRuntimeDebug('error', …)` —— 没装 DevTools（也就没有 error 钩子）时
- * 控制台**一个字都不输出**：错误被替换成 fallback，现场再无痕迹。这是排查成本最高的一种
- * 静默。装了钩子就交给它（避免重复输出），没装就打到控制台。
+ * It used to only call `invokeRuntimeDebug('error', …)` — when DevTools was not installed
+ * (and thus there was no error hook), the console printed **nothing at all**: the error was
+ * swapped for the fallback and the scene left without a trace. This is the most expensive
+ * kind of silence to debug. When hooks are installed, delegate to them (avoiding duplicate
+ * output); otherwise print to the console.
  *
- * @param loud 只有「真的吞下了错误」才需要吵；retrying / recovered 属于信息，不进控制台。
+ * @param loud Only "an error was really swallowed" deserves noise; retrying / recovered are
+ * informational and stay out of the console.
  */
 function reportBoundaryError(event: RuntimeErrorEvent, loud: boolean): void {
   invokeRuntimeDebug('error', event)
@@ -51,7 +54,7 @@ export function insertBoundary(
       const normalized = normalizeVobsError(reason, {
         code: 'VOBS_R001',
         layer: 'runtime',
-        fix: '检查组件渲染逻辑，或在边界 fallback 中提供恢复操作。'
+        fix: 'Check the component render logic, or provide a recovery action in the boundary fallback.'
       })
       lastError = normalized
       reportBoundaryError({

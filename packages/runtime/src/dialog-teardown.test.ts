@@ -1,21 +1,25 @@
 // @vitest-environment jsdom
-// 回归测试（源自 Labelune 弹窗踩坑，docs/todo.md 备忘）：
-// ① Dialog 条件 children → null 时与兄弟内容共存（应用层「开关与数据分离」模式的语义保证）
-// ② 用户态组件透传 children 按节点渲染（编译产物形态模拟，编译器侧另有产物断言）
-// ③ insertDynamic 卸载子树时旧 effect 一并清理（幽灵订阅检测）
+// Regression tests (from the Labelune dialog pitfalls, docs/todo.md memo):
+// ① Dialog conditional children → null coexists with sibling content (semantic guarantee
+//    for the application-level "separate switch from data" pattern)
+// ② User-land components pass children through and render them as nodes (compiled-output
+//    shape simulation; the compiler side has its own output assertions)
+// ③ When insertDynamic unmounts a subtree, its old effects are cleaned up too (ghost
+//    subscription detection)
 import { describe, expect, it } from 'vitest'
 import { createDOMRenderer, setRenderer, createComponent, insertBefore, insertDynamic, insertDynamicValue } from '@vobs/vobs'
 import { effect, state } from '@vobs/reactivity'
 
 const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0))
 
-describe('Dialog 条件 children 与兄弟内容共存', () => {
-  // 模拟 Labelune TemplatesPage 结构：页面先有内容，末尾挂 Dialog（children 条件渲染）
-  it('关闭弹窗（open 与 children 同一信号）后兄弟内容仍在', async () => {
+describe('Dialog conditional children coexist with sibling content', () => {
+  // Simulate the Labelune TemplatesPage structure: the page has content first, the Dialog
+  // (children conditionally rendered) is appended at the end
+  it('sibling content remains after closing the dialog (open and children share one signal)', async () => {
     setRenderer(createDOMRenderer())
     const request = state<{ message: string } | null>(null)
 
-    // 模拟编译产物：children getter + open getter 都读同一个信号
+    // Simulate compiled output: children getter + open getter both read the same signal
     function buildBody(): HTMLElement {
       const div = document.createElement('div')
       div.className = 'template-dialog'
@@ -23,7 +27,7 @@ describe('Dialog 条件 children 与兄弟内容共存', () => {
       return div
     }
 
-    // @vobs/ui Dialog 的核心结构：backdrop(root) > surface > (head) + body(mountSlot → insertDynamic)
+    // @vobs/ui Dialog core structure: backdrop(root) > surface > (head) + body(mountSlot → insertDynamic)
     const root = document.createElement('div')
     root.setAttribute('role', 'presentation')
 
@@ -33,19 +37,19 @@ describe('Dialog 条件 children 与兄弟内容共存', () => {
     surface.appendChild(body)
     root.appendChild(surface)
 
-    // Dialog 的 open effect（模拟 dialog.ts 第 70-79 行）
+    // The Dialog's open effect (simulating dialog.ts lines 70-79)
     effect(() => {
       const open = request.value !== null
       ;(root as HTMLElement & { hidden: boolean }).hidden = !open
     })
 
-    // mountSlot：children 插槽
+    // mountSlot: the children slot
     insertDynamic(body, null, () => {
       const value = request.value !== null ? buildBody() : null
       return value
     })
 
-    // 页面结构：panel 在 Dialog 之前（同级兄弟）
+    // Page structure: the panel precedes the Dialog (a same-level sibling)
     const page = document.createElement('div')
     const panel = document.createElement('div')
     panel.className = 'templates-grid'
@@ -53,34 +57,36 @@ describe('Dialog 条件 children 与兄弟内容共存', () => {
     page.appendChild(panel)
     page.appendChild(root)
 
-    // 打开弹窗：open 与 children 同时为真
+    // Open the dialog: open and children both true
     request.set({ message: '删除模板？' })
     await flush()
     expect(body.querySelector('.template-dialog')).not.toBeNull()
     expect(page.querySelector('.templates-grid')).not.toBeNull()
 
-    // 关闭弹窗：open 与 children 同时变 null（应用层最初的写法）
+    // Close the dialog: open and children both become null (the application's original form)
     request.set(null)
     await flush()
     expect(body.querySelector('.template-dialog')).toBeNull()
-    // 关键断言：兄弟内容不消失
+    // Key assertion: sibling content doesn't disappear
     expect(page.querySelector('.templates-grid')).not.toBeNull()
     expect(page.textContent).toContain('template-card-content')
   })
 })
 
-describe('用户态组件透传 children', () => {
-  // 模拟编译产物：function Section({children}) { return <section>{children}</section> }
-  // children 编译为 props 上的 getter（get accessor），读取时求值
-  it('children 为节点时正常渲染而非 [object HTMLDivElement]', async () => {
+describe('user-land components pass children through', () => {
+  // Simulate compiled output: function Section({children}) { return <section>{children}</section> }
+  // children compiles to a getter (get accessor) on props, evaluated on read
+  it('node children render as nodes, not [object HTMLDivElement]', async () => {
     setRenderer(createDOMRenderer())
     function Section(props: { readonly children?: unknown }): Node {
       const section = document.createElement('section')
-      // children 运行时为节点，类型上 unknown 需收敛到 DynamicChild 可接受形态
+      // children is a node at runtime; the unknown type must be narrowed to a
+      // DynamicChild-acceptable form
       insertDynamicValue(section, null, () => Reflect.get(props, 'children') as never)
       return section
     }
-    // 调用方编译产物：children getter 返回构建好的节点（transformElement IIFE 求值结果）
+    // Caller's compiled output: the children getter returns the built node (the
+    // transformElement IIFE evaluation result)
     const node = createComponent(Section, {
       get children() {
         const div = document.createElement('div')
@@ -94,11 +100,12 @@ describe('用户态组件透传 children', () => {
     expect(host.textContent).not.toContain('[object')
   })
 
-  it('children 为节点数组时展开渲染', () => {
+  it('array children are expanded and rendered', () => {
     setRenderer(createDOMRenderer())
     function Section(props: { readonly children?: unknown }): Node {
       const section = document.createElement('section')
-      // children 运行时为节点/节点数组，类型上 unknown 需收敛到 DynamicChild 可接受形态
+      // children is a node/node array at runtime; the unknown type must be narrowed to a
+      // DynamicChild-acceptable form
       insertDynamicValue(section, null, () => Reflect.get(props, 'children') as never)
       return section
     }
@@ -117,15 +124,15 @@ describe('用户态组件透传 children', () => {
   })
 })
 
-describe('insertDynamic 卸载子树的 effect 清理', () => {
-  it('条件翻转为 null 后旧组件 effect 被清理（幽灵订阅检测）', async () => {
+describe('effect cleanup when insertDynamic unmounts a subtree', () => {
+  it('old component effects are cleaned up after the condition flips to null (ghost subscription detection)', async () => {
     setRenderer(createDOMRenderer())
     const visible = state(true)
     const unrelated = state(0)
     let cleanups = 0
     function Inner(): Node {
       effect(() => {
-        unrelated.value // 组件体读取信号
+        unrelated.value // the component body reads a signal
         return () => {
           cleanups += 1
         }
@@ -140,7 +147,7 @@ describe('insertDynamic 卸载子树的 effect 清理', () => {
     visible.set(false)
     await flush()
     expect(parent.querySelector('span')).toBeNull()
-    // 关键断言：旧 effect 已清理，不再订阅 unrelated
+    // Key assertion: the old effect was cleaned up and no longer subscribes to unrelated
     expect(cleanups).toBe(1)
 
     unrelated.set(99)
@@ -148,7 +155,7 @@ describe('insertDynamic 卸载子树的 effect 清理', () => {
     expect(cleanups).toBe(1)
   })
 
-  it('嵌套组件 owner 随子树卸载一并清理', async () => {
+  it('nested component owners are cleaned up together with the subtree unmount', async () => {
     setRenderer(createDOMRenderer())
     const visible = state(true)
     const unrelated = state(0)

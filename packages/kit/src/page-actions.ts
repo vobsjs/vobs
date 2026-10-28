@@ -25,7 +25,7 @@ export function KitPageActions(props: KitPageActionsProps = {}): VobsNode {
   ])
   bindCommonAttributes(root, props, ['align'])
   bindUserStyle(root, props)
-  // 同 filter-bar：作者传了 role 就用作者的，没给才兜底（原来无条件写死把它盖掉）
+  // Same as filter-bar: use the author's role when given, only fall back otherwise (an unconditional write used to clobber it)
   if (!hasProp(props, 'role')) setAttribute(root, 'role', 'group')
   if (hasProp(props, 'children')) mountSlot(root, props, 'children')
   return root

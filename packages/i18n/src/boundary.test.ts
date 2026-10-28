@@ -13,9 +13,11 @@ import { I18nBoundary, createI18n, i18nPlugin, useI18n, type I18nContext } from 
 setRenderer(createDOMRenderer())
 
 /**
- * `I18nBoundary` 原来是**死快照**（§12.2 #4）：父上下文的 messages/locale 在创建边界那一刻被取值拷走，
- * 之后父级 `setMessages`/`loadLocale` 边界里永远看不到；自定义 formatter 与 localeLoaders
- * **完全没有继承** —— 前者让 `{name, shout}` 这类占位符静默退化成 `String(value)`。
+ * `I18nBoundary` used to be a **dead snapshot** (§12.2 #4): the parent context's messages/locale
+ * were copied at the moment the boundary was created, so later parent `setMessages`/`loadLocale`
+ * calls were never seen inside the boundary; custom formatters and localeLoaders were **not
+ * inherited at all** — the former silently degraded placeholders like `{name, shout}` to
+ * `String(value)`.
  */
 const Inner = (props: { keyName: string; name?: string }): VobsNode => {
   const i18n = useI18n()
@@ -40,7 +42,7 @@ function mountBoundary(i18n: I18nContext, locale: string, innerProps: { keyName:
 }
 
 describe('@vobs/i18n I18nBoundary', () => {
-  it('继承父上下文的自定义 formatter（不再静默退化成 String(value)）', () => {
+  it('inherits custom formatters from the parent context (no longer silently degraded to String(value))', () => {
     const i18n = createI18n({ defaultLocale: 'en-US', messages: { 'en-US': { hello: 'Hello {name, shout}' } } })
     i18n.registerFormatter('shout', value => String(value).toUpperCase())
 
@@ -50,10 +52,10 @@ describe('@vobs/i18n I18nBoundary', () => {
     i18n.dispose()
   })
 
-  it('父上下文之后追加的翻译在边界里可见（不再是死快照）', () => {
+  it('translations added to the parent context later are visible inside the boundary (no longer a dead snapshot)', () => {
     const i18n = createI18n({ defaultLocale: 'en-US', messages: { 'en-US': { before: 'BEFORE' } } })
     const view = mountBoundary(i18n, 'en-US', { keyName: 'after' })
-    expect(view.container.textContent).toBe('after')      // 缺 key 时返回 key 本身
+    expect(view.container.textContent).toBe('after')      // Missing keys return the key itself
 
     i18n.setMessages('en-US', { after: 'AFTER' })
     view.app.update()
@@ -63,7 +65,7 @@ describe('@vobs/i18n I18nBoundary', () => {
     i18n.dispose()
   })
 
-  it('继承父上下文的 localeLoaders', async () => {
+  it('inherits localeLoaders from the parent context', async () => {
     const i18n = createI18n({
       defaultLocale: 'en-US',
       messages: { 'en-US': { hi: 'Hi' } },

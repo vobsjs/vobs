@@ -1,13 +1,13 @@
 /**
- * C232 根治（2026-10-28）的路由判定：三元 / `&&` 链中提取「条件 + keyed map call」。
+ * The routing decision for the C232 root fix (2026-10-28): extract "condition + keyed map call" from ternary / `&&` chains.
  *
- * 命中即由编译器路由为 `insertShow`（条件容器 + 容器内标准 insertList）——
- * cond 与列表拆成两层订阅：cond 只管容器挂载/卸载，列表按 key 复用，不再整列重建。
- * analyze（C232 警告）与 compile（产物生成）共用本判定，保证「不警告的形态一定被路由」。
+ * On a hit the compiler routes it to `insertShow` (a conditional container + standard insertList inside the container) —
+ * cond and the list are split into two subscription layers: cond only manages container mount/unmount, the list reuses by key, no more whole-list rebuilds.
+ * analyze (the C232 warning) and compile (output generation) share this decision, guaranteeing "whatever is not warned about is definitely routed".
  */
 import ts from 'typescript'
 
-/** 剥掉对运行时取值没有影响的包装：括号、`as` / `satisfies` 断言、非空断言。 */
+/** Strips wrappers that have no effect on runtime value extraction: parentheses, `as` / `satisfies` assertions, non-null assertions. */
 export function unwrapExpr(node: ts.Expression): ts.Expression {
   let current = node as ts.Expression
   for (;;) {
@@ -31,7 +31,7 @@ function returnsJsx(node: ts.Node): boolean {
       seen = true
       return
     }
-    // 不进入嵌套函数：内层组件返回 JSX 不代表外层是组件
+    // Do not descend into nested functions: an inner component returning JSX does not make the outer one a component
     if (child !== node && ts.isFunctionLike(child)) return
     ts.forEachChild(child, visit)
   }
@@ -39,7 +39,7 @@ function returnsJsx(node: ts.Node): boolean {
   return seen
 }
 
-/** keyed map call：`.map(回调)`，回调为函数且产出 JSX（与编译器 insertList 通道的识别一致）。 */
+/** A keyed map call: `.map(callback)` where the callback is a function producing JSX (matching the compiler's insertList channel detection). */
 export function isKeyedListCall(node: ts.Node): boolean {
   if (!ts.isCallExpression(node)) return false
   if (!ts.isPropertyAccessExpression(node.expression) || node.expression.name.text !== 'map') return false
@@ -47,7 +47,7 @@ export function isKeyedListCall(node: ts.Node): boolean {
   return callback !== undefined && ts.isFunctionLike(callback) && returnsJsx(callback)
 }
 
-/** 空分支：null / false / undefined（unwrap 后）。 */
+/** An empty branch: null / false / undefined (after unwrap). */
 export function isEmptyBranch(node: ts.Expression): boolean {
   const u = unwrapExpr(node)
   return u.kind === ts.SyntaxKind.NullKeyword
@@ -56,18 +56,18 @@ export function isEmptyBranch(node: ts.Expression): boolean {
 }
 
 export interface ShowListShape {
-  /** 路由到 insertShow 的条件；null = 恒真（分支本身是顶层 map）。 */
+  /** The condition routed to insertShow; null = always true (the branch itself is a top-level map). */
   condition: ts.Expression | null
   mapCall: ts.Expression
 }
 
 /**
- * 从三元 / `&&` 链中提取「条件 + keyed map call」。
+ * Extract "condition + keyed map call" from a ternary / `&&` chain.
  *
- * 支持：`cond ? list : null`、`cond ? null : list`（条件取反）、`cond && list`、
- * 嵌套组合（`a && b && list`、`cond ? (x ? list : null) : null` —— 条件按链合并）。
- * 不支持（返回 null，继续走多态插入 + C232 警告）：两支都是 list、list 与节点混排、
- * 非 JSX 产出的 map。
+ * Supported: `cond ? list : null`, `cond ? null : list` (condition negated), `cond && list`,
+ * nested combinations (`a && b && list`, `cond ? (x ? list : null) : null` — conditions merged along the chain).
+ * Not supported (returns null; polymorphic insertion + the C232 warning continue): both branches are lists, lists mixed with nodes,
+ * or a map that does not produce JSX.
  */
 export function routeShowList(expression: ts.Expression): ShowListShape | null {
   const u = unwrapExpr(expression)

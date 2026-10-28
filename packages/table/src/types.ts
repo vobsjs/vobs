@@ -143,7 +143,7 @@ export interface KitDataTableProps<Row = Record<string, unknown>> extends DataTa
   readonly rows?: readonly Row[]
   readonly resource?: DataTableResource<Row>
   readonly rowKey?: (row: Row, index: number) => unknown
-  /** 传入 Signal 时受控分页：表格翻页后自动写回信号。 */
+  /** Controlled pagination when a Signal is passed: the table writes the page back to the signal after paging. */
   readonly page?: number | Signal<number>
   readonly pageSize?: number | Signal<number>
   readonly total?: number
@@ -160,10 +160,14 @@ export interface KitDataTableProps<Row = Record<string, unknown>> extends DataTa
   readonly rowHeight?: number
   readonly overscan?: number
   /**
-   * 满高自适应形态（2026-10-28 收编，Finora ui.css 实证形态）：根转 flex column、
-   * viewport 吸收剩余高度、**table 仅在状态行（空态/加载/错误）存在时拉伸**——
-   * 空态/少行时表格撑满容器、分页条贴底；无条件拉伸会让 tr 均分多余高度（行高爆炸）。
-   * 容器需有确定高度（应用层滚动链提供）。
+   * Full-height adaptive form (canonized 2026-10-28, proven in Finora's
+   * ui.css): the root becomes flex column, the viewport absorbs the remaining
+   * height, and **the table stretches only when a state row (empty/loading/
+   * error) exists** — with an empty state or few rows the table fills the
+   * container and the pagination bar hugs the bottom; unconditional
+   * stretching makes tr elements split the extra height evenly (row-height
+   * explosion). The container needs a definite height (provided by the
+   * app-level scroll chain).
    */
   readonly hauto?: boolean
   readonly loading?: DataTableChildren

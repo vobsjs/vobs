@@ -22,7 +22,7 @@ describe('@vobs/i18n', () => {
     setRenderer(createDOMRenderer())
   })
 
-  it('按嵌套 key 查找翻译，支持 fallback、缺失 key 和参数插值', () => {
+  it('looks up translations by nested key, supporting fallback, missing keys, and param interpolation', () => {
     const i18n = createI18n({
       defaultLocale: 'zh-CN',
       fallbackLocale: 'en-US',
@@ -39,11 +39,11 @@ describe('@vobs/i18n', () => {
   })
 
   /*
-   * 插值原来用 `key in params`（沿原型链找）：空 params 下 `{constructor}` 会渲染出
-   * `function Object() { [native code] }`，`{toString}`/`{__proto__}` 同理；而显式传
-   * `undefined`/`null` 会渲染成字面量 "undefined"/"null"。
+   * Interpolation used `key in params` (walking the prototype chain): with empty params,
+   * `{constructor}` rendered as `function Object() { [native code] }`, and `{toString}`/`{__proto__}`
+   * behaved the same; explicitly passing `undefined`/`null` rendered the literals "undefined"/"null".
    */
-  it('插值只认自有属性，缺失/空值参数不渲染成字面量', () => {
+  it('interpolation only recognizes own properties; missing/empty params are not rendered as literals', () => {
     const i18n = createI18n({
       defaultLocale: 'en-US',
       messages: {
@@ -59,7 +59,7 @@ describe('@vobs/i18n', () => {
     expect(i18n.t('ctor', {})).toBe('X {constructor}')
     expect(i18n.t('toStr', {})).toBe('Y {toString}')
     expect(i18n.t('proto', {})).toBe('Z {__proto__}')
-    // 缺参保持占位符原样（与缺 key 的处理一致，不静默变成 'undefined'）
+    // Missing params keep the placeholder as-is (consistent with missing-key handling; never silently 'undefined')
     expect(i18n.t('name', { name: undefined })).toBe('V {name}')
     expect(i18n.t('name', { name: null })).toBe('V {name}')
     expect(i18n.t('name', { name: 'Ada' })).toBe('V Ada')
@@ -67,18 +67,20 @@ describe('@vobs/i18n', () => {
   })
 
   /*
-   * 缺 key 原来**完全静默**（返回 key 本身、零警告）→ 下游只能靠 `value === key` 字符串比较猜，
-   * `@vobs/kit` 就是这么写的。这里加一个可观测出口，**不改变** t() 的返回值。
+   * A missing key used to be **completely silent** (returning the key itself, zero warnings) →
+   * downstream could only guess via the `value === key` string comparison, which is exactly what
+   * `@vobs/kit` did. This adds an observable hook without **changing** t()'s return value.
    */
   /*
-   * ISO 字符串是 JSON 载荷里最常见的时间形态，原来 `formatDate('2024-…Z')` **静默吐空串**
-   * （只认 Date/number），调用方只看到"没有日期"。现在合法字符串会被解析，非法仍为空串。
+   * ISO strings are the most common time form in JSON payloads; `formatDate('2024-…Z')` used to
+   * **silently return an empty string** (only Date/number accepted), so callers just saw "no
+   * date". Valid strings are now parsed; invalid ones still yield an empty string.
    */
   /*
-   * 单位选择原来用 `Math.round`：90 分钟 = 1.5 小时 → 四舍五入成 "2 hours ago"。
-   * 正确语义是"取数量至少为 1 的最大单位" → "1 hour ago"。
+   * Unit selection used `Math.round`: 90 minutes = 1.5 hours → rounded up to "2 hours ago".
+   * The correct semantics is "take the largest unit whose amount is at least 1" → "1 hour ago".
    */
-  it('{v,number}/{v,currency} 遇到非数字值不再静默吐空串', () => {
+  it('{v,number}/{v,currency} no longer silently produce an empty string for non-numeric values', () => {
     const i18n = createI18n({
       defaultLocale: 'en-US',
       messages: { 'en-US': { num: 'n={v,number}', cur: 'c={v,currency}', ok: 'k={v,number}', bad: 'bad={v,date}', when: 'w={v,date}' } }
@@ -86,26 +88,27 @@ describe('@vobs/i18n', () => {
     expect(i18n.t('num', { v: 'abc' })).toBe('n=abc')
     expect(i18n.t('cur', { v: 'abc' })).toBe('c=abc')
     expect(i18n.t('ok', { v: 1234.5 })).toContain('1,234.5')
-    // 日期/相对时间同一取向：解析不出日期就把原值显示出来，而不是让整段文案缺一块
+    // Date/relativeTime share the orientation: when the date can't be parsed, show the original value instead of leaving a hole in the copy
     expect(i18n.t('bad', { v: 'not-a-date' })).toBe('bad=not-a-date')
     expect(i18n.t('when', { v: '2024-01-15T00:00:00Z' })).toContain('2024')
     i18n.dispose()
   })
 
-  it('formatRelativeTime 不会把 90 分钟说成 2 小时（单位按截断选）', () => {
+  it('formatRelativeTime never describes 90 minutes as 2 hours (units picked by truncation)', () => {
     const i18n = createI18n({ defaultLocale: 'en-US' })
     const now = new Date('2026-09-03T12:00:00.000Z')
     expect(i18n.formatRelativeTime(new Date('2026-09-03T10:30:00.000Z'), now)).toBe('1 hour ago')
     expect(i18n.formatRelativeTime(new Date('2026-09-03T10:59:00.000Z'), now)).toBe('1 hour ago')
     expect(i18n.formatRelativeTime(new Date('2026-09-03T11:01:00.000Z'), now)).toBe('59 minutes ago')
     expect(i18n.formatRelativeTime(new Date('2026-09-03T12:30:00.000Z'), now)).toBe('in 30 minutes')
-    // ISO 字符串也接受（JSON 载荷里最常见），运行时早就走 toDate，这里把类型补齐
+    // ISO strings are accepted too (most common in JSON payloads); the runtime already goes through toDate, this just completes the typing
     expect(i18n.formatRelativeTime('2026-09-03T10:30:00.000Z', '2026-09-03T12:00:00.000Z')).toBe('1 hour ago')
     i18n.dispose()
   })
 
-  it('formatDate 接受 ISO 字符串（非法输入仍然是空串）', () => {
-    // 用 fr-FR：Intl 实例缓存是**模块级**的，换 locale 才不会给下面那条"构造次数"用例预热掉
+  it('formatDate accepts ISO strings (invalid input still yields an empty string)', () => {
+    // Use fr-FR: the Intl instance cache is **module-level**; a different locale keeps this from
+    // pre-warming the "construction count" test below
     const i18n = createI18n({ defaultLocale: 'fr-FR', timeZone: 'UTC' })
     expect(i18n.formatDate('2024-01-15T00:00:00Z', 'short')).toContain('2024')
     expect(i18n.formatDate('not a date')).toBe('')
@@ -115,10 +118,11 @@ describe('@vobs/i18n', () => {
   })
 
   /*
-   * `t()` 缺 key 时返回 key 本身，调用方无法区分"缺 key"与"译文恰好等于 key"
-   * （`@vobs/kit` 因此只能写 `value === key ? fallback : value`）。`has(key)` 是可以直接问的答案。
+   * `t()` returns the key itself when the key is missing, so callers cannot distinguish "missing
+   * key" from "the translation happens to equal the key" (which is why `@vobs/kit` had to write
+   * `value === key ? fallback : value`). `has(key)` is the answer you can ask for directly.
    */
-  it('has(key) 区分"缺 key"与"译文恰好等于 key"', () => {
+  it('has(key) distinguishes "missing key" from "translation happens to equal the key"', () => {
     const i18n = createI18n({
       defaultLocale: 'zh-CN',
       fallbackLocale: 'en-US',
@@ -130,13 +134,13 @@ describe('@vobs/i18n', () => {
 
     expect(i18n.has('literal.key')).toBe(true)
     expect(i18n.has('nested.deep')).toBe(true)
-    expect(i18n.has('fromFallback')).toBe(true)   // 走 fallback locale 也算有
+    expect(i18n.has('fromFallback')).toBe(true)   // Resolving through the fallback locale also counts
     expect(i18n.has('missing.key')).toBe(false)
     expect(i18n.has('')).toBe(false)
     i18n.dispose()
   })
 
-  it('onMissingKey 能观测到缺 key，但不改变返回值，且观察者抛错不影响结果', () => {
+  it('onMissingKey observes missing keys without changing the return value, and an observer throwing does not affect the result', () => {
     const seen: string[] = []
     const i18n = createI18n({
       defaultLocale: 'en-US',
@@ -152,14 +156,14 @@ describe('@vobs/i18n', () => {
     expect(i18n.t('boom')).toBe('boom')
     expect(seen).toEqual(['missing.one@en-US', 'boom@en-US'])
 
-    // 译文恰好等于 key 时不该被当成缺失（那正是 kit 无法区分的情形）
+    // A translation that happens to equal the key must not be treated as missing (exactly the case kit could not distinguish)
     i18n.setMessages('en-US', { 'literal.key': 'literal.key' })
     expect(i18n.t('literal.key')).toBe('literal.key')
     expect(seen).toHaveLength(2)
     i18n.dispose()
   })
 
-  it('locale 变化会驱动使用 t 的节点更新', () => {
+  it('a locale change drives nodes using t to update', () => {
     const i18n = createI18n({
       defaultLocale: 'zh-CN',
       messages: {
@@ -186,16 +190,18 @@ describe('@vobs/i18n', () => {
   })
 
   /*
-   * `new Intl.*` 很贵：实测 formatDate 每次新建 ≈94.6µs，复用实例 ≈1.84µs（≈50×）。
-   * 5 处格式化方法原来每次都新建（201/210/217/241/245）。这里用构造次数直接钉住缓存，
-   * 比计时稳定得多。
+   * `new Intl.*` is expensive: measured formatDate construction at ≈94.6µs per call vs ≈1.84µs
+   * reusing an instance (≈50×). The 5 formatting methods used to construct a new one every call
+   * (201/210/217/241/245). This pins the cache via the construction count, far more stable than
+   * timing.
    */
-  it('同 locale/options 复用 Intl 实例（构造昂贵，实测约 50×）', () => {
+  it('reuses Intl instances for the same locale/options (construction is expensive, measured ≈50×)', () => {
     const dateSpy = vi.spyOn(Intl, 'DateTimeFormat')
     const numberSpy = vi.spyOn(Intl, 'NumberFormat')
     const relativeSpy = vi.spyOn(Intl, 'RelativeTimeFormat')
-    // 用 en-GB：Intl 实例缓存是**模块级**的，换个本文件其它用例都不用的 locale，
-    // 这条用例才不会因为别人先跑过而被"预热"成 0 次构造（那样就失去判别力了）。
+    // Use en-GB: the Intl instance cache is **module-level**; picking a locale no other test in
+    // this file uses keeps this test from being "pre-warmed" to 0 constructions by others running
+    // first (which would destroy its discriminating power).
     const i18n = createI18n({ defaultLocale: 'en-GB', timeZone: 'UTC' })
 
     const firstDate = i18n.formatDate(new Date('2024-01-15T00:00:00Z'), 'short')
@@ -211,7 +217,7 @@ describe('@vobs/i18n', () => {
 
     expect(dateSpy).toHaveBeenCalledTimes(1)
     expect(relativeSpy).toHaveBeenCalledTimes(1)
-    // 普通数字与货币是两套 options → 两个实例（各自也只建一次）
+    // Plain numbers and currency are two different option sets → two instances (each constructed only once)
     expect(numberSpy).toHaveBeenCalledTimes(2)
 
     dateSpy.mockRestore()
@@ -220,7 +226,7 @@ describe('@vobs/i18n', () => {
     i18n.dispose()
   })
 
-  it('切语言后格式化结果跟着变（缓存按 locale 分开）', () => {
+  it('formatting results follow locale switches (the cache is keyed per locale)', () => {
     const i18n = createI18n({ defaultLocale: 'en-US', timeZone: 'UTC' })
     const english = i18n.formatDate(new Date('2024-01-15T00:00:00Z'), { year: 'numeric', month: 'long' })
     i18n.setLocale('de-DE')
@@ -231,7 +237,7 @@ describe('@vobs/i18n', () => {
     i18n.dispose()
   })
 
-  it('提供日期、数字、货币和相对时间格式化', () => {
+  it('provides date, number, currency, and relative-time formatting', () => {
     const i18n = createI18n({ defaultLocale: 'en-US', timeZone: 'UTC' })
 
     expect(i18n.formatDate(new Date('2024-01-15T00:00:00Z'), 'short')).toContain('2024')
@@ -242,24 +248,26 @@ describe('@vobs/i18n', () => {
   })
 
   /*
-   * `mergeMessages` 原来在普通对象上 `merged[key] = value`：键名是 `__proto__` 时那不是写键，
-   * 而是**设置合并结果的原型** → 于是 `{"__proto__":{"injected":"PWNED"}}` 这种载荷（locale 文件、
-   * 服务端下发的翻译）能让任意键凭空出现，`t()` 直接读到攻击者指定"译文"。
+   * `mergeMessages` used to do `merged[key] = value` on a plain object: when the key was
+   * `__proto__` that was not a key write but **set the prototype of the merged result** → a
+   * payload like `{"__proto__":{"injected":"PWNED"}}` (locale files, server-delivered
+   * translations) could make arbitrary keys appear out of nowhere, and `t()` would read the
+   * attacker-specified "translation" directly.
    */
-  it('恶意 messages 载荷不能通过 __proto__ 注入翻译', () => {
+  it('a malicious messages payload cannot inject translations via __proto__', () => {
     const i18n = createI18n({ defaultLocale: 'en-US', messages: { 'en-US': { hello: 'Hello' } } })
     i18n.setMessages('en-US', JSON.parse('{"__proto__":{"injected":"PWNED"}}'))
 
     expect(i18n.t('hello')).toBe('Hello')
-    // 缺 key 时返回 key 本身 —— 修复前这里返回 'PWNED'
+    // Missing keys return the key itself — before the fix this returned 'PWNED'
     expect(i18n.t('injected')).toBe('injected')
     expect((i18n.messages.value['en-US'] as Record<string, unknown>).injected).toBeUndefined()
-    // 也不得污染全局原型
+    // The global prototype must not be polluted either
     expect(({} as Record<string, unknown>).injected).toBeUndefined()
     i18n.dispose()
   })
 
-  it('支持自定义 formatter 和运行时追加翻译', () => {
+  it('supports custom formatters and runtime message additions', () => {
     const i18n = createI18n({
       defaultLocale: 'en-US',
       messages: { 'en-US': { greeting: 'Hello {name, uppercase}' } }
@@ -274,7 +282,7 @@ describe('@vobs/i18n', () => {
     i18n.dispose()
   })
 
-  it('按需加载语言资源时去重请求并深度合并 namespace', async () => {
+  it('deduplicates requests and deep-merges namespaces when lazily loading locale resources', async () => {
     let calls = 0
     const i18n = createI18n({
       defaultLocale: 'en-US',
@@ -295,14 +303,14 @@ describe('@vobs/i18n', () => {
     i18n.dispose()
   })
 
-  it('拒绝没有 loader 或格式错误的语言资源', async () => {
+  it('rejects locale resources with no loader or an invalid format', async () => {
     const i18n = createI18n({ defaultLocale: 'en-US' })
-    await expect(i18n.loadLocale('zh-CN')).rejects.toThrow('没有可用的 loader')
-    await expect(i18n.loadLocale('zh-CN', async () => ({ broken: [] as unknown as string }))).rejects.toThrow('值无效')
+    await expect(i18n.loadLocale('zh-CN')).rejects.toThrow('no loader available')
+    await expect(i18n.loadLocale('zh-CN', async () => ({ broken: [] as unknown as string }))).rejects.toThrow('invalid value')
     i18n.dispose()
   })
 
-  it('i18nPlugin 注入共享上下文，I18nBoundary 的惰性 children 使用局部语言', () => {
+  it('i18nPlugin injects the shared context and I18nBoundary lazy children use the local locale', () => {
     const i18n = createI18n({
       defaultLocale: 'zh-CN',
       messages: {
@@ -336,7 +344,7 @@ describe('@vobs/i18n', () => {
     i18n.dispose()
   })
 
-  it('没有安装插件时，useI18n 给出明确错误', () => {
+  it('useI18n gives a clear error when no plugin is installed', () => {
     const app = createVobs({ render: () => {
       void useI18n()
       return createText('')

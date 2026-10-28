@@ -67,13 +67,14 @@ export interface ThemeBoundaryProps {
 
 export const defaultLightTheme: ThemeTokens = {
   /*
-   * 键就是**变量名**（flattenInto 对 -- 开头的键原样透传）。
+   * Keys are **variable names** (flattenInto passes keys starting with -- through verbatim).
    *
-   * 原来写 colorScheme，展平出来是 --vobs-colorScheme —— 而全仓唯一的消费方
-   * （ui/src/styles/base.css 的 :root { color-scheme: var(--vobs-color-scheme, dark) }）
-   * 读的是连字符拼法。两种拼法从不交汇，那条规则永远走 fallback，
-   * 原生控件 / 滚动条 / body 底色因此不跟主题。改成显式变量名后与 CSS 侧一致
-   * （CSS 默认值见 ui/src/styles/tokens.css 的同名变量）。
+   * This used to be written colorScheme, which flattened to --vobs-colorScheme — but the repo's
+   * only consumer (ui/src/styles/base.css: `:root { color-scheme: var(--vobs-color-scheme, dark) }`)
+   * reads the hyphenated spelling. The two spellings never met, so that rule always hit its
+   * fallback and native controls / scrollbars / body background never followed the theme. Switched
+   * to an explicit variable name to match the CSS side (CSS default values live in the same-named
+   * variables in ui/src/styles/tokens.css).
    */
   '--vobs-color-scheme': 'light',
   brand: {
@@ -141,7 +142,8 @@ export const defaultDarkTheme: ThemeTokens = {
 const appliedVariables = new WeakMap<HTMLElement, Set<string>>()
 
 export function createTheme(options: ThemeOptions = {}): ThemeContext {
-  // debug 名：守卫告警（C210/C211 等）会引用信号名，无名信号报错时只显示「未命名信号」，无法定位
+  // Debug names: guard warnings (C210/C211 etc.) reference signal names; an unnamed signal error
+  // only shows "(unnamed signal)" and cannot be located
   const mode = state<ThemeMode>(options.defaultMode ?? 'light', 'theme.mode')
   const systemMode = state<ResolvedThemeMode>(readSystemMode(), 'theme.systemMode')
   const themes = state<Record<ResolvedThemeMode, ThemeTokens>>({
@@ -197,20 +199,23 @@ export function createTheme(options: ThemeOptions = {}): ThemeContext {
 
     setMode(nextMode: ThemeMode): void {
       ensureActive()
-      // 与 setBrand 同理：setter 会被组件 effect 调用（App 的模式同步 effect 读 themeMode 后调
-      // setMode），写入必须在 untrack 内——否则 ensureActive 对 mode 的读取会把 mode 拉进调用方
-      // effect 的依赖集，随后写入 mode 触发 VOBS_C210 自订阅循环
+      // Same rationale as setBrand: setters get called from component effects (App's mode-sync
+      // effect reads themeMode then calls setMode), so the write must be inside untrack —
+      // otherwise ensureActive's read of mode pulls mode into the caller effect's dependency set,
+      // and the subsequent write to mode triggers the VOBS_C210 self-subscription loop
       untrack(() => { mode.value = validateMode(nextMode) })
     },
 
     setBrand(nextBrand: Partial<BrandTokens>): void {
       ensureActive()
       /*
-       * 读取放进 untrack。
+       * Reads go inside untrack.
        *
-       * 这两个 setter 会被组件 effect 调用（很常见：按路由/用户切品牌）。原来它们在 effect 里
-       * 直接读 overrides / brand，于是 effect 订阅了源；写完又触发自己 —— 实测 101 轮后抛
-       * 「响应式更新超过 100 轮」。setter 不应该订阅它要写的信号。
+       * These setters get called from component effects (very common: switching brand per
+       * route/user). They used to read overrides / brand directly inside the effect, so the effect
+       * subscribed to its sources; the write then re-triggered itself — measured: after 101 rounds
+       * it threw "reactive updates exceeded 100 rounds". A setter must not subscribe to the signal
+       * it writes.
        */
       const merged = untrack(() => ({ ...brand.value, ...nextBrand }))
       const current = untrack(() => overrides.value)
@@ -219,7 +224,7 @@ export function createTheme(options: ThemeOptions = {}): ThemeContext {
 
     registerTheme(nextMode: ResolvedThemeMode, nextTheme: ThemeTokens): () => void {
       ensureActive()
-      // 同上：读取放 untrack，避免在 effect 内注册主题时自订阅
+      // Same as above: reads go in untrack to avoid self-subscription when registering a theme inside an effect
       const previous = untrack(() => themes.value[nextMode])
       themes.value = { ...untrack(() => themes.value), [nextMode]: mergeThemes(previous, nextTheme) }
       return () => {
@@ -247,7 +252,7 @@ export function createTheme(options: ThemeOptions = {}): ThemeContext {
   return context
 
   function ensureActive(): void {
-    if (disposed) throw new Error('Vobs Theme: 已销毁的上下文不能继续使用')
+    if (disposed) throw new Error('Vobs Theme: cannot use a disposed context')
   }
 }
 
@@ -266,7 +271,7 @@ export function themePlugin(options: ThemePluginOptions = {}): VobsPlugin {
 
 export function useTheme(): ThemeContext {
   const theme = inject(THEME_KEY)
-  if (!theme) throw new Error('Vobs Theme: 找不到上下文，请安装 themePlugin')
+  if (!theme) throw new Error('Vobs Theme: context not found; install themePlugin first')
   return theme
 }
 
@@ -278,21 +283,22 @@ export function ThemeBoundary(props: ThemeBoundaryProps = {}): VobsNode {
     props.brand ? { brand: props.brand } : {}
   ))
   /*
-   * `override: true` 是**必需**的，不是可选优化。
+   * `override: true` is **required**, not an optional optimization.
    *
-   * `ThemeBoundary` 的语义就是"在这个子树里用一份 scoped 主题"——也就是**遮蔽**父主题。
-   * `themePlugin()` 已经把 `THEME_KEY` 注册给了根上下文，而 `provide` 对重复 key 默认抛错：
-   *   Vobs: 注入项 Symbol(vobs.theme) 已存在；如需覆盖请传入 override: true
-   * 于是**任何在 themePlugin 子树内使用 ThemeBoundary 的应用都会直接崩**
-   * （provider 是挂在**当前 owner** 上的，而 `injectFromOwner` 沿 owner 链向上找，
-   * 所以子级注册天然遮蔽父级 —— 这正是 override 该被允许的场景）。
+   * `ThemeBoundary`'s semantics is "use a scoped theme within this subtree" — i.e. **shadowing**
+   * the parent theme. `themePlugin()` has already registered `THEME_KEY` on the root context, and
+   * `provide` throws on duplicate keys by default:
+   *   Vobs: injection Symbol(vobs.theme) already exists; pass override: true to overwrite
+   * So **any app using ThemeBoundary inside a themePlugin subtree would crash outright**
+   * (providers hang off the **current owner**, and `injectFromOwner` walks up the owner chain, so
+   * child registrations naturally shadow parents — exactly the scenario override should allow).
    */
   provide(THEME_KEY, local, { override: true })
 
   const root = createElement('div') as HTMLElement
   renderEffect(() => {
     applyThemeVariables(root, local.theme.value)
-    // 同上：SSR 元素没有 dataset，安静跳过（客户端水合时再标）
+    // Same as above: SSR elements have no dataset; skip quietly (mark on client hydration)
     if (root.dataset) root.dataset.vobsMode = local.resolvedMode.value
   })
   const child = typeof props.children === 'function' ? props.children() : props.children
@@ -333,14 +339,16 @@ function createScopedTheme(parent: ThemeContext, initialOverrides: ThemeTokens):
     setBrand(nextBrand): void {
       ensureActive()
       /*
-       * 读取必须放进 `untrack`，否则在 effect 内调用就是**自订阅**：
-       * `overrides.value` 与 `brand.value` 都参与算出新值，而紧接着又写 `overrides.value`
-       * —— 读过的信号被当场写，框架护栏会报 VOBS_C210，并真的构成循环
-       * （实测：ThemeBoundary 子树里的组件 effect 调 `setBrand` → runs=101 抛
-       * "响应式更新超过 100 轮"）。
+       * Reads must go inside `untrack`, otherwise calling this inside an effect is **self-
+       * subscription**: `overrides.value` and `brand.value` both participate in computing the new
+       * value, and `overrides.value` is written right after — a signal that was just read gets
+       * written on the spot; the framework guard reports VOBS_C210 and it really is a loop
+       * (measured: a component effect inside a ThemeBoundary subtree calling `setBrand` → runs=101
+       * threw "reactive updates exceeded 100 rounds").
        *
-       * 根主题的实现（本文件 `:202-224` 的 `setBrand` / `registerTheme`）早就这么做了，
-       * **scoped 这一份漏了** —— 同一份逻辑写两遍的典型后果。
+       * The root theme implementation (`setBrand` / `registerTheme` at `:202-224` in this file)
+       * already did this — **the scoped copy was missing it** — the classic consequence of writing
+       * the same logic twice.
        */
       const base = untrack(() => overrides.value)
       const currentBrand = untrack(() => brand.value)
@@ -364,7 +372,7 @@ function createScopedTheme(parent: ThemeContext, initialOverrides: ThemeTokens):
   return context
 
   function ensureActive(): void {
-    if (disposed) throw new Error('Vobs Theme: 已销毁的局部上下文不能继续使用')
+    if (disposed) throw new Error('Vobs Theme: cannot use a disposed local context')
   }
 }
 
@@ -374,13 +382,13 @@ function parseDehydratedState(snapshot: unknown): ThemeDehydratedState {
     try {
       value = JSON.parse(snapshot)
     } catch {
-      throw new Error('Vobs Theme: 初始状态不是有效 JSON')
+      throw new Error('Vobs Theme: initial state is not valid JSON')
     }
   }
-  if (!value || typeof value !== 'object') throw new Error('Vobs Theme: 初始状态格式无效')
+  if (!value || typeof value !== 'object') throw new Error('Vobs Theme: initial state has an invalid format')
   const candidate = value as Partial<ThemeDehydratedState>
   if (candidate.version !== 1 || !candidate.overrides || typeof candidate.overrides !== 'object') {
-    throw new Error('Vobs Theme: 初始状态版本或字段无效')
+    throw new Error('Vobs Theme: initial state version or fields are invalid')
   }
   return {
     version: 1,
@@ -391,12 +399,14 @@ function parseDehydratedState(snapshot: unknown): ThemeDehydratedState {
 
 function applyThemeVariables(root: HTMLElement, theme: ThemeTokens): void {
   /*
-   * SSR 的元素是**纯数据对象**（ssr/src/renderer.ts:105 的 createElementNode：只有
-   * attrs/props/children，没有 style 也没有 dataset）。原来这里无条件写 root.style，
-   * 于是 renderToString 直接抛 `Cannot read properties of undefined (reading 'setProperty')`
-   * —— SSR + 主题边界整个不可用，而且一个用例都没有。
+   * SSR elements are **pure data objects** (createElementNode at ssr/src/renderer.ts:105: only
+   * attrs/props/children — no style, no dataset). This used to write root.style unconditionally,
+   * so renderToString threw outright with
+   * `Cannot read properties of undefined (reading 'setProperty')` — SSR + theme boundary was
+   * entirely unusable, with not a single test case.
    *
-   * 服务端本来也不该写内联变量（该由 <style>/class 交给客户端水合），所以安静跳过。
+   * The server shouldn't write inline variables anyway (a <style>/class should hand that to the
+   * client for hydration), so skip quietly.
    */
   if (!root.style) return
   const next = flattenTheme(theme)
@@ -441,7 +451,7 @@ function isThemeTokens(value: unknown): value is ThemeTokens {
 
 function validateMode(mode: ThemeMode): ThemeMode {
   if (mode !== 'light' && mode !== 'dark' && mode !== 'system') {
-    throw new Error('Vobs Theme: mode 必须是 light、dark 或 system')
+    throw new Error('Vobs Theme: mode must be light, dark, or system')
   }
   return mode
 }

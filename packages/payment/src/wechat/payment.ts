@@ -14,22 +14,22 @@ import type {
 } from './types'
 
 /**
- * 微信支付下单（APIv3）
+ * WeChat Pay order creation (APIv3)
  *
- * 覆盖四种收款场景：
- * - jsapiPay：公众号网页 / 小程序（wx.requestPayment）
- * - appPay：APP 拉起微信支付
- * - nativePay：PC 扫码支付（返回二维码链接）
- * - h5Pay：微信外浏览器 H5 支付（返回收银台跳转链接）
+ * Covers four payment scenarios:
+ * - jsapiPay: Official Account web page / Mini Program (wx.requestPayment)
+ * - appPay: launch WeChat Pay from a native app
+ * - nativePay: PC QR-code payment (returns the QR code URL)
+ * - h5Pay: H5 payment in browsers outside WeChat (returns the cashier redirect URL)
  *
- * ⚠️ 支付结果以异步通知或 query() 为准。
+ * ⚠️ Treat the async notification or query() as the source of truth for payment results.
  */
 export function createPayment(client: WechatClient) {
   return {
     /**
-     * 公众号 / 小程序支付下单（POST /v3/pay/transactions/jsapi）
-     * @param params 下单参数，openid 必填
-     * @returns 调起 wx.requestPayment 所需的签名参数
+     * Official Account / Mini Program order (POST /v3/pay/transactions/jsapi)
+     * @param params order params; openid is required
+     * @returns signed params needed to invoke wx.requestPayment
      */
     async jsapiPay(params: WechatPayParams & { openid: string }): Promise<WechatJsapiPayResult> {
       const { data } = await postTransaction(client, 'jsapi', params)
@@ -37,9 +37,9 @@ export function createPayment(client: WechatClient) {
     },
 
     /**
-     * APP 支付下单（POST /v3/pay/transactions/app）
-     * @param params 下单参数
-     * @returns 传给客户端 SDK 调起微信支付的签名参数
+     * App order (POST /v3/pay/transactions/app)
+     * @param params order params
+     * @returns signed params to pass to the client SDK to launch WeChat Pay
      */
     async appPay(params: WechatPayParams): Promise<WechatAppPayResult> {
       const { data } = await postTransaction(client, 'app', params)
@@ -47,21 +47,21 @@ export function createPayment(client: WechatClient) {
     },
 
     /**
-     * Native 扫码支付下单（POST /v3/pay/transactions/native）
-     * @returns 二维码链接（前端渲染二维码，用户扫码支付）
+     * Native QR-code order (POST /v3/pay/transactions/native)
+     * @returns QR code URL (frontend renders the QR code; user scans to pay)
      */
     async nativePay(params: WechatPayParams): Promise<WechatNativePayResult> {
       const { data } = await postTransaction(client, 'native', params)
       if (!data.code_url) {
-        throw new Error('WechatClient: 下单响应缺少 code_url')
+        throw new Error('WechatClient: order response is missing code_url')
       }
       return { codeUrl: data.code_url }
     },
 
     /**
-     * H5 支付下单（POST /v3/pay/transactions/h5）
-     * @param params 下单参数，payerClientIp 必填
-     * @returns 收银台跳转链接（302 重定向即可拉起微信支付）
+     * H5 order (POST /v3/pay/transactions/h5)
+     * @param params order params; payerClientIp is required
+     * @returns cashier redirect URL (a 302 redirect launches WeChat Pay)
      */
     async h5Pay(params: WechatH5PayParams): Promise<WechatH5PayResult> {
       const body = buildTransactionBody(client, params)
@@ -74,8 +74,8 @@ export function createPayment(client: WechatClient) {
     },
 
     /**
-     * 交易查询（GET /v3/pay/transactions/out-trade-no/{no} 或 .../id/{id}）
-     * @throws {WechatApiError} 订单不存在等失败（RESOURCE_NOT_EXISTS）
+     * Transaction query (GET /v3/pay/transactions/out-trade-no/{no} or .../id/{id})
+     * @throws {WechatApiError} on failures such as order not found (RESOURCE_NOT_EXISTS)
      */
     async query(params: WechatQueryParams): Promise<WechatQueryResult> {
       const mchid = client.config.mchid
@@ -112,7 +112,7 @@ async function postTransaction(
   return unwrapV3(client.sdk.v3.pay.transactions[chain].post(body))
 }
 
-/** 构造下单请求体（camelCase -> snake_case，注入 appid/mchid/notify_url） */
+/** Build the order request body (camelCase -> snake_case, injects appid/mchid/notify_url) */
 function buildTransactionBody(
   client: WechatClient,
   params: WechatPayParams
@@ -134,7 +134,7 @@ function buildTransactionBody(
   if (params.openid) {
     body.payer = { openid: params.openid }
   }
-  // 移除 undefined 字段
+  // Strip undefined fields
   for (const key of Object.keys(body)) {
     if (body[key] === undefined) delete body[key]
   }
@@ -142,12 +142,12 @@ function buildTransactionBody(
 }
 
 /**
- * 生成拉起支付的签名参数。
- * 签名串：appid\ntimeStamp\nnonceStr\nprepay_id=xxx\n（SHA256withRSA，商户 API 私钥）
+ * Generate the signed params used to launch payment.
+ * Sign message: appId\ntimeStamp\nnonceStr\nprepay_id=xxx\n (SHA256withRSA, merchant API private key)
  */
 function buildInvokeParams(client: WechatClient, prepayId: string): WechatJsapiPayResult {
   if (!prepayId) {
-    throw new Error('WechatClient: 下单响应缺少 prepay_id')
+    throw new Error('WechatClient: order response is missing prepay_id')
   }
   const appId = client.config.appid
   const timeStamp = `${Formatter.timestamp()}`
@@ -158,7 +158,7 @@ function buildInvokeParams(client: WechatClient, prepayId: string): WechatJsapiP
   return { appId, timeStamp, nonceStr, package: pkg, signType: 'RSA', paySign }
 }
 
-/** snake_case 响应映射 */
+/** snake_case response mapping */
 function mapTransaction(data: Record<string, any>): WechatQueryResult {
   return {
     appid: data.appid,

@@ -1,19 +1,22 @@
 /**
- * SVG 标签与命名空间 —— 编译期判定提升、运行期决定怎么建节点的**同一份依据**。
+ * SVG tags and namespace — the **single source of truth** used both for compile-time
+ * hoisting decisions and for runtime node creation.
  *
- * 两处都需要知道「这个名字是不是 SVG 标签」：
- * - 运行期：`document.createElement('rect')` 得到的是 HTMLUnknownElement，
- *   整棵 SVG 子树都不渲染（且没有报错），所以必须走 createElementNS
- * - 编译期：静态子树被提升成 HTML 模板串再 cloneNode，而模板串是**用 HTML 解析器**
- *   解析的 —— `<g>`、`<rect>` 同样变成 HTMLUnknownElement，所以静态提升路径
- *   也必须走同一份标签表（两路共用，才不会再漏入口）。
+ * Both sides need to know "is this name an SVG tag":
+ * - Runtime: `document.createElement('rect')` yields an HTMLUnknownElement and the whole
+ *   SVG subtree fails to render (with no error), so it must go through createElementNS
+ * - Compile time: static subtrees are hoisted into an HTML template string and cloneNode'd,
+ *   and that string is parsed **by the HTML parser** — `<g>` and `<rect>` likewise become
+ *   HTMLUnknownElement, so the static-hoisting path must consult the same tag table
+ *   (shared by both paths, so no entry point is missed again).
  */
 export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
 
 /**
- * SVG 标签全集（= TypeScript SVGElementTagNameMap 的键，运行时分发依据）。
- * 与 React 的运行时清单同思路：只含纯 SVG 标签，刻意排除与 HTML 同名的
- * a/script/style/title（它们在 JSX 类型里归 HTMLElement，按 HTML 创建）。
+ * The full set of SVG tags (= the keys of TypeScript's SVGElementTagNameMap; the runtime
+ * dispatch basis). Same idea as React's runtime list: pure SVG tags only, deliberately
+ * excluding the HTML-homonyms a/script/style/title (they belong to HTMLElement in JSX
+ * types and are created as HTML).
  */
 export const SVG_TAGS: ReadonlySet<string> = new Set([
   'animate', 'animateMotion', 'animateTransform', 'circle', 'clipPath', 'defs', 'desc',
@@ -28,7 +31,7 @@ export const SVG_TAGS: ReadonlySet<string> = new Set([
   'use', 'view'
 ])
 
-/** 是否是 SVG 专属标签（按名字判定，不看父级）。 */
+/** Whether the name is an SVG-exclusive tag (decided by name alone, not by ancestors). */
 export function isSvgTag(tag: string): boolean {
   return SVG_TAGS.has(tag)
 }

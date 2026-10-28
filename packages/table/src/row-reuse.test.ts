@@ -9,18 +9,22 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * tbody 走 keyed 调和（行复用）。
+ * tbody uses keyed reconciliation (row reuse).
  *
- * 原来 tbody 是 `createFragment` + 手写 `insertBefore` 循环 —— 每次 effect 重跑整块重建：
- * 实测 2000 行改 1 行创建 **6014** 个元素、节点全部换新（行内焦点与 DOM 状态全丢）。
- * 改用 `insertList` 后同场景只创建 **14** 个元素，行节点被复用。
+ * tbody used to be a `createFragment` + hand-written `insertBefore` loop —
+ * every effect re-run rebuilt the whole block: verified that changing 1 row of
+ * 2000 created **6014** elements with every node replaced (in-row focus and
+ * DOM state all lost). After switching to `insertList`, the same scenario
+ * creates only **14** elements and row nodes are reused.
  *
- * 这里的断言是**节点身份**：一旦退回整块重建，`firstRow` 就会变，测试立刻失败。
- * 同时锁住"复用之后内容仍然是新的" —— 这是复用最容易踩坏的地方（行数据必须经
- * memo 在单元格 effect 内取值，而不是靠 insertList 传给渲染函数的那个 item 代理，
- * 实测后者没能让复用的行更新内容）。
+ * The assertions here are about **node identity**: if the code regresses to
+ * whole-block rebuild, `firstRow` changes and the test fails immediately.
+ * Also locked: "after reuse the content is still fresh" — the easiest thing
+ * to break with reuse (row data must be read inside cell effects via the
+ * memo, not from the item proxy insertList hands the render function;
+ * verified that the latter didn't make reused rows update their content).
  */
-describe('KitDataTable 行复用', () => {
+describe('KitDataTable row reuse', () => {
   interface Row { id: number; name: string; role: string }
   const columns: readonly DataTableColumn<Row>[] = [
     { id: 'name', label: 'Name', key: 'name', sortable: true },
@@ -39,7 +43,7 @@ describe('KitDataTable 行复用', () => {
     return { rows, host, bodyRows, cleanup: () => { app.destroy(); host.remove() } }
   }
 
-  it('只改一行内容时复用行节点，而不是整表重建', async () => {
+  it('reuses row nodes when only one row's content changes, instead of rebuilding the whole table', async () => {
     const { rows, bodyRows, cleanup } = await mountTable([
       { id: 1, name: 'Ada', role: 'Admin' },
       { id: 2, name: 'Lin', role: 'Viewer' },
@@ -55,15 +59,15 @@ describe('KitDataTable 行复用', () => {
     ]
     await settle()
 
-    // 节点身份不变 ⇒ 行被复用（整块重建的话这里会全不等）
+    // Node identity unchanged ⇒ rows reused (a whole-block rebuild would fail all of these)
     expect(bodyRows().map(row => row)).toEqual(before)
-    // 但内容必须是新的
+    // But the content must be fresh
     expect(bodyRows()[0]?.textContent).toContain('CHANGED')
     expect(bodyRows()[0]?.textContent).not.toContain('Ada')
     cleanup()
   })
 
-  it('排序后内容跟着变（复用行不能显示旧数据）', async () => {
+  it('content follows after sorting (reused rows must not show stale data)', async () => {
     const { bodyRows, cleanup } = await mountTable([
       { id: 1, name: 'Ada', role: 'Admin' },
       { id: 2, name: 'Lin', role: 'Viewer' },
@@ -75,7 +79,7 @@ describe('KitDataTable 行复用', () => {
     cleanup()
   })
 
-  it('有 rowKey 时按数据身份复用（重排也认得住同一行）', async () => {
+  it('with rowKey, reuse follows data identity (the same row is recognized across reorders)', async () => {
     const { rows, bodyRows, cleanup } = await mountTable([
       { id: 1, name: 'Ada', role: 'Admin' },
       { id: 2, name: 'Lin', role: 'Viewer' }
@@ -88,7 +92,7 @@ describe('KitDataTable 行复用', () => {
     ]
     await settle()
 
-    // 顺序换了，但 Lin 那一行应是同一个节点（按 rowKey 复用）
+    // Order swapped, but Lin's row should be the same node (reused by rowKey)
     expect(bodyRows()[0]).toBe(linRow)
     expect(bodyRows()[0]?.textContent).toContain('Lin')
     cleanup()

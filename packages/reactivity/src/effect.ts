@@ -30,32 +30,37 @@ export function cleanupDependencies(subscriber: Subscriber): void {
 }
 
 /**
- * effect 的实例。
+ * Effect instance.
  *
- * **为什么是 class 而不是对象字面量**：与 `signal.ts` 的 `StateSignal`、`owner.ts` 的
- * `OwnerImpl` 同一个原因 —— 在对象字面量里放 `get disposed()` 访问器会让 V8 把这个实例
- * **降级成字典模式**，此后该实例的每次属性访问都走慢路径，而 `disposed` 是
- * `notify()` / `run()` 每次都要读的字段（每次信号写入 × 每个订阅者读一次）。
+ * **Why a class instead of an object literal**: same reason as `StateSignal` in
+ * `signal.ts` and `OwnerImpl` in `owner.ts` — putting a `get disposed()` accessor
+ * on an object literal demotes the instance to **dictionary mode** in V8, after
+ * which every property access on the instance takes the slow path. And `disposed`
+ * is read on every `notify()` / `run()` call (every signal write × one read per
+ * subscriber).
  *
- * 实测（`.artifacts/verify-harness/bench-effect-shape.ts`，同机同轮）：
- *   对象字面量 + `get disposed()`   1.665 ms / 20 万次读
- *   class 原型字段                  0.147 ms / 20 万次读   → **11.3×**
- * 这是本包**第三次**修同一个病（signal、owner 已修），effect 是最后漏掉的那个。
+ * Measured (`.artifacts/verify-harness/bench-effect-shape.ts`, same machine, same run):
+ *   object literal + `get disposed()`   1.665 ms / 200k reads
+ *   class prototype field               0.147 ms / 200k reads   → **11.3×**
+ * This is the **third** time the same disease has been fixed in this package
+ * (signal and owner were already fixed); effect was the last one left.
  *
- * `disposed` 是普通数据字段而不是访问器 —— 对外读法 `effect.disposed` 完全不变，
- * 包内也从未有人给它赋值（只用 `dispose()` 走状态转移）。
+ * `disposed` is a plain data field, not an accessor — the external read
+ * `effect.disposed` is unchanged, and nothing inside the package ever assigns to
+ * it (state transitions only go through `dispose()`).
  */
 class EffectImpl implements Effect {
   readonly order: number
   readonly depth: number
   readonly dependencies = new Set<Dependency>()
   disposed = false
-  /** 上一次 callback 返回的清理函数（下次运行前、或销毁时执行一次）。 */
+  /** Cleanup returned by the last callback run (executed once before the next run, or on dispose). */
   private cleanup: EffectCleanup | undefined
   private dirty = true
   /**
-   * 逐实例箭头函数：`owner?.addCleanup(eff.dispose)` 需要它能**脱离对象**传递，
-   * 原型方法会丢 `this`。这条契约与 `StateSignal.set`、`MemoSignal.dispose` 相同。
+   * Per-instance arrow function: `owner?.addCleanup(eff.dispose)` requires it to be
+   * passable **detached from the object**; a prototype method would lose `this`.
+   * Same contract as `StateSignal.set` and `MemoSignal.dispose`.
    */
   readonly dispose: () => void
 

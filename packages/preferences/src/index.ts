@@ -28,11 +28,11 @@ export type PreferenceSignals<S extends PreferenceSchema> = {
 
 export function definePreferences<S extends PreferenceSchema>(schema: S): S {
   if (!schema || typeof schema !== 'object' || Object.keys(schema).length === 0) {
-    throw new Error('Vobs Preferences: schema 不能为空')
+    throw new Error('Vobs Preferences: schema must not be empty')
   }
   for (const [key, definition] of Object.entries(schema)) {
     if (!definition || typeof definition !== 'object' || !('default' in definition)) {
-      throw new Error(`Vobs Preferences: ${key} 缺少 default`)
+      throw new Error(`Vobs Preferences: ${key} is missing a default`)
     }
     validateDefinition(key, definition)
   }
@@ -123,7 +123,7 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
   let currentUserId = resolveUserId()
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   let skipNextSave = false
-  /** restore() 正在经 resetAll() 写信号；用来把"恢复自己的写入"和"用户的写入"分开。 */
+  /** restore() is currently writing signals via resetAll(); used to separate "our own restore writes" from "user writes". */
   let applyingRestore = false
   let disposed = false
 
@@ -149,12 +149,15 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
       const definition = schema[name]
       validateValue(name, definition, value)
       /*
-       * 真实写入不能被上一个 restore() 留下的"跳过下一次保存"旗标吞掉。
+       * A real write must not be swallowed by the "skip next save" flag left behind by the
+       * previous restore().
        *
-       * `skipNextSave` 由**下一次 flush** 消费，而 flush 是微任务：`restore()` 之后、
-       * flush 之前的任何 set() 都会连 restore 的那份一起被跳过 —— 内存改了、盘上没改、
-       * 也不报错（实测 `restore(); set('pageSize', 99)`：内存 99 / 盘上 50）。
-       * restore() 自己经 resetAll() 触发的写入由 applyingRestore 标记，不在这里清旗标。
+       * `skipNextSave` is consumed by the **next flush**, and flush is a microtask: any set()
+       * between restore() and that flush got skipped together with the restore's own batch —
+       * memory changed, disk didn't, and no error was reported (measured:
+       * `restore(); set('pageSize', 99)` → memory 99 / disk 50). Writes triggered by restore()
+       * itself via resetAll() are covered by the applyingRestore flag; the flag must not be
+       * cleared here for those.
        */
       if (!applyingRestore) skipNextSave = false
       signals[key].value = value
@@ -175,19 +178,21 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
       const key = getStorageKey()
       const stored = storage.get<StoredPreferences>(key)
       /*
-       * 待触发的防抖保存必须在这里作废。
+       * A pending debounced save must be voided here.
        *
-       * restore() 之后内存已经以存储为准，之前排队的那次 save() 写的却是"当前内存"——
-       * 若对方标签页是 removeItem（stored 为 null），它就会把刚恢复的默认值写回盘上，
-       * 于是对方的清空被复活（实测 `[backend.setItem] vobs:pref:global = {"...theme":"light"...}`，
-       * 而该键在 restore 前已被另一标签页删除）。
+       * After restore() memory already follows storage, but the previously queued save() writes
+       * "current memory" — if the other tab did a removeItem (stored is null), it would write the
+       * just-restored defaults back to disk, resurrecting the other side's clearing (measured:
+       * `[backend.setItem] vobs:pref:global = {"...theme":"light"...}` even though that key had
+       * already been deleted by another tab before restore).
        */
       cancelPendingSave()
       /*
-       * skipNextSave 是旗标而不是"这些写入来自谁"的信息，且由**下一次 flush** 消费。
-       * 下面这一段经 resetAll() 也会走 set()，所以需要 applyingRestore 让 set() 知道
-       * "这是我自己的恢复写入，可以继续压制保存"，而 restore() 之后同一个同步任务里
-       * 用户的 set() 必须落盘。finally 保证两条提前 return 路径也会复位。
+       * skipNextSave is a flag, not information about "who these writes came from", and it is
+       * consumed by the **next flush**. The block below also goes through set() via resetAll(), so
+       * applyingRestore lets set() know "these are my own restore writes, suppressing the save is
+       * fine", while a user's set() in the same synchronous task after restore() must reach disk.
+       * finally guarantees both early-return paths reset the flag too.
        */
       applyingRestore = true
       skipNextSave = true
@@ -200,20 +205,22 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
           try {
             values = options.migrate(values, stored.version, version)
           } catch (error) {
-            const preferenceError = new PreferenceError('MIGRATION_FAILED', `Vobs Preferences: ${key} 迁移失败`, key, error)
+            const preferenceError = new PreferenceError('MIGRATION_FAILED', `Vobs Preferences: failed to migrate ${key}`, key, error)
             report(preferenceError)
             return
           }
         }
         for (const [name, value] of Object.entries(values)) {
           /*
-           * 必须用**自有属性**判断。
+           * Must use **own property** checks.
            *
-           * `schema[name]` 会沿原型链查到 `Object.prototype` —— 存档里一个 `__proto__` 键就让
-           * `definition` 恒为真，于是 `signals['__proto__'].value = value` 直接**写到 Object.prototype 上**
-           * （实测 `({}).value = {polluted:true}`，全程无 onError）；`constructor`/`toString` 键同理。
-           * 而全仓多处（resource / ui/forms / combobox / storage）靠 `'value' in x` **认信号** ——
-           * 一旦污染，所有普通对象都会被误判成信号。
+           * `schema[name]` walks the prototype chain down to `Object.prototype` — a single
+           * `__proto__` key in the archive made `definition` always truthy, so
+           * `signals['__proto__'].value = value` wrote **straight onto Object.prototype**
+           * (measured: `({}).value = {polluted:true}` with no onError anywhere);
+           * `constructor`/`toString` keys behave the same. Meanwhile lots of code across the repo
+           * (resource / ui/forms / combobox / storage) **recognizes signals** via `'value' in x` —
+           * once polluted, every plain object gets misidentified as a signal.
            */
           if (!Object.prototype.hasOwnProperty.call(schema, name)) continue
           if (!Object.prototype.hasOwnProperty.call(signals, name)) continue
@@ -240,7 +247,7 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
       try {
         storage.set(getStorageKey(), { version, values } satisfies StoredPreferences)
       } catch (error) {
-        const preferenceError = new PreferenceError('PERSIST_FAILED', 'Vobs Preferences: 保存失败', getStorageKey(), error)
+        const preferenceError = new PreferenceError('PERSIST_FAILED', 'Vobs Preferences: failed to save', getStorageKey(), error)
         report(preferenceError)
         throw preferenceError
       }
@@ -319,7 +326,7 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
     try { options.onError?.(error) } catch { /* error handlers must not interrupt preferences */ }
   }
 
-  /** 作废已排队但还没触发的防抖保存（restore 以存储为准，旧排队没有保留价值）。 */
+  /** Void a queued but not-yet-fired debounced save (restore follows storage; the stale queue has no retention value). */
   function cancelPendingSave(): void {
     if (saveTimer === undefined) return
     clearTimeout(saveTimer)
@@ -333,7 +340,7 @@ export function createPreferences<S extends PreferenceSchema>(options: Preferenc
   }
 
   function ensureActive(): void {
-    if (disposed) throw new Error('Vobs Preferences: 已销毁的上下文不能继续使用')
+    if (disposed) throw new Error('Vobs Preferences: cannot use a disposed context')
   }
 }
 
@@ -351,7 +358,7 @@ export function preferencesPlugin<S extends PreferenceSchema>(options: Preferenc
 
 export function usePreferences<S extends PreferenceSchema = PreferenceSchema>(): PreferencesContext<S> {
   const preferences = inject(PREFERENCES_KEY)
-  if (!preferences) throw new PreferenceError('RESTORE_FAILED', 'Vobs Preferences: 找不到上下文，请安装 preferencesPlugin')
+  if (!preferences) throw new PreferenceError('RESTORE_FAILED', 'Vobs Preferences: context not found; install preferencesPlugin first')
   return preferences as PreferencesContext<S>
 }
 
@@ -370,7 +377,7 @@ function isStoredPreferences(value: unknown): value is StoredPreferences {
 
 function validateDefinition(key: string, definition: PreferenceDefinition<unknown>): void {
   if (definition.type && !['string', 'number', 'boolean', 'object', 'array'].includes(definition.type)) {
-    throw new PreferenceError('INVALID_SCHEMA', `Vobs Preferences: ${key} 的 type 无效`, key)
+    throw new PreferenceError('INVALID_SCHEMA', `Vobs Preferences: invalid type for ${key}`, key)
   }
   validateValue(key, definition, definition.default)
 }
@@ -383,16 +390,16 @@ function validateValue(key: string, definition: PreferenceDefinition<unknown>, v
     || definition.type === 'string' && typeof value === 'string'
     || definition.type === 'boolean' && typeof value === 'boolean'
   if (!matchesType || definition.validate && !definition.validate(value)) {
-    throw new PreferenceError('INVALID_VALUE', `Vobs Preferences: ${key} 的值无效`, key)
+    throw new PreferenceError('INVALID_VALUE', `Vobs Preferences: invalid value for ${key}`, key)
   }
 }
 
 function validateVersion(version: number): number {
-  if (!Number.isInteger(version) || version < 0) throw new Error('Vobs Preferences: version 必须是大于等于 0 的整数')
+  if (!Number.isInteger(version) || version < 0) throw new Error('Vobs Preferences: version must be an integer greater than or equal to 0')
   return version
 }
 
 function validateDelay(delay: number): number {
-  if (!Number.isFinite(delay) || delay < 0) throw new Error('Vobs Preferences: saveDebounce 必须是大于等于 0 的有限数字')
+  if (!Number.isFinite(delay) || delay < 0) throw new Error('Vobs Preferences: saveDebounce must be a finite number greater than or equal to 0')
   return delay
 }

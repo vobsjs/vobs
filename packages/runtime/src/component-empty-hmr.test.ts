@@ -1,41 +1,47 @@
 // @vitest-environment jsdom
 /*
- * HMR 刷新时组件返回空值不能崩（1.8.0 修复漏掉的另一半）。
+ * Components returning empty values must not crash on HMR refresh (the other half the
+ * 1.8.0 fix missed).
  *
- * ## 缺陷
+ * ## The defect
  *
- * `createComponent` 有两条渲染路径：
- * - **首屏**（`const node = isRenderableNode(rendered) ? … : createComment('vobs:empty')`）
- *   —— 1.8.0 修好了空返回值
- * - **HMR 刷新**（`refreshInstance`，由 `hmr.ts` 调用）—— **没修**：
- *   `nodeOwners.set(next as object, owner)` 拿到 `null` 当 WeakMap 的 key →
- *   抛 `Invalid value used as weak map key`，与 9/30 发版黑屏同一个错误
+ * `createComponent` has two render paths:
+ * - **First mount** (`const node = isRenderableNode(rendered) ? … : createComment('vobs:empty')`)
+ *   — 1.8.0 fixed empty return values here
+ * - **HMR refresh** (`refreshInstance`, called from `hmr.ts`) — **not fixed**:
+ *   `nodeOwners.set(next as object, owner)` got `null` as a WeakMap key →
+ *   throws `Invalid value used as weak map key`, the same error as the 9/30 release
+ *   black screen
  *
- * ## 实际后果（如实定级：**不是生产崩溃**）
+ * ## Actual consequence (graded honestly: **not a production crash**)
  *
- * `hmr.ts` 把 `instance.refresh()` 包在 try/catch 里，异常被吞掉 —— 但那个 catch
- * 自己的注释写着后果：
- *   「静默吞掉会让开发者以为热更新成功了，而屏幕上是旧的 —— 最容易被当成
- *    「改了没生效」查半天」
+ * `hmr.ts` wraps `instance.refresh()` in try/catch, swallowing the exception — but that
+ * catch's own comment states the consequence:
+ *   "Swallowing this silently would make the developer think the hot update succeeded
+ *    while the screen shows the old thing — the easiest misread as 'my change didn't
+ *    take effect', chased for hours"
  *
- * 即：**开发期改了代码、热更新刷新失败、屏幕停在旧版本**。
+ * I.e.: **during development the code changed, the hot-update refresh failed, and the
+ * screen stayed on the old version**.
  *
- * ## 走的是真实 HMR 路径
+ * ## Goes through the real HMR path
  *
- * 用 `resolveComponent` 拿到 HMR 代理（编译器注入的代码用的就是它），
- * 挂载后 `updateHmrModule` 换上新版本 —— 这样 `module.instances` 里才**真的**有实例，
- * `refresh()` 才会被调用。
+ * `resolveComponent` is used to get the HMR proxy (what compiler-injected code uses);
+ * after mounting, `updateHmrModule` swaps in the new version — only then does
+ * `module.instances` **really** contain an instance and `refresh()` actually get called.
  *
- * ⚠️ 我第一版测试**没有走这条路**：直接 `createComponent` + `updateHmrModule`，
- * 实例从未注册到该 moduleId，于是 `module.instances` 是空的、`refresh` 根本没跑，
- * 测试全绿但**什么都没验**。咬合（退掉归一化）时它也没变红，才暴露出来。
+ * ⚠️ My first test version **did not take this path**: it called `createComponent`
+ * directly + `updateHmrModule`; the instance was never registered to that moduleId, so
+ * `module.instances` was empty, `refresh` never ran, the tests were green but **verified
+ * nothing**. When the fix was reverted it still didn't go red, which exposed it.
  *
- * ## 顺带锁住类型层
+ * ## Also locks the type layer
  *
- * 下面的组件直接 `return cond ? … : null`，**没有类型断言、没有 cast**。
- * 1.8.3 之前会报 `Type 'null' is not assignable to type 'VobsNode'`。
- * 业界一致做法是全放行：React 的 `ReactNode`、Preact 的 `ComponentChild`、
- * Solid 的 `JSX.Element`、Vue 的 `VNodeChild` 都含 `null | undefined | boolean`。
+ * The components below do `return cond ? … : null` directly — **no type assertion, no
+ * cast**. Before 1.8.3 this reported `Type 'null' is not assignable to type 'VobsNode'`.
+ * The industry consensus is to allow it across the board: React's `ReactNode`, Preact's
+ * `ComponentChild`, Solid's `JSX.Element`, Vue's `VNodeChild` all include
+ * `null | undefined | boolean`.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { scheduler, state } from '@vobs/reactivity'
@@ -46,8 +52,8 @@ import { resolveComponent, updateHmrModule } from './hmr'
 setRenderer(createDOMRenderer())
 const settle = (): void => { scheduler.flush() }
 
-describe('组件返回空值：类型层（业界一致，直接写不报错）', () => {
-  it('`return cond ? <div/> : null` 不需要 cast', () => {
+describe('component empty returns: type layer (industry consensus, no cast needed)', () => {
+  it('`return cond ? <div/> : null` needs no cast', () => {
     const open = state(true)
     function MaybeEmpty(): VobsNode | null {
       return open.value ? createElement('div') : null
@@ -55,7 +61,7 @@ describe('组件返回空值：类型层（业界一致，直接写不报错）'
     expect(typeof MaybeEmpty).toBe('function')
   })
 
-  it('早退式 `if (cond) return null` 同样不需要 cast', () => {
+  it('early-return `if (cond) return null` likewise needs no cast', () => {
     const loading = state(false)
     function EarlyReturn() {
       if (loading.value) return null
@@ -65,14 +71,14 @@ describe('组件返回空值：类型层（业界一致，直接写不报错）'
   })
 })
 
-describe('组件返回空值：HMR 刷新路径不能崩', () => {
+describe('component empty returns: the HMR refresh path must not crash', () => {
   const moduleId = '/src/tmp-hmr-return.tsx'
 
-  it('新版本让组件返回 null → 刷新不抛错，且内容真的换成了空', () => {
+  it('a new version making the component return null → refresh does not throw, and content really becomes empty', () => {
     const host = document.createElement('main')
     document.body.appendChild(host)
 
-    // ① 用 HMR 代理（编译器注入的代码走的就是 resolveComponent）
+    // ① Use the HMR proxy (compiler-injected code goes through resolveComponent)
     const V1 = (): VobsNode => {
       const el = createElement('div')
       el.textContent = 'v1'
@@ -85,26 +91,26 @@ describe('组件返回空值：HMR 刷新路径不能崩', () => {
     })
     app.mount(host)
     settle()
-    expect(host.textContent, '首屏没渲染出来，后面的断言就没有意义').toBe('v1')
+    expect(host.textContent, 'first mount rendered nothing, the assertions after this are meaningless').toBe('v1')
 
-    // ② 换上新版本：返回 null（正是会触发那条未修复路径的形态）
+    // ② Swap in the new version: returns null (exactly the form that triggers the unfixed path)
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       expect(
         () => { updateHmrModule(moduleId, { V1: (): VobsNode | null => null }) },
-        'HMR 刷新抛错了 —— 异常被 hmr.ts 吞掉，屏幕会停在旧版本'
+        'HMR refresh threw — the exception was swallowed by hmr.ts and the screen would stay on the old version'
       ).not.toThrow()
       settle()
 
-      // ③ 证明刷新**真的执行了**（不是"没抛错因为什么都没跑"）
+      // ③ Prove the refresh **really executed** (not "didn't throw because nothing ran")
       expect(
         host.textContent,
-        '刷新成空之后 DOM 里还是 v1 —— 说明 refresh 根本没被执行，这条测试没验到东西'
+        'DOM still shows v1 after refreshing to empty — refresh never executed, this test verified nothing'
       ).toBe('')
-      // 刷新失败会被 hmr.ts 记为错误；成功就不该有
+      // A failed refresh is logged as an error by hmr.ts; success must not log one
       const logged = [...warning.mock.calls, ...error.mock.calls].map(call => String(call[0])).join('\n')
-      expect(logged, `刷新留下了错误记录：${logged}`).not.toContain('weak map')
+      expect(logged, `refresh left an error record: ${logged}`).not.toContain('weak map')
     } finally {
       warning.mockRestore(); error.mockRestore()
     }

@@ -29,7 +29,7 @@ describe('@vobs/upload', () => {
     vi.useRealTimers()
   })
 
-  it('将文件和元数据编码为 FormData，并从 HTTP 进度更新响应式任务', async () => {
+  it('encodes file and metadata into FormData and updates reactive tasks from HTTP progress', async () => {
     let body: FormData | undefined
     const http = createHTTPClient({
       adapter: config => {
@@ -57,11 +57,13 @@ describe('@vobs/upload', () => {
   })
 
   /*
-   * 响应 mapper 抛错原来被归成 `UPLOAD_FAILED`，与传输失败**不可区分**。
-   * 后果：调用方/重试 UI 只能盲目重传，而默认 POST 非幂等 —— 文件已被服务端接收并落库，
-   * 重传等于服务端静默重复写入（报告探针 F：adapter 调用 1→2）。
+   * A thrown error from the response mapper was originally collapsed into `UPLOAD_FAILED`,
+   * **indistinguishable** from a transfer failure.
+   * Consequence: the caller/retry UI could only blindly retry, and the default POST is not
+   * idempotent — the file was already received and stored by the server, so retrying equals a
+   * silent duplicate write server-side (report probe F: adapter calls 1→2).
    */
-  it('响应 mapper 抛错与传输失败分开报，避免调用方盲目重传', async () => {
+  it('response mapper errors are reported separately from transfer failures so callers do not blindly retry', async () => {
     const http = createHTTPClient({
       adapter: config => response({ ok: true }, config)
     })
@@ -76,11 +78,11 @@ describe('@vobs/upload', () => {
     await expect(task.promise).resolves.toBeNull()
     expect(task.status.value).toBe('error')
     expect(task.error.value?.code).toBe('UPLOAD_RESPONSE_INVALID')
-    expect(task.error.value?.message).toContain('不要盲目重传')
+    expect(task.error.value?.message).toContain('do not blindly retry')
     uploader.dispose()
   })
 
-  it('真正的传输失败仍然是 UPLOAD_FAILED', async () => {
+  it('a real transfer failure is still UPLOAD_FAILED', async () => {
     const http = createHTTPClient({
       adapter: () => { throw new Error('network down') }
     })
@@ -93,11 +95,13 @@ describe('@vobs/upload', () => {
   })
 
   /*
-   * `clearCompleted()` 原来只缩短公开数组：已完成的任务对象、它的 4 个信号与 `File` 引用
-   * 一直被内部的 createdTasks 强引用到 dispose() —— 长期开着的上传面板等于单调泄漏。
-   * 现在清掉的行会连同信号一起销毁，所以它们的信号写入变成 no-op（读到值不变）。
+   * `clearCompleted()` originally only shrank the public array: completed task objects, their 4
+   * signals, and the `File` reference stayed strongly referenced by the internal createdTasks
+   * until dispose() — a long-lived upload panel was a monotonic leak.
+   * Now cleared rows are disposed together with their signals, so writes to their signals become
+   * no-ops (the read value does not change).
    */
-  it('clearCompleted 释放已完成任务（被清掉的句柄信号已销毁）', async () => {
+  it('clearCompleted releases completed tasks (the cleared handles\' signals are disposed)', async () => {
     const http = createHTTPClient({ adapter: config => response({ ok: true }, config) })
     const uploader = createUpload({ http, url: '/upload', concurrency: 1 })
     const task = uploader.upload(createFile('a.pdf', 'application/pdf'))
@@ -111,7 +115,7 @@ describe('@vobs/upload', () => {
     try {
       task.status.value = 'error'
     } catch {
-      // 已销毁的信号也可能直接拒绝写入；两种形态都算"释放了"
+      // a disposed signal may also reject writes outright; both shapes count as "released"
     }
     expect(task.status.value).toBe(before)
 
@@ -119,11 +123,12 @@ describe('@vobs/upload', () => {
   })
 
   /*
-   * `tasks` 是**公开可写**的 Signal。调用方把它写成 [] 之后，原来的 dispose 只遍历 tasks.value
-   * → 一个任务都取消不到：在途上传继续跑、`await task.promise` 永久挂起（报告探针 G 的形态）。
-   * createdTasks 才是在途任务的真相来源。
+   * `tasks` is a **publicly writable** Signal. Once the caller writes it to [], the original
+   * dispose iterated only tasks.value → not a single task got cancelled: in-flight uploads kept
+   * running and `await task.promise` hung forever (the shape of report probe G).
+   * createdTasks is the source of truth for tasks in flight.
    */
-  it('公开 tasks 被清空后 dispose 仍会取消在途上传', async () => {
+  it('dispose still cancels in-flight uploads after the public tasks is emptied', async () => {
     const http = createHTTPClient({ adapter: () => new Promise(() => undefined) })
     const uploader = createUpload({ http, url: '/upload', concurrency: 1 })
     const task = uploader.upload(createFile('a.pdf', 'application/pdf'))
@@ -136,7 +141,7 @@ describe('@vobs/upload', () => {
     expect(task.status.value).toBe('cancelled')
   })
 
-  it('校验 MIME、扩展名和文件大小，并在创建任务前拒绝无效文件', () => {
+  it('validates MIME, extension, and file size, rejecting invalid files before task creation', () => {
     const uploader = createUpload({
       http: createHTTPClient(),
       url: '/upload',
@@ -154,7 +159,7 @@ describe('@vobs/upload', () => {
     uploader.dispose()
   })
 
-  it('服务层限制并发，后续任务在前一任务结束后才开始', async () => {
+  it('the service caps concurrency; later tasks start only after the previous one ends', async () => {
     const resolvers: Array<() => void> = []
     let running = 0
     let maxRunning = 0
@@ -186,7 +191,7 @@ describe('@vobs/upload', () => {
     uploader.dispose()
   })
 
-  it('取消正在上传的任务，重试失败任务并清除完成任务', async () => {
+  it('cancels an uploading task, retries a failed task, and clears completed tasks', async () => {
     let attempt = 0
     let aborted = false
     const http = createHTTPClient({
@@ -220,7 +225,7 @@ describe('@vobs/upload', () => {
     uploader.dispose()
   })
 
-  it('uploadPlugin 优先注入 HTTPClient，并在应用销毁后释放自有任务', async () => {
+  it('uploadPlugin prefers the injected HTTPClient and releases its own tasks after app destruction', async () => {
     const http = createHTTPClient({ adapter: config => response({ ok: true }, config) })
     let injected: ReturnType<typeof createUpload> | undefined
     const app = createVobs({
@@ -235,10 +240,10 @@ describe('@vobs/upload', () => {
     await task?.promise
     app.destroy()
 
-    expect(() => injected?.upload(createFile('later.txt', 'text/plain'))).toThrow('已销毁')
+    expect(() => injected?.upload(createFile('later.txt', 'text/plain'))).toThrow('disposed')
   })
 
-  it('未安装插件或缺少 HTTPClient 时给出明确错误', () => {
+  it('gives clear errors when the plugin is not installed or the HTTPClient is missing', () => {
     expect(() => uploadPlugin({ url: '/upload' }).install?.({
       inject: () => undefined,
       provide: () => undefined

@@ -5,7 +5,7 @@ import { vobsPlugin } from './index'
 import { workspaceAliases } from '../../../scripts/vite-workspace.mjs'
 
 describe('vobsPlugin', () => {
-  it('将编译器插件配置透传给 TSX 转换', () => {
+  it('passes compiler plugin config through to TSX transforms', () => {
     const plugin = vobsPlugin({
       compiler: {
         plugins: [{
@@ -22,7 +22,7 @@ describe('vobsPlugin', () => {
       }
     })
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: missing transform hook')
 
     const result = transform.call({} as ThisParameterType<typeof transform>,
       `export function App() { return <span>{message}</span> }`,
@@ -32,10 +32,10 @@ describe('vobsPlugin', () => {
     expect(result).toMatchObject({ code: expect.stringContaining('() => title') })
   })
 
-  it('返回源码映射并注入可关闭的 HMR 接受器', () => {
+  it('returns a source map and injects a toggleable HMR acceptor', () => {
     const plugin = vobsPlugin()
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: missing transform hook')
 
     const result = transform.call({} as ThisParameterType<typeof transform>,
       `export function App() { return <span>hello</span> }`,
@@ -47,10 +47,10 @@ describe('vobsPlugin', () => {
     expect(result.code).toContain('updateHmrModule')
   })
 
-  it('可以关闭 HMR 注入', () => {
+  it('HMR injection can be disabled', () => {
     const plugin = vobsPlugin({ hmr: false })
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: missing transform hook')
 
     const result = transform.call({} as ThisParameterType<typeof transform>,
       `export function App() { return <span>hello</span> }`,
@@ -60,21 +60,21 @@ describe('vobsPlugin', () => {
     expect(result.code).not.toContain('import.meta.hot.accept')
   })
 
-  it('生产构建默认不注入 HMR 代码', () => {
+  it('production builds do not inject HMR code by default', () => {
     const plugin = vobsPlugin()
     const configResolved = plugin.configResolved as ((config: unknown) => void) | undefined
     configResolved?.({ command: 'build' })
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: missing transform hook')
     const result = transform.call({} as ThisParameterType<typeof transform>,
       `export const App = () => <main>hello</main>`, 'src/App.tsx') as { code: string }
     expect(result.code).not.toContain('import.meta.hot.accept')
   })
 
-  it('生产构建默认剔除组件源码位置，开发构建保留', () => {
+  it('production builds strip component source locations by default; dev builds keep them', () => {
     const compile = (plugin: ReturnType<typeof vobsPlugin>, source: string) => {
       const transform = plugin.transform
-      if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: 缺少 transform 钩子')
+      if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: missing transform hook')
       return transform.call({} as ThisParameterType<typeof transform>,
         source, 'src/App.tsx') as { code: string }
     }
@@ -89,50 +89,50 @@ describe('vobsPlugin', () => {
     expect(development).toContain('file: "src/App.tsx"')
   })
 
-  it('显式 compiler.sourceLocation 配置优先于生产默认值', () => {
+  it('explicit compiler.sourceLocation wins over the production default', () => {
     const plugin = vobsPlugin({ hmr: false, compiler: { sourceLocation: true } })
     const configResolved = plugin.configResolved as ((config: unknown) => void) | undefined
     configResolved?.({ command: 'build' })
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: missing transform hook')
     const result = transform.call({} as ThisParameterType<typeof transform>,
       `export function App() { return <Panel /> }`, 'src/App.tsx') as { code: string }
     expect(result.code).toContain('file: "src/App.tsx"')
   })
 
-  it('转换不含 export function 的合法 TSX 模块', () => {
+  it('transforms legal TSX modules without export function', () => {
     const plugin = vobsPlugin({ hmr: false })
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: missing transform hook')
 
     const result = transform.call({} as ThisParameterType<typeof transform>,
       `export const App = () => <main>hello</main>`,
       'src/App.tsx'
     ) as { code: string }
 
-    // 完全静态的 JSX 提升为模板克隆
+    // Fully static JSX is hoisted to a template clone
     expect(result.code).toContain('createTemplate("<main>hello</main>")')
   })
 
-  it('转换默认箭头导出和带 query 的 TSX 模块', () => {
+  it('transforms default arrow exports and TSX modules with a query', () => {
     const plugin = vobsPlugin({ hmr: false })
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite plugin: missing transform hook')
 
     const result = transform.call({} as ThisParameterType<typeof transform>,
       `export default () => <main>hello</main>`,
       'src/App.tsx?direct'
     ) as { code: string }
 
-    // 完全静态的 JSX 提升为模板克隆
+    // Fully static JSX is hoisted to a template clone
     expect(result.code).toContain('createTemplate("<main>hello</main>")')
   })
 
-  it('通过 extractI18n 回调收集静态翻译 key', () => {
+  it('collects static translation keys via the extractI18n callback', () => {
     const keys: string[] = []
     const plugin = vobsPlugin({ hmr: false, extractI18n: key => keys.push(key) })
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: missing transform hook')
 
     transform.call({} as ThisParameterType<typeof transform>,
       `export const Page = () => <main>{t('page.title')} {i18n.t('common.ok')}</main>`,
@@ -142,10 +142,10 @@ describe('vobsPlugin', () => {
     expect(keys).toEqual(['page.title', 'common.ok'])
   })
 
-  it('为 .ts 状态模块注入 HMR 保鲜与接受器（dev 默认开启）', () => {
+  it('injects HMR freshness and an acceptor into .ts state modules (dev default on)', () => {
     const plugin = vobsPlugin()
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: missing transform hook')
 
     const result = transform.call({} as ThisParameterType<typeof transform>,
       `import { state } from '@vobs/reactivity'\nexport const count = state(0)\n`,
@@ -156,19 +156,19 @@ describe('vobsPlugin', () => {
     expect(result.code).toContain('import.meta.hot.accept')
   })
 
-  it('普通 .ts 模块与 .d.ts 不参与编译', () => {
+  it('ordinary .ts modules and .d.ts are not compiled', () => {
     const plugin = vobsPlugin()
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: missing transform hook')
 
     expect(transform.call({} as ThisParameterType<typeof transform>, `export const value = 1`, 'src/utils/math.ts')).toBeNull()
     expect(transform.call({} as ThisParameterType<typeof transform>, `export declare const x: number`, 'src/types.d.ts')).toBeNull()
   })
 
-  it('hmrState: false 关闭 .ts 状态模块处理', () => {
+  it('hmrState: false disables .ts state module handling', () => {
     const plugin = vobsPlugin({ hmrState: false })
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: missing transform hook')
 
     const result = transform.call({} as ThisParameterType<typeof transform>,
       `import { state } from '@vobs/reactivity'\nexport const count = state(0)\n`,
@@ -177,11 +177,11 @@ describe('vobsPlugin', () => {
     expect(result).toBeNull()
   })
 
-  it('生产构建不为 .ts 状态模块注入 HMR', () => {
+  it('production builds do not inject HMR into .ts state modules', () => {
     const plugin = vobsPlugin()
     ;(plugin.configResolved as (config: unknown) => void)?.({ command: 'build' })
     const transform = plugin.transform
-    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: 缺少 transform 钩子')
+    if (typeof transform !== 'function') throw new Error('Vobs Vite Plugin: missing transform hook')
 
     const result = transform.call({} as ThisParameterType<typeof transform>,
       `import { state } from '@vobs/reactivity'\nexport const count = state(0)\n`,
@@ -190,7 +190,7 @@ describe('vobsPlugin', () => {
     expect(result).toBeNull()
   })
 
-  it('将 HTML 模块编译为无 innerHTML 的 Vobs 组件', () => {
+  it('compiles HTML modules into Vobs components without innerHTML', () => {
     const result = compileHtmlComponent('<article class="copy"><h1>Hello</h1><p>Safe</p></article>', {
       filename: 'src/content.html'
     })
@@ -201,7 +201,7 @@ describe('vobsPlugin', () => {
     expect(result).not.toContain('innerHTML')
   })
 
-  it('将受限的 Vobs 指令连接到响应式 props 和事件', () => {
+  it('wires restricted Vobs directives to reactive props and events', () => {
     const result = compileHtmlComponent(`
       <button data-vobs-on-click="onSave" data-vobs-prop-disabled="disabled">
         <span data-vobs-text="label"></span>
@@ -217,33 +217,33 @@ describe('vobsPlugin', () => {
     expect(result).toContain('bindProperty(element, "disabled"')
   })
 
-  it('拒绝脚本、事件属性和危险 URL', () => {
-    expect(() => compileHtmlComponent('<script>alert(1)</script>')).toThrow('禁止使用 <script>')
-    expect(() => compileHtmlComponent('<button onclick="alert(1)">run</button>')).toThrow('禁止使用危险属性')
-    expect(() => compileHtmlComponent('<a href="javascript:alert(1)">run</a>')).toThrow('禁止使用危险 URL')
-    expect(() => compileHtmlComponent('<button data-vobs-on-click="on-click">run</button>')).toThrow('有效的 props 名称')
-    expect(() => compileHtmlComponent('<div data-vobs-bind-style="styleValue"></div>')).toThrow('不允许动态绑定 style')
-    expect(() => compileHtmlComponent('<div data-vobs-prop-innerHTML="content"></div>')).toThrow('不允许动态绑定 property')
+  it('rejects scripts, event attributes, and dangerous URLs', () => {
+    expect(() => compileHtmlComponent('<script>alert(1)</script>')).toThrow('<script> is not allowed')
+    expect(() => compileHtmlComponent('<button onclick="alert(1)">run</button>')).toThrow('dangerous attribute not allowed')
+    expect(() => compileHtmlComponent('<a href="javascript:alert(1)">run</a>')).toThrow('dangerous URL attribute not allowed')
+    expect(() => compileHtmlComponent('<button data-vobs-on-click="on-click">run</button>')).toThrow('valid props name')
+    expect(() => compileHtmlComponent('<div data-vobs-bind-style="styleValue"></div>')).toThrow('dynamic style binding is not allowed')
+    expect(() => compileHtmlComponent('<div data-vobs-prop-innerHTML="content"></div>')).toThrow('dynamic property binding is not allowed')
   })
 
-  it('忽略注释和文档类型声明', () => {
+  it('ignores comments and doctype declarations', () => {
     const result = compileHtmlComponent('<!doctype html><!-- note --><main>content</main>')
     expect(result).toContain('createElement(\"main\")')
     expect(result).not.toContain('tagName')
   })
 
-  it('只将被导入的 HTML 文件交给组件加载器', async () => {
+  it('hands only imported HTML files to the component loader', async () => {
     const plugin = vobsPlugin({ hmr: false })
     const resolveId = plugin.resolveId
     const load = plugin.load
-    if (typeof resolveId !== 'function' || typeof load !== 'function') throw new Error('Vobs Vite Plugin: 缺少 HTML 模块钩子')
+    if (typeof resolveId !== 'function' || typeof load !== 'function') throw new Error('Vobs Vite Plugin: missing HTML module hooks')
 
     expect(resolveId.call({} as ThisParameterType<typeof resolveId>, './content.html', 'src/Page.tsx', { attributes: {}, isEntry: false })).toBeTruthy()
     expect(resolveId.call({} as ThisParameterType<typeof resolveId>, './index.html', undefined, { attributes: {}, isEntry: false })).toBeNull()
   })
 })
 
-describe('vobsPlugin 开发期护栏', () => {
+describe('vobsPlugin development guardrails', () => {
   const GUARDRAILS_ID = '\0virtual:vobs-dev-guardrails'
 
   const asDev = (plugin: ReturnType<typeof vobsPlugin>): void => {
@@ -253,7 +253,7 @@ describe('vobsPlugin 开发期护栏', () => {
     ;(plugin.configResolved as (config: unknown) => void | undefined)?.({ command: 'build' })
   }
 
-  it('dev 下把护栏脚本注入 index.html，且只加 tag 不替换 HTML', () => {
+  it('injects the guardrail script into index.html in dev, adding a tag without replacing the HTML', () => {
     const plugin = vobsPlugin()
     asDev(plugin)
     const tags = plugin.transformIndexHtml
@@ -269,65 +269,67 @@ describe('vobsPlugin 开发期护栏', () => {
     expect(Array.isArray(result)).toBe(true)
     expect(result?.[0]?.tag).toBe('script')
     expect(result?.[0]?.attrs.src).toContain('virtual:vobs-dev-guardrails')
-    // 返回 html 字段会替换整份 HTML —— 必须是 tag 数组
+    // Returning an html field would replace the entire HTML — it must be a tag array
     expect(result).not.toHaveProperty('html')
   })
 
-  it('build 下不注入、也不产出护栏模块', async () => {
+  it('does not inject or produce the guardrail module in build', async () => {
     const plugin = vobsPlugin()
     asBuild(plugin)
     const load = plugin.load
-    if (typeof load !== 'function') throw new Error('缺少 load 钩子')
+    if (typeof load !== 'function') throw new Error('missing load hook')
 
     expect(await load.call({} as ThisParameterType<typeof load>, GUARDRAILS_ID)).toBeNull()
   })
 
-  it('devGuardrails: false 时完全关闭', async () => {
+  it('devGuardrails: false turns it off entirely', async () => {
     const plugin = vobsPlugin({ devGuardrails: false })
     asDev(plugin)
     const load = plugin.load
-    if (typeof load !== 'function') throw new Error('缺少 load 钩子')
+    if (typeof load !== 'function') throw new Error('missing load hook')
 
     expect(plugin.transformIndexHtml).toBeDefined()
     expect(await load.call({} as ThisParameterType<typeof load>, GUARDRAILS_ID)).toBeNull()
   })
 
-  it('护栏模块用动态 import，缺少 @vobs/vobs 时不会白屏', async () => {
+  it('the guardrail module uses a dynamic import, so a missing @vobs/vobs does not blank the page', async () => {
     const plugin = vobsPlugin()
     asDev(plugin)
     const load = plugin.load
-    if (typeof load !== 'function') throw new Error('缺少 load 钩子')
+    if (typeof load !== 'function') throw new Error('missing load hook')
 
     const code = await load.call({} as ThisParameterType<typeof load>, GUARDRAILS_ID) as string
     expect(code).toContain("import('@vobs/vobs/dev')")
     expect(code).not.toMatch(/^import\s/mu)
-    // 不用顶层 await：TLA 需要浏览器与构建 target 都支持，而这里不需要
+    // No top-level await: TLA needs both browser and build target support, neither of which is needed here
     expect(code).not.toMatch(/^\s*await\s/mu)
     expect(code).toContain('/__vobs/violation')
     expect(code).toContain('installDevGuardrails')
-    // 上报的是框架统一的诊断字段
+    // Reports the framework's unified diagnostic fields
     expect(code).toContain('error.fix')
     expect(code).toContain('error.location')
   })
 
-  it('虚拟模块 id 会被 resolveId 认领', () => {
+  it('the virtual module id is claimed by resolveId', () => {
     const plugin = vobsPlugin()
     const resolveId = plugin.resolveId
-    if (typeof resolveId !== 'function') throw new Error('缺少 resolveId 钩子')
+    if (typeof resolveId !== 'function') throw new Error('missing resolveId hook')
     expect(resolveId.call({} as ThisParameterType<typeof resolveId>, GUARDRAILS_ID, undefined, { attributes: {}, isEntry: false }))
       .toBe(GUARDRAILS_ID)
   })
 
   /*
-   * 这条不是为了覆盖率，是踩过的坑：playground 的别名表是「精确匹配，或 pattern + '/' 前缀匹配」，
-   * 所以 `@vobs/vobs/dev` 只写 `@vobs/vobs` 会被拼成 `index.ts/dev` —— 开发环境里直接
-   * 「Failed to resolve import」，而且只在页面真的加载这个模块时才炸。
+   * This test is not about coverage; it locks in a real pitfall: the playground alias
+   * table does "exact match, or pattern + '/' prefix match", so writing only
+   * `@vobs/vobs` for `@vobs/vobs/dev` gets joined into `index.ts/dev` — the dev
+   * environment then fails outright with "Failed to resolve import", and only when the
+   * page actually loads that module.
    */
-  it('护栏模块 import 的每个 @vobs 子路径，在 workspace 别名表里都是显式键', async () => {
+  it('every @vobs subpath imported by the guardrail module is an explicit key in the workspace alias table', async () => {
     const plugin = vobsPlugin()
     asDev(plugin)
     const load = plugin.load
-    if (typeof load !== 'function') throw new Error('缺少 load 钩子')
+    if (typeof load !== 'function') throw new Error('missing load hook')
 
     const code = await load.call({} as ThisParameterType<typeof load>, GUARDRAILS_ID) as string
     const specifiers = [...code.matchAll(/['"](@vobs\/[^'"]+)['"]/gu)].map(match => match[1])

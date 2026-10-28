@@ -1,34 +1,34 @@
 /*
- * `VOBS_C107`：组件体里的 `return` 读了信号（run-once 冻结）。
+ * `VOBS_C107`: a `return` in the component body reads a signal (run-once freezing).
  *
- * 真实项目 2026-10-02 踩坑 4：v2 壳给 `/login` 做「全屏直渲染」特例，写成
+ * Real project pitfall 4 (2026-10-02): the v2 shell had a "full-screen direct render" special case for `/login`, written as
  * `if (router.currentRoute.value.path === '/login') return <LoginPage />`，
- * 构建通过，但登录成功跳到 /designer 后壳不出现 —— 读信号发生在组件体，值在挂载时固化。
+ * the build passed, but after login the jump to /designer showed no shell — the signal was read in the component body, its value frozen at mount.
  *
- * ## 这条规则存在的理由：**三种写法坏得一模一样**
+ * ## Why this rule exists: **three shapes break identically**
  *
- * 实测编译产物确认，下面三者的产物里都**没有** `insertDynamic` / `createBlock`：
- *
- * ```ts
- * return cond.value ? <A/> : <B/>      // ① 两支均 JSX
- * if (cond.value) return <A/> …        // ② if 早退式
- * return cond.value ? <A/> : null      // ③ 一侧 null（C104 也报这个）
- * ```
- *
- * 因为**组件顶层 `return` 处没有 parent/anchor**，而响应式条件渲染需要一个能换内容的
- * 位置 —— 返回值**就是**那个节点本身。
- *
- * 而 C104 只认 ③（判据是空字面量），**默许了 ① 与 ②**，而它们同样冻结。
- * 这正是踩坑 4 的形态，也是必须另立一条规则的原因。
- *
- * ## 关键判据：**只报 JSX 之外**的读取
+ * Confirmed against real compile output: none of the three outputs below contain `insertDynamic` / `createBlock`:
  *
  * ```ts
- * return cond.value ? <A/> : <B/>              // ❌ 冻结
- * return <div>{cond.value ? <A/> : <B/>}</div> // ✅ 子节点位置由编译期生成条件工厂
+ * return cond.value ? <A/> : <B/>      // (1) both branches JSX
+ * if (cond.value) return <A/> …        // (2) early-return if
+ * return cond.value ? <A/> : null      // (3) one side null (C104 also reports this)
  * ```
  *
- * 两者长得像、后果相反。所以「走进 JSX 就停」是这条规则的核心。
+ * Because there is **no parent/anchor at the component's top-level `return`**, and reactive conditional rendering needs a slot where
+ * content can be swapped — the return value **is** the node itself.
+ *
+ * But C104 only recognizes (3) (its test is empty literals), **tolerating (1) and (2)**, which freeze just the same.
+ * That is exactly pitfall 4's shape, and the reason a separate rule is required.
+ *
+ * ## Key test: **only reads outside JSX** are reported
+ *
+ * ```ts
+ * return cond.value ? <A/> : <B/>              // ❌ frozen
+ * return <div>{cond.value ? <A/> : <B/>}</div> // ✅ the child position gets a compiler-generated conditional factory
+ * ```
+ *
+ * They look alike with opposite outcomes. So "stop at JSX" is the core of this rule.
  */
 import { describe, expect, it } from 'vitest'
 import { compileWithSourceMap } from './index'
@@ -36,83 +36,83 @@ import { compileWithSourceMap } from './index'
 const c107 = (source: string) =>
   compileWithSourceMap(source, { filename: 'case.tsx' }).diagnostics.filter(d => d.code === 'VOBS_C107')
 
-describe('VOBS_C107 该报的形态（三种全冻结 + 变体）', () => {
-  it('① 根级三元，两支均 JSX', () => {
+describe('VOBS_C107 shapes that must be reported (three frozen shapes + variants)', () => {
+  it('(1) root-level ternary, both branches JSX', () => {
     expect(c107(`export function S(){ return cond.value ? <A/> : <B/> }`)).toHaveLength(1)
   })
 
-  it('② if 早退式（C104 管不到，但同样冻结）', () => {
+  it('(2) early-return if (C104 cannot catch it, but it freezes all the same)', () => {
     expect(c107(`export function S(){ if (cond.value) return <A/>; return <B/> }`)).toHaveLength(1)
   })
 
-  it('③ 根级三元，一侧 null', () => {
+  it('(3) root-level ternary with a null side', () => {
     expect(c107(`export function S(){ return cond.value ? <A/> : null }`)).toHaveLength(1)
   })
 
-  it('④ `&&` 形态', () => {
+  it('(4) the `&&` shape', () => {
     expect(c107(`export function S(){ return cond.value && <A/> }`)).toHaveLength(1)
   })
 
-  it('⑤ 点路径读取（踩坑 4 的实际形态）', () => {
+  it("(5) dot-path reads (pitfall 4's actual shape)", () => {
     expect(c107(`export function S(){ return router.currentRoute.value.path === "/x" ? <A/> : <B/> }`))
       .toHaveLength(1)
   })
 
-  it('⑥ `if` 分支里 return 节点', () => {
+  it('(6) returning a node inside an `if` branch', () => {
     expect(c107(`export function S(){ if (cond.value) { return <A/> } return <B/> }`)).toHaveLength(1)
   })
 
-  it('是 warning 而不是 error（静态判不出"是不是组件"）', () => {
+  it('a warning, not an error (statics cannot tell "is it a component")', () => {
     expect(c107(`export function S(){ return cond.value ? <A/> : <B/> }`)[0]!.severity).toBe('warning')
   })
 
-  it('fix 文案指向 RouterView / Show，并明说"提到顶层 return 不管用"', () => {
+  it('the fix points to RouterView / Show and states plainly that "hoisting to the top-level return does not work"', () => {
     const fix = c107(`export function S(){ return cond.value ? <A/> : <B/> }`)[0]!.fix ?? ''
     expect(fix).toContain('RouterView')
     expect(fix).toContain('Show')
-    // 踩坑 4 的对策是错的 —— 文案必须点明，不能再让人以为写到顶层就行
-    expect(fix).toContain('不管用')
+    // Pitfall 4's workaround was wrong — the text must say so, so nobody believes writing it at the top level works
+    expect(fix).toContain('does not work')
   })
 })
 
-describe('VOBS_C107 不该报的形态（正确写法与无关写法）', () => {
-  it('**JSX 子节点位置** —— 正确写法，编译期生成条件工厂', () => {
+describe('VOBS_C107 shapes that must not be reported (correct and unrelated shapes)', () => {
+  it('**a JSX child position** — the correct form; the compiler generates a conditional factory', () => {
     expect(c107(`export function S(){ return <div>{cond.value ? <A/> : <B/>}</div> }`)).toEqual([])
   })
 
-  it('**JSX 属性位置** —— 同样由绑定 effect 处理', () => {
+  it('**a JSX attribute position** — likewise handled by the bound effect', () => {
     expect(c107(`export function S(){ return <div class={cond.value ? "on" : "off"} /> }`)).toEqual([])
   })
 
-  it('return 节点但没读信号', () => {
+  it('returns a node but reads no signal', () => {
     expect(c107(`export function S(){ return <div>static</div> }`)).toEqual([])
   })
 
-  it('读信号但返回数据、不产出节点', () => {
+  it('reads a signal but returns data, producing no node', () => {
     expect(c107(`export function S(){ return cond.value ? 1 : 2 }`)).toEqual([])
   })
 
-  it('条件里没有信号读取（普通变量）', () => {
+  it('no signal read in the condition (an ordinary variable)', () => {
     expect(c107(`export function S({ on }: P){ return on ? <A/> : <B/> }`)).toEqual([])
   })
 })
 
-describe('VOBS_C107 调用点豁免（有名函数仅被 JSX 上下文调用 = 求值在响应式作用域）', () => {
-  it('**只在 JSX 子节点调用** —— 分支求值随信号重算，不冻结（真实案例 groupCards）', () => {
+describe('VOBS_C107 call-site exemption (a named function called only from JSX contexts = evaluation in a reactive scope)', () => {
+  it('**called only at a JSX child position** — branch evaluation re-runs with the signals, not frozen (the real groupCards case)', () => {
     expect(c107(`export function S(){
   const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
   return <div>{groupCards()}</div>
 }`)).toEqual([])
   })
 
-  it('**只在 JSX 属性位置调用** —— 属性经绑定 effect / getter 求值，同样响应式', () => {
+  it('**called only at a JSX attribute position** — attributes evaluate through bound effects / getters, likewise reactive', () => {
     expect(c107(`export function S(){
   const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
   return <Picker items={groupCards()} />
 }`)).toEqual([])
   })
 
-  it('**组件体同步调用** —— 函数体在组件体执行期跑过一遍，真冻结，照报', () => {
+  it('**a synchronous call in the component body** — the function body ran once during component-body execution, truly frozen, reported as usual', () => {
     expect(c107(`export function S(){
   const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
   const cards = groupCards()
@@ -120,14 +120,14 @@ describe('VOBS_C107 调用点豁免（有名函数仅被 JSX 上下文调用 = �
 }`)).toHaveLength(1)
   })
 
-  it('**JSX 内嵌套函数里的调用** —— 调用点与 JSX 之间隔着函数边界，求值时机未知，保守照报', () => {
+  it('**a call inside a nested function within JSX** — a function boundary sits between the call site and the JSX, evaluation timing unknown, conservatively reported', () => {
     expect(c107(`export function S(){
   const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
   return <div>{() => groupCards()}</div>
 }`)).toHaveLength(1)
   })
 
-  it('**effect 回调里调用** —— 同样是组件体执行期（同步跑到首 await），照报', () => {
+  it('**a call in an effect callback** — also during component-body execution (synchronously up to the first await), reported as usual', () => {
     expect(c107(`export function S(){
   const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
   effect(() => { void groupCards() })
@@ -135,7 +135,7 @@ describe('VOBS_C107 调用点豁免（有名函数仅被 JSX 上下文调用 = �
 }`)).toHaveLength(1)
   })
 
-  it('**没有任何调用点**（组件本身 / 仅当值传递）—— 无法证明安全，保守照报', () => {
+  it('**no call site at all** (the component itself / passed around as a value) — safety unprovable, conservatively reported', () => {
     expect(c107(`export function S(){
   const groupCards = () => { if (planGroup.value) return <A/>; return <B/> }
   pass(groupCards)
@@ -147,44 +147,44 @@ describe('VOBS_C107 调用点豁免（有名函数仅被 JSX 上下文调用 = �
 }`)).toHaveLength(1)
   })
 
-  it('豁免只作用于有名函数 —— 匿名宿主（IIFE）拿不到名字，保守照报（return + if 双路径各报一条）', () => {
+  it('the exemption only applies to named functions — an anonymous host (IIFE) has no name, conservatively reported (the return + if paths report one each)', () => {
     expect(c107(`export function S(){
   return (() => { if (cond.value) return <A/>; return <B/> })()
 }`)).toHaveLength(2)
   })
 })
 
-describe('VOBS_C107 情况三：空值守卫（2026-10-28 收编，silent-failures 最后一条静默）', () => {
-  it('`if (信号) return null` + 同函数 JSX return —— 组件形态照报', () => {
+describe('VOBS_C107 Case 3: the empty-value guard (absorbed 2026-10-28; the last silent failure in silent-failures)', () => {
+  it('`if (signal) return null` + a JSX return in the same function — the component shape is reported as usual', () => {
     const found = c107(`export function S(){
   if (loading.value) return null
   return <div>{content}</div>
 }`)
     expect(found).toHaveLength(1)
-    expect(found[0]!.message).toContain('空值守卫')
-    expect(found[0]!.fix).toContain('下放进 JSX')
+    expect(found[0]!.message).toContain('empty-value guard')
+    expect(found[0]!.fix).toContain('down into a JSX')
   })
 
-  it('`return undefined` / `return false` 变体同样算空守卫', () => {
+  it('`return undefined` / `return false` variants also count as empty guards', () => {
     expect(c107(`export function S(){ if (loading.value) return undefined; return <A/> }`)).toHaveLength(1)
     expect(c107(`export function S(){ if (loading.value) return false; return <A/> }`)).toHaveLength(1)
   })
 
-  it('纯数据函数的空守卫**不报** —— 函数级收窄（无 JSX return = 不渲染，谈不上冻结）', () => {
+  it('an empty guard in a pure data function is **not reported** — the function-level narrowing (no JSX return = not rendered, freezing is out of the question)', () => {
     expect(c107(`export function S(props){
   const find = (id: string) => { if (id === '') return null; return props.items.find(i => i.id === id) }
   return <div>{find('a')?.name}</div>
 }`)).toEqual([])
   })
 
-  it('守卫版 helper **只在 JSX 调用** —— 豁免照常生效（真实案例 groupCards 的 null 变体）', () => {
+  it('a guard helper **called only from JSX** — the exemption applies as usual (the null variant of the real groupCards case)', () => {
     expect(c107(`export function S(){
   const groupCards = () => { if (planGroup.value) return null; return <B/> }
   return <div>{groupCards()}</div>
 }`)).toEqual([])
   })
 
-  it('守卫版 helper **组件体同步调用** —— 真冻结，照报', () => {
+  it('a guard helper **called synchronously in the component body** — truly frozen, reported as usual', () => {
     expect(c107(`export function S(){
   const groupCards = () => { if (planGroup.value) return null; return <B/> }
   const cards = groupCards()
@@ -192,7 +192,7 @@ describe('VOBS_C107 情况三：空值守卫（2026-10-28 收编，silent-failur
 }`)).toHaveLength(1)
   })
 
-  it('守卫版 helper **无调用点**（跨文件使用/组件本身）—— 无法证明安全，保守照报', () => {
+  it('a guard helper with **no call site** (cross-file use / the component itself) — safety unprovable, conservatively reported', () => {
     expect(c107(`export function S(){
   if (loading.value) return null
   return <B/>

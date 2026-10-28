@@ -6,12 +6,14 @@ import { effect, state } from '@vobs/reactivity'
 const tick = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0))
 
 /**
- * insertShow —— 编译器「三元/&& 分支里的 keyed 列表」专用产物（C232 根治）。
- * 契约：cond 只管容器挂载/卸载；列表在容器内走标准 insertList（keyed 复用）；
- * 卸载 = dispose 容器 scope（行内 effect 一并清理，无幽灵更新）。
+ * insertShow — the compiled artifact dedicated to "keyed lists inside ternary/&&
+ * branches" (the C232 cure).
+ * Contract: cond only manages the container's mount/unmount; inside the container the
+ * list goes through standard insertList (keyed reuse);
+ * unmount = dispose the container scope (in-row effects cleaned up too, no ghost updates).
  */
 describe('insertShow', () => {
-  it('条件为真挂载容器并渲染列表行；为假整体卸载', async () => {
+  it('mounts the container and renders list rows when the condition is true; unmounts wholesale when false', async () => {
     setRenderer(createDOMRenderer())
     const parent = document.createElement('div')
     const visible = state(true)
@@ -37,7 +39,7 @@ describe('insertShow', () => {
     expect(parent.textContent).toBe('ab')
   })
 
-  it('条件不变、列表变化时 keyed 复用 —— 复用行不重新渲染，只有新行走 renderItem', async () => {
+  it('with the condition unchanged and the list changed, keyed reuse — reused rows don\'t re-render, only new rows go through renderItem', async () => {
     setRenderer(createDOMRenderer())
     const parent = document.createElement('div')
     const visible = state(true)
@@ -53,7 +55,7 @@ describe('insertShow', () => {
     })
     expect(renderCount).toBe(2)
 
-    // cond 抖动（false → true）：容器重建，整列重挂
+    // cond jitter (false → true): the container is rebuilt, the whole list re-mounted
     visible.value = false
     await tick()
     renderCount = 0
@@ -61,7 +63,7 @@ describe('insertShow', () => {
     await tick()
     expect(renderCount).toBe(2)
 
-    // cond 保持 true，只换列表数据：keyed 复用 —— a 行不重渲染，仅 c 行新建
+    // cond stays true, only list data changes: keyed reuse — row a doesn't re-render, only row c is created
     renderCount = 0
     items.value = [{ id: 'a' }, { id: 'c' }]
     await tick()
@@ -71,7 +73,7 @@ describe('insertShow', () => {
     expect(parent.querySelector('[data-id="c"]')).not.toBeNull()
   })
 
-  it('卸载后行内 effect 被清理，不再响应信号（无幽灵更新）', async () => {
+  it('in-row effects are cleaned up after unmount and no longer respond to signals (no ghost updates)', async () => {
     setRenderer(createDOMRenderer())
     const parent = document.createElement('div')
     const visible = state(true)
@@ -97,11 +99,11 @@ describe('insertShow', () => {
 
     counter.value = 1
     await tick()
-    // 幽灵 effect 不允许再触发
+    // Ghost effects must not fire again
     expect(runs).toEqual([0, -1])
   })
 
-  it('条件高频抖动不产生重复容器', async () => {
+  it('high-frequency condition jitter produces no duplicate containers', async () => {
     setRenderer(createDOMRenderer())
     const parent = document.createElement('div')
     const visible = state(true)
@@ -116,13 +118,14 @@ describe('insertShow', () => {
       visible.value = !visible.value
     }
     await tick()
-    // 信号同值写入不触发 effect，末次可见值取决于奇偶抖动后的最终写入；
-    // 断言核心：mount 只在「 false → true 的沿」发生，不会重复挂载
+    // Same-value signal writes don't trigger the effect; the final visible value depends on
+    // the last write after the odd/even jitter.
+    // Core assertion: mount happens only on a "false → true edge", never mounting repeatedly
     expect(mountCount).toBeLessThanOrEqual(3)
     expect(mountCount).toBeGreaterThanOrEqual(1)
     visible.value = true
     await tick()
-    // 从 false → true 再挂一次；若已挂载则不重复
+    // Mounts once more from false → true; if already mounted, no repeat
     const after = mountCount
     visible.value = true
     await tick()

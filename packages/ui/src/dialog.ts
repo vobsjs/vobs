@@ -68,17 +68,22 @@ export function Dialog(props: DialogProps = {}): VobsNode {
   setAttribute(body, 'class', 'vui-dialog__body')
 
   /*
-   * 焦点陷阱：模态打开时把焦点移入、Tab 循环留在内部、关闭时还原到打开前的元素。
+   * Focus trap: move focus in when the modal opens, keep Tab cycling inside,
+   * and restore focus to the pre-open element on close.
    *
-   * 原来 Dialog 声明了 `aria-modal="true"` 却**完全没有焦点管理** —— 而 focus trap 就在
-   * overlay.ts 里实现好、测过、也导出了，只是没有任何组件用它（全仓只有它自己的测试调用）。
-   * 缺的后果是实打实的：焦点留在弹窗外的触发按钮上 → Escape 的 keydown 永远到不了这里的
-   * `root` 监听 → 「按 Esc 关不掉」；同时 Tab 会跑到弹窗背后的内容里。
+   * Dialog used to declare `aria-modal="true"` with **no focus management at
+   * all** — while the focus trap was implemented, tested, and exported in
+   * overlay.ts, just never used by any component (only its own tests called
+   * it). The cost was real: focus stayed on the trigger button outside the
+   * dialog → Escape keydowns never reached the `root` listener here → "Esc
+   * doesn't close it"; meanwhile Tab escaped into the content behind the
+   * dialog.
    *
-   * 只在 modal 时陷阱：非模态对话框不该抢焦点（与上面 aria-modal 的判断保持一致）。
-   * 不传 onEscape —— 下面 root 上的 Escape 监听已经在处理，两处都接会重复 emitClose。
+   * Trap only when modal: non-modal dialogs must not steal focus (consistent
+   * with the aria-modal check above). No onEscape — the Escape listener on
+   * root below already handles it, and wiring both would emitClose twice.
    */
-  // createElement 返回 Element，但 DOM 渲染器产出的必然是 HTMLElement；trap 需要 .focus()。
+  // createElement returns Element, but the DOM renderer always produces an HTMLElement; the trap needs .focus().
   const trap = createFocusTrap(surface as HTMLElement)
   effect(() => {
     const open = readProp(props, 'open', false)

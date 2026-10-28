@@ -18,7 +18,7 @@ import type { VuiChildren, VuiCommonProps } from './types'
 
 export type MoneyKind = 'auto' | 'in' | 'out' | 'plain'
 
-/** 千分位 + 固定位小数（默认 2 位）；非有限数回落 0 */
+/** Thousands separators + fixed decimals (default 2); non-finite numbers fall back to 0 */
 export function formatNumber(value: number, decimals = 2): string {
   if (!Number.isFinite(value)) return (0).toFixed(decimals)
   return Math.abs(value).toLocaleString('en-US', {
@@ -28,18 +28,18 @@ export function formatNumber(value: number, decimals = 2): string {
 }
 
 export interface MoneyTextProps extends VuiCommonProps {
-  /** 金额（正负皆可；展示取绝对值，符号由 kind 决定） */
+  /** Amount (either sign; display uses the absolute value, the sign is decided by kind). */
   readonly value?: number
-  /** auto：负数红括号；in：+ 绿；out：− 红；plain：无符号 */
+  /** auto: red parentheses for negatives; in: + green; out: − red; plain: no sign. */
   readonly kind?: MoneyKind
-  /** true 时不显示货币符号（表格里已外置符号时用） */
+  /** When true, no currency symbol (used when the symbol is already external in tables). */
   readonly plain?: boolean
-  /** 货币符号（默认 ¥） */
+  /** Currency symbol (default ¥). */
   readonly currency?: string
   readonly decimals?: number
 }
 
-/** 金额展示：等宽 tabular-nums · 千分位 · 收入绿/支出红/负数红括号 */
+/** Amount display: tabular-nums monospace · thousands separators · income green / expense red / red parentheses for negatives. */
 export function MoneyText(props: MoneyTextProps = {}): VobsNode {
   const root = createElement('span')
   const value = () => readProp(props, 'value', 0)
@@ -82,7 +82,7 @@ export interface NumTextProps extends VuiCommonProps {
   readonly children?: VuiChildren
 }
 
-/** 等宽数字文本（tabular-nums，数字列对齐用） */
+/** Monospace numeric text (tabular-nums, for aligning numeric columns). */
 export function NumText(props: NumTextProps = {}): VobsNode {
   const root = createElement('span')
   bindClassList(root, props, () => ['vui-num'])

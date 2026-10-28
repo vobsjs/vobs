@@ -1,8 +1,9 @@
 /**
- * 面板样式。由 @vobs/dsh 注入 shadow root：DSH 的全局 CSS 进不来，这里也漏不出去。
+ * Panel styles. Injected into the shadow root by @vobs/dsh: DSH's global CSS cannot get
+ * in, and nothing here leaks out.
  *
- * 配色优先读 DSH 的 design token（会继承进 shadow root），读不到就按
- * `data-scheme` 回退 —— 所以脱离 DSH 预览时同样好看。
+ * Colors prefer DSH's design tokens (inherited into the shadow root), falling back by
+ * `data-scheme` when unavailable — so the panel looks just as good outside DSH preview.
  */
 export const PANEL_CSS = `
 :where(*, *::before, *::after) { box-sizing: border-box; }

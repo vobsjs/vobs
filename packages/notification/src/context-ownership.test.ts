@@ -8,35 +8,43 @@ import {
 } from './index'
 
 /*
- * 契约：**谁创建 context，谁负责 dispose** —— 外部 context 不是缺陷，插件不许替调用方销毁。
+ * Contract: **whoever creates the context is responsible for disposing it** — an external
+ * context is not a defect, and the plugin must not dispose it on the caller's behalf.
  *
- * 报告（`.artifacts/reports/notification.md` §3.2，high）说 `index.ts:148`
+ * A report (`.artifacts/reports/notification.md` §3.2, high) claims that `index.ts:148`
  *   `if (getCurrentOwner()) onDispose(context.dispose)`
- * 只覆盖"创建时有 Owner"这条路径，而 `props.notification` / `notificationPlugin({ notification })`
- * 传入的外部 context 不会被收尾 —— 实测确实如此（下面第 1 条用例就是它的复现），但这是**所有权语义**，
- * 不是缺陷：
+ * only covers the "owner present at creation" path, and that an external context passed via
+ * `props.notification` / `notificationPlugin({ notification })` never gets finalized —
+ * measured, that is indeed the case (test 1 below reproduces it), but this is **ownership
+ * semantics**, not a defect:
  *
- * - `index.ts:206-208`：`notificationPlugin` 只在**自己创建** context 时才返回清理函数
- *   （`options.notification ? undefined : createNotification(options)`），传入的外部对象一律不动手；
- *   同理 `props.notification`（ui/src/toast.ts:30）只是"用"，从不"销毁"。
- * - README:14-26 的主用法就是模块级 `const notification = createNotification()` + 自行
- *   `notification.dispose()`（README:38）—— 调用方自持、跨应用复用是**文档化的**用法；
- *   `packages/ui/src/toast.test.ts:71-80` 甚至依赖它：`app.destroy()` 之后拿同一个 context 再挂第二个应用。
- *   插件若在 `app.destroy()` 里替调用方销毁，这两个既有契约立刻同时崩。
- * - 报告那句"定时器仍写已卸载组件"经实测**不成立**：外部 context 的定时器到点只会调**调用方自己注册的**
- *   `onDismiss`，框架层面对已卸载宿主的 DOM 写入是 0（探针：宿主经 `insertDynamic` 卸载后 90ms 内
- *   MutationObserver 记录 3 → 3，没有任何新增变更，见下第 1 条用例同场景）。
+ * - `index.ts:206-208`: `notificationPlugin` only returns a cleanup function when it
+ *   **created the context itself** (`options.notification ? undefined : createNotification(options)`);
+ *   an externally passed object is never touched. Same for `props.notification`
+ *   (ui/src/toast.ts:30) — it only "uses", never "destroys".
+ * - The main usage in README:14-26 is a module-level `const notification = createNotification()`
+ *   plus an explicit `notification.dispose()` (README:38) — caller-owned, reused across apps is
+ *   a **documented** usage; `packages/ui/src/toast.test.ts:71-80` even relies on it: after
+ *   `app.destroy()` it mounts a second app with the same context. If the plugin disposed the
+ *   caller's context inside `app.destroy()`, both existing contracts would break at once.
+ * - The report's claim that "timers still write into unmounted components" is **not true** per
+ *   measurement: an external context's timer, when it fires, only calls the **caller's own**
+ *   `onDismiss`; framework-level DOM writes into an unmounted host are 0 (probe: within 90ms
+ *   after the host was unmounted via `insertDynamic`, MutationObserver recorded 3 → 3 — no new
+ *   mutations; same scenario as test 1 below).
  *
- * 所以本文件把所有权**钉死**在这三条上（而不是"咬住"某处待修代码）：外部 context 不随 app 销毁、
- * 插件自建 context 随 app 销毁、Owner 作用域内创建的 context 随该 Owner 销毁。
- * 谁把这行守卫改坏（例如让插件无条件 dispose `options.notification`），第 1 条就会红。
+ * So this file **pins** ownership with these three tests (not by "biting" some code awaiting a
+ * fix): an external context survives app destruction, a plugin-created context dies with the
+ * app, and a context created inside an Owner scope dies with that Owner.
+ * If anyone breaks that guard line (e.g. making the plugin unconditionally dispose
+ * `options.notification`), test 1 turns red.
  */
-describe('@vobs/notification context 所有权契约', () => {
+describe('@vobs/notification context ownership contract', () => {
   afterEach(() => {
     vi.useRealTimers()
   })
 
-  it('外部 context 由调用方持有：app.destroy() 不收尾它（队列/定时器/可用性照旧）', () => {
+  it('external context is caller-owned: app.destroy() does not finalize it (queue/timers/usability intact)', () => {
     vi.useFakeTimers()
     const notification = createNotification({ defaultDuration: 50 })
     const dismissed: Array<[string, string]> = []
@@ -53,24 +61,24 @@ describe('@vobs/notification context 所有权契约', () => {
       ]
     })
     app.mount(document.createElement('div'))
-    // 注入的就是调用方那个对象本身（不是副本）——所以"插件收尾"就等于"销毁调用方的对象"
+    // what gets injected is the caller's object itself (not a copy) — so "plugin finalizes" would equal "destroy the caller's object"
     expect(injected).toBe(notification)
 
     app.destroy()
 
-    // ① 没被清空：外部 context 的状态原样保留
+    // (1) not cleared: the external context's state is preserved as-is
     expect(notification.notifications.value).toHaveLength(1)
-    // ② 定时器仍在：50ms 后按 timeout 收尾（报告 H6 的实测行为，这里是有意钉住的语义）
+    // (2) timer still alive: finalizes with timeout after 50ms (the measured behavior of report H6; semantics pinned here on purpose)
     vi.advanceTimersByTime(50)
     expect(dismissed).toEqual([['notification-1', 'timeout']])
-    // ③ 仍然可用：没有被 NOTIFICATION_CONTEXT_DISPOSED 挡住（未被 dispose 的直接证据）
+    // (3) still usable: not blocked by NOTIFICATION_CONTEXT_DISPOSED (direct evidence it was never disposed)
     expect(() => notification.info('after app destroy')).not.toThrow()
     expect(notification.notifications.value).toHaveLength(1)
 
     notification.dispose()
   })
 
-  it('插件自建 context 由插件持有：app.destroy() 收尾（清定时器、回调 0 次、再用抛错）', () => {
+  it('plugin-created context is plugin-owned: app.destroy() finalizes it (timers cleared, 0 callbacks, further use throws)', () => {
     vi.useFakeTimers()
     const reasons: string[] = []
     let injected: NotificationContext | undefined
@@ -90,7 +98,7 @@ describe('@vobs/notification context 所有权契约', () => {
 
     app.destroy()
 
-    // dispose() 清掉定时器（index.ts:140-141），超时回调一次都不该再打
+    // dispose() clears the timers (index.ts:140-141); the timeout callback must not fire at all
     vi.advanceTimersByTime(50)
     expect(reasons).toEqual([])
     expect(injected!.notifications.value).toHaveLength(0)
@@ -99,7 +107,7 @@ describe('@vobs/notification context 所有权契约', () => {
     )
   })
 
-  it('Owner 作用域内创建的 context 随该 Owner 销毁（index.ts:148 那条路径）', () => {
+  it('a context created inside an Owner scope dies with that Owner (the index.ts:148 path)', () => {
     vi.useFakeTimers()
     const reasons: string[] = []
     let scoped: NotificationContext | undefined
@@ -113,11 +121,11 @@ describe('@vobs/notification context 所有权契约', () => {
 
     const app = createVobs({ render: () => createComponent(Scoped, {}) })
     app.mount(document.createElement('div'))
-    // 挂载期间可用，并留下一条 50ms 后本该超时收尾的待触发条目
+    // usable while mounted, leaving one entry that would time out after 50ms
     expect(() => scoped!.info('while mounted')).not.toThrow()
     expect(scoped!.notifications.value).toHaveLength(1)
 
-    app.destroy() // 组件 Owner 一并销毁 → 第 148 行注册的 onDispose 跑起来
+    app.destroy() // the component Owner is destroyed too → the onDispose registered at line 148 runs
 
     vi.advanceTimersByTime(50)
     expect(reasons).toEqual([])

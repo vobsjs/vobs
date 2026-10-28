@@ -21,11 +21,11 @@ describe('createVobs', () => {
     setRenderer(createDOMRenderer())
   })
 
-  it('没有 render 时抛错', () => {
+  it('throws when render is missing', () => {
     expect(() => createVobs({} as any)).toThrow()
   })
 
-  it('支持应用级错误观察器且不会覆盖原始异常', () => {
+  it('supports an application-level error observer without overriding the original exception', () => {
     const errors: unknown[] = []
     const app = createVobs({
       render: () => { throw new Error('render failed') },
@@ -36,7 +36,7 @@ describe('createVobs', () => {
     expect((errors[0] as Error).message).toBe('render failed')
   })
 
-  it('挂载后 mounted 为 true', () => {
+  it('mounted is true after mount', () => {
     const app = createVobs({
       render: () => {
         return createText('hello')
@@ -54,7 +54,7 @@ describe('createVobs', () => {
     expect(container.innerHTML).toBe('')
   })
 
-  it('按依赖顺序安装插件，并逆序清理', () => {
+  it('installs plugins in dependency order and cleans up in reverse', () => {
     const calls: string[] = []
     const dependency = {
       name: 'dependency',
@@ -83,13 +83,13 @@ describe('createVobs', () => {
     ])
   })
 
-  it('注入项默认不可被静默覆盖', () => {
+  it('injections cannot be silently overridden by default', () => {
     const key = createInjectionKey<string>('test.value')
     const plugin: VobsPlugin = {
       name: 'context',
       install: context => {
         context.provide(key, 'first')
-        expect(() => context.provide(key, 'second')).toThrow('已存在')
+        expect(() => context.provide(key, 'second')).toThrow('already exists')
         context.provide(key, 'second', { override: true })
         expect(context.inject(key)).toBe('second')
       }
@@ -98,7 +98,7 @@ describe('createVobs', () => {
     createVobs({ render: () => createText(''), plugins: [plugin] }).destroy()
   })
 
-  it('插件可访问 app、注册销毁回调并声明可选依赖', () => {
+  it('plugins can access the app, register destroy callbacks, and declare optional dependencies', () => {
     const calls: string[] = []
     let contextApp: ReturnType<typeof createVobs> | undefined
     const optional: VobsPlugin = {
@@ -124,7 +124,7 @@ describe('createVobs', () => {
     expect(calls).toEqual(['cleanup', 'on-destroy'])
   })
 
-  it('组件 provide/inject 按 Owner 层级查找，并可覆盖父级值', () => {
+  it('component provide/inject resolves through the Owner hierarchy and can override parent values', () => {
     const key = createInjectionKey<string>('test.component-context')
     let injected: string | undefined
     let nestedInjected: string | undefined
@@ -149,15 +149,15 @@ describe('createVobs', () => {
     app.destroy()
   })
 
-  it('组件外调用 provide 会给出作用域错误', () => {
+  it('calling provide outside a component gives a scope error', () => {
     const key = createInjectionKey<string>('test.outside-context')
-    expect(() => provide(key, 'value')).toThrow('Owner 作用域')
+    expect(() => provide(key, 'value')).toThrow('Owner scope')
   })
 
-  it('inject 支持默认值和必需注入校验', () => {
+  it('inject supports fallback values and required-injection validation', () => {
     const key = createInjectionKey<string>('test.optional')
     expect(inject(key, 'fallback')).toBe('fallback')
-    expect(() => injectRequired(key, 'test.optional')).toThrow('必需注入项')
+    expect(() => injectRequired(key, 'test.optional')).toThrow('required injection')
     const app = createVobs({
       render: () => {
         provide(key, 'provided')
@@ -170,7 +170,7 @@ describe('createVobs', () => {
     app.destroy()
   })
 
-  it('插件可以观察启动错误，但不能吞掉原始错误', () => {
+  it('plugins can observe startup errors but cannot swallow the original error', () => {
     const failure = new Error('install failed')
     let reported: unknown
     const observer: VobsPlugin = {
@@ -191,7 +191,7 @@ describe('createVobs', () => {
     expect(reported).toBe(failure)
   })
 
-  it('组件错误保留编译器提供的源码位置', () => {
+  it('component errors keep the source location provided by the compiler', () => {
     const failure = new Error('render failed')
     const app = createVobs({
       render: () => createComponent(() => { throw failure }, {}, {
@@ -209,7 +209,7 @@ describe('createVobs', () => {
     })
   })
 
-  it('组件 effect 错误也保留源码位置并继续向应用传播', () => {
+  it('component effect errors keep the source location too and keep propagating to the app', () => {
     const failure = new Error('effect failed')
     const app = createVobs({
       render: () => createComponent(() => {
@@ -226,7 +226,7 @@ describe('createVobs', () => {
     })
   })
 
-  it('组件 Owner 销毁时自动移除事件监听器', () => {
+  it('event listeners are removed automatically when the component Owner is disposed', () => {
     let button!: HTMLButtonElement
     let clicks = 0
     const app = createVobs({
@@ -245,22 +245,22 @@ describe('createVobs', () => {
 })
 
 /*
- * 插件契约的三条「声明与实现之间」的缝。
- * 都先实测复现过才动手（探针见 .artifacts/probe-plugin.mjs）。
+ * Three "between declaration and implementation" seams of the plugin contract.
+ * All were reproduced in real measurements first (probes in .artifacts/probe-plugin.mjs).
  */
-describe('插件契约的诊断', () => {
+describe('plugin contract diagnostics', () => {
   const mount = (plugins: VobsPlugin[]) =>
     createVobs({ renderer: createDOMRenderer(), render: () => createText(''), plugins })
 
-  it('同名插件第二次传入不同对象时会警告（带版本），同一对象重复传则不吵', () => {
+  it('a second same-name plugin with a different object warns (with version); passing the same object repeatedly stays quiet', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const plugin = { name: '@x/a', version: '1.0.0', install: () => {} }
 
-    // 同一个对象 use 两次：正常用法，不该有噪音
+    // `use` on the same object twice: normal usage, no noise expected
     mount([plugin, plugin])
     expect(warn).not.toHaveBeenCalled()
 
-    // 名字相同但是另一个对象：原来静默跳过、毫无提示
+    // Same name but a different object: used to be skipped silently with no hint
     mount([plugin, { name: '@x/a', version: '2.0.0', install: () => {} }])
     expect(warn).toHaveBeenCalledTimes(1)
     expect(String(warn.mock.calls[0][0])).toContain('@x/a')
@@ -269,22 +269,22 @@ describe('插件契约的诊断', () => {
     warn.mockRestore()
   })
 
-  it('install 返回 Promise 会在安装期抛错，而不是拖到 destroy 才炸', () => {
+  it('install returning a Promise throws at install time instead of exploding at destroy', () => {
     const app = createVobs({ renderer: createDOMRenderer(), render: () => createText('') })
     expect(() => app.use({ name: 'async', install: (async () => {}) as unknown as () => void }))
-      .toThrow(/必须同步返回清理函数或不返回/)
-    // 关键：错误发生在安装期，destroy 时不会再出问题
+      .toThrow(/must synchronously return a cleanup function or return nothing/)
+    // Key point: the error happens at install time; destroy no longer has a problem
     expect(() => app.destroy()).not.toThrow()
   })
 
-  it('install 返回非函数也拒绝', () => {
+  it('install returning a non-function is rejected too', () => {
     const app = createVobs({ renderer: createDOMRenderer(), render: () => createText('') })
     expect(() => app.use({ name: 'bad', install: (() => 42) as unknown as () => void }))
-      .toThrow(/必须同步返回清理函数或不返回/)
+      .toThrow(/must synchronously return a cleanup function or return nothing/)
     app.destroy()
   })
 
-  it('optional 仅声明：不安装其中的插件（既有语义，测试锁住）', () => {
+  it('optional is declaration-only: plugins inside it are not installed (existing semantics, locked by test)', () => {
     const calls: string[] = []
     const optional: VobsPlugin = { name: 'opt', install: () => { calls.push('opt') } }
     mount([{ name: 'main', optional: [optional], install: () => { calls.push('main') } }])

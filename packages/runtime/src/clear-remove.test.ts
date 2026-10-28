@@ -23,7 +23,7 @@ function Item(props: { readonly label: () => string }): VobsNode {
   return el
 }
 
-/** 组件清理时抛错的组件（用于验证顺序：DOM 先摘、Owner 后释放）。 */
+/** A component whose cleanup throws (used to verify the order: DOM detached first, Owner released after). */
 function Boom(): VobsNode {
   const el = createElement('div')
   onDispose(() => { throw new Error('cleanup boom') })
@@ -31,28 +31,30 @@ function Boom(): VobsNode {
 }
 
 /*
- * `removeChild` 原来是「先释放 Owner 再摘 DOM」：cleanup 抛错就永远走不到摘除，
- * DOM 里留着旧节点、它的 effect 却已经没了 —— 屏幕上两棵树且没有任何提示。
+ * `removeChild` used to "release the Owner first, then detach the DOM": when cleanup
+ * threw, the detach was never reached — the DOM kept the old node while its effects were
+ * already gone — two trees on screen with no hint whatsoever.
  */
-describe('removeChild 的顺序', () => {
-  it('cleanup 抛错也仍然把节点从 DOM 摘掉', () => {
+describe('removeChild ordering', () => {
+  it('detaches the node from the DOM even when cleanup throws', () => {
     const parent = document.createElement('div')
     const child = createComponent(Boom, {})
     insertBefore(parent as unknown as Node, child, null)
     expect((parent as unknown as Node).contains(child as unknown as Node)).toBe(true)
 
     expect(() => removeChild(parent as unknown as Node, child)).toThrow('cleanup boom')
-    // 关键：DOM 已经一致了
+    // Key: the DOM is already consistent
     expect((parent as unknown as Node).contains(child as unknown as Node)).toBe(false)
   })
 })
 
 /*
- * `clear` 原来只调渲染器（`textContent = ''`）——被清掉子树的 Owner 一个都不释放：
- * 组件里的 effect 继续订阅信号（幽灵更新）、监听不解绑、onDispose 不跑。
+ * `clear` used to only call the renderer (`textContent = ''`) — not a single Owner of the
+ * cleared subtrees was released: effects inside components kept subscribing to signals
+ * (ghost updates), listeners stayed bound, onDispose never ran.
  */
-describe('clear 释放 Owner', () => {
-  it('组件输出节点上的 Owner 被释放，清空后不再幽灵更新', async () => {
+describe('clear releases Owners', () => {
+  it('Owners on component output nodes are released; no ghost updates after clearing', async () => {
     const label = state('a')
     const host = document.createElement('div')
     for (let i = 0; i < 3; i++) {
@@ -66,16 +68,18 @@ describe('clear 释放 Owner', () => {
     clear(host)
     expect(host.textContent).toBe('')
 
-    // 幽灵更新：如果 Owner 没释放，这里会重新写回文本
+    // Ghost update: if the Owner hadn't been released, the text would be rewritten here
     label.value = 'b'
     await flush()
     expect(host.textContent).toBe('')
   })
 
-  it('清理抛错也不影响容器被清空，错误照旧抛出', () => {
+  it('cleanup throwing doesn\'t stop the container from being emptied, and the error still throws', () => {
     const host = document.createElement('div')
-    // 用组件（输出节点会登记 Owner）—— 手工 createOwner 不登记节点，walk 找不到它，
-    // 这正是 clear 的覆盖边界：组件边界内的清理是完整的，组件外自己建的 effect 归它的 Owner 管。
+    // Use components (output nodes register their Owner) — a hand-made createOwner
+    // registers no node, so walk can't find it; that's exactly clear's coverage boundary:
+    // cleanup inside component boundaries is complete, effects built outside components
+    // belong to their own Owner.
     insertBefore(host as unknown as Node, createComponent(Boom, {}), null)
     insertBefore(host as unknown as Node, createComponent(Item, { label: () => 'x' }), null)
 

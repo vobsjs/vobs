@@ -1,4 +1,4 @@
-// 浏览器 DOM 适配器
+// Browser DOM adapter
 
 import type { VobsRenderer } from '@vobs/runtime'
 

@@ -13,7 +13,7 @@ import {
 } from './index'
 
 describe('@vobs/resource', () => {
-  it('自动请求并暴露响应式状态', async () => {
+  it('requests automatically and exposes reactive state', async () => {
     const client = createResourceClient()
     const users = client.resource(() => Promise.resolve([{ id: 1 }]))
 
@@ -24,7 +24,7 @@ describe('@vobs/resource', () => {
     expect(users.loading.value).toBe(false)
   })
 
-  it('prefetchAll 会等待无 key Resource 的进行中请求', async () => {
+  it('prefetchAll waits for in-flight requests of keyless resources', async () => {
     let resolve!: (value: string) => void
     let settled = false
     const client = createResourceClient()
@@ -40,7 +40,7 @@ describe('@vobs/resource', () => {
     client.clear()
   })
 
-  it('客户端清理时通过 ResourceFetcher 的 AbortSignal 取消请求', async () => {
+  it('cancels requests via the ResourceFetcher AbortSignal when the client is cleared', async () => {
     let requestSignal: AbortSignal | undefined
     const client = createResourceClient()
     client.resource(signal => new Promise<string>((_, reject) => {
@@ -57,7 +57,7 @@ describe('@vobs/resource', () => {
     await Promise.resolve()
   })
 
-  it('相同 key 共享缓存和进行中的请求', async () => {
+  it('same key shares the cache and the in-flight request', async () => {
     const client = createResourceClient()
     const fetcher = vi.fn(() => Promise.resolve([{ id: 1 }]))
     const a = client.resource({ key: ['users', { page: 1 }], fetcher, staleTime: 1_000 })
@@ -68,7 +68,7 @@ describe('@vobs/resource', () => {
     expect(a.data).toBe(b.data)
   })
 
-  it('缓存未过期时复用成功结果，失效后重新请求', async () => {
+  it('reuses successful results while fresh, refetches after invalidation', async () => {
     const client = createResourceClient()
     const fetcher = vi.fn(() => Promise.resolve(fetcher.mock.calls.length))
     const first = client.resource({ key: ['counter'], fetcher, staleTime: 1_000 })
@@ -83,7 +83,7 @@ describe('@vobs/resource', () => {
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
-  it('mutate 写入共享缓存', async () => {
+  it('mutate writes into the shared cache', async () => {
     const client = createResourceClient()
     const a = client.resource({ key: ['count'], fetcher: () => Promise.resolve(1), staleTime: 1_000 })
     const b = client.resource({ key: ['count'], fetcher: () => Promise.resolve(1), staleTime: 1_000 })
@@ -94,7 +94,7 @@ describe('@vobs/resource', () => {
     expect(client.get<number>(['count'])?.data).toBe(2)
   })
 
-  it('飞行中请求完成时不得覆盖 mutate 写入的新数据', async () => {
+  it('an in-flight request completing must not overwrite data written by mutate', async () => {
     let resolveRequest!: (value: number) => void
     const client = createResourceClient()
     const count = client.resource(() => new Promise<number>(resolve => { resolveRequest = resolve }))
@@ -110,7 +110,7 @@ describe('@vobs/resource', () => {
     expect(count.error.value).toBeNull()
   })
 
-  it('飞行中请求失败时不得把旧错误写回 mutate 后的状态', async () => {
+  it('an in-flight request failing must not write the old error back over mutate\'s state', async () => {
     let rejectRequest!: (reason: Error) => void
     const client = createResourceClient()
     const count = client.resource(() => new Promise<number>((_, reject) => { rejectRequest = reject }))
@@ -124,7 +124,7 @@ describe('@vobs/resource', () => {
     expect(count.data.value).toBe(100)
   })
 
-  it('将失败归一化为 Error 并通知客户端', async () => {
+  it('normalizes failures into Error and notifies the client', async () => {
     const onError = vi.fn()
     const client = createResourceClient({ onError })
     const users = client.resource({ key: ['users'], fetcher: () => Promise.reject('offline') })
@@ -134,7 +134,7 @@ describe('@vobs/resource', () => {
     expect(onError).toHaveBeenCalledTimes(1)
   })
 
-  it('按配置重试失败的请求，并只报告最终失败', async () => {
+  it('retries failed requests per config and reports only the final failure', async () => {
     const onError = vi.fn()
     const client = createResourceClient({ onError })
     let attempts = 0
@@ -154,7 +154,7 @@ describe('@vobs/resource', () => {
     client.clear()
   })
 
-  it('乐观更新在 action 失败时回滚，并保留错误状态', async () => {
+  it('optimistic update rolls back when the action fails and keeps the error state', async () => {
     const client = createResourceClient()
     const count = client.resource({ key: ['count'], fetcher: () => Promise.resolve(1) })
     await count.refetch()
@@ -166,7 +166,7 @@ describe('@vobs/resource', () => {
     client.clear()
   })
 
-  it('较早的乐观操作失败时不能回滚较晚的写入', async () => {
+  it('an earlier optimistic operation failing must not roll back later writes', async () => {
     let rejectFirst!: (reason: unknown) => void
     const client = createResourceClient()
     const count = client.resource({ key: ['count'], fetcher: () => Promise.resolve(1) })
@@ -183,7 +183,7 @@ describe('@vobs/resource', () => {
     client.clear()
   })
 
-  it('插件提供共享客户端给依赖它的插件', () => {
+  it('plugin provides the shared client to dependent plugins', () => {
     const client = createResourceClient()
     let injected: typeof client | undefined
     const consumer: VobsPlugin = {
@@ -197,7 +197,7 @@ describe('@vobs/resource', () => {
     app.destroy()
   })
 
-  it('路由进入前并行预取 meta 中的数据，并复用客户端缓存', async () => {
+  it('prefetches route meta data in parallel before entering and reuses the client cache', async () => {
     let calls = 0
     const client = createResourceClient()
     const router = createRouter({
@@ -246,7 +246,7 @@ describe('@vobs/resource', () => {
     client.clear()
   })
 
-  it('路由预取失败时取消导航并保留当前路由', async () => {
+  it('route prefetch failure cancels navigation and keeps the current route', async () => {
     const router = createRouter({
       history: createMemoryHistory('/'),
       routes: [
@@ -275,7 +275,7 @@ describe('@vobs/resource', () => {
     client.clear()
   })
 
-  it('响应式 key 切换时取消旧请求并切换到新缓存条目', async () => {
+  it('cancels the old request and switches to the new cache entry when a reactive key changes', async () => {
     const key = state<readonly unknown[]>(['first'])
     const signals = new Map<string, AbortSignal>()
     const resolve = new Map<string, (value: string) => void>()
@@ -304,7 +304,7 @@ describe('@vobs/resource', () => {
     key.dispose()
   })
 
-  it('stale-while-revalidate 先返回缓存并在后台更新', async () => {
+  it('stale-while-revalidate returns the cache first and updates in the background', async () => {
     let calls = 0
     let resolveRefresh!: (value: string) => void
     const client = createResourceClient()
@@ -332,7 +332,7 @@ describe('@vobs/resource', () => {
     client.clear()
   })
 
-  it('资源所属 Owner 销毁时取消实例请求', async () => {
+  it('cancels instance requests when the owning owner is disposed', async () => {
     let requestSignal: AbortSignal | undefined
     const owner = createOwner()
     const client = createResourceClient()
@@ -348,15 +348,15 @@ describe('@vobs/resource', () => {
     client.clear()
   })
 
-  it('稳定序列化对象 key，拒绝循环引用', () => {
+  it('serializes object keys stably and rejects circular references', () => {
     expect(stableSerialize(['users', { page: 1, filter: 'all' }]))
       .toBe(stableSerialize(['users', { filter: 'all', page: 1 }]))
     const circular: { self?: unknown } = {}
     circular.self = circular
-    expect(() => stableSerialize(circular)).toThrow('循环引用')
+    expect(() => stableSerialize(circular)).toThrow('circular references')
   })
 
-  it('ResourceBoundary 在加载、成功和空数据状态间切换', async () => {
+  it('ResourceBoundary switches between loading, success and empty-data states', async () => {
     let resolve!: (value: number | null) => void
     const client = createResourceClient()
     const count = client.resource({
@@ -392,7 +392,7 @@ describe('@vobs/resource', () => {
     client.clear()
   })
 
-  it('ResourceBoundary 将失败交给 fallback，并提供重试函数', async () => {
+  it('ResourceBoundary hands failures to fallback and provides a retry function', async () => {
     let attempts = 0
     const client = createResourceClient()
     const users = client.resource({
@@ -431,7 +431,7 @@ describe('@vobs/resource', () => {
     client.clear()
   })
 
-  it('ResourceBoundary 将 children 渲染异常交给统一错误边界', async () => {
+  it('ResourceBoundary routes children render errors to the unified error boundary', async () => {
     const client = createResourceClient()
     const resource = client.resource({ key: ['render-error'], fetcher: () => Promise.resolve('data') })
     await resource.prefetch()

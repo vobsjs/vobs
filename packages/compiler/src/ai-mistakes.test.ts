@@ -1,63 +1,63 @@
 /*
- * **AI 常见错误的语料库 + 覆盖率测量**（P4 与 P2 的合体）。
+ * **Corpus of common AI mistakes + coverage measurement** (P4 and P2 merged).
  *
- * ## 为什么合成一件东西
+ * ## Why they were merged into one thing
  *
- * - **P4（评测）**要的是"典型 AI 写法能被编译期拦住多少"
- * - **P2（补静默类）**要的是"还有哪些'编译期合法、运行期错'的形态没被覆盖"
+ * - **P4 (evaluation)** wants "how many typical AI shapes the compile stage can intercept"
+ * - **P2 (silent-failure hunting)** wants "which 'legal at compile time, wrong at runtime' shapes are still uncovered"
  *
- * 两者是同一份数据的两个视角：**每条语料声明它"应被哪条规则拦住"，
- * 或者"当前静默"**。测试断言**现状**，于是：
- * - 已覆盖的条目 = 评测的分母与分子
- * - `silent: true` 的条目 = **P2 的工作清单**（可见，不靠记忆）
+ * They are two views of the same data: **each corpus entry declares which rule should intercept it,
+ * or that it is "currently silent"**. The tests assert the **status quo**, so:
+ * - covered entries = the evaluation's denominator and numerator
+ * - entries with `silent: true` = **P2's work list** (visible, not memory-dependent)
  *
- * ## 语料为什么是「React 形状」
+ * ## Why the corpus is "React-shaped"
  *
- * AI 报错的大头来自 React 先验。而 vobs 与 React 有几处**根本不同**
- * （组件体只跑一次、无 deps 数组、JSX 是实例不是描述对象）。所以语料挑的是
- * **在 React 里完全正确、在 vobs 里错**的写法 —— 那才是最贵的一类。
+ * Most AI errors come from React priors. And vobs differs from React in a few **fundamental** ways
+ * (the component body runs once, no deps arrays, JSX is an instance not a description object). So the corpus picks shapes
+ * **perfectly correct in React, wrong in vobs** — that is the most expensive class.
  *
- * ## 这个文件的两个用途
+ * ## The two uses of this file
  *
- * 1. **回归**：哪天某条被覆盖的形态又变静默了，测试变红
- * 2. **改进方向**：`silent: true` 的条目就是下一步要补的诊断（见 docs/silent-failures.md）
+ * 1. **Regression**: if a covered shape ever goes silent again, the test turns red
+ * 2. **Improvement direction**: `silent: true` entries are the next diagnostics to add (see docs/silent-failures.md)
  */
 import { describe, expect, it } from 'vitest'
 import { compileWithSourceMap } from './index'
 import { analyzeSource } from './analyze'
 
 interface Mistake {
-  /** 这条为什么是 AI 常犯的（一句话）。 */
+  /** Why this is a common AI mistake (one sentence). */
   readonly why: string
-  /** 典型错误源码。 */
+  /** The typical mistaken source code. */
   readonly source: string
-  /** 期望被哪个码拦住；`null` 表示**当前静默**（P2 的工作清单）。 */
+  /** Which code is expected to intercept it; `null` means **currently silent** (P2's work list). */
   readonly caughtBy: string | null
   /**
-   * 对"静默"条目的说明：**为什么暂时不做**。
-   * 每条静默项都必须写清原因 —— 否则它看起来像忘了。
+   * Explanation for "silent" entries: **why it is deliberately not done yet**.
+   * Every silent entry must state its reason — otherwise it looks like an oversight.
    */
   readonly silentNote?: string
 }
 
 const CORPUS: readonly Mistake[] = [
   {
-    why: 'React 里 `const node = <X/>; return cond ? node : null` 完全合法（描述对象随时重建），vobs 里节点被急切创建。',
+    why: 'In React, `const node = <X/>; return cond ? node : null` is perfectly legal (description objects are rebuilt at will); in vobs the node is created eagerly.',
     source: 'export function P(){ const node = <Picker el={p.value} />; return open.value ? node : null }',
     caughtBy: 'VOBS_C108'
   },
   {
-    why: 'React 里 `return cond ? <A/> : null` 每次渲染都重求值；vobs 组件体只跑一次，顶层 return 处也没有 parent/anchor。',
+    why: 'In React, `return cond ? <A/> : null` re-evaluates on every render; in vobs the component body runs once, and the top-level return has no parent/anchor either.',
     source: 'export function P(){ return cond.value ? <div>a</div> : null }',
     caughtBy: 'VOBS_C104'
   },
   {
-    why: 'React 里 `cond ? <A/> : <B/>` 是最常见的条件渲染；vobs 里顶层 return 处两支都是 JSX 也**一样冻结**。',
+    why: 'In React, `cond ? <A/> : <B/>` is the most common conditional render; in vobs, at the top-level return, both branches being JSX **freezes all the same**.',
     source: 'export function P(){ return cond.value ? <div>a</div> : <div>b</div> }',
     caughtBy: 'VOBS_C107'
   },
   {
-    why: 'React 里把派生值取出来放变量很自然（每次渲染重算）；vobs 组件体只跑一次，那是快照。',
+    why: 'In React, pulling a derived value into a variable is natural (recomputed every render); in vobs the component body runs once — that is a snapshot.',
     source: [
       "import { state } from '@vobs/vobs'",
       'export function Page() {',
@@ -69,7 +69,7 @@ const CORPUS: readonly Mistake[] = [
     caughtBy: 'VOBS_C118'
   },
   {
-    why: 'React 的 `useEffect(fn, [deps])` 依赖显式声明，且 effect 里写 state 是日常；vobs 依赖自动收集，写自己读的信号即循环。',
+    why: 'The React `useEffect(fn, [deps])` declares dependencies explicitly, and writing state inside an effect is routine; in vobs dependencies are auto-collected, and writing a signal you read is a loop.',
     source: [
       "import { effect, state } from '@vobs/vobs'",
       'export function P() {',
@@ -81,57 +81,57 @@ const CORPUS: readonly Mistake[] = [
     caughtBy: 'VOBS_C210'
   },
   {
-    why: 'React 的 effect 可以是 async（它 await 那个 Promise 只是不等待，但依赖数组让它安全）；vobs 依赖自动收集 + 不等 Promise，首个 await 前是同步的。',
+    why: 'A React effect may be async (awaiting the Promise just goes unawaited, but the deps array keeps it safe); in vobs dependencies are auto-collected + the Promise is never awaited, and everything before the first await is synchronous.',
     source: 'export function P(){ effect(async () => { await load() }) }',
     caughtBy: 'VOBS_C106'
   },
   {
-    why: 'React 里模块顶层放 JSX 常量很常见（`const MENU = <Item/>`），因为没有"渲染器未初始化"这个阶段。',
+    why: 'In React, JSX constants at module top level are common (`const MENU = <Item/>`) because there is no "renderer not initialized" phase.',
     source: 'export const MENU = <div>顶层</div>',
     caughtBy: 'VOBS_C105'
   },
   {
     /*
-     * 2026-10-28 起，`cond && list` / `cond ? list : null` 的**简单形态**已被编译器
-     * 自动路由 insertShow（条件容器 + 容器内 keyed insertList），不再报警 ——
-     * 语料保留**仍会报警**的混排形态（节点与 list 两支，编译器无法安全改写）。
+     * Since 2026-10-28, the **simple shapes** `cond && list` / `cond ? list : null` are auto-routed by the compiler
+     * to insertShow (a conditional container + keyed insertList inside it) and no longer warn —
+     * the corpus keeps the **still-warning** mixed shape (node and list branches; the compiler cannot safely rewrite it).
      */
-    why: 'React 里 `{cond ? <Empty/> : list.map(...)}`（空态与列表混排）很常见；vobs 里 list 分支不会走 insertList（编译器只对「list 分支 + null/false 分支」的简单形态自动路由 insertShow，混排需人工拆：空态单独一行 {empty.value ? <Empty/> : null}，list 提为直接子表达式）。',
+    why: 'In React, `{cond ? <Empty/> : list.map(...)}` (an empty state mixed with a list) is common; in vobs the list branch will not go through insertList (the compiler only auto-routes insertShow for the simple "list branch + null/false branch" shapes; mixed shapes need a manual split: the empty state on its own line {empty.value ? <Empty/> : null}, the list hoisted into a direct child expression).',
     source: 'export function P(){ return <div>{open.value ? <b>empty</b> : items.value.map(i => <li key={i}/>)}</div> }',
     caughtBy: 'VOBS_C232'
   },
 
   {
     /*
-     * 2026-10-28 补上诊断（VOBS_C233）：补的就是 silentNote 当时要求的**绑定分析** ——
-     * 只对「名字确实绑定到 `state(...)`」的接收者报警，普通数组的 push 一个不报。
-     * 当年它记在 silent-failures.md 的静默清单里，现在是「已从静默转为有诊断」的第 6 条。
+     * The diagnostic was added 2026-10-28 (VOBS_C233): it delivers exactly the **binding analysis** silentNote originally demanded —
+     * only receivers whose name is verifiably bound to `state(...)` are reported; a plain array's push is never reported.
+     * It used to sit on silent-failures.md's silent list; it is now the 6th item to go "from silent to diagnosed".
      */
-    why: 'React 里数组原地 push 后靠重新渲染生效；vobs 里引用没变，信号不通知。',
+    why: 'In React, an in-place array push takes effect via re-rendering; in vobs the reference is unchanged and the signal never notifies.',
     source: 'export function P(){ const list = state([1]); list.value.push(2); return <div>{list.value.length}</div> }',
     caughtBy: 'VOBS_C233'
   },
 
   /*
-   * 2026-10-28：曾经唯一的静默（组件体提前 return null 守卫）已被 C107 情况三收编 ——
-   * 判据 = 空守卫 return + 宿主函数内有 JSX return（渲染函数）+ isJsxOnlyCaller
-   * 豁免有名 helper；纯数据函数的空守卫（`T | null` 建模）不报。全仓实测 0 误报。
-   * **静默清单清零。**
+   * 2026-10-28: what was once the only silence (an early return-null guard in the component body) has been absorbed by C107 Case 3 —
+   * test = empty-guard return + a JSX return in the host function (a render function) + the isJsxOnlyCaller
+   * exemption for named helpers; empty guards in pure data functions (`T | null` modeling) are not reported. Repo-wide measured false positives: 0.
+   * **The silent list is now zero.**
    */
   {
     /*
-     * 这条**部分**被覆盖：把查表结果读进 const 这件事被 C118 抓到
-     * （组件体只跑一次 → 那是快照）。而"白名单查表 miss → 静默空白"那一半
-     * **静态抓不到**（白名单在应用侧），已由运行时缓解：`@vobs/icon-core` 在
-     * definition 为空时发出**按名字去重的警告**（66350b9），控制台会点名。
+     * This one is **partially** covered: reading a lookup result into a const is caught by C118
+     * (the component body runs once → it is a snapshot). But the "whitelist lookup miss → silent blank" half
+     * **cannot be caught statically** (the whitelist lives in the application) and is mitigated at runtime: `@vobs/icon-core`
+     * emits a **name-deduplicated warning** (66350b9) when the definition is empty, naming the icon in the console.
      */
-    why: 'React 里按名字查组件表很常见；vobs 里查表结果进 const 是快照（C118 抓），'
-      + '而查表 miss 静默空白只有运行时能点名。',
+    why: 'In React, looking up a component table by name is common; in vobs, a lookup result stored into a const is a snapshot (caught by C118), '
+      + 'while a lookup miss leaving a silent blank can only be named by the runtime.',
     source: 'export function P(){ const icon = ICONS[name.value]; return <div>{icon}</div> }',
     caughtBy: 'VOBS_C118'
   },
   {
-    why: 'React 的 `setState(newValue)` 不依赖读取；vobs 里 `.set()` 与 `.value =` 同义，写自己读的仍循环。',
+    why: 'The React `setState(newValue)` does not depend on a read; in vobs `.set()` is synonymous with `.value =`, so writing what you read is still a loop.',
     source: [
       "import { effect, state } from '@vobs/vobs'",
       'export function P() {',
@@ -144,10 +144,10 @@ const CORPUS: readonly Mistake[] = [
   },
   {
     /*
-     * Finora 死穴 §1-3（实证 2 次）：C210 报「(未命名信号)」时无法定位是哪个信号 ——
-     * 2026-10-28 起静态规则在**创建处**就提醒（VOBS_C120）。
+     * Finora deadly sin §1-3 (confirmed twice): when C210 reports "(unnamed signal)" there is no way to tell which signal —
+     * since 2026-10-28 a static rule warns right at the **creation site** (VOBS_C120).
      */
-    why: 'React DevTools 里组件名即标签；vobs 的运行时诊断靠调试名，`state(0)` 不传名报错时只显示 "(未命名信号)"。',
+    why: 'In React DevTools the component name is the label; vobs runtime diagnostics rely on debug names, and when `state(0)` without a name errors it only shows "(unnamed signal)".',
     source: [
       "import { effect, state } from '@vobs/vobs'",
       'export function P() {',
@@ -160,7 +160,7 @@ const CORPUS: readonly Mistake[] = [
   }
 ]
 
-/** 该源码在静态通道上报出的码（编译器 + 分析器，与 vobs check 一致）。 */
+/** The codes this source raises on the static channel (compiler + analyzer, matching vobs check). */
 function codesOf(source: string): string[] {
   const compiled = compileWithSourceMap(source, { filename: 'a.tsx' }).diagnostics.map(item => item.code)
   const analyzed = analyzeSource(source, 'a.tsx').map(item => item.code)
@@ -170,36 +170,36 @@ function codesOf(source: string): string[] {
 const caught = CORPUS.filter(item => item.caughtBy !== null)
 const silent = CORPUS.filter(item => item.caughtBy === null)
 
-describe('AI 错误语料：已被编译期拦住的形态（回归）', () => {
+describe('AI mistake corpus: shapes already intercepted at compile time (regression)', () => {
   for (const item of caught) {
     it(`${item.caughtBy} ← ${item.why.slice(0, 40)}…`, () => {
-      expect(codesOf(item.source), `这条本该被 ${item.caughtBy} 拦住，实际没报`).toContain(item.caughtBy)
+      expect(codesOf(item.source), `this should have been intercepted by ${item.caughtBy}, but nothing was reported`).toContain(item.caughtBy)
     })
   }
 })
 
-describe('AI 错误语料：静默清单（2026-10-28 起清零）', () => {
-  it('**静默必须保持为零** —— 新静默条目要过完整的「不做」流程', () => {
+describe('AI mistake corpus: the silent list (zeroed since 2026-10-28)', () => {
+  it('**the silent count must stay at zero** — a new silent entry must go through the full "deliberately not doing it" process', () => {
     /*
-     * 历史上这里有两条静默（数组原地修改、组件体提前 return null 守卫），
-     * 都已收编（C233 / C107 情况三）。将来若语料里再次出现 `caughtBy: null`，
-     * 这条断言变红 —— 提醒走完整流程：silentNote 写清为什么不做、
-     * silent-failures.md 记档、覆盖率相应回退。
+     * Historically there were two silences here (in-place array mutation, an early return-null guard in the component body),
+     * both absorbed (C233 / C107 Case 3). If a `caughtBy: null` ever appears in the corpus again,
+     * this assertion turns red — reminding to run the full process: write the silentNote explaining why not,
+     * record it in silent-failures.md, and let the coverage figure fall accordingly.
      */
-    expect(silent, '出现新的静默条目 —— 请补 silentNote 并同步 docs/silent-failures.md')
+    expect(silent, 'a new silent entry appeared — add a silentNote and sync docs/silent-failures.md')
       .toHaveLength(0)
   })
 })
 
-describe('覆盖率（P4 的测量面）', () => {
-  it('统计并打印覆盖率 —— 这是"编译期能拦住多少 AI 错误"的分子/分母', () => {
+describe("coverage (P4's measurement surface)", () => {
+  it('tallies and prints the coverage — the numerator/denominator of "how many AI mistakes the compile stage can intercept"', () => {
     const total = CORPUS.length
     const hit = caught.length
     const ratio = Math.round((hit / total) * 100)
-    console.log(`  AI 错误语料覆盖率：${hit}/${total}（${ratio}%）`)
-    console.log(`  当前静默（P2 工作清单）：${silent.length} 条`)
+    console.log(`  AI mistake corpus coverage: ${hit}/${total} (${ratio}%)`)
+    console.log(`  currently silent (P2 work list): ${silent.length}`)
     for (const item of silent) console.log(`    - ${item.why.slice(0, 60)}`)
     expect(total).toBeGreaterThan(0)
-    // 覆盖率只做记录，不设阈值 —— 设了就会诱使人写"容易通过的语料"
+    // Coverage is recorded only; no threshold is set — a threshold would tempt people to write "easy-to-pass corpus entries"
   })
 })

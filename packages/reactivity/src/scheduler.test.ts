@@ -19,39 +19,40 @@ describe('scheduler priorities', () => {
 })
 
 /*
- * batch 的错误优先级。
+ * batch's error priority.
  *
- * 原来 flush 放在 finally 里：`fn()` 抛错时，flush 自己再抛错就会把原始错误顶掉
- * （finally 里的 throw 覆盖 try 里的 throw），开发者看到的是一个和自己代码无关的错误。
+ * The flush used to live in finally: when `fn()` threw, an error thrown by flush
+ * itself would replace the original error (a throw in finally overrides the throw
+ * in try), and the developer saw an error unrelated to their own code.
  */
-describe('batch 的错误优先级', () => {
-  it('fn 与 flush 都抛错时，抛出 fn 自己的错误', () => {
+describe('batch error priority', () => {
+  it('when both fn and flush throw, fn\'s own error is thrown', () => {
     const value = state(0)
     let armed = false
     const handle = effect(() => {
       value.value
-      if (armed) throw new Error('flush 阶段的错误')
+      if (armed) throw new Error('error from the flush phase')
     })
     armed = true
 
     expect(() => batch(() => {
       value.value = 1
-      throw new Error('fn 自己的错误')
-    })).toThrow('fn 自己的错误')
+      throw new Error('fn\'s own error')
+    })).toThrow('fn\'s own error')
 
     handle.dispose()
   })
 
-  it('只有 flush 抛错时照常抛出', () => {
+  it('when only flush throws, it is thrown as usual', () => {
     const value = state(0)
     let armed = false
     const handle = effect(() => {
       value.value
-      if (armed) throw new Error('只有 flush 错')
+      if (armed) throw new Error('only the flush error')
     })
     armed = true
 
-    expect(() => batch(() => { value.value = 1 })).toThrow('只有 flush 错')
+    expect(() => batch(() => { value.value = 1 })).toThrow('only the flush error')
     handle.dispose()
   })
 })

@@ -5,7 +5,7 @@ import { KitPage, KitPageHeader } from './page'
 describe('@vobs/kit page primitives', () => {
   beforeEach(() => setRenderer(createDOMRenderer()))
 
-  it('KitPage 使用无 UI 依赖的标题和 actions 插槽', () => {
+  it('KitPage uses UI-free title and actions slots', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitPage, {
@@ -25,7 +25,7 @@ describe('@vobs/kit page primitives', () => {
     app.destroy()
   })
 
-  it('KitPage 可以完全替换 header', () => {
+  it('KitPage allows fully replacing the header', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitPage, {
@@ -41,7 +41,7 @@ describe('@vobs/kit page primitives', () => {
     app.destroy()
   })
 
-  it('KitPage 将 toolbar 渲染为页面级区域', () => {
+  it('KitPage renders toolbar as a page-level region', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitPage, {
@@ -58,7 +58,7 @@ describe('@vobs/kit page primitives', () => {
     app.destroy()
   })
 
-  it('没有 toolbar 时不生成空的页面级区域', () => {
+  it('no toolbar prop means no empty page-level region', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(KitPage, { title: 'Users', children: 'Content' })

@@ -7,30 +7,32 @@ import { checkContractSync } from './agent-doc.js'
 import { cliVersion } from '../version.js'
 
 /**
- * `vobs mcp` —— Model Context Protocol 的 **stdio** server（零依赖，手写 JSON-RPC 2.0）。
+ * `vobs mcp` — a **stdio** server for the Model Context Protocol (zero dependencies, hand-written JSON-RPC 2.0).
  *
- * ## 为什么做它
+ * ## Why build it
  *
- * 运行时反馈闭环不能是「人触发」的：Agent 需要标准协议入口自主调用
- * `check:runtime`。MCP 是行业事实标准（Next.js 的 next-devtools-mcp、
- * neo.mjs 的 neural-link 都把运行时状态暴露成 Agent 可自主调用的 tools）。
- * 这里暴露三个 tools，全部基于**已存在的纯函数/脚本**，不引入新能力只换协议：
+ * The runtime feedback loop must not be "human-triggered": agents need a standard protocol
+ * entry to invoke `check:runtime` autonomously. MCP is the de-facto industry standard
+ * (Next.js's next-devtools-mcp and neo.mjs's neural-link both expose runtime state as
+ * agent-invocable tools). The tools exposed here are all built on **existing pure
+ * functions/scripts** — no new capability, just a different protocol:
  *
- * - `check_runtime` — 跑运行时护栏，返回机器可读 verdict（check-runtime.mjs --json）
- * - `explain_diagnostic` — 单个诊断码的 why / correct / wrong / rewrites（可直接机械替换）
- * - `contract_status` — 项目 AGENTS.md 契约与安装的框架版本是否漂移
+ * - `check_runtime` — runs the runtime guardrails, returns a machine-readable verdict (check-runtime.mjs --json)
+ * - `explain_diagnostic` — why / correct / wrong / rewrites for one diagnostic code (directly machine-applicable)
+ * - `contract_status` — whether the project AGENTS.md contract has drifted from the installed framework version
  *
- * ## 诚实定位
+ * ## Honest positioning
  *
- * `check_runtime` 依赖 `scripts/check-runtime.mjs`（monorepo 内部脚本，起 dev server +
- * 真实 Chrome）。npm 下游项目还没有等价 CLI 入口（那是独立工作），此 tool 会返回
- * 明确的不可用说明；`explain_diagnostic` / `contract_status` 是纯函数，随处可用。
+ * `check_runtime` depends on `scripts/check-runtime.mjs` (a monorepo-internal script:
+ * boots a dev server + real Chrome). Downstream npm projects have no equivalent CLI entry
+ * yet (that is separate work), so this tool returns a clear unavailability notice;
+ * `explain_diagnostic` / `contract_status` are pure functions and work everywhere.
  *
- * ## 协议
+ * ## Protocol
  *
- * newline-delimited JSON-RPC 2.0 over stdio（MCP stdio transport）。只实现
- * `initialize` / `notifications/initialized` / `tools/list` / `tools/call` ——
- * MCP 的最小可用子集。schema 承诺 additive-only（与 explain --json 同一约定）。
+ * newline-delimited JSON-RPC 2.0 over stdio (MCP stdio transport). Only
+ * `initialize` / `notifications/initialized` / `tools/list` / `tools/call` are implemented —
+ * the minimal usable MCP subset. The schema promises additive-only (same convention as explain --json).
  */
 
 const PROTOCOL_VERSION = '2024-11-05'
@@ -88,8 +90,10 @@ export function createMcpState(root: string): McpState {
 }
 
 /**
- * 处理一条 MCP 消息，返回要写回 stdout 的 JSON-RPC 响应（通知类返回 null）。
- * 抽成纯函数：测试可以直接打消息进、断言消息出，不用走 stdio。
+ * Handle one MCP message and return the JSON-RPC response to write back to stdout
+ * (notifications return null).
+ * Extracted as a pure function: tests can push a message in and assert on the message
+ * out, without going through stdio.
  */
 export function handleMcpMessage(state: McpState, raw: unknown): object | null {
   const message = raw as { id?: unknown; method?: unknown; params?: { name?: unknown; arguments?: Record<string, unknown> } } | null
@@ -155,9 +159,11 @@ function runTool(state: McpState, name: string, toolArgs: Record<string, unknown
 }
 
 /**
- * 写前自检（MulFCoder 的 Judger 思路，2026-10-28）：Agent 在把生成代码写进项目**之前**，
- * 先对片段跑完整的静态通道（编译器诊断 + 分析器诊断）—— 纯内存、零副作用。
- * 返回的每条诊断带 code/message/fix（fix 指向 vobs explain，rewrites 经 explain --json 可得）。
+ * Pre-write self-check (the MulFCoder Judger idea, 2026-10-28): **before** an agent writes
+ * generated code into the project, it runs the full static channel on the snippet
+ * (compiler diagnostics + analyzer diagnostics) — pure in-memory, zero side effects.
+ * Each returned diagnostic carries code/message/fix (fix points at vobs explain;
+ * rewrites are available via explain --json).
  */
 function runCheckSourceSnippet(toolArgs: Record<string, unknown>): string {
   const code = toolArgs.code
@@ -181,7 +187,8 @@ function runCheckSourceSnippet(toolArgs: Record<string, unknown>): string {
     return true
   }).map(item => ({
     ...item,
-    // 内嵌改写指令（元数据第一条）—— AI 拿到诊断即拿到 before/after，不用二次调 explain
+    // Embedded rewrite instruction (the first metadata entry) — receiving a diagnostic
+    // means receiving the before/after pair; no second explain call needed
     rewrite: DIAGNOSTIC_GUIDES.find(guide => guide.code === item.code)?.rewrites?.[0] ?? null
   }))
   return JSON.stringify({
@@ -194,7 +201,7 @@ function runCheckSourceSnippet(toolArgs: Record<string, unknown>): string {
   }, null, 2)
 }
 
-/** 跑运行时护栏（spawnSync —— MCP tools/call 的语义就是拿到完整结果再返回）。 */
+/** Run the runtime guardrails (spawnSync — tools/call semantics: return only the complete result). */
 function runCheckRuntime(root: string, toolArgs: Record<string, unknown>): string {
   const script = resolve(root, 'scripts', 'check-runtime.mjs')
   if (!existsSync(script)) {
@@ -215,7 +222,7 @@ function runCheckRuntime(root: string, toolArgs: Record<string, unknown>): strin
   return result.stdout.trim()
 }
 
-/** stdio 主循环：逐行读 JSON-RPC，逐条写响应。stdin 关闭（Agent 断开）时返回。 */
+/** stdio main loop: read JSON-RPC line by line, write one response per request. Returns when stdin closes (agent disconnects). */
 export async function mcpCommand(): Promise<void> {
   const state = createMcpState(resolve(process.cwd()))
   const readline = await import('node:readline')

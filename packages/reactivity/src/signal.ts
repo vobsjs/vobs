@@ -11,13 +11,13 @@ export interface Subscriber {
   notify(): void
 }
 
-/** 只读信号：派生值（memo）与只读上下文的最小契约，只能订阅与读取。 */
+/** Read-only signal: the minimal contract for derived values (memo) and read-only context — subscribe and read only. */
 export interface ReadableSignal<T> extends Dependency {
   readonly value: T
   dispose(): void
 }
 
-/** 可写信号：state() 的返回类型。`set` 与 `.value =` 赋值语义完全一致。 */
+/** Writable signal: the return type of state(). `set` is semantically identical to `.value =` assignment. */
 export interface Signal<T> extends ReadableSignal<T> {
   value: T
   set(next: T): void
@@ -33,7 +33,7 @@ export function setCurrentSubscriber(subscriber: Subscriber | null): void {
   currentSubscriber = subscriber
 }
 
-/** 在 `fn` 执行期间暂停依赖追踪，结束后恢复（嵌套安全）。 */
+/** Suspends dependency tracking while `fn` runs, restoring it afterwards (nesting-safe). */
 export function untrack<T>(fn: () => T): T {
   const previous = currentSubscriber
   currentSubscriber = null
@@ -52,19 +52,21 @@ export function trackDependency(dependency: Dependency): void {
 }
 
 /**
- * 一个 state 信号。
+ * A state signal.
  *
- * **这里为什么是 class 而不是对象字面量**（实测，同机同轮循环，每次 `.value` 读写）：
+ * **Why a class here instead of an object literal** (measured, same machine, same loop,
+ * per `.value` read/write):
  *
- *   对象字面量里的 get/set 访问器      83.6 ns
- *   同样两个访问器放在 class 原型上      1.2 ns   ← 70×
- *   class 原型 + 判等 + 分支           3.2 ns   ← 对比字面量版的 81 ns
+ *   get/set accessors on an object literal        83.6 ns
+ *   the same two accessors on a class prototype    1.2 ns   ← 70×
+ *   class prototype + equality check + branch      3.2 ns   ← vs 81 ns for the literal
  *
- * 原因：**在对象字面量里定义访问器会让 V8 把这个实例降级成字典模式**，之后每次属性
- * 访问都走慢路径。放到原型上就不影响实例的隐藏类。
+ * Reason: **defining accessors on an object literal demotes the instance to
+ * dictionary mode in V8**, after which every property access takes the slow path.
+ * On the prototype, the instance's hidden class is unaffected.
  *
- * 这是整个框架最热的路径（每次读、每次写都经过它），也是 Owner 那边同一个病
- * （`owner.ts` 的 `get disposed()`）。
+ * This is the hottest path in the whole framework (every read and every write goes
+ * through it) — the same disease as on the Owner side (`get disposed()` in `owner.ts`).
  */
 class StateSignal<T> implements Signal<T> {
   private current: T
@@ -72,18 +74,22 @@ class StateSignal<T> implements Signal<T> {
   private warnedAfterDispose = false
   private readonly subscribers = new Set<Subscriber>()
   /**
-   * 上一次通知用的订阅者快照。通知时要快照（订阅者可能在自己被通知的过程中退订），
-   * 但不必每次写都重建：订阅集合只在 add/delete 时变，任何增删把它置空即可。
+   * Snapshot of the subscribers used for the previous notification. Notification
+   * must snapshot (a subscriber may unsubscribe while it is being notified), but
+   * it need not be rebuilt on every write: the subscriber set only changes on
+   * add/delete, so any add/delete invalidates it.
    */
   private notifySnapshot: Subscriber[] | null = null
   /**
-   * `set` 刻意做成**逐实例的箭头函数**而不是原型方法。
+   * `set` is deliberately a **per-instance arrow function**, not a prototype method.
    *
-   * 它必须能脱离对象直接当回调传递（`const { set } = signal; onClick = () => set(1)`），
-   * 原型方法会丢 `this`。这条契约有测试锁定：
-   * 「set 可脱离对象直接作为回调传递」。
+   * It must be usable directly as a callback detached from the object
+   * (`const { set } = signal; onClick = () => set(1)`); a prototype method would
+   * lose `this`. This contract is pinned by a test:
+   * "set can be passed directly as a detached callback".
    *
-   * 代价是每个信号多一个闭包分配 —— 不在读写热路径上，换来的是这条契约不破。
+   * The cost is one extra closure allocation per signal — not on the read/write
+   * hot path — in exchange for keeping this contract intact.
    */
   readonly set: (next: T) => void
 
@@ -105,11 +111,11 @@ class StateSignal<T> implements Signal<T> {
 
   set value(nextValue: T) {
     if (this.disposed) {
-      // 显式 dispose 后的写入永远是编程错误：每信号限警告一次，避免循环刷屏
+      // Writes after an explicit dispose are always a programming error: warn at most once per signal to avoid spamming in a loop
       if (!this.warnedAfterDispose) {
         this.warnedAfterDispose = true
         const name = getSignalDebugName(this as unknown as Signal<unknown>)
-        console.warn(`[vobs] 写入已 dispose 的 state${name ? ` "${name}"` : ''}，本次写入被忽略`)
+        console.warn(`[vobs] write to a disposed state${name ? ` "${name}"` : ''}; this write was ignored`)
       }
       return
     }
@@ -118,7 +124,7 @@ class StateSignal<T> implements Signal<T> {
     this.current = nextValue
     if (hasDebugHooks()) invokeDebug('signalChanged', this as unknown as Signal<unknown>, previousValue, nextValue)
     if (this.subscribers.size === 0) return
-    // 订阅集合没变就复用上次的快照（增删处会置空）
+    // Reuse the previous snapshot when the subscriber set is unchanged (invalidated on add/delete)
     const snapshot = this.notifySnapshot ?? (this.notifySnapshot = [...this.subscribers])
     for (const subscriber of snapshot) subscriber.notify()
   }
@@ -157,9 +163,11 @@ class StateSignal<T> implements Signal<T> {
  */
 export function state<T>(initialValue: T, debugName?: string): Signal<T> {
   const signalInstance = new StateSignal(initialValue)
-  // 信号寿命 = 可达性：不注册 owner 清理（效果销毁时经 unsubscribe 自行解除
-  // 订阅，订阅图仍然随作用域释放）。显式 dispose() 仅供调用方手动废弃信号。
-  // owner 仅用于调试钩子的归属信息（devtools 索引），不影响生命周期。
+  // Signal lifetime = reachability: no owner cleanup registration (when effects are
+  // disposed they unsubscribe themselves via unsubscribe, so the subscription graph
+  // is still released with the scope). Explicit dispose() is only for callers that
+  // want to manually retire a signal. The owner is used solely as attribution info
+  // for debug hooks (devtools indexing); it does not affect the lifecycle.
   if (hasDebugHooks()) {
     invokeDebug('signalCreated', signalInstance as unknown as Signal<unknown>, getCurrentOwner())
   }

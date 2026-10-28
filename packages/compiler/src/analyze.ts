@@ -1,46 +1,46 @@
 /**
- * vobs 源码的**静态分析规则**（不跑应用就能给出的问题清单）。
+ * **Static analysis rules** for vobs source code (a list of problems found without running the app).
  *
- * ## 为什么放在 `@vobs/compiler` 而不是 CLI
+ * ## Why this lives in `@vobs/compiler` and not the CLI
  *
- * 这些规则必须同时被 `vobs check` 和 `vite dev`/`vite build` 看见 ——
- * 只在 check 里报的话，**AI 改完代码、`vite build` 通过，但问题还在**，
- * 与「错了不能静默」直接冲突。
+ * These rules must be visible to both `vobs check` and `vite dev`/`vite build` —
+ * if they only fired in check, **the AI fixes the code, `vite build` passes, but the problem is still there**,
+ * which directly conflicts with "errors must not be silent".
  *
- * 而 `@vobs/vite-plugin` 需要这些规则，却**不能依赖 CLI**（依赖方向反了 —— CLI 是应用侧
- * 工具）。所以放在双方都已经依赖的 `@vobs/compiler`：编译器诊断（`C104`–`C108`）与
- * 分析器诊断（`C118`/`C210`/`C232`/`C233`/`C234`）同在此处，两条通道拿到全部规则。
+ * And `@vobs/vite-plugin` needs these rules but **cannot depend on the CLI** (the dependency direction would be inverted — the CLI is an
+ * application-side tool). So they live in `@vobs/compiler`, which both sides already depend on: compiler diagnostics (`C104`–`C108`) and
+ * analyzer diagnostics (`C118`/`C210`/`C232`/`C233`/`C234`) sit here together, so both channels get all the rules.
  */
 import ts from 'typescript'
 import { VOBS_C210 as C210_CODE, vobsC210Fix } from '@vobs/runtime'
 import { isKeyedListCall, routeShowList, unwrapExpr } from './show-route'
 
 export interface CheckDiagnostic {
-  /** 稳定错误码，AI 与文档按它检索。 */
+  /** Stable error code; AI and docs look it up by this. */
   readonly code: string
   readonly severity: 'error' | 'warning'
   readonly message: string
-  /** 该怎么改。只报错对 AI 没有价值。 */
+  /** How to fix it. Reporting an error without this is worthless to an AI. */
   readonly fix: string
-  /** 相对目标目录的路径。 */
+  /** Path relative to the target directory. */
   readonly file: string
   readonly line: number
   readonly column: number
-  /** 出错那一行的原文，方便直接定位。 */
+  /** The original text of the offending line, for quick locating. */
   readonly snippet: string
 }
 
-/** effect 写入了自己依赖的信号。 */
+/** An effect writes a signal it itself depends on. */
 export const VOBS_C210 = C210_CODE
-/** 列表写在分支位置 —— 失去 keyed 复用。 */
+/** A list written in a branch position — keyed reuse is lost. */
 export const VOBS_C232 = 'VOBS_C232'
-/** 在组件体里读信号并存进局部变量 —— 组件体只执行一次，之后永不更新。 */
+/** A signal read in the component body and stored in a local variable — the body runs once, so it never updates afterwards. */
 export const VOBS_C118 = 'VOBS_C118'
-/** 数组信号用 mutator 原地修改 —— 引用没变，订阅处不会更新。 */
+/** An array signal mutated in place via a mutator — the reference is unchanged, so subscribers never update. */
 export const VOBS_C233 = 'VOBS_C233'
-/** state() 未传调试名 —— 运行时诊断显示 "(未命名信号)"，无法定位。 */
+/** state() called without a debug name — runtime diagnostics show "(unnamed signal)", so it cannot be located. */
 export const VOBS_C120 = 'VOBS_C120'
-/** on 回调里读了 deps 之外的信号 —— untrack 作用域内读取不建立订阅。 */
+/** A signal outside deps is read inside an on callback — reads in the untrack scope establish no subscription. */
 export const VOBS_C234 = 'VOBS_C234'
 
 function returnsJsx(node: ts.Node): boolean {
@@ -51,7 +51,7 @@ function returnsJsx(node: ts.Node): boolean {
       seen = true
       return
     }
-    // 不进入嵌套函数：内层组件返回 JSX 不代表外层是组件
+    // Do not descend into nested functions: an inner component returning JSX does not make the outer one a component
     if (child !== node && (ts.isFunctionLike(child))) return
     ts.forEachChild(child, visit)
   }
@@ -60,10 +60,10 @@ function returnsJsx(node: ts.Node): boolean {
 }
 
 /**
- * `X.value` 形式的内存读取，返回接收者的文本（`count`、`props.name` 都算）。
+ * A `X.value`-shaped memory read; returns the receiver's text (`count` and `props.name` both count).
  *
- * 用文本而不是标识符：信号经常是别人传进来的（`props.name.value`），
- * 只认裸标识符会把这些全漏掉。
+ * Text rather than an identifier: signals are often passed in from elsewhere (`props.name.value`),
+ * and accepting only bare identifiers would miss all of those.
  */
 function signalNameOf(node: ts.Node): string | undefined {
   if (!ts.isPropertyAccessExpression(node)) return undefined
@@ -99,47 +99,47 @@ const isWriteOperator = (kind: ts.SyntaxKind): boolean =>
   || kind === ts.SyntaxKind.AsteriskEqualsToken
   || kind === ts.SyntaxKind.SlashEqualsToken
 
-/* ------------------------------------------------- 规则 A：effect 自订阅 */
+/* ------------------------------------------------- Rule A: effect self-subscription */
 
 /**
- * 在 effect **外层作用域**里被声明、且初始化式**明显不是信号**的名字。
+ * Names declared in an effect's **outer scope** whose initializer is **clearly not a signal**.
  *
- * ## 为什么需要（实测的误报类）
+ * ## Why it exists (a measured false-positive class)
  *
- * effect 体内的同名遮蔽早已处理；但**在组件体里声明的**同名局部仍会误报：
+ * Same-name shadowing inside the effect body is already handled; but same-named locals **declared in the component body** still false-positived:
  *
  * ```ts
- * const count = state(0)          // 外层信号
+ * const count = state(0)          // outer signal
  * function P() {
- *   const count = { value: 0 }    // ← 在**组件体**里声明（不在 effect 内）
- *   effect(() => { count.value = 1 })   // 这不是信号，却被当成自订阅
+ *   const count = { value: 0 }    // ← declared in the **component body** (not inside the effect)
+ *   effect(() => { count.value = 1 })   // not a signal, yet treated as self-subscription
  * }
  * ```
  *
- * ## 判据：初始化式是不是**调用**
+ * ## Test: is the initializer a **call**
  *
- * 信号几乎总是调用产生的，所以：
+ * Signals are almost always produced by calls, so:
  *
- * | 写法 | 判定 | 理由 |
+ * | Shape | Verdict | Reason |
  * |---|---|---|
- * | `const c = { value: 0 }` | **不是信号** → 跳过 | 对象字面量 |
- * | `const c = props.count` | **不是信号** → 跳过 | 属性访问 |
- * | `const c = state(0)` | 继续检查 | 调用 —— 但确实是信号，正确 |
- * | `const c = createStore()` | **继续检查** | 调用 —— **未知也保守保留**（自定义工厂） |
- * | 无初始化式 / 解构 | 继续检查 | 无法判断 |
+ * | `const c = { value: 0 }` | **not a signal** → skip | object literal |
+ * | `const c = props.count` | **not a signal** → skip | property access |
+ * | `const c = state(0)` | keep checking | a call — but genuinely a signal, correct |
+ * | `const c = createStore()` | **keep checking** | a call — **unknowns are conservatively kept** (custom factory) |
+ * | no initializer / destructuring | keep checking | undecidable |
  *
- * 最后两行是这个判据的关键：**只要可能是工厂产出就保留**，
- * 于是"从别处 import 的信号"（无本地声明）与"自定义 store 工厂"都不会被误杀。
+ * The last two rows are the crux of this test: **keep anything that might be factory-produced**,
+ * so "signals imported from elsewhere" (no local declaration) and "custom store factories" are never wrongly eliminated.
  */
 function collectNonSignalLocals(from: ts.Node): Set<string> {
   const nonSignal = new Set<string>()
   let node: ts.Node | undefined = from
   while (node !== undefined && !ts.isSourceFile(node)) {
-    // `isFunctionLike` 也覆盖签名声明（没有 body），所以按可选属性取
+    // `isFunctionLike` also matches signature declarations (no body), hence the optional-property access
     const fnBody = ts.isFunctionLike(node) ? (node as { body?: ts.ConciseBody }).body : undefined
     if (fnBody !== undefined && ts.isBlock(fnBody)) {
       const scan = (child: ts.Node): void => {
-        // 不进入内层函数：内层有自己的作用域，由它自己那一轮处理
+        // Do not descend into inner functions: they have their own scope, handled by their own round
         if (ts.isFunctionLike(child)) return
         if (ts.isVariableDeclaration(child) && ts.isIdentifier(child.name)
           && child.initializer !== undefined) {
@@ -148,7 +148,7 @@ function collectNonSignalLocals(from: ts.Node): Set<string> {
             || ts.isTypeAssertionExpression(init)) {
             init = init.expression
           }
-          // 调用/构造 → 可能是信号工厂 → 交给后续判断，不在此排除
+          // call/new → could be a signal factory → leave it to the later checks, do not exclude here
           if (!ts.isCallExpression(init) && !ts.isNewExpression(init)) {
             nonSignal.add(child.name.text)
           }
@@ -170,25 +170,25 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
     const writes = new Map<string, ts.Node>()
 
     /*
-     * **作用域遮蔽集合**：effect 回调体内（含嵌套）**声明过的名字**。
+     * **Scope shadowing set**: names **declared** inside the effect callback body (including nested).
      *
-     * 为什么需要：这条规则按**信号变量名**比对读写集合，所以"同名局部对象"会被误报。
-     * 实测的误报形态（对抗测试里 1/7）：
+     * Why needed: this rule compares read/write sets by **signal variable name**, so a "same-named local object" would be false-positived.
+     * The measured false-positive shape (1/7 in the adversarial tests):
      *
      * ```ts
-     * const count = state(0)              // 外层信号
+     * const count = state(0)              // outer signal
      * effect(() => {
-     *   const count = { value: 0 }        // ← 在 effect 体内**重新声明**
-     *   count.value = count.value + 1     // 这不是信号，却被当成自订阅
+     *   const count = { value: 0 }        // ← **redeclared** inside the effect body
+     *   count.value = count.value + 1     // not a signal, yet treated as self-subscription
      * })
      * ```
      *
-     * 命名成"遮蔽"是准确的：内层声明覆盖了外层的信号名。既然名字在 effect 体内
-     * 被**重新声明**，`X.value` 就不该再被当成外层那个信号。
+     * Calling it "shadowing" is accurate: the inner declaration covers the outer signal name. Since the name is
+     * **redeclared** in the effect body, `X.value` should no longer be treated as that outer signal.
      *
-     * 只收名字、不判断类型 —— 但**方向是安全的**：命中就跳过（少报），
-     * 而不是命中就报（多报）。少报的代价远低于误报（`C104` 的教训：
-     * 18 处命中 16 处误报，代价是整个团队开始无视告警）。
+     * Only names are collected, with no type judgment — but the **direction is safe**: a hit means skip (under-report),
+     * not report (over-report). Under-reporting costs far less than false positives (the `C104` lesson:
+     * 18 hits, 16 false positives; the cost was the whole team starting to ignore warnings).
      */
     const shadowed = new Set<string>()
     const collectDeclarations = (node: ts.Node): void => {
@@ -200,26 +200,26 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
         && ts.isIdentifier(node.variableDeclaration.name)) shadowed.add(node.variableDeclaration.name.text)
       ts.forEachChild(node, collectDeclarations)
     }
-    // 注意：`body` 是回调体；它内部所有声明都算遮蔽（嵌套函数内的也算 —— 保守方向）
+    // Note: `body` is the callback body; every declaration inside counts as shadowing (nested functions' too — the conservative direction)
     ts.forEachChild(body, collectDeclarations)
-    // 形参也要算（`effect((x) => { x.value = 1 })` 里的 x 是形参，不是信号）
+    // Parameters count too (the x in `effect((x) => { x.value = 1 })` is a parameter, not a signal)
     if (ts.isFunctionLike(body.parent)) {
       for (const parameter of body.parent.parameters) {
         if (ts.isIdentifier(parameter.name)) shadowed.add(parameter.name.text)
       }
     }
     /*
-     * **外层作用域**（组件体）里"明显不是信号"的局部名也要遮蔽 —— 见 collectNonSignalLocals。
-     * 这里比体内那圈**更精确**（只排除非调用初始化式），因为外层同名局部很常见
-     * （`const count = props.count` 这类），一刀切会漏掉大量真自订阅。
+     * Local names in the **outer scope** (component body) that are "clearly not signals" are shadowed too — see collectNonSignalLocals.
+     * This pass is **more precise** than the in-body one (only non-call initializers are excluded), because same-named outer locals are common
+     * (`const count = props.count` and the like); a blanket rule would miss many real self-subscriptions.
      */
     for (const name of collectNonSignalLocals(body)) shadowed.add(name)
 
     const visit = (node: ts.Node, insideUntrack: boolean): void => {
-      // 嵌套函数有自己的订阅语义，不算在本次 effect 的读写里
+      // Nested functions have their own subscription semantics; they do not count in this effect's reads/writes
       if (node !== body && ts.isFunctionLike(node)) return
 
-      // untrack(...) 里的写入不建立订阅 → 正是正确写法
+      // Writes inside untrack(...) establish no subscription → exactly the correct form
       const nextUntracked = insideUntrack
         || (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'untrack')
 
@@ -228,7 +228,7 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
         if (name !== undefined && !nextUntracked && !shadowed.has(name)) writes.set(name, node)
       } else if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
         && (node.operator === ts.SyntaxKind.PlusPlusToken || node.operator === ts.SyntaxKind.MinusMinusToken)) {
-        // `count.value++` 同时是读和写 —— 这正是自订阅的经典形态
+        // `count.value++` is both a read and a write — the classic self-subscription shape
         const name = signalNameOf(node.operand)
         if (name !== undefined && !shadowed.has(name)) {
           if (!nextUntracked) writes.set(name, node)
@@ -242,7 +242,7 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
         const name = signalNameOf(node)
         if (name !== undefined && !shadowed.has(name)) {
           const parent = node.parent
-          // 只有赋值类运算符的左侧才不是「读」；`count.value < 1` 的左侧仍然是读
+          // Only the left side of an assignment-family operator is not a "read"; the left of `count.value < 1` is still a read
           const isAssignmentTarget = ts.isBinaryExpression(parent)
             && isWriteOperator(parent.operatorToken.kind)
             && parent.left === node
@@ -259,17 +259,17 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
       if (!reads.has(name)) continue
       found.push(diagnosticAt(source, file, writeNode, {
         /*
-         * **error**：真自订阅值得让 CI 失败；已知误报形态（同名遮蔽）已由上面的
-         * 作用域解析消除。
+         * **error**: real self-subscriptions are worth failing CI over; the known false-positive shape (same-name shadowing) has
+         * already been eliminated by the scope resolution above.
          *
-         * 说明：这条的判定仍是**按变量名**比对，不是"真的订阅了"。真正的硬门禁
-         * 仍由运行时护栏提供（按真实依赖集判定，跨函数/跨模块精确）。
+         * Note: this rule still compares **by variable name**, not "actually subscribed". The real hard gate
+         * remains the runtime guardrails (judged by the actual dependency set, precise across functions/modules).
          */
         code: VOBS_C210,
         severity: 'error',
-        message: `effect 写入了它自己依赖的信号 "${name}" —— 这次写入会把它重新调度，形成自订阅循环`,
-        // 文案与运行时护栏**共用同一份**（@vobs/runtime 的 diagnostic-text）——
-        // 此前两处各写一份，1.8.5 改进运行时那份时这里没同步，用户在 vite 里看到旧建议。
+        message: `effect writes the signal "${name}" it itself depends on — this write re-schedules it, forming a self-subscription loop`,
+        // The fix text is **shared with** the runtime guardrails (diagnostic-text in @vobs/runtime) —
+        // there used to be two copies; when 1.8.5 improved the runtime copy, this one was not synced and users saw the stale advice in vite.
         fix: vobsC210Fix(name)
       }))
     }
@@ -290,29 +290,29 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
   return found
 }
 
-/* -------------------------------------- 规则 B：列表写在分支位置（C232） */
+/* -------------------------------------- Rule B: list written in a branch position (C232) */
 
 function ruleListInBranch(source: ts.SourceFile, file: string): CheckDiagnostic[] {
   const found: CheckDiagnostic[] = []
-  const message = 'list 写在三元/&& 的分支里 —— 会走多态插入，失去 keyed 复用；'
-    + '而且**分支条件本身变化也会重建整个列表**'
-  const fix = '把 list 提成**直接的**子表达式：先写条件分支，再单独写 {items.map(...)}。'
-    + '三元里同时有节点与 list 时，list 那一支不会编译成 insertList。'
-    + '（实测产物对比：分支里是 insertDynamicValue(el, null, () => cond.value ? items.map(…) : null)，'
-    + '直接子表达式是 insertList(el, null, () => items, renderItem) —— 前者每次重跑都新建全部节点，'
-    + '且 cond 变化同样触发重建（那个 getter 读了它）；后者按 key 复用/移动，只订阅列表源。）'
-    + '影响大小取决于**条目数与是否有状态**：几项无状态按钮可忽略；'
-    + '几十项、或条目内有焦点/输入/滚动状态时必须改。'
-    + '（2026-10-28 起，`cond ? list : null` / `cond && list` 这类简单形态已由编译器'
-    + '自动路由 insertShow —— 条件容器内 keyed 复用，本规则不再对它们报警；'
-    + '仍报警的是节点与 list 混排等编译器无法安全改写的形态。）'
+  const message = 'A list written in a ternary/&& branch — it goes through polymorphic insertion and loses keyed reuse; '
+    + 'moreover, **a change of the branch condition itself also rebuilds the entire list**'
+  const fix = 'Hoist the list into a **direct** child expression: write the conditional branch first, then write {items.map(...)} separately. '
+    + 'When a ternary mixes nodes and a list, the list branch will not compile into insertList. '
+    + '(Measured output comparison: in a branch it is insertDynamicValue(el, null, () => cond.value ? items.map(…) : null), '
+    + 'while a direct child expression yields insertList(el, null, () => items, renderItem) — the former rebuilds every node on each re-run, '
+    + 'and a cond change triggers a rebuild too (that getter reads it); the latter reuses/moves by key and only subscribes to the list source.) '
+    + 'The impact depends on **item count and statefulness**: a few stateless buttons are negligible; '
+    + 'dozens of items, or items holding focus/input/scroll state, must be fixed. '
+    + '(Since 2026-10-28, simple shapes like `cond ? list : null` / `cond && list` are auto-routed by the compiler '
+    + 'to insertShow — keyed reuse inside a conditional container; this rule no longer warns on them. '
+    + 'What still warns are shapes the compiler cannot safely rewrite, such as nodes and lists mixed together.)'
 
   /*
-   * 与编译器 appendChildren 严格同构：C232 只对「会走 insertDynamicValue 的列表」有意义。
-   * - JsxExpression 顶层：routeShowList 命中 = 已被编译器路由 insertShow（整棵子树被吸收，
-   *   条件部分编译为 getter、list 分支走容器内 insertList）—— 跳过，不报也不深入。
-   * - 未路由：检查顶层三元/&& 分支里的 keyed map（unwrap 后），并深入子树
-   *   （嵌套形态的内层仍会走多态插入，照报）。
+   * Strictly isomorphic to the compiler's appendChildren: C232 only matters for lists that would go through insertDynamicValue.
+   * - JsxExpression top level: a routeShowList hit = already routed by the compiler to insertShow (the whole subtree is absorbed,
+   *   the condition compiled into a getter, the list branch going through in-container insertList) — skip, neither report nor descend.
+   * - Not routed: check the keyed map in top-level ternary/&& branches (after unwrap), and descend into the subtree
+   *   (the inner part of nested shapes still goes through polymorphic insertion, so it is reported as usual).
    */
   const visit = (node: ts.Node, routed: boolean): void => {
     if (routed) return
@@ -346,14 +346,14 @@ function ruleListInBranch(source: ts.SourceFile, file: string): CheckDiagnostic[
   return found
 }
 
-/* --------------------------------- 规则 C：组件体里读信号存局部变量（C118） */
+/* --------------------------------- Rule C: signal read in the component body stored in a local (C118) */
 
 function containsSignalRead(node: ts.Node): boolean {
   let seen = false
   const visit = (child: ts.Node): void => {
     if (seen) return
-    // 函数体内的读取是**延迟**的（事件处理器、定时器、回调），不算「组件体里读信号」。
-    // 这条必须放在最前面：`const handler = () => { signal.value }` 里的读取完全正常。
+    // Reads inside function bodies are **deferred** (event handlers, timers, callbacks) and do not count as "reading a signal in the component body".
+    // This check must come first: the read in `const handler = () => { signal.value }` is perfectly fine.
     if (ts.isFunctionLike(child)) return
     if (signalNameOf(child) !== undefined) {
       seen = true
@@ -366,10 +366,10 @@ function containsSignalRead(node: ts.Node): boolean {
 }
 
 /**
- * 取一个函数**自己的绑定名**（用于判断它是不是"被当组件调用"）。
+ * Get a function's **own binding name** (used to tell whether it is "being called as a component").
  *
- * 覆盖 `const render = () => {…}`、`function render() {…}`、`const o = { render() {…} }`；
- * 匿名函数（回调、IIFE）返回 `undefined`。
+ * Covers `const render = () => {…}`, `function render() {…}`, `const o = { render() {…} }`;
+ * anonymous functions (callbacks, IIFEs) return `undefined`.
  */
 function ownNameOf(fn: ts.FunctionLikeDeclaration): string | undefined {
   if (fn.name !== undefined && ts.isIdentifier(fn.name)) return fn.name.text
@@ -380,21 +380,21 @@ function ownNameOf(fn: ts.FunctionLikeDeclaration): string | undefined {
 }
 
 /**
- * 在 **JSX 表达式里被调用**的标识符集合（`{render()}` 这种）。
+ * The set of identifiers **called inside JSX expressions** (the `{render()}` kind).
  *
- * ## 为什么要单独收集
+ * ## Why collect it separately
  *
- * C118 的前提是"这个函数体只执行一次"。而 `{render()}` 里的 `render` **每次求值都会重跑** ——
- * 它体里的 `const shown = n.value` 每轮都是新鲜的，代码完全正确。
+ * C118's premise is "this function body runs only once". But `render` in `{render()}` **re-runs on every evaluation** —
+ * its `const shown = n.value` is fresh every round, and the code is perfectly correct.
  *
- * 但 `returnsJsx(render)` 会把这种渲染 helper 认成"组件" → 误报（实测残留）。
+ * But `returnsJsx(render)` would classify such a render helper as a "component" → false positive (a measured leftover).
  *
- * ## 为什么只收"调用"而不收"引用"
+ * ## Why only "calls" are collected, not "references"
  *
- * 只认 callee，是为了**保住真阳性**：
- * - `{render()}` → 是调用 → helper → 跳过 ✓
- * - `component={P}` / `<RouterView component={P}/>` → 只是引用，未调用 → **仍然检查 P** ✓
- * - `<P/>` → JSX 标签，本来就不在 JsxExpression 里 → 仍然检查 ✓
+ * Accepting only callees is to **preserve true positives**:
+ * - `{render()}` → a call → helper → skip ✓
+ * - `component={P}` / `<RouterView component={P}/>` → a mere reference, not called → **P is still checked** ✓
+ * - `<P/>` → a JSX tag, never inside a JsxExpression to begin with → still checked ✓
  */
 function collectCalledInJsx(root: ts.Node): Set<string> {
   const called = new Set<string>()
@@ -420,15 +420,15 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
 
   const inspectComponent = (fn: ts.FunctionLikeDeclaration): void => {
     /*
-     * **被 JSX 表达式调用的函数是 helper，不是组件。**
+     * **A function called by a JSX expression is a helper, not a component.**
      *
      * ```tsx
      * const render = () => { const shown = n.value + 1; return <b>{shown}</b> }
-     * return <div>{render()}</div>      // ← 每次求值都重跑 → shown 是新鲜的
+     * return <div>{render()}</div>      // ← re-runs on every evaluation → shown is fresh
      * ```
      *
-     * 它与 `export const Page = () => {…}`（真组件）形态完全一样，
-     * 但**调用位置**把二者分开了：编译器不会在 JSX 里"手动调用"组件。
+     * Its shape is identical to `export const Page = () => {…}` (a real component),
+     * but the **call site** separates the two: the compiler never "manually calls" a component inside JSX.
      */
     const ownName = ownNameOf(fn)
     if (ownName !== undefined && calledInJsx.has(ownName)) return
@@ -437,12 +437,12 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
     if (body === undefined || !ts.isBlock(body) || !returnsJsx(fn)) return
 
     /*
-     * **立即执行的函数不是组件**（实测出来的误报，来自真实项目 Labelune）。
+     * **Immediately invoked functions are not components** (a measured false positive, from the real project Labelune).
      *
      * ```tsx
      * {qExpanded.value === job.id ? (
      *   <div>
-     *     {(() => {                          // ← IIFE，在 JSX **子节点位置**
+     *     {(() => {                          // ← an IIFE at a JSX **child position**
      *       const failedShown = ...signal.value...
      *       return (<>...</>)
      *     })()}
@@ -450,14 +450,14 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
      * ) : null}
      * ```
      *
-     * JSX 子节点位置的表达式是**动态的** —— 这个 IIFE 每次依赖变化都会重跑，
-     * 所以它体里的 `const x = signal.value` **不是** run-once 快照，代码是对的。
+     * Expressions at JSX child positions are **dynamic** — this IIFE re-runs whenever a dependency changes,
+     * so its `const x = signal.value` is **not** a run-once snapshot; the code is correct.
      *
-     * 但 `returnsJsx(fn)` 会把它认成"组件"，于是报 C118 —— **误报**。
+     * But `returnsJsx(fn)` would classify it as a "component" and report C118 — a **false positive**.
      */
     /*
-     * **要注意括号**：`(() => {...})()` 里那个 arrow 的**父节点是
-     * `ParenthesizedExpression`，不是 `CallExpression`** —— 只查一层 `parent` 拦不住。
+     * **Mind the parentheses**: in `(() => {...})()`, that arrow's **parent is a
+     * `ParenthesizedExpression`, not a `CallExpression`** — checking one level of `parent` cannot catch it.
      */
     let callee: ts.Node = fn
     let up: ts.Node | undefined = fn.parent
@@ -467,11 +467,11 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
     }
     if (up !== undefined && ts.isCallExpression(up) && up.expression === callee) return
 
-    // 组件体里「读信号 + 存进 const」
+    // In the component body: "reads a signal + stores into a const"
     const captured: { name: string; node: ts.VariableDeclaration }[] = []
-    // 组件体里「props 属性 + 存进 const」（死穴 §4 快照族，2026-10-28）：
-    // vobs 的动态 props 是 getter 属性（每次读取重算），`const st = props.state`
-    // 存进局部变量即 run-once 快照——JSX 里直接用 st 永远是初值。
+    // In the component body: "props property + stored into a const" (deadly-sin §4 snapshot family, 2026-10-28):
+    // vobs dynamic props are getter properties (recomputed on every read); `const st = props.state`
+    // stored in a local variable is a run-once snapshot — using st directly in JSX always yields the initial value.
     const propsCaptured: { name: string; node: ts.VariableDeclaration }[] = []
     for (const statement of body.statements) {
       if (!ts.isVariableStatement(statement)) continue
@@ -491,7 +491,7 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
 
     if (captured.length === 0 && propsCaptured.length === 0) return
 
-    // 这些名字是否在 JSX 表达式里被用到；被**调用**的（`{st()}`）是 getter 形态，不算快照
+    // Whether these names are used inside JSX expressions; ones that are **called** (`{st()}`) are in getter form and do not count as snapshots
     const usedInJsx = new Set<string>()
     const calledInJsxBody = new Set<string>()
     const visit = (node: ts.Node): void => {
@@ -512,9 +512,9 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
       found.push(diagnosticAt(source, file, item.node, {
         code: VOBS_C118,
         severity: 'warning',
-        message: `组件体里读了信号并存进 "${item.name}" —— 组件体只执行一次，这个值之后永远不会更新`,
-        fix: `把读取放进动态表达式（直接在 JSX 里用 .value），或改成 memo 派生值：`
-          + `const ${item.name} = memo(() => ...)。`
+        message: `A signal is read in the component body and stored into "${item.name}" — the component body runs only once, so this value never updates afterwards`,
+        fix: `Put the read into a dynamic expression (use .value directly in JSX), or turn it into a memo-derived value: `
+          + `const ${item.name} = memo(() => ...).`
       }))
     }
 
@@ -523,10 +523,10 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
       found.push(diagnosticAt(source, file, item.node, {
         code: VOBS_C118,
         severity: 'warning',
-        message: `组件体里把 props 属性存进了 "${item.name}" —— 动态 props 是 getter（每次读取重算），`
-          + `存进局部变量即 run-once 快照，之后永远是初始值`,
-        fix: `改成 getter 形态并在 JSX 里调用：const ${item.name} = () => props.<属性>，`
-          + `用法 {${item.name}()}；或直接在 JSX 里写 props.<属性>。`
+        message: `A props property is stored into "${item.name}" in the component body — dynamic props are getters (recomputed on every read), `
+          + `and storing one in a local variable is a run-once snapshot that keeps the initial value forever`,
+        fix: `Switch to getter form and call it in JSX: const ${item.name} = () => props.<prop>, `
+          + `used as {${item.name}()}; or write props.<prop> directly in JSX.`
       }))
     }
   }
@@ -542,19 +542,19 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
   return found
 }
 
-/* --------------------------------- 规则 D：数组信号原地修改（C233） */
+/* --------------------------------- Rule D: array signal mutated in place (C233) */
 
-/** 数组原地变异方法：这些调用改的是**同一个引用**，信号不会通知订阅方。 */
+/** In-place array mutators: these calls modify **the same reference**, so the signal never notifies subscribers. */
 const ARRAY_MUTATORS = new Set([
   'push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin'
 ])
 
 /**
- * 判断变异点处的名字是否被**同名局部遮蔽**。
+ * Tell whether the name at a mutation point is **shadowed by a same-named local**.
  *
- * 沿 parent 链向上，途经的每个函数检查它的**参数**与**体内声明**（含嵌套 ——
- * 保守方向：多排除 = 少报。真实场景里「内层回调声明了同名而变异点在外层直接
- * 使用信号」的概率极低，少报的代价远低于误报，见 C104 的教训）。
+ * Walk up the parent chain; each function passed checks its **parameters** and **body declarations** (including nested —
+ * the conservative direction: more exclusions = fewer reports. In real code, "an inner callback declares the same name while the mutation
+ * point uses the outer signal" is extremely unlikely; under-reporting costs far less than false positives — see the C104 lesson).
  */
 function shadowedByName(from: ts.Identifier, name: string): boolean {
   let parent: ts.Node | undefined = from.parent
@@ -571,10 +571,10 @@ function shadowedByName(from: ts.Identifier, name: string): boolean {
           if (hit) return
           if (ts.isVariableDeclaration(child) && ts.isIdentifier(child.name) && child.name.text === name) {
             /*
-             * **绑定到 state(...) 的声明就是信号本身，不算遮蔽** —— 否则变异点
-             * 永远会被「信号自己的声明」误判成同名遮蔽、规则一次都报不出来
-             * （第一个对抗用例就暴露了这个 bug）。只排除这一种：内层**非信号**
-             * 的同名声明（`const list = { value: [] }`）才是真遮蔽。
+             * **A declaration bound to state(...) is the signal itself, not shadowing** — otherwise the mutation
+             * point would always be misjudged as same-name shadowing by "the signal's own declaration" and the rule would
+             * never fire (the very first adversarial case exposed this bug). Only this kind is excluded: an inner **non-signal**
+             * same-named declaration (`const list = { value: [] }`) is a real shadow.
              */
             let init: ts.Expression | undefined = child.initializer
             while (init !== undefined && (ts.isParenthesizedExpression(init) || ts.isAsExpression(init))) {
@@ -597,26 +597,26 @@ function shadowedByName(from: ts.Identifier, name: string): boolean {
 }
 
 /**
- * 数组信号的原地变异（`silent-failures.md` 曾记录的第 1 条静默，2026-10-28 补上诊断）。
+ * In-place mutation of array signals (silent failure #1 once recorded in `silent-failures.md`; the diagnostic was added 2026-10-28).
  *
  * ```ts
  * const list = state([1])
- * list.value.push(2)   // 引用没变 → 信号不通知 → 订阅处永不更新
+ * list.value.push(2)   // reference unchanged → no notification → subscribers never update
  * ```
  *
- * ## 判据（按 silentNote 当时的要求：先确认绑定，再开口）
+ * ## Test (per silentNote's original demand: confirm the binding before speaking up)
  *
- * 只对「**名字确实绑定到 `state(...)`**」的接收者报警 —— 这就是当年缺的
- * **绑定分析**。普通数组的 `.push()` 是完全正常的代码，一个都不报。
- * 同名遮蔽（内层重声明/形参）排除；`untrack` 内也不例外
- * （换不换引用与订阅无关，原地变异永远到不了订阅方）。
+ * Only receivers whose **name is verifiably bound to `state(...)`** are reported — exactly the
+ * **binding analysis** that was missing back then. A plain array's `.push()` is perfectly normal code; not one is reported.
+ * Same-name shadowing (inner redeclarations/parameters) is excluded; `untrack` is no exception either
+ * (reference swapping has nothing to do with subscriptions; in-place mutation never reaches subscribers).
  *
- * 方向是保守的：只认 `state` 标识符直调（自定义 store 工厂不认 = 漏报不误报），
- * severity 先给 warning —— 等全仓实测误报后再决定是否升 error。
+ * The direction is conservative: only direct `state` identifier calls count (custom store factories are not recognized = under-report, never false-positive),
+ * and severity starts at warning — whether to upgrade to error awaits repo-wide measured false positives.
  */
 /**
- * 字段赋值的接收者是否落在某 state 绑定信号的 **`.value` 链**上
- * （`X.value.name = …` / 深层 `X.value.a.b = …`）→ 返回那个标识符 `X`；否则 null。
+ * Whether a field assignment's receiver sits on the **`.value` chain** of a state-bound signal
+ * (`X.value.name = …` / deep `X.value.a.b = …`) → returns that identifier `X`; otherwise null.
  */
 function fieldMutationOwner(left: ts.Node, stateBindings: Set<string>): ts.Identifier | null {
   let current = left
@@ -634,12 +634,12 @@ function fieldMutationOwner(left: ts.Node, stateBindings: Set<string>): ts.Ident
 function ruleSignalArrayMutation(source: ts.SourceFile, file: string): CheckDiagnostic[] {
   const found: CheckDiagnostic[] = []
 
-  // 全文件收集「绑定到 state(...) 调用」的名字 —— 这就是 silentNote 里说的绑定分析
+  // Collect across the file the names "bound to state(...) calls" — the binding analysis silentNote spoke of
   const stateBindings = collectStateBindings(source)
   if (stateBindings.size === 0) return found
 
   const visit = (node: ts.Node): void => {
-    // 形态一：<name>.value.<mutator>(...) —— 三层数组变异 + 调用
+    // Shape 1: <name>.value.<mutator>(...) — three-level array mutation + call
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
       && ts.isPropertyAccessExpression(node.expression.expression)) {
       const mutator = node.expression.name
@@ -651,17 +651,17 @@ function ruleSignalArrayMutation(source: ts.SourceFile, file: string): CheckDiag
           found.push(diagnosticAt(source, file, node, {
             code: VOBS_C233,
             severity: 'warning',
-            message: `数组信号 "${name}" 用 ${mutator.text}() 原地修改 —— 引用没变，`
-              + `订阅它的 JSX 永远不会更新`,
-            fix: `数组更新必须换引用：push 用 ${name}.value = [...${name}.value, 新项]；`
-              + `排序/截断同理先拷贝再改：${name}.value = [...${name}.value].sort(...)。`
+            message: `Array signal "${name}" is mutated in place via ${mutator.text}() — the reference is unchanged, `
+              + `so the JSX subscribed to it never updates`,
+            fix: `Array updates must swap the reference: push via ${name}.value = [...${name}.value, newItem]; `
+              + `likewise copy before sort/truncate: ${name}.value = [...${name}.value].sort(...).`
           }))
         }
       }
     }
-    // 形态二（对称缺口，2026-10-28）：<name>.value.<...字段...> = 新值 —— 对象字段原地赋值。
-    // 改内部字段引用没变，订阅处同样不会更新 —— 与数组变异是同一个坑的两种写法。
-    // 沿属性链找 X.value 前缀：一层（X.value.name）与深层（X.value.a.b）都算。
+    // Shape 2 (the symmetric gap, 2026-10-28): <name>.value.<...field...> = newValue — in-place object field assignment.
+    // Changing an inner field leaves the reference unchanged, so subscribers likewise never update — the same pit as array mutation, differently spelled.
+    // Walk the property chain for an X.value prefix: one level (X.value.name) and deep (X.value.a.b) both count.
     if (ts.isBinaryExpression(node) && isWriteOperator(node.operatorToken.kind)
       && ts.isPropertyAccessExpression(node.left)) {
       const ownerIdentifier = fieldMutationOwner(node.left, stateBindings)
@@ -670,9 +670,9 @@ function ruleSignalArrayMutation(source: ts.SourceFile, file: string): CheckDiag
         found.push(diagnosticAt(source, file, node, {
           code: VOBS_C233,
           severity: 'warning',
-          message: `信号 "${owner}" 的内部字段被原地修改 —— 引用没变，订阅它的 JSX 永远不会更新`,
-          fix: `对象更新必须整体换引用：${owner}.value = { ...${owner}.value, 字段: 新值 }`
-            + `（深层字段沿路径逐层展开）。改字段/数组原地变异都不触发更新，引用变了才触发。`
+          message: `An inner field of signal "${owner}" is mutated in place — the reference is unchanged, so the JSX subscribed to it never updates`,
+          fix: `Object updates must swap the reference wholesale: ${owner}.value = { ...${owner}.value, field: newValue } `
+            + `(deep fields are spread level by level along the path). In-place field/array mutation never triggers updates; only a changed reference does.`
         }))
       }
     }
@@ -683,17 +683,17 @@ function ruleSignalArrayMutation(source: ts.SourceFile, file: string): CheckDiag
   return found
 }
 
-/* ------------------------------------ 规则 E：state() 未传调试名（C120） */
+/* ------------------------------------ Rule E: state() without a debug name (C120) */
 
 /**
- * state() 未传调试名（Finora 死穴 §1-3 的静态前移，2026-10-28）。
+ * state() without a debug name (the static forward-move of Finora's deadly sin §1-3, 2026-10-28).
  *
- * C210/C211 的运行时报错里信号显示为 **"(未命名信号)"** —— 没传第二参的信号
- * 在排查时无法定位（页面上多个信号都叫这个）。运行时无法在报错前提醒；
- * 静态规则在**创建处**就能说清楚。
+ * In C210/C211 runtime errors the signal shows up as **"(unnamed signal)"** — a signal without the second argument
+ * cannot be located while debugging (several signals on the page all share that name). The runtime cannot warn before the error;
+ * the static rule can say it right at the **creation site**.
  *
- * fix 文案直接给出**与变量同名**的建议（`state(0, 'count')`）—— 约定俗成的写法，
- * AI 与人都能照抄。spread 参数跳过（无法确定参数个数，少报不误报）。
+ * The fix text directly suggests **the same name as the variable** (`state(0, 'count')`) — the conventional form,
+ * which AI and humans can copy verbatim. Spread arguments are skipped (the argument count is undecidable; under-report, never false-positive).
  */
 function ruleUnnamedSignal(source: ts.SourceFile, file: string): CheckDiagnostic[] {
   const found: CheckDiagnostic[] = []
@@ -701,18 +701,18 @@ function ruleUnnamedSignal(source: ts.SourceFile, file: string): CheckDiagnostic
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'state'
       && node.arguments.length < 2
       && !node.arguments.some(item => ts.isSpreadElement(item))) {
-      // 建议名：const count = state(0) → 建议 'count'；其它场景给通用提示
+      // Suggested name: const count = state(0) → suggest 'count'; other scenarios get a generic hint
       let suggested: string | undefined
       const parent = node.parent
       if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) suggested = parent.name.text
       found.push(diagnosticAt(source, file, node, {
         code: VOBS_C120,
         severity: 'warning',
-        message: 'state() 没传调试名 —— 运行时诊断（如 C210 自订阅）会把它显示为 "(未命名信号)"，'
-          + '页面上有多个信号时无法定位是哪一个',
+        message: 'state() is called without a debug name — runtime diagnostics (e.g. C210 self-subscription) will show it as "(unnamed signal)", '
+          + 'and with several signals on the page it is impossible to tell which one',
         fix: suggested !== undefined
-          ? `给第二个参数传与变量同名的调试名：state(<初值>, '${suggested}')。`
-          : `给第二个参数传一个调试名（通常与变量同名）：state(<初值>, '名字')。`
+          ? `Pass a debug name matching the variable as the second argument: state(<initial>, '${suggested}').`
+          : `Pass a debug name as the second argument (usually matching the variable): state(<initial>, 'name').`
       }))
     }
     ts.forEachChild(node, visit)
@@ -722,7 +722,7 @@ function ruleUnnamedSignal(source: ts.SourceFile, file: string): CheckDiagnostic
 }
 
 /**
- * 全文件收集「绑定到 `state(...)` 调用」的名字 —— C233 / C234 共用的绑定分析。
+ * Collect across the file the names "bound to `state(...)` calls" — the binding analysis shared by C233 / C234.
  */
 function collectStateBindings(source: ts.SourceFile): Set<string> {
   const stateBindings = new Set<string>()
@@ -740,7 +740,7 @@ function collectStateBindings(source: ts.SourceFile): Set<string> {
   return stateBindings
 }
 
-/** 函数体内读到的**纯标识符信号**名（`X.value` 且 X 是标识符、X ∈ stateBindings）。 */
+/** Names of **plain-identifier signals** read inside a function body (`X.value` where X is an identifier and X ∈ stateBindings). */
 function collectSignalReads(body: ts.Node, stateBindings: Set<string>): Set<string> {
   const reads = new Set<string>()
   const walk = (node: ts.Node): void => {
@@ -755,23 +755,23 @@ function collectSignalReads(body: ts.Node, stateBindings: Set<string>): Set<stri
 }
 
 /**
- * on 回调里的**隐式断边**（AI「以为读了就依赖」在 on 语境下的必然踩法，2026-10-28）。
+ * The **implicit broken edge** in on callbacks (the inevitable way the "if it read it, it depends" assumption trips in the on context, 2026-10-28).
  *
  * ```ts
  * effect(on([a], () => {
- *   use(b.value)   // ⚠️ on 的回调跑在 untrack 作用域里 —— b 不会建立订阅
- * }))              //    b 变化不触发本 effect，更新静默丢失
+ *   use(b.value)   // ⚠️ the on callback runs in an untrack scope — b establishes no subscription
+ * }))              //    a change of b does not trigger this effect; the update is silently lost
  * ```
  *
- * ## 为什么是提示而不是错误
+ * ## Why a hint rather than an error
  *
- * on 回调里读非 deps 信号有**两种意图**：
- * (a) 期望它也触发 → 漏写 deps，是真 bug（欠订阅）；
- * (b) 只要最新值、由 deps 触发刷新 —— **合法模式**（每次重跑读到新值）。
- * 静态分不出意图，所以 severity = warning，文案把两种意图都说清楚让作者自认。
+ * Reading a non-deps signal inside an on callback has **two intents**:
+ * (a) expecting it to trigger too → deps was omitted, a real bug (under-subscription);
+ * (b) wanting only the latest value, refreshed by deps — a **legitimate pattern** (each re-run reads the fresh value).
+ * Statics cannot tell the intents apart, hence severity = warning; the text spells out both so the author can self-identify.
  *
- * deps 形态：数组 → 元素标识符；单信号 → 名字本身；**取值函数** → 函数体内
- * 读到的绑定信号（函数读什么订阅什么）；其余（spread 等）→ 跳过（少报不误报）。
+ * deps shapes: array → element identifiers; a single signal → the name itself; a **getter function** → the bound
+ * signals read inside its body (whatever the function reads is what it subscribes to); anything else (spread etc.) → skipped (under-report, never false-positive).
  */
 function ruleOnCallbackUntracked(source: ts.SourceFile, file: string): CheckDiagnostic[] {
   const found: CheckDiagnostic[] = []
@@ -791,7 +791,7 @@ function ruleOnCallbackUntracked(source: ts.SourceFile, file: string): CheckDiag
   }
 
   const visit = (node: ts.Node): void => {
-    // 形态：effect(on(deps, callback))
+    // Shape: effect(on(deps, callback))
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'effect'
       && node.arguments.length > 0) {
       const arg0 = node.arguments[0]
@@ -806,11 +806,11 @@ function ruleOnCallbackUntracked(source: ts.SourceFile, file: string): CheckDiag
             found.push(diagnosticAt(source, file, callback, {
               code: VOBS_C234,
               severity: 'warning',
-              message: `on 的回调跑在 untrack 作用域里 —— 这里读了 "${name}" 但它不在 deps 里，`
-                + `不会建立订阅：${name} 变化不会触发本 effect`,
-              fix: `期望它也触发 → 加进 deps：on([…, ${name}], fn)。`
-                + `若只要最新值、由 deps 触发刷新（刻意不订阅）→ 可忽略本提示，`
-                + `或用 untrack(() => ${name}.value) 显式表达意图。`
+              message: `The on callback runs in an untrack scope — it reads "${name}" here but that name is not in deps, `
+                + `so no subscription is established: a change of ${name} will not trigger this effect`,
+              fix: `Expect it to trigger too → add it to deps: on([…, ${name}], fn). `
+                + `If you only want the latest value refreshed by deps (deliberately unsubscribed) → ignore this hint, `
+                + `or express the intent explicitly with untrack(() => ${name}.value).`
             }))
           }
         }
@@ -822,22 +822,22 @@ function ruleOnCallbackUntracked(source: ts.SourceFile, file: string): CheckDiag
   return found
 }
 
-/* -------------------------------------------------------------- 入口 */
+/* -------------------------------------------------------------- Entry */
 
 /**
- * 行内抑制：`// vobs-check-ignore-next-line`。
+ * Inline suppression: `// vobs-check-ignore-next-line`.
  *
- * 这三条规则都是**启发式**的：它们靠名字与形状判断「这看起来像信号自订阅 / 像写在分支里的列表 /
- * 像在组件体里读信号」，而有些合法代码恰好长成那样。检查器没有逃生口的话，用户只能关掉整条
- * 规则（或者被 CI 挡住去做假的改写）—— 那比漏报更糟。
+ * These rules are all **heuristic**: they judge by name and shape that "this looks like a signal self-subscription / a list in a branch /
+ * a signal read in the component body", and some perfectly legal code happens to look exactly like that. Without an escape hatch in the
+ * checker, users would have to disable the whole rule (or be blocked by CI into making fake rewrites) — worse than under-reporting.
  *
- * 只支持「抑制下一行」：作用范围最小、读代码时一眼看得见，也没有整文件豁免那种一刀切。
- * 实测就撞到过一例：`ListEntry.value` 是普通字段，但写法与信号自订阅完全相同
- * （后来给它改了名，但用户代码里不会有这种运气）。
+ * Only "suppress the next line" is supported: the smallest possible scope, visible at a glance while reading, and no whole-file blanket exemption.
+ * One such case actually occurred: `ListEntry.value` is a plain field, but written exactly like a signal self-subscription
+ * (it was later renamed, but user code cannot count on that kind of luck).
  */
 const IGNORE_NEXT_LINE = /vobs-check-ignore-next-line/u
 
-/** 被行内注释抑制的行号集合（1-based，收集的是「注释的下一行」）。 */
+/** Line numbers suppressed by inline comments (1-based; collects "the line after the comment"). */
 function suppressedLines(text: string): Set<number> {
   const suppressed = new Set<number>()
   const lines = text.split(/\r?\n/u)
@@ -863,8 +863,8 @@ export function analyzeSource(text: string, file: string): CheckDiagnostic[] {
 }
 
 /**
- * 跑编译器诊断并映射成 `CheckDiagnostic`。
+ * Run the compiler diagnostics and map them into `CheckDiagnostic`.
  *
- * `compileWithSourceMap` 用 try/catch 包住：单个文件让编译器抛错不该中断整轮检查
- * （那是"检查工具本身"的失败，不是源码的问题）。
+ * `compileWithSourceMap` is wrapped in try/catch: a single file making the compiler throw must not abort the whole check run
+ * (that is a failure of "the checking tool itself", not a problem in the source).
  */

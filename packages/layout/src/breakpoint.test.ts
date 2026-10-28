@@ -9,16 +9,19 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * `mobileBreakpoint` 必须是响应式的。
+ * `mobileBreakpoint` must be reactive.
  *
- * 原来 KitLayout 在组件体里 `normalizeBreakpoint(readProp(props, 'mobileBreakpoint', …))` 算一次，
- * 把**数字**交给 createKitViewport —— 而组件体只执行一次，于是事后改断点毫无作用：
- * 实测把断点从 768 改成 600，`vobs-kit-layout--mobile` 类不消失。
+ * KitLayout used to compute `normalizeBreakpoint(readProp(props,
+ * 'mobileBreakpoint', …))` once in the component body and hand the **number**
+ * to createKitViewport — component bodies run once, so changing the breakpoint
+ * afterwards had no effect: verified that switching from 768 to 600 didn't
+ * remove the `vobs-kit-layout--mobile` class.
  *
- * 现在断点是 memo、传给 viewport 的是 getter，viewport 在 `isMobile` 的 memo 里读它
- * —— 断点变了 isMobile 就跟着变。这里两个方向都断言。
+ * The breakpoint is now a memo and the viewport receives a getter; the
+ * viewport reads it inside the `isMobile` memo — a breakpoint change moves
+ * isMobile with it. Both directions are asserted here.
  *
- * jsdom 的 window.innerWidth 默认 1024。
+ * jsdom's window.innerWidth defaults to 1024.
  */
 const INNER_WIDTH = 1024
 
@@ -34,18 +37,18 @@ function mount(initialBreakpoint: number) {
   return { breakpoint, root, isMobile, cleanup: () => { app.destroy(); host.remove() } }
 }
 
-describe('KitLayout mobileBreakpoint 响应性', () => {
-  it('断点调高到超过窗口宽度时进入移动布局，调回来后退出', async () => {
+describe('KitLayout mobileBreakpoint reactivity', () => {
+  it('enters the mobile layout when the breakpoint rises above the window width and exits when lowered back', async () => {
     const { breakpoint, isMobile, cleanup } = mount(600)
     await settle()
     expect(INNER_WIDTH).toBeGreaterThan(600)
     expect(isMobile()).toBe(false)
 
-    breakpoint.value = 2000                      // 1024 < 2000 → 移动布局
+    breakpoint.value = 2000                      // 1024 < 2000 → mobile layout
     await settle()
     expect(isMobile()).toBe(true)
 
-    breakpoint.value = 600                       // 再调回来 → 应当退出（原来这里仍然是 true）
+    breakpoint.value = 600                       // back down → should exit (it used to stay true here)
     await settle()
     expect(isMobile()).toBe(false)
 

@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 /*
- * 数字输入解析契约（外部踩坑文档 #7）。
+ * The numeric input parsing contract (external pitfall doc #7).
  *
- * 核心事实：`Number('') === 0` —— 用户把输入框清空的瞬间值被当成 0 写进信号。
- * 在「比例锁定 / 联动计算」链路里 `0` 经除法变成 `Infinity`，再把兄弟维度一并清零：
- * **清一个输入框，旁边几个也跟着归零**。
+ * Core fact: `Number('') === 0` — the instant the user clears the input box, the value is
+ * written into the signal as 0. In "ratio locking / linked calculation" chains that 0 becomes
+ * `Infinity` through division and zeroes the sibling dimensions too:
+ * **clearing one input box zeroes several neighboring ones as well**.
  *
- * 契约：数字语义的输入走 `parseNumber` —— 空串 / 非法 / 超界一律**不提交**，
- * 信号保持最后一次有效值。
+ * Contract: numerically semantic input goes through `parseNumber` — empty / invalid /
+ * out-of-bounds values are **never committed**; the signal keeps the last valid value.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { scheduler } from '@vobs/reactivity'
@@ -18,20 +19,20 @@ setRenderer(createDOMRenderer())
 const settle = (): void => { scheduler.flush() }
 
 describe('parseNumber', () => {
-  it('**空串不提交**（这是它存在的首要理由）', () => {
+  it('**empty string is not committed** (the primary reason it exists)', () => {
     expect(parseNumber('').ok).toBe(false)
     expect(parseNumber('')).toEqual({ ok: false, reason: 'empty' })
     expect(parseNumber('   ')).toEqual({ ok: false, reason: 'empty' })
   })
 
-  it('非法形态不提交（不用 Number() 的宽松解析）', () => {
+  it('invalid shapes are not committed (no Number()-style lenient parsing)', () => {
     for (const text of ['abc', '1.2.3', '--1', '1,000', '12px', '1e3', '0x10', 'Infinity', 'NaN']) {
       const result = parseNumber(text)
-      expect(result.ok, `${JSON.stringify(text)} 竟然被接受了`).toBe(false)
+      expect(result.ok, `${JSON.stringify(text)} was unexpectedly accepted`).toBe(false)
     }
   })
 
-  it('合法十进制照常提交', () => {
+  it('valid decimal input is committed as usual', () => {
     expect(parseNumber('0')).toEqual({ ok: true, value: 0 })
     expect(parseNumber('42')).toEqual({ ok: true, value: 42 })
     expect(parseNumber('-1.5')).toEqual({ ok: true, value: -1.5 })
@@ -40,36 +41,36 @@ describe('parseNumber', () => {
     expect(parseNumber(' 7 ')).toEqual({ ok: true, value: 7 })
   })
 
-  it('用户正在输入的中间态 `1.` 默认接受（拒绝会让输入过程很别扭）', () => {
+  it('the mid-typing state `1.` is accepted by default (rejecting it makes typing awkward)', () => {
     expect(parseNumber('1.')).toEqual({ ok: true, value: 1 })
     expect(parseNumber('1.', { allowTrailingDot: false }).ok).toBe(false)
   })
 
-  it('超界**不提交**（不是静默钳制 —— 钳制会掩盖用户输入）', () => {
+  it('out-of-bounds is **not committed** (not silently clamped — clamping masks user input)', () => {
     expect(parseNumber('101', { max: 100 })).toEqual({ ok: false, reason: 'above-max' })
     expect(parseNumber('-1', { min: 0 })).toEqual({ ok: false, reason: 'below-min' })
-    // 边界值本身是合法的（含端点）
+    // boundary values themselves are valid (endpoints included)
     expect(parseNumber('100', { max: 100 })).toEqual({ ok: true, value: 100 })
     expect(parseNumber('0', { min: 0 })).toEqual({ ok: true, value: 0 })
   })
 
-  it('integer 选项拒绝小数', () => {
+  it('the integer option rejects decimals', () => {
     expect(parseNumber('1.5', { integer: true })).toEqual({ ok: false, reason: 'not-integer' })
     expect(parseNumber('2', { integer: true })).toEqual({ ok: true, value: 2 })
   })
 
-  it('超长数字（形态合法但溢出为 Infinity）被挡住', () => {
+  it('overlong numbers (shape-valid but overflowing to Infinity) are blocked', () => {
     expect(parseNumber('1'.repeat(400)).ok).toBe(false)
   })
 
-  it('失败原因都有中文说明', () => {
+  it('every failure reason has a user-facing message', () => {
     for (const reason of ['empty', 'invalid', 'not-integer', 'below-min', 'above-max'] as const) {
       expect(describeNumberParseFailure(reason).length).toBeGreaterThan(0)
     }
   })
 })
 
-describe('Field type="number" 不把空串写成 0', () => {
+describe('Field type="number" does not write an empty string as 0', () => {
   function mountNumericField(initial: unknown, extra: Record<string, unknown> = {}) {
     const form = createForm({ get ratio() { return initial } } as never)
     const onInvalid = vi.fn()
@@ -90,7 +91,7 @@ describe('Field type="number" 不把空串写成 0', () => {
     return { form, host, app, input, onInvalid, cleanup: () => { app.destroy(); host.remove() } }
   }
 
-  it('清空输入框**不**把值变成 0（这是坑的原始形态）', () => {
+  it('clearing the input does **not** turn the value into 0 (the original shape of the pit)', () => {
     const view = mountNumericField(50)
     expect(view.input.value).toBe('50')
 
@@ -99,30 +100,31 @@ describe('Field type="number" 不把空串写成 0', () => {
     settle()
 
     const field = view.form.field('ratio' as never) as { value: { value: unknown } }
-    expect(field.value.value, '空串被当成了 0 —— 联动链会被清零').toBe(50)
-    expect(view.input.value).toBe('')     // 框里仍是用户清空的状态（那是输入框自己的表现）
+    expect(field.value.value, 'empty string treated as 0 — the linked chain would be zeroed').toBe(50)
+    expect(view.input.value).toBe('')     // the box still shows the user-cleared state (that is the input's own representation)
     view.cleanup()
   })
 
-  it('非法输入不提交，并按 reason 通知调用方', () => {
+  it('invalid input is not committed and the caller is notified with the reason', () => {
     const view = mountNumericField(50)
     /*
-     * 注意：`<input type="number">` **自己就会拒绝非法文本** ——
-     * 给它 `.value = 'abc'` 会被浏览器归一成 `''`，所以这里走到的是 `empty` 而不是 `invalid`。
-     * （`invalid` 由 `parseNumber` 直接覆盖，见上面的纯函数用例 ——
-     * 文本框 + 数值语义 hint 的组合才会真正收到 'abc'。）
+     * Note: `<input type="number">` **rejects invalid text on its own** —
+     * assigning `.value = 'abc'` gets normalized to `''` by the browser, so what reaches us here
+     * is `empty`, not `invalid`.
+     * (`invalid` is covered directly by `parseNumber`, see the pure-function cases above —
+     * only the text box + numeric-hint combination actually receives 'abc'.)
      */
     view.input.value = 'abc'
     view.input.dispatchEvent(new Event('input', { bubbles: true }))
     settle()
 
     const field = view.form.field('ratio' as never) as { value: { value: unknown } }
-    expect(field.value.value, '非法输入被提交了').toBe(50)
+    expect(field.value.value, 'invalid input was committed').toBe(50)
     expect(view.onInvalid).toHaveBeenCalledWith('empty', '')
     view.cleanup()
   })
 
-  it('文本框 + 数值 hint（min/max）能收到真正的非法文本', () => {
+  it('a text box with numeric hints (min/max) receives truly invalid text', () => {
     const view = mountNumericField(50, { type: 'text', min: 0, max: 100 })
     view.input.value = 'abc'
     view.input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -133,7 +135,7 @@ describe('Field type="number" 不把空串写成 0', () => {
     view.cleanup()
   })
 
-  it('超界不提交', () => {
+  it('out-of-bounds is not committed', () => {
     const view = mountNumericField(50, { max: 100 })
     view.input.value = '101'
     view.input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -143,18 +145,18 @@ describe('Field type="number" 不把空串写成 0', () => {
     view.cleanup()
   })
 
-  it('合法数字**提交为 number 类型**（不是字符串）', () => {
+  it('a valid number is **committed as a number type** (not a string)', () => {
     const view = mountNumericField(50)
     view.input.value = '75'
     view.input.dispatchEvent(new Event('input', { bubbles: true }))
     settle()
     const field = view.form.field('ratio' as never) as { value: { value: unknown } }
     expect(field.value.value).toBe(75)
-    expect(typeof field.value.value, '数字框提交了字符串，调用方一除法就出事').toBe('number')
+    expect(typeof field.value.value, 'the number box committed a string; the caller\'s first division breaks').toBe('number')
     view.cleanup()
   })
 
-  it('文本框（无数字语义）行为不变 —— 仍原样写字符串', () => {
+  it('a text box (no numeric semantics) behaves unchanged — the string is still written as-is', () => {
     const form = createForm({ get note() { return 'x' } } as never)
     const host = document.createElement('main')
     document.body.appendChild(host)
@@ -172,7 +174,7 @@ describe('Field type="number" 不把空串写成 0', () => {
     app.destroy(); host.remove()
   })
 
-  it('onNumberInvalid 不落成 DOM 属性', () => {
+  it('onNumberInvalid does not land as a DOM attribute', () => {
     const view = mountNumericField(50)
     expect(view.input.hasAttribute('onnumberinvalid')).toBe(false)
     view.cleanup()

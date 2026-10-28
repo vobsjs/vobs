@@ -2,7 +2,7 @@ import { createComponent } from '@vobs/vobs'
 import { Icon } from '@vobs/ui'
 import type { DataTableIcons } from './types'
 
-/** 内置默认图标；`icons` prop 中的同名项会逐个覆盖。 */
+/** Built-in default icons; same-named entries in the `icons` prop override them one by one. */
 export function defaultIcons(): Required<DataTableIcons> {
   return {
     ascending: () => createComponent(Icon, { name: 'chevron-up' }),

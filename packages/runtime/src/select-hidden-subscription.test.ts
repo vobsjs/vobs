@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
 /*
- * `<select value={…}>` 插入 option 时的值重放，**不得建立隐藏订阅**。
+ * The value replay when `<select value={…}>` gets options inserted **must not establish
+ * a hidden subscription**.
  *
- * 机制：`bindProperty(select,'value',…)` 会注册一个 reader（`ops.ts` 的
- * `selectValueReaders`），插入 `<option>` 时同步重放当前值。
- * 而插入往往发生在某个 effect 运行期间（`insertList`/`insertDynamic` 都由 effect 驱动）——
- * 若重放里的读取被算进**外层 effect 的依赖**，该 effect 以后会被那个信号唤醒：
- * 依赖图上多一条没人打算建立的边（"隐藏订阅"），表现为"插选项时某个不相关的 effect 重跑了"。
+ * Mechanism: `bindProperty(select,'value',…)` registers a reader (`selectValueReaders` in
+ * `ops.ts`), and inserting an `<option>` synchronously replays the current value.
+ * The insertion usually happens while some effect is running (`insertList`/
+ * `insertDynamic` are both effect-driven) — if the read inside the replay were counted
+ * into the **outer effect's dependencies**, the effect would from then on be woken by
+ * that signal: one extra edge in the dependency graph nobody intended (a "hidden
+ * subscription"), showing up as "some unrelated effect re-ran when options were inserted".
  *
- * 判据用**行为**：外层 effect 的重跑次数。
- * 修复前：插入 option 时外层 effect 会额外重跑（因为它意外订阅了值信号）。
- * 修复后：外层 effect 只被它自己读的信号驱动。
+ * The criterion is **behavioral**: the outer effect's re-run count.
+ * Before the fix: inserting an option re-ran the outer effect (it had accidentally
+ * subscribed to the value signal).
+ * After: the outer effect is driven only by signals it reads itself.
  */
 import { describe, expect, it } from 'vitest'
 import { createDOMRenderer, setRenderer, state } from '@vobs/vobs'
@@ -26,20 +30,20 @@ function optionFor(value: string): HTMLOptionElement {
   return option
 }
 
-describe('<select> value 重放不得建立隐藏订阅', () => {
-  it('插入 option 不会让"值信号"之外的 effect 被唤醒', () => {
+describe('<select> value replay must not establish hidden subscriptions', () => {
+  it('inserting an option does not wake effects other than the "value signal"', () => {
     const select = createElement('select') as HTMLSelectElement
     const selectedValue = state('b')
     const unrelated = state(0)
 
     bindProperty(select, 'value', () => selectedValue.value)
 
-    // 外层 effect：只读 `unrelated`，与 select 的值无关
+    // Outer effect: reads only `unrelated`, unrelated to the select's value
     let runs = 0
     const stop = effect(() => {
       runs += 1
       void unrelated.value
-      // 在 effect 内插入选项 —— 模拟列表驱动的动态 option
+      // Insert an option inside the effect — simulating list-driven dynamic options
       const option = optionFor('a')
       insertBefore(select, option, null)
     })
@@ -47,15 +51,15 @@ describe('<select> value 重放不得建立隐藏订阅', () => {
     const afterFirst = runs
     expect(afterFirst).toBeGreaterThanOrEqual(1)
 
-    // 改**值信号**：外层 effect 没读过它，不该被唤醒
+    // Change the **value signal**: the outer effect never read it; it must not be woken
     selectedValue.value = 'a'
     settle()
-    expect(runs, '插入 option 的路径让外层 effect 意外订阅了 select 的值信号').toBe(afterFirst)
+    expect(runs, 'the option-insertion path made the outer effect accidentally subscribe to the select\'s value signal').toBe(afterFirst)
 
     stop.dispose()
   })
 
-  it('重放仍然生效：动态插入的 option 能命中已绑定的值', () => {
+  it('the replay still works: dynamically inserted options hit the already-bound value', () => {
     const select = createElement('select') as HTMLSelectElement
     const selectedValue = state('b')
     bindProperty(select, 'value', () => selectedValue.value)
@@ -65,11 +69,11 @@ describe('<select> value 重放不得建立隐藏订阅', () => {
     insertBefore(select, optionFor('b'), null)
     settle()
 
-    // 值 'b' 对应的 option 现在存在了 → select.value 应当命中
+    // The option for value 'b' now exists → select.value should hit it
     expect(select.value).toBe('b')
   })
 
-  it('值信号变化本身仍然驱动 select.value（绑定没被 untrack 弄坏）', () => {
+  it('the value signal\'s own changes still drive select.value (the binding wasn\'t broken by untrack)', () => {
     const select = createElement('select') as HTMLSelectElement
     const selectedValue = state('a')
     bindProperty(select, 'value', () => selectedValue.value)
@@ -80,10 +84,10 @@ describe('<select> value 重放不得建立隐藏订阅', () => {
 
     selectedValue.value = 'b'
     settle()
-    expect(select.value, '绑定的 effect 没跟上值信号').toBe('b')
+    expect(select.value, 'the bound effect didn\'t follow the value signal').toBe('b')
   })
 
-  it('optgroup 内的 option 也会触发重放（既有语义不变）', () => {
+  it('options inside an optgroup also trigger the replay (existing semantics unchanged)', () => {
     const select = createElement('select') as HTMLSelectElement
     const selectedValue = state('x')
     bindProperty(select, 'value', () => selectedValue.value)
@@ -94,7 +98,7 @@ describe('<select> value 重放不得建立隐藏订阅', () => {
     expect(select.value).toBe('x')
   })
 
-  it('没有绑定值的 select 插入 option 是安全的（reader 不存在）', () => {
+  it('inserting an option into a select with no bound value is safe (no reader exists)', () => {
     const select = createElement('select') as HTMLSelectElement
     expect(() => {
       insertBefore(select, optionFor('a'), null)

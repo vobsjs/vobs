@@ -49,7 +49,8 @@ export function KitLayout(props: KitLayoutProps = {}): VobsNode {
   const backdrop = createElement('div')
   const footer = createElement('footer')
 
-  // 断点做成 memo 并交给 viewport 的是 getter：这样 mobileBreakpoint 变化才真的生效
+  // The breakpoint is a memo and the viewport receives a getter, so a
+  // mobileBreakpoint change actually takes effect
   const breakpoint = memo(() => normalizeBreakpoint(readProp(props, 'mobileBreakpoint', DEFAULT_MOBILE_BREAKPOINT)))
   const viewport = createKitViewport(() => breakpoint.value)
   const sidebarExpanded = readProp(props, 'sidebarExpanded', false)
@@ -78,7 +79,7 @@ export function KitLayout(props: KitLayoutProps = {}): VobsNode {
     },
 
     setSidebarCollapsed(value: boolean): void {
-      if (!isBoolean(value)) throw new Error('VOBS_KIT001: sidebarCollapsed 必须是 boolean')
+      if (!isBoolean(value)) throw new Error('VOBS_KIT001: sidebarCollapsed must be a boolean')
       if (readProp<boolean | undefined>(props, 'sidebarCollapsed', undefined) === undefined) {
         internalCollapsed.value = value
       }
@@ -89,7 +90,7 @@ export function KitLayout(props: KitLayoutProps = {}): VobsNode {
     },
 
     setMobileOpen(value: boolean): void {
-      if (!isBoolean(value)) throw new Error('VOBS_KIT001: mobileOpen 必须是 boolean')
+      if (!isBoolean(value)) throw new Error('VOBS_KIT001: mobileOpen must be a boolean')
       if (readProp<boolean | undefined>(props, 'mobileOpen', undefined) === undefined) {
         internalMobileOpen.value = value
       }
@@ -146,13 +147,17 @@ export function KitLayout(props: KitLayoutProps = {}): VobsNode {
 
   insertDynamic(sidebar, null, () => createSidebarSlot(props, context, sidebarVisible))
   /*
-   * 侧栏"是否对用户可见"必须**同时考虑桌面可见性与移动抽屉开合**。
+   * "Visible to the user" for the sidebar must take **both desktop visibility
+   * and the mobile drawer state** into account.
    *
-   * 原来只绑 `sidebarVisible`：移动端关掉抽屉时，侧栏靠 CSS 类移到视口外，
-   * 但它仍在 DOM、也没被 `hidden` —— 里面的链接**照样能被 Tab 到**
-   * （键盘用户按 Tab 就跑进看不见的导航）。这正是"关闭的抽屉仍可 Tab"。
+   * It used to bind only `sidebarVisible`: when the drawer closed on mobile,
+   * the sidebar was moved off-screen via CSS classes but was still in the DOM
+   * and not `hidden` — its links **remained tabbable** (keyboard users pressed
+   * Tab and landed inside invisible navigation). That's exactly "a closed
+   * drawer is still tabbable".
    *
-   * 桌面端 `isMobile` 为 false，表达式退化成原来的 `sidebarVisible`，行为不变。
+   * On desktop `isMobile` is false, so the expression degrades to the original
+   * `sidebarVisible` — behavior unchanged.
    */
   bindVisibility(sidebar, memo(() => (
     sidebarVisible.value && (!viewport.isMobile.value || mobileOpen.value)
@@ -283,25 +288,32 @@ function createBackdropSlot(
 }
 
 /**
- * 隐藏时把节点**移出 Tab 序列与无障碍树**。
+ * When hidden, move the node **out of the tab order and the accessibility tree**.
  *
- * 只用 `hidden` + `aria-hidden` 是不够的：侧栏在移动端是**屏幕外的 CSS 定位**
- * （靠根节点上的 `vobs-kit-layout--mobile-open` 类滑入滑出，见本文件 `:105`），
- * 关掉抽屉时它仍然在 DOM 里、样式上只是被移出视口 —— 于是里面的链接**照样能被 Tab 到**：
- * 键盘用户按 Tab 会跑进看不见的导航，`aria-hidden` 也管不住键盘焦点。
+ * `hidden` + `aria-hidden` alone are not enough: on mobile the sidebar is
+ * **off-screen CSS positioning** (it slides in/out via the
+ * `vobs-kit-layout--mobile-open` class on the root, see `:105` in this file).
+ * With the drawer closed it's still in the DOM and merely moved out of the
+ * viewport — so its links **remained tabbable**: keyboard users pressed Tab and
+ * landed inside invisible navigation, and `aria-hidden` doesn't stop keyboard
+ * focus either.
  *
- * `inert` 正是为这件事设计的：它把整棵子树同时移出**焦点顺序**与**无障碍树**。
- * 旧浏览器不支持时 `inert=""` 只是个无害的未知属性，而 `hidden`/`aria-hidden` 仍在兜底。
+ * `inert` was designed exactly for this: it removes the whole subtree from
+ * **the focus order and the accessibility tree** at once. On old browsers
+ * `inert=""` is just a harmless unknown attribute, while `hidden` /
+ * `aria-hidden` keep covering the basics.
  */
 function bindVisibility(node: Element, visible: { value: boolean }): void {
   effect(() => {
     setProperty(node, 'hidden', !visible.value)
     setOptionalAttribute(node, 'aria-hidden', visible.value ? undefined : 'true')
     /*
-     * 布尔属性必须走 `setAttribute` 而不是 `setOptionalAttribute`：
-     * 后者把**空串也当成"移除"**（`value === '' → removeAttribute`），
-     * 而 `inert=""` 恰恰是布尔属性**生效**的写法 —— 用它会把 inert 直接删掉。
-     * 可见时用 `removeAttribute` 移除；`inert="false"` 仍然生效，所以不能靠值表达。
+     * Boolean attributes must go through `setAttribute`, not
+     * `setOptionalAttribute`: the latter treats **the empty string as "remove"**
+     * (`value === '' → removeAttribute`), and `inert=""` is exactly how a
+     * boolean attribute **activates** — using it would delete inert outright.
+     * When visible, remove it with `removeAttribute`; `inert="false"` still
+     * activates, so the value can't express the state.
      */
     if (visible.value) removeAttribute(node, 'inert')
     else setAttribute(node, 'inert', '')
@@ -310,7 +322,7 @@ function bindVisibility(node: Element, visible: { value: boolean }): void {
 
 function normalizeSidebarWidth(value: number): number {
   if (!Number.isFinite(value) || value <= 0) {
-    throw new Error('VOBS_KIT001: sidebarWidth 必须是大于 0 的有限数字')
+    throw new Error('VOBS_KIT001: sidebarWidth must be a finite number greater than 0')
   }
   return Math.round(value)
 }

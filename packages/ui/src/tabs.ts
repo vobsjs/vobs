@@ -48,16 +48,18 @@ export function Tabs(props: TabsProps): VobsNode {
     setAttribute(tablist, 'class', `vui-tabs${variant === 'filled' ? ' vui-tabs--filled' : ''}`)
   })
   setAttribute(panel, 'class', 'vui-tabs__panel')
-  // 面板此前完全没有 role（只有 tab 有），屏幕阅读器读不出"这是标签页的内容区"。
+  // The panel had no role at all before (only the tab did), so screen readers couldn't announce "this is the tab panel's content area".
   setAttribute(panel, 'role', 'tabpanel')
 
   /*
-   * 键盘切换标签（WAI-ARIA tabs 模式）。
+   * Keyboard tab switching (WAI-ARIA tabs pattern).
    *
-   * 原来只有鼠标点击 —— 键盘用户按 Tab 会依次停靠**每一个**标签，方向键毫无反应；
-   * 而 `role="tab"` 的存在意味着屏幕阅读器会按"方向键可切换"来播报，两边对不上。
+   * Only mouse clicks existed before — keyboard users had to Tab through
+   * **every** tab and the arrow keys did nothing; yet `role="tab"` means
+   * screen readers announce "arrow keys switch tabs", so the two disagreed.
    *
-   * 采用 automatic activation（焦点跟着选中走）：标签内容切换很轻，不需要先聚焦再确认。
+   * Uses automatic activation (focus follows selection): switching tab content
+   * is cheap, so no focus-then-confirm step is needed.
    */
   addEventListener(tablist, 'keydown', event => {
     const key = (event as KeyboardEvent).key
@@ -76,14 +78,18 @@ export function Tabs(props: TabsProps): VobsNode {
     const next = enabled[nextIndex]
     selectTab(props, internalValue, next)
     /*
-     * 聚焦必须等这一批更新落地、并**重新查一次节点**。
+     * Focus must wait for this batch of updates to land and **re-query the
+     * node**.
      *
-     * 选中会触发标签条重渲染（insertDynamic 重建所有按钮）—— 直接对此刻手里的旧按钮
-     * focus() 会被紧接着的刷新丢掉（实测：选中变了、焦点却没跟上，后续方向键全失效）。
-     * 更新是按微任务批处理的，所以这里再排一个微任务：它必定排在刷新之后。
+     * Selection triggers a rerender of the tab strip (insertDynamic rebuilds
+     * all buttons) — calling focus() on the stale button in hand gets thrown
+     * away by the immediately following refresh (verified: selection changed
+     * but focus didn't follow, and subsequent arrow keys all stopped working).
+     * Updates are batched on microtasks, so queue another microtask here: it
+     * is guaranteed to run after the refresh.
      */
     queueMicrotask(() => {
-      // 属性比较而不是拼选择器：作者给的 id 含引号时 querySelector 会抛异常。
+      // Compare attributes instead of building a selector: querySelector throws when an author id contains quotes.
       const target = [...tablist.querySelectorAll('[data-tab-id]')]
         .find(element => element.getAttribute('data-tab-id') === next.id)
       if (target instanceof HTMLElement) target.focus()
@@ -101,7 +107,7 @@ export function Tabs(props: TabsProps): VobsNode {
   return root
 }
 
-/** 选中一个标签：受控时不写内部状态，只回调；非受控时先写内部状态再回调。 */
+/** Select a tab: controlled mode only invokes the callback without writing internal state; uncontrolled writes internal state first, then the callback. */
 function selectTab(
   props: TabsProps,
   internalValue: { value: string | undefined },
@@ -125,8 +131,9 @@ function createTabButtons(props: TabsProps, internalValue: { value: string | und
       setAttribute(button, 'aria-selected', isActive ? 'true' : 'false')
       setAttribute(button, 'data-tab-id', item.id)
       /*
-       * roving tabindex：只有当前标签是可 Tab 停靠的，其余 -1。
-       * 否则键盘用户要按 Tab 穿过每一个标签才能走到面板（WAI-ARIA tabs 的标准做法）。
+       * Roving tabindex: only the current tab is a Tab stop, the rest get -1.
+       * Otherwise keyboard users must Tab through every tab to reach the panel
+       * (the standard WAI-ARIA tabs practice).
        */
       setAttribute(button, 'tabindex', isActive ? '0' : '-1')
       if (item.disabled === true) {

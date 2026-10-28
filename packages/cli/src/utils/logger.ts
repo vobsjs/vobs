@@ -1,16 +1,17 @@
 import pc from 'picocolors'
 
 /*
- * 诊断/日志一律走 **stderr**，stdout 只留给**数据**。
+ * Diagnostics/logs always go to **stderr**; stdout is reserved for **data**.
  *
- * 为什么这不是洁癖：`vobs check --json` 的输出是给 AI 与开发台面板消费的机器接口，
- * 而 `--json --write` 时 `logger.info('报告写入 …')` 会先往 stdout 打一行带时间戳的
- * `[14:24:23] ℹ …`，于是 `JSON.parse(stdout)` 直接失败（实测
- * `.artifacts/probe-audit-cli-check.mjs`：同一脚本里 `--json` 可 parse、`--json --write` 不可）。
- * `warn` 同理。
+ * Why this is not fussiness: `vobs check --json` output is a machine interface consumed by
+ * AI and the devtools panel, and with `--json --write` the `logger.info('report written …')`
+ * line would print a timestamped `[14:24:23] ℹ …` to stdout first, making
+ * `JSON.parse(stdout)` fail outright (measured in `.artifacts/probe-audit-cli-check.mjs`:
+ * with the same script `--json` parses and `--json --write` does not). Same for `warn`.
  *
- * 注意：`error` 本来就走 stderr；`success`/`step` 保持 stdout（它们是给人看的**主输出**，
- * 不是旁路日志），`check` 的成功行也仍是 stdout。
+ * Note: `error` already goes to stderr; `success`/`step` stay on stdout (they are the
+ * **primary output** for humans, not side-channel logs), and check's success line stays on
+ * stdout too.
  */
 function timestamp(): string {
   return pc.dim(`[${new Date().toLocaleTimeString()}]`)

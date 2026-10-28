@@ -35,7 +35,7 @@ function makeStorage(): StorageContext {
 }
 
 describe('@vobs/sync', () => {
-  it('持久化待上传变更和增量 cursor，并应用远端变更', async () => {
+  it('persists pending changes and the incremental cursor, and applies remote changes', async () => {
     const storage = makeStorage()
     const applied: string[] = []
     const { transport, requests } = fakeTransport([{
@@ -69,12 +69,13 @@ describe('@vobs/sync', () => {
   })
 
   /*
-   * §"离线优先"的全部意义：入队即落盘。原来 enqueue/removePending/clearPending 只改内存信号
-   * （setPending 不写 storage，persist() 只在 restore()/runCycle() 末尾调用）→ 离线编辑后
-   * 关页面，未上传的变更**永久消失**，而 README:35 承诺了持久化。
-   * 上面那条用例在 enqueue 之后先跑了完整 sync()，恰好绕开了这条路径。
+   * The entire point of §"offline first": enqueue persists immediately. enqueue/removePending/
+   * clearPending used to only touch the in-memory signal (setPending didn't write storage;
+   * persist() only ran at the end of restore()/runCycle()) → after editing offline and closing
+   * the page, unuploaded changes **vanished permanently**, while README:35 promised persistence.
+   * The test above happens to dodge this path because it runs a full sync() right after enqueue.
    */
-  it('enqueue 立刻落盘：不跑 sync 直接重建实例，未上传的变更还在', () => {
+  it('enqueue persists immediately: rebuilding the instance without running sync keeps unuploaded changes', () => {
     const storage = makeStorage()
     const { transport } = fakeTransport([])
     const sync = createSync({ transport, storage })
@@ -82,7 +83,7 @@ describe('@vobs/sync', () => {
     sync.enqueue({ key: 'draft:2', operation: 'upsert', value: { title: 'B' }, timestamp: 2 })
     expect(sync.pending.value).toBe(2)
 
-    // 模拟"离线编辑后关页面"：不跑 sync、直接重建实例
+    // Simulate "edit offline then close the page": no sync, rebuild the instance directly
     const restored = createSync({ transport, storage })
     expect(restored.pending.value).toBe(2)
     expect(restored.pendingChanges.value.map(change => change.key)).toEqual(['draft:1', 'draft:2'])
@@ -91,7 +92,7 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
-  it('removePending / clearPending 也落盘', () => {
+  it('removePending / clearPending also persist to disk', () => {
     const storage = makeStorage()
     const { transport } = fakeTransport([])
     const sync = createSync({ transport, storage })
@@ -113,7 +114,7 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
-  it('落盘失败时 enqueue 抛 SYNC_FAILED，且内存不进入半状态', () => {
+  it('enqueue throws SYNC_FAILED when persisting fails, and memory never enters a half-state', () => {
     const storage = makeStorage()
     const { transport } = fakeTransport([])
     const sync = createSync({ transport, storage })
@@ -131,12 +132,14 @@ describe('@vobs/sync', () => {
   })
 
   /*
-   * 报告说"onRemote 抛错 → pending 已清空并落盘、本地变更永久消失"。**实测不成立**：
-   * `await onRemote(...)` 排在 setPending/persist **之前**，抛错时整段提交逻辑都没跑 →
-   * pending 保持原样（已 ack 的本地变更下轮重发 = at-least-once）、cursor 不推进
-   * （远端变更下轮重新拉取 = 自愈）。这里把实际行为钉住，防止以后有人"顺手"提前提交。
+   * The report claimed "onRemote throws → pending already cleared and persisted, local changes lost
+   * forever". **Not reproducible**: `await onRemote(...)` runs **before** setPending/persist, so
+   * when it throws the entire commit block never executes → pending stays as-is (ack'd local
+   * changes re-sent next round = at-least-once) and the cursor doesn't advance (remote changes
+   * re-pulled next round = self-healing). This test pins the actual behavior to prevent someone
+   * later "conveniently" committing early.
    */
-  it('onRemote 抛错时不丢数据：pending 保留、cursor 不推进（下轮重发/重拉）', async () => {
+  it('losing no data when onRemote throws: pending is kept and the cursor does not advance (re-send/re-pull next round)', async () => {
     const storage = makeStorage()
     let localId = ''
     const transport: SyncTransport = {
@@ -155,7 +158,7 @@ describe('@vobs/sync', () => {
     expect(sync.pending.value).toBe(1)
     expect(sync.cursor.value).toBeNull()
     expect(sync.lastSyncAt.value).toBeNull()
-    // 落盘的也是"还没提交"的那一份
+    // What's persisted is also the "not yet committed" version
     const restored = createSync({ transport, storage })
     expect(restored.pending.value).toBe(1)
     expect(restored.cursor.value).toBeNull()
@@ -165,7 +168,7 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
-  it('数组响应被拒绝（原来 typeof === "object" 放行 → 假成功）', async () => {
+  it('rejects array responses (typeof === "object" used to let them through → faked success)', async () => {
     const storage = makeStorage()
     const { transport } = fakeTransport([[
       { id: 'x', key: 'k', operation: 'upsert', value: 1, timestamp: 1 }
@@ -177,7 +180,7 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
-  it('保留 local-wins 变更，remote-wins 则移除冲突本地变更', async () => {
+  it('keeps local-wins changes and removes the conflicting local change on remote-wins', async () => {
     const localWinsStorage = makeStorage()
     const localWinsTransport = fakeTransport([{
       timestamp: 1000,
@@ -207,18 +210,23 @@ describe('@vobs/sync', () => {
   })
 
   /*
-   * 两条"local-wins 不收敛"的缺陷（原实现下都能复现，见下方注释的实测值）。
+   * Two "local-wins never converges" defects (both reproducible under the old implementation; see
+   * measured values in the comments below).
    *
-   * 服务端每轮都推同一个远端 key 时，原实现把胜出的本地变更永久留在 pending：
-   *   - 即便服务端**显式** `acknowledged: ['local']` 确认收下了，`!conflictIds.has(id)`
-   *     也让它永远不摘 → 每个周期原样重推、pushed 恒 ≥1，这条变更永远"没上传成功"。
-   *   - 于是冲突判定每轮重跑 → 自定义 resolver 每轮被再调一次、pulled 永远 0
-   *     （实测 3 轮 resolver 被调 3 次；60ms/多轮内 pulled 始终 0）。
-   * 契约：冲突判定只决定"远端值要不要覆盖本地值"，不决定"服务端收没收下" ——
-   * 后者只看 acknowledged。且同一份本地变更（id+timestamp 未变）判给 local 后
-   * 结论不会再变，不该重跑 resolver。
+   * When the server pushes the same remote key every round, the old implementation kept the winning
+   * local change in pending forever:
+   *   - Even when the server **explicitly** confirmed receipt via `acknowledged: ['local']`,
+   *     `!conflictIds.has(id)` prevented its removal → re-pushed verbatim every cycle, pushed stuck
+   *     ≥1, and the change was forever "not uploaded successfully".
+   *   - Conflict resolution then re-ran every round → the custom resolver got called again each
+   *     round and pulled stayed 0 (measured: resolver called 3 times across 3 rounds; pulled
+   *     remained 0 over 60ms/multiple rounds).
+   * Contract: conflict resolution only decides "should the remote value override the local value",
+   * not "did the server accept it" — the latter is answered solely by acknowledged. And once the
+   * same local change (unchanged id+timestamp) is resolved to local, the verdict cannot change, so
+   * the resolver shouldn't re-run.
    */
-  it('服务端每轮推同一 key 时收敛：显式 ack 后本地变更离队，远端值被接受', async () => {
+  it('converges when the server pushes the same key every round: after explicit ack the local change leaves the queue and the remote value is accepted', async () => {
     const storage = makeStorage()
     const transport: SyncTransport = {
       sync: async () => ({
@@ -235,7 +243,7 @@ describe('@vobs/sync', () => {
     expect(first).toMatchObject({ pushed: 1, pulled: 0 })
     expect(sync.pending.value).toBe(0)
 
-    // 本地这份变更已经上传成功，下一轮冲突消失、远端值正常落地
+    // This local change uploaded successfully; next round the conflict is gone and the remote value lands normally
     const second = await sync.sync()
     expect(second).toMatchObject({ pushed: 0, pulled: 1 })
     expect(second.changes[0]?.value).toBe('remote')
@@ -244,11 +252,13 @@ describe('@vobs/sync', () => {
   })
 
   /*
-   * 判定缓存的**清账**（§18.100/§18.102）。缓存键就是 pending 变更的 id，所以变更离开 pending 时
-   * 必须把结论一起丢掉；否则调用方用**同一 id+timestamp** 重新提交同一份变更时，
-   * `resolveConflict` 会拿旧结论短路成 'local'，**不再调用**自定义 resolver（决策被悄悄复用）。
+   * **Clearing** the verdict cache (§18.100/§18.102). The cache key is the pending change's id, so
+   * when a change leaves pending its verdict must be dropped too; otherwise, when the caller
+   * resubmits the same change with the **same id+timestamp**, `resolveConflict` short-circuits to
+   * 'local' with the stale verdict and **never calls** the custom resolver again (the decision is
+   * silently reused).
    */
-  it('变更离队后再提交同一份（同 id+timestamp）会重新调用 resolver', async () => {
+  it('resubmitting the same change (same id+timestamp) after it left the queue calls the resolver again', async () => {
     const storage = makeStorage()
     const resolve = vi.fn(() => 'local' as const)
     const transport: SyncTransport = {
@@ -264,23 +274,23 @@ describe('@vobs/sync', () => {
     await sync.sync()
     expect(resolve).toHaveBeenCalledTimes(1)
 
-    // 调用方（如"重试"按钮）用同一 id+timestamp 再提交一次
+    // The caller (e.g. a "retry" button) resubmits with the same id+timestamp
     sync.enqueue({ id: 'local', key: 'item:1', operation: 'upsert', value: 'local', timestamp: 3 })
     await sync.sync()
 
-    // 没有清账时这里仍是 1（被上一次的结论短路）→ 用例失败
+    // Without cache clearing this stays 1 (short-circuited by the previous verdict) → test fails
     expect(resolve).toHaveBeenCalledTimes(2)
     sync.dispose()
     storage.dispose()
   })
 
-  it('同一份本地变更只判一次冲突：服务端重复推同一 remote 不重跑 resolver', async () => {
+  it('resolves conflict only once for the same local change: a repeatedly pushed remote does not re-run the resolver', async () => {
     const storage = makeStorage()
     const resolve = vi.fn(() => 'local' as const)
     const transport: SyncTransport = {
       sync: async () => ({
         timestamp: 1000,
-        // 显式空 ack：服务端没有确认收下任何变更
+        // Explicit empty ack: the server did not confirm receipt of any change
         acknowledged: [],
         changes: [{ id: 'remote-stable', key: 'item:1', operation: 'upsert', value: 'remote', timestamp: 2 }]
       })
@@ -293,7 +303,7 @@ describe('@vobs/sync', () => {
     const third = await sync.sync()
 
     expect(resolve).toHaveBeenCalledTimes(1)
-    // 没被 ack → 仍然 pending（at-least-once），但结论不会翻
+    // Not acked → still pending (at-least-once), but the verdict never flips
     expect([first.pulled, second.pulled, third.pulled]).toEqual([0, 0, 0])
     expect(sync.pendingChanges.value.map(change => change.value)).toEqual(['local'])
     sync.dispose()
@@ -301,11 +311,12 @@ describe('@vobs/sync', () => {
   })
 
   /*
-   * 判定缓存必须**有界**：`localWinsResolved` 只按本地变更 id 记账，本地变更一离队
-   * （被 ack、removePending、clearPending）就必须删掉，否则长期运行会无界增长。
-   * 这里用"变更被 ack 离队"这条最普通的路径钉住回收。
+   * The verdict cache must be **bounded**: `localWinsResolved` is keyed by local change id, so once
+   * a change leaves the queue (acked, removePending, clearPending) its entry must be deleted;
+   * otherwise it grows without bound over a long run. This pins reclamation on the most ordinary
+   * path: "the change is acked and leaves the queue".
    */
-  it('local-wins 判定缓存有界：变更离队后不再记账', async () => {
+  it('the local-wins verdict cache is bounded: entries are dropped once the change leaves the queue', async () => {
     const storage = makeStorage()
     const first: SyncTransport = {
       sync: async () => ({
@@ -319,7 +330,7 @@ describe('@vobs/sync', () => {
     await sync.sync()
     expect(sync.pending.value).toBe(0)
 
-    // 换一个 key（因此换一条缓存项）+ 服务端不再 ack：新变更必须被重新判定
+    // A different key (hence a different cache entry) + the server no longer acks: the new change must be re-resolved
     const second: SyncTransport = {
       sync: async () => ({
         timestamp: 2000,
@@ -337,7 +348,7 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
-  it('支持自定义冲突 resolver、事件和失败状态', async () => {
+  it('supports a custom conflict resolver, events, and failure state', async () => {
     const storage = makeStorage()
     const onError = vi.fn()
     const onRemote = vi.fn()
@@ -365,7 +376,7 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
-  it('离线时不请求，online 事件后自动重试', async () => {
+  it('does not request while offline and retries automatically after the online event', async () => {
     const storage = makeStorage()
     const { transport, requests } = fakeTransport([{ timestamp: 1000, changes: [] }])
     const sync = createSync({ transport, storage })
@@ -385,17 +396,22 @@ describe('@vobs/sync', () => {
   })
 
   /*
-   * `pollInterval` 的语义 = **固定周期轮询**，不是"失败重试 + 退避"。
+   * The semantics of `pollInterval` = **fixed-interval polling**, not "failure retry + backoff".
    *
-   * 深读报告说"失败后无重试退避、60ms 内 0 次自动重试"。实测：那是契约而非缺陷 ——
-   *   - 失败后请求间隔**恒等于** pollInterval（实测 1000/1000/1000…，无指数增长）；
-   *   - 显式 pollInterval 时失败也会继续（下一次请求 = 下一个 tick），所以"没有退避"；
-   *   - 不传 pollInterval 时失败后**一次都不会自动重试**（10s 内仍只有 1 次请求）。
-   * 依据：README:44 只承诺 "`pollInterval` syncing"，SyncOptions 里没有 retry/retryDelay，
-   * 需要退避请由调用方用 `onError`/`error` 事件 + `stop()` 自行调度（queue 支持 per-task
-   * retry，但 sync 的 runCycle 并未使用它）。把这条钉住，防止以后有人"顺手"加重试改变语义。
+   * A deep-read report said "no retry backoff after failure, 0 automatic retries within 60ms".
+   * Measured: that is the contract, not a defect —
+   *   - After a failure the request interval **equals** pollInterval exactly (measured
+   *     1000/1000/1000…, no exponential growth);
+   *   - With an explicit pollInterval, failures keep going (the next request = the next tick),
+   *     hence "no backoff";
+   *   - Without pollInterval, **zero** automatic retries after failure (still exactly 1 request
+   *     after 10s).
+   * Basis: README:44 only promises "`pollInterval` syncing"; SyncOptions has no retry/retryDelay.
+   * If backoff is needed, the caller should schedule it via `onError`/the `error` event +
+   * `stop()` (queue supports per-task retry, but sync's runCycle does not use it). Pinned to
+   * prevent someone later "conveniently" adding retries and changing the semantics.
    */
-  it('pollInterval 是固定周期轮询而非退避重试；不传则失败后不自动重试', async () => {
+  it('pollInterval is fixed-interval polling, not backoff retry; without it there are no automatic retries after failure', async () => {
     vi.useFakeTimers()
     try {
       const storage = makeStorage()
@@ -411,7 +427,7 @@ describe('@vobs/sync', () => {
 
       await vi.advanceTimersByTimeAsync(0)
       expect(attemptAt).toHaveLength(1)
-      // 报告说的"60ms 内 0 次重试"：没有隐式重试，只有下一个 poll tick
+      // The report's "0 retries within 60ms": no implicit retry, only the next poll tick
       await vi.advanceTimersByTimeAsync(60)
       expect(attemptAt).toHaveLength(1)
       await vi.advanceTimersByTimeAsync(1000)
@@ -426,7 +442,7 @@ describe('@vobs/sync', () => {
       await started
       sync.dispose()
 
-      // 不传 pollInterval：失败后没有自动重试（调用方自己决定重试策略）
+      // Without pollInterval: no automatic retry after failure (the caller decides the retry policy)
       const passiveStorage = makeStorage()
       let passiveAttempts = 0
       const passive = createSync({
@@ -444,7 +460,7 @@ describe('@vobs/sync', () => {
     }
   })
 
-  it('stop 取消正在执行的请求，dispose 清理自有 queue 和 storage', async () => {
+  it('stop cancels the in-flight request and dispose cleans up owned queue and storage', async () => {
     const storage = makeStorage()
     let aborted = false
     const transport = {
@@ -466,7 +482,7 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
-  it('插件可复用注入的 transport/storage/queue，未安装时 useSync 报错', () => {    let injected: ReturnType<typeof createSync> | undefined
+  it('the plugin can reuse injected transport/storage/queue, and useSync errors when not installed', () => {    let injected: ReturnType<typeof createSync> | undefined
     const consumer: VobsPlugin = {
       name: 'sync-consumer',
       install(context) { injected = context.inject(SYNC_KEY) as ReturnType<typeof createSync> }
@@ -488,7 +504,7 @@ describe('@vobs/sync', () => {
     )
   })
 
-  it('同步上下文销毁后拒绝继续使用', () => {
+  it('rejects further use after the sync context is disposed', () => {
     const queue = createTaskQueue()
     const storage = makeStorage()
     const sync = createSync({ transport: fakeTransport([]).transport, storage, queue })
@@ -500,7 +516,7 @@ describe('@vobs/sync', () => {
     storage.dispose()
   })
 
-  it('拒绝无效服务端响应', async () => {
+  it('rejects invalid server responses', async () => {
     const storage = makeStorage()
     const sync = createSync({ transport: fakeTransport([null]).transport, storage })
     await expect(sync.sync()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })

@@ -1,8 +1,8 @@
 import type { WechatClientOptions } from './types'
 
 /**
- * 微信支付配置管理
- * 遵循 vobs 生命周期管理：可创建、可校验、可更新、可替换
+ * WeChat Pay configuration management
+ * Follows vobs lifecycle management: can be created, validated, updated, and replaced
  */
 export class WechatConfig {
   private _options: WechatClientOptions
@@ -12,44 +12,44 @@ export class WechatConfig {
     this._options = { ...options }
   }
 
-  /** 获取完整配置 */
+  /** Full configuration */
   get options(): Readonly<WechatClientOptions> {
     return this._options
   }
 
-  /** 商户号 */
+  /** Merchant ID */
   get mchid(): string {
     return this._options.mchid
   }
 
-  /** 应用 ID（公众号 / 小程序 / APP） */
+  /** App ID (Official Account / Mini Program / App) */
   get appid(): string {
     return this._options.appid
   }
 
-  /** 商户 API 证书序列号 */
+  /** Merchant API certificate serial number */
   get serial(): string {
     return this._options.serial
   }
 
-  /** APIv3 密钥（回调解密用） */
+  /** APIv3 key (used to decrypt callback payloads) */
   get apiv3Key(): string {
     return this._options.apiv3Key
   }
 
-  /** 异步通知地址 */
+  /** Async notification URL */
   get notifyUrl(): string | undefined {
     return this._options.notifyUrl
   }
 
-  /** 更新配置（部分更新） */
+  /** Update config (partial update) */
   update(patch: Partial<WechatClientOptions>): void {
     const merged = { ...this._options, ...patch }
     this.validate(merged)
     this._options = merged
   }
 
-  /** 替换配置 */
+  /** Replace config */
   replace(options: WechatClientOptions): void {
     this.validate(options)
     this._options = { ...options }
@@ -57,25 +57,25 @@ export class WechatConfig {
 
   private validate(options: WechatClientOptions): void {
     if (!options.mchid) {
-      throw new Error('WechatConfig: mchid 不能为空')
+      throw new Error('WechatConfig: mchid must not be empty')
     }
     if (!options.serial) {
-      throw new Error('WechatConfig: serial（商户 API 证书序列号）不能为空')
+      throw new Error('WechatConfig: serial (merchant API certificate serial number) must not be empty')
     }
     if (!options.privateKey) {
-      throw new Error('WechatConfig: privateKey（商户 API 私钥 PEM）不能为空')
+      throw new Error('WechatConfig: privateKey (merchant API private key PEM) must not be empty')
     }
     if (!options.certs || Object.keys(options.certs).length === 0) {
-      throw new Error('WechatConfig: certs（平台证书/微信支付公钥 {序列号: PEM}）不能为空')
+      throw new Error('WechatConfig: certs (platform certificates / WeChat Pay public keys as {serial: PEM}) must not be empty')
     }
     if (!options.appid) {
-      throw new Error('WechatConfig: appid 不能为空')
+      throw new Error('WechatConfig: appid must not be empty')
     }
     if (!options.apiv3Key) {
-      throw new Error('WechatConfig: apiv3Key 不能为空')
+      throw new Error('WechatConfig: apiv3Key must not be empty')
     }
     if (options.apiv3Key.length !== 32) {
-      throw new Error('WechatConfig: apiv3Key 必须为 32 字节字符串')
+      throw new Error('WechatConfig: apiv3Key must be a 32-byte string')
     }
   }
 }

@@ -177,19 +177,22 @@ export function mount(
     fireEvent(event, { target }): void {
       const node = testRenderer.queryByTag(target)
       const handler = node?.events[event]
-      if (!handler) throw new Error(`Vobs test-utils: 未找到 ${target} 的 ${event} 事件处理器`)
+      if (!handler) throw new Error(`Vobs test-utils: no ${event} event handler found on ${target}`)
       handler.call(node, { type: event, target: node } as unknown as Event)
     }
   }
 }
 
 /**
- * `mount()` 会把测试渲染器装进**进程级** `setRenderer` 单例（应用销毁时才还原）。
- * 只要有一条用例忘记 `destroy()`，同文件**后续所有** DOM 用例的 `createElement` 就会返回
- * 普通对象而不是 DOM 节点 —— vitest 按文件隔离，单跑那个文件根本看不见（"单独绿、全量红"）。
+ * `mount()` installs the test renderer into the **process-level** `setRenderer`
+ * singleton (restored only when the app is destroyed). If a single test forgets
+ * `destroy()`, **all subsequent** DOM tests in the same file get plain objects instead
+ * of DOM nodes from `createElement` — vitest isolates per file, so running that file
+ * alone never shows it ("green alone, red together").
  *
- * `mount()` 会尽力注册一次 `afterEach` 兜底（读 `globalThis.afterEach`；vitest 默认
- * `globals: false` 时不存在，就跳过）。想显式接管（推荐，且与 globals 配置无关）：
+ * `mount()` best-effort registers one `afterEach` fallback (reads `globalThis.afterEach`;
+ * with vitest's default `globals: false` it does not exist and is skipped). To take over
+ * explicitly (recommended, and independent of the globals setting):
  *
  * ```ts
  * import { afterEach } from 'vitest'
@@ -197,22 +200,24 @@ export function mount(
  * afterEach(cleanupMountedApps)
  * ```
  *
- * 本仓就是这么做的：`scripts/vitest-setup.ts` + `vitest.config.ts` 的 `setupFiles`。
- * 包本身不依赖 vitest（它连 devDependencies 都没有），所以清理函数必须由调用方接上去。
+ * This repo does exactly that: `scripts/vitest-setup.ts` + `setupFiles` in
+ * `vitest.config.ts`. The package itself does not depend on vitest (it has no
+ * devDependencies at all), so the cleanup function must be wired up by the caller.
  *
- * `app.destroy()` 是幂等的，测试自己手动 destroy 之后再走一遍没有副作用。
+ * `app.destroy()` is idempotent — a test that already destroyed manually suffers no
+ * side effects from this running again.
  */
 const mountedApps = new Set<VobsApp<never>>()
 let autoCleanupRegistered = false
 
-/** 销毁所有 `mount()` 过但没销毁的应用（顺带还原全局渲染器）。可安全重复调用。 */
+/** Destroys every app that was `mount()`ed but not destroyed (also restores the global renderer). Safe to call repeatedly. */
 export function cleanupMountedApps(): void {
   for (const app of [...mountedApps]) {
     mountedApps.delete(app)
     try {
       app.destroy()
     } catch {
-      // 清理失败不能顶掉用例本身的失败信息
+      // A failing cleanup must not override the test's own failure message
     }
   }
 }
@@ -243,7 +248,7 @@ function createElementNode(tag: string): TestElement {
 
 function removeChildNode(parent: TestElement, child: TestNode): void {
   const index = parent.children.indexOf(child)
-  if (index < 0) throw new Error('Vobs test-utils: 节点不属于指定父节点')
+  if (index < 0) throw new Error('Vobs test-utils: node does not belong to the given parent')
   parent.children.splice(index, 1)
   child.parent = null
 }

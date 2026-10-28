@@ -12,15 +12,19 @@ import {
 
 describe('@vobs/logger', () => {
   /*
-   * 记日志**本身**不能崩：调用方数据里的抛错 getter、恶意 Proxy 的陷阱、坏 clock
-   * 原来都能让 `logger.info()` 直接 throw（0 条落地）。对照 devtools 的同位做法（try/catch → 标记）。
+   * Writing a log entry must **never crash itself**: throwing getters in
+   * caller data, malicious Proxy traps, and a broken clock could all make
+   * `logger.info()` throw directly (0 entries landed). Mirrors the devtools
+   * approach in the same position (try/catch → marker).
    */
   /*
-   * 日志对象经常被解构/当回调传出去（`const { info } = logger`）。原来四个便捷方法是
-   * 对象字面量简写 + `this.log(...)` → 解构后 `this` 是 undefined，直接 TypeError。
-   * 本仓 `state.set` 出于同样理由做成箭头函数。
+   * Logger objects get destructured / passed as callbacks all the time
+   * (`const { info } = logger`). The four convenience methods used to be
+   * object-literal shorthands calling `this.log(...)` → after destructuring
+   * `this` was undefined and it threw TypeError. `state.set` in this repo is
+   * an arrow function for the same reason.
    */
-  it('方法可以安全解构（不再依赖 this）', () => {
+  it('methods are safe to destructure (no longer rely on this)', () => {
     const memory = createMemoryTransport()
     const logger = createLogger({ level: 'debug', transports: [memory] })
     const { log, debug, info, warn, error } = logger
@@ -40,7 +44,7 @@ describe('@vobs/logger', () => {
       'warn:via warn',
       'error:via error'
     ])
-    // 也当回调传（map/forEach 这类会把 this 变成 undefined 或别的对象）
+    // Also passed as a callback (map/forEach bind this to undefined or some other object)
     const levels = ['info', 'warn']
     const asCallback: (value: string) => void = logger.info
     levels.forEach(asCallback)
@@ -48,7 +52,7 @@ describe('@vobs/logger', () => {
     logger.dispose()
   })
 
-  it('调用方数据抛错 / 恶意 Proxy / 坏 clock 都不会让日志本身崩', () => {
+  it('throwing caller data / hostile Proxy / broken clock never crash logging itself', () => {
     const memory = createMemoryTransport()
     const logger = createLogger({
       level: 'debug',
@@ -68,22 +72,22 @@ describe('@vobs/logger', () => {
     expect(() => logger.info('with bad clock')).not.toThrow()
 
     expect(memory.entries).toHaveLength(4)
-    // 坏 clock 不能让整条日志消失
+    // A broken clock must not make the whole entry disappear
     expect(memory.entries[3]?.timestamp).toBe('Invalid Date')
-    // 抛错的那个键只顶掉自己，相邻的好键照常记录
+    // The throwing key only takes out itself; neighboring good keys log as usual
     const nested = memory.entries[0]?.context.throwingGetter as Record<string, unknown>
     expect(nested.ok).toBe(1)
     expect(String(nested.boom)).toContain('Uninspectable')
-    // Proxy 当 details 本身：展开就会崩 → 整体降级，但日志仍在
+    // Proxy as the details object itself: spreading would crash → whole-object fallback, but the entry still logs
     expect(String(memory.entries[1]?.context['[Uninspectable]'])).toContain('ownKeys exploded')
-    // Proxy 作为值：坏键只顶掉自己
+    // Proxy as a value: the bad key only takes out itself
     const hostileValue = memory.entries[2]?.context.hostile as Record<string, unknown>
     expect(String(hostileValue['[Uninspectable]'])).toContain('ownKeys exploded')
 
     logger.dispose()
   })
 
-  it('按级别过滤，并合并子日志的结构化上下文', () => {
+  it('filters by level and merges structured child-logger context', () => {
     const memory = createMemoryTransport()
     const logger = createLogger({
       level: 'info',
@@ -106,7 +110,7 @@ describe('@vobs/logger', () => {
     logger.dispose()
   })
 
-  it('默认脱敏敏感键，安全处理错误、深层对象和循环值', () => {
+  it('redacts sensitive keys by default and safely handles errors, deep objects and circular values', () => {
     const memory = createMemoryTransport()
     const circular: { self?: unknown } = {}
     circular.self = circular
@@ -130,7 +134,7 @@ describe('@vobs/logger', () => {
     logger.dispose()
   })
 
-  it('flush 等待异步 transport，并隔离 transport 写入和 flush 错误', async () => {
+  it('flush awaits async transports and isolates transport write/flush errors', async () => {
     let resolveWrite: (() => void) | undefined
     const onTransportError = vi.fn()
     const asyncTransport = {
@@ -154,7 +158,7 @@ describe('@vobs/logger', () => {
     logger.dispose()
   })
 
-  it('console transport 使用对应级别输出，内存 transport 可以限制和清空', () => {
+  it('console transport outputs at the matching level; memory transport supports limit and clear', () => {
     const output = vi.fn()
     const consoleTransport = createConsoleTransport({ warn: output })
     const memory = createMemoryTransport(2)
@@ -170,7 +174,7 @@ describe('@vobs/logger', () => {
     logger.dispose()
   })
 
-  it('子 Logger 销毁只停止自己的写入，不关闭父 Logger 的共享 transport', () => {
+  it('child logger disposal only stops its own writes, leaving the parent\'s shared transports open', () => {
     const memory = createMemoryTransport()
     const logger = createLogger({ transports: [memory] })
     const child = logger.child({ requestId: 'request-1' })
@@ -183,7 +187,7 @@ describe('@vobs/logger', () => {
     logger.dispose()
   })
 
-  it('loggerPlugin 注入上下文并在应用销毁后停止写入自有 logger', () => {
+  it('loggerPlugin injects the context and stops writing its own logger after app destroy', () => {
     const memory = createMemoryTransport()
     let injected: ReturnType<typeof createLogger> | undefined
     const app = createVobs({
@@ -200,7 +204,7 @@ describe('@vobs/logger', () => {
     expect(memory.entries.map(entry => entry.message)).toEqual(['before destroy'])
   })
 
-  it('未安装插件时 useLogger 给出明确错误', () => {
+  it('useLogger gives a clear error when the plugin is not installed', () => {
     const app = createVobs({ render: () => {
       useLogger()
       return createText('')

@@ -1,7 +1,9 @@
-// 编译器静态模板提升的运行时支撑：
-// 编译期把完全静态的 JSX 子树序列化为 HTML 字符串，模块加载时解析一次，
-// 运行时通过 cloneNode 复制，替代逐个 createElement + setStaticProps + insertBefore。
-// 仅适用于 DOM 渲染器（模板本质是 HTML），自定义渲染器场景由编译产物不使用该优化兜底。
+// Runtime support for the compiler's static template hoisting:
+// at compile time, fully static JSX subtrees are serialized into an HTML string, parsed once
+// at module load, and cloned at runtime via cloneNode — replacing per-node
+// createElement + setStaticProps + insertBefore.
+// DOM renderer only (a template is inherently HTML); for custom renderers, the compiled
+// output simply does not use this optimization.
 
 const templateCache = new Map<string, HTMLTemplateElement>()
 
@@ -19,6 +21,6 @@ export function createTemplate(html: string): HTMLTemplateElement {
 /** Clone a hoisted template for one mount; the compiled HTML always has a single root element. */
 export function cloneTemplate(template: HTMLTemplateElement): Node {
   const root = template.content.firstElementChild
-  if (!root) throw new Error('Vobs: 静态模板缺少根元素，请检查编译产物')
+  if (!root) throw new Error('Vobs: static template is missing a root element; check the compiled output')
   return root.cloneNode(true)
 }

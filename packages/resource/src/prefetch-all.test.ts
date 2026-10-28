@@ -3,15 +3,17 @@ import { describe, expect, it } from 'vitest'
 import { createResourceClient } from './index'
 
 /*
- * §12.1 #8 说 `renderToStringAsync` 里 `prefetchAll()` 用 `allSettled` **吞错**。
- * 核实结论：**不抛错是刻意的**（SSR 不该因为一个请求失败就整页 500），而且失败并不"消失" ——
- * 它落在该条目的 `error` 信号上（渲染该资源的组件会走错误态），`dehydrate()` 也**不会**把
- * 出错的条目带去客户端冒充缓存。真正缺的只是"服务端一个聚合的失败清单"，那是新的 API 设计，
- * 不属于"修 bug"。这条测试把现有契约钉住，避免以后有人把它改成 throw（会打断 SSR）或
- * 改成把错误条目也 dehydrate（会让客户端拿到假数据）。
+ * §12.1 #8 says `prefetchAll()` inside `renderToStringAsync` uses `allSettled` and **swallows
+ * errors**. Verified conclusion: **not throwing is deliberate** (SSR must not 500 the whole page
+ * because one request failed), and failures do not "disappear" — they land on that entry's `error`
+ * signal (the component rendering the resource enters its error state), and `dehydrate()` also
+ * **never** carries errored entries to the client masquerading as cache. What was genuinely missing
+ * was only "an aggregated server-side failure list" — that is new API design, not a bug fix. This
+ * test pins the existing contract so nobody later changes it to throw (would break SSR) or to
+ * dehydrate errored entries too (would hand the client fake data).
  */
-describe('resource.prefetchAll 的失败语义', () => {
-  it('不抛错；失败落在条目 error 上，且不进 dehydrate()', async () => {
+describe('resource.prefetchAll failure semantics', () => {
+  it('does not throw; failures land on entry error and stay out of dehydrate()', async () => {
     const client = createResourceClient()
     const failing = client.resource({
       key: ['failing'],
@@ -28,7 +30,7 @@ describe('resource.prefetchAll 的失败语义', () => {
     expect(healthy.error.value).toBeNull()
     expect(healthy.data.value).toBe('value')
 
-    // 出错的条目不能被脱水成"看起来正常的缓存"
+    // an errored entry must not be dehydrated into "cache that looks normal"
     const serialized = JSON.stringify(client.dehydrate())
     expect(serialized).toContain('healthy')
     expect(serialized).not.toContain('failing')

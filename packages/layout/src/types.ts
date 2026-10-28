@@ -29,14 +29,20 @@ export interface KitMenuItem {
   readonly icon?: LayoutChildren
   readonly badge?: LayoutChildren
   /**
-   * 悬浮角标：渲染在图标右上角的红色数字胶囊，展开/收起两态通用（普通 badge 折叠时会隐藏）。
-   * 仅在配置了 icon 的菜单项上生效；0、''、null、undefined 不渲染。
-   * 传函数时在菜单渲染作用域内求值，内部信号变化会触发菜单树重建（与 items getter 同机制）。
+   * Floating badge pill: a red number capsule rendered at the icon's
+   * top-right corner, shared by both collapsed/expanded states (a plain badge
+   * hides when collapsed). Only takes effect on menu items with an icon
+   * configured; 0, '', null, undefined render nothing. When a function is
+   * passed it is evaluated inside the menu render scope, so internal signal
+   * changes rebuild the menu tree (same mechanism as the items getter).
    */
   readonly badgePill?: number | string | (() => number | string)
   /**
-   * 钉靠位置：'bottom' 将菜单项钉到侧边栏底部区（渲染顺序固定：普通菜单 → pin 菜单 → footer 插槽）。
-   * 钉靠项与普通项走同一套激活/hover/折叠样式，仅位置不同；'top' 为预留枚举，当前等同缺省。
+   * Pin position: 'bottom' pins the item to the sidebar's bottom region
+   * (fixed render order: normal menu → pinned menu → footer slot). Pinned
+   * items share the same activation/hover/collapse styles as normal ones and
+   * differ only in position; 'top' is a reserved value, currently the same as
+   * the default.
    */
   readonly pin?: 'top' | 'bottom'
   readonly href?: string
@@ -156,7 +162,7 @@ export interface KitLayoutContext {
 export interface KitViewport {
   readonly width: Signal<number>
   readonly height: Signal<number>
-  /** memo 派生值，只读。 */
+  /** memo-derived value, read-only. */
   readonly isMobile: ReadableSignal<boolean>
   dispose(): void
 }

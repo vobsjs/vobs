@@ -39,8 +39,10 @@ export function StatusBar(props: StatusBarProps = {}): VobsNode {
   bindCommonAttributes(root, props, ['left', 'right', 'onItemClick'])
   bindUserStyle(root, props)
   /*
-   * 与 Alert/Switch 同一个坑：`role` 不在上面那行的 skip 列表里，所以通用通道**先**把作者传的
-   * role 写上，这里无条件写死就又把它盖掉了。作者给了就用作者的，没给才兜底。
+   * Same pit as Alert/Switch: `role` isn't in the skip list of the line above,
+   * so the generic channel writes the author's role **first** and an
+   * unconditional hardcode here clobbered it again. The author's value wins
+   * when given; the fallback applies only when absent.
    */
   if (!hasProp(props, 'role')) setAttribute(root, 'role', 'status')
 

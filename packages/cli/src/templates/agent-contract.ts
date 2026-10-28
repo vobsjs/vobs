@@ -1,186 +1,189 @@
 /**
- * vobs 框架契约正文 —— `vobs agent-doc` 的输出来源。
+ * vobs framework contract body — the source of `vobs agent-doc` output.
  *
- * 为什么是 TS 模块而不是 .md 文件：读文件要靠 `import.meta.url` 解析相对路径，
- * 而**全量测试时 vitest 会转换模块**，`import.meta.url` 指向虚拟路径，
- * `new URL('../../src/templates/…')` 就找不到文件（实测：单独跑 8 条全过、
- * 全量跑 8 条全红）。内联成字符串**免疫打包与转换**，也省掉发布时拷模板。
+ * Why a TS module instead of a .md file: reading a file relies on `import.meta.url`
+ * to resolve a relative path, and **under a full vitest run modules get transformed**,
+ * so `import.meta.url` points at a virtual path and
+ * `new URL('../../src/templates/…')` cannot find the file (measured: the 8 cases pass
+ * standalone and all 8 fail in a full run). Inlining the string is **immune to bundling
+ * and transformation**, and also removes the need to copy templates at publish time.
  *
- * 内容由 `packages/cli/src/templates/agent-contract.md` 生成（保留 .md 作可读源）；
- * 改契约请改 .md 后重新生成，或直接改这里的字符串。
+ * Content is generated from `packages/cli/src/templates/agent-contract.md` (the .md is kept
+ * as the readable source); to change the contract, edit the .md and regenerate,
+ * or edit the string here directly.
  */
-export const AGENT_CONTRACT = `# vobs 框架契约（写代码前必读）
+export const AGENT_CONTRACT = `# vobs Framework Contract (read before writing code)
 
-vobs 是**编译型 / 细粒度 / 响应式**框架，与 React 的心智模型有几处**根本不同**。
-下面的每一条都来自真实事故，**违反时通常编译通过、运行期才错**。
+vobs is a **compiled / fine-grained / reactive** framework with a mental model that differs from React in several **fundamental** ways.
+Every rule below comes from a real incident; **violations usually compile fine and only fail at runtime**.
 
-> 本文档由 \`vobs agent-doc\` 从框架版本生成 —— 不要手改生成的块。
-> 每条后面括号里是**违反时框架会报的诊断码**。
+> This document is generated from the framework version by \`vobs agent-doc\` — do not hand-edit the generated block.
+> The parenthetical after each rule is the **diagnostic code the framework reports when the rule is violated**.
 
-## 一、组件体只执行一次（run-once）
+## 1. Component bodies execute exactly once (run-once)
 
-**组件函数体只在创建时跑一次**，之后只有 JSX 里订阅的位置更新。
+**The component function body runs only once at creation time**; afterwards, only subscribed positions in JSX update.
 
-- ❌ \`const filtered = list.value.filter(...)\` —— 一次快照，之后永不更新
-- ✅ 派生放进 JSX：\`<div>{list.value.filter(...).map(render)}</div>\`
-- ❌ 组件体里取快照给回调用：\`const v = name.value; onClick={() => save(v)}\`
-- ✅ 回调内重读：\`onClick={() => save(name.value)}\`
-- 动态 props 用 getter 形态，不要传求值后的值
+- ❌ \`const filtered = list.value.filter(...)\` — a one-time snapshot that never updates afterwards
+- ✅ Put derivations in JSX: \`<div>{list.value.filter(...).map(render)}</div>\`
+- ❌ Taking a snapshot in the component body for a callback: \`const v = name.value; onClick={() => save(v)}\`
+- ✅ Re-read inside the callback: \`onClick={() => save(name.value)}\`
+- Pass dynamic props in getter form, never as already-evaluated values
 
-## 二、条件渲染：**不要在组件体里 \`return\` 分支**（\`VOBS_C107\` / \`VOBS_C104\`）
+## 2. Conditional rendering: **do not \`return\` branches from the component body** (\`VOBS_C107\` / \`VOBS_C104\`)
 
-组件体里读信号的 \`return\` 在挂载时固化，**三种写法坏得一模一样**：
+A \`return\` in the component body that reads a signal is frozen at mount time; **all three forms break identically**:
 
 \`\`\`tsx
-return cond.value ? <A/> : <B/>        // ❌ 冻结
-if (cond.value) return <A/>            // ❌ 冻结
-return cond.value ? <A/> : null        // ❌ 冻结
+return cond.value ? <A/> : <B/>        // ❌ frozen
+if (cond.value) return <A/>            // ❌ frozen
+return cond.value ? <A/> : null        // ❌ frozen
 \`\`\`
 
-顶层 \`return\` 处**没有 parent/anchor**，所以两支都是 JSX 也一样不会重分支。
+At the top-level \`return\` there is **no parent/anchor**, so even when both branches are JSX the branch never re-evaluates.
 
-| 场景 | 用什么 |
+| Scenario | Use |
 |---|---|
-| **路由分支** | **\`<RouterView/>\`**（声明式，内部 \`insertDynamic\` + \`resetKey\`） |
-| 保留挂载、只切显隐 | **\`<Show when={cond}>\`**（切 \`hidden\` + \`inert\`，焦点/滚动/内部状态不丢） |
-| 只切类名 | \`class="base" classList={{ 'is-on': cond.value }}\` |
-| 普通条件渲染 | 放进 **JSX 子节点位置**：\`<div>{cond.value ? <A/> : <B/>}</div>\` |
+| **Route branching** | **\`<RouterView/>\`** (declarative; internally \`insertDynamic\` + \`resetKey\`) |
+| Keep mounted, toggle visibility only | **\`<Show when={cond}>\`** (toggles \`hidden\` + \`inert\`; focus/scroll/internal state survive) |
+| Class toggling only | \`class="base" classList={{ 'is-on': cond.value }}\` |
+| Ordinary conditional rendering | Put it in a **JSX child position**: \`<div>{cond.value ? <A/> : <B/>}</div>\` |
 
-## 三、effect 里不要写自己读过的信号（\`VOBS_C210\` / \`VOBS_C211\`）
+## 3. Do not write signals you read inside an effect (\`VOBS_C210\` / \`VOBS_C211\`)
 
-**依赖是自动收集的**：effect 运行期间读到的**任何**信号都会变成依赖。
+**Dependencies are collected automatically**: **any** signal read while the effect runs becomes a dependency.
 
-- ❌ \`effect(() => { count.value++ })\` —— 读+写同一个信号 = 自订阅循环
-- ❌ \`effect(() => { if (session.value) void sync() })\` —— **「只调了个函数」不等于没依赖**：
-  被调函数在**首个 \`await\` 之前**的代码是**同步执行**的，它读的信号算在 effect 头上
-- ✅ 只想声明依赖：**\`effect(on(deps, () => { … }))\`** —— 回调在 untrack 作用域里跑，
-  它调用的函数碰什么信号都不会反向订阅
-- ✅ 派生值用 \`memo\`，不要"读 A 写 B"
-- 兜底才是 \`untrack(() => { X.value = next })\`
+- ❌ \`effect(() => { count.value++ })\` — read + write on the same signal = self-subscription loop
+- ❌ \`effect(() => { if (session.value) void sync() })\` — **"just calling a function" does not mean "no dependencies"**:
+  the callee's code **before its first \`await\`** runs **synchronously**, and the signals it reads are charged to the effect
+- ✅ To declare dependencies only: **\`effect(on(deps, () => { … }))\`** — the callback runs in an untrack scope,
+  so functions it calls never reverse-subscribe to any signal they touch
+- ✅ Use \`memo\` for derived values; do not "read A, write B"
+- \`untrack(() => { X.value = next })\` is the last-resort escape hatch
 
-**别在 effect 里调 async 函数**（\`VOBS_C106\`）：\`effect\` 不等它，
-且首个 \`await\` 之前的部分是同步的。异步取数用 **\`@vobs/resource\`**。
+**Never call async functions inside an effect** (\`VOBS_C106\`): \`effect\` does not await it,
+and everything before the first \`await\` is synchronous. Use **\`@vobs/resource\`** for async data fetching.
 
-### 依赖图是运行时成型的**动态图**（AI 判据：这条边文本里可见吗？）
+### The dependency graph is a **dynamic graph** shaped at runtime (AI criterion: is this edge visible in the text?)
 
-依赖集每次重跑**清空重收集** —— 代码里"出现了哪些信号"≠"这一刻订阅了哪几条边"：
+The dependency set is **cleared and re-collected on every re-run** — "which signals appear in the code" ≠ "which edges are subscribed at this moment":
 
-- **条件分支里的读取是条件依赖**：\`if (a.value) use(b.value)\` —— a 为 false 的那些轮
-  **不订阅 b**（分支没走就没有依赖边）。动态键 \`store[key.value]\` 同理。
-  别假设"文本里出现的信号都无条件依赖"，也别假设"读过的会一直依赖"
-- **钉死**依赖集：\`effect(on(deps, fn))\` —— deps **声明即订阅**（无论 fn 用不用）；
-  **断开**某条边：\`untrack(fn)\`。这两个原语让依赖关系在文本里显式可见
-- ⚠️ **on 的回调跑在 untrack 作用域里**：回调内读的信号**不会订阅** ——
-  \`effect(on([a], () => { 用了 b.value }))\` 不会因 b 变化触发（\`VOBS_C234\`）。
-  期望它触发就写进 deps；只要最新值就是刻意不订阅，写 \`untrack\` 表明意图
+- **Reads inside conditional branches are conditional dependencies**: \`if (a.value) use(b.value)\` — on rounds where a is false,
+  **b is not subscribed** (branch not taken, no dependency edge). Dynamic keys \`store[key.value]\` work the same way.
+  Do not assume "every signal appearing in the text is an unconditional dependency", nor "once read, subscribed forever"
+- **Pin** the dependency set: \`effect(on(deps, fn))\` — deps are **subscribed at declaration time** (whether or not fn uses them);
+  **sever** an edge with \`untrack(fn)\`. These two primitives make dependency relations explicitly visible in the text
+- ⚠️ **on's callback runs in an untrack scope**: signals read inside the callback are **not subscribed** —
+  \`effect(on([a], () => { uses b.value }))\` will not fire when b changes (\`VOBS_C234\`).
+  If it should fire, add it to deps; if you only want the latest value, deliberately skip subscribing and write \`untrack\` to state the intent
 
-## 四、客户端副作用与 SSR
+## 4. Client-side side effects and SSR
 
-- 定时器 / 监听 / \`matchMedia\` / \`localStorage\` → **\`onMount\` 启动、\`onDestroy\` 清理**
-  （**不要手写 \`typeof window\` 守卫**）
-- **渲染输出本身**依赖浏览器（窗口尺寸 / \`localStorage\` 回填 / \`Date.now\` / 随机值）
-  → **\`<ClientOnly fallback={…}>\`**（首轮两侧都渲染 fallback，水合对得上）
-- 模块顶层**禁止** JSX（\`VOBS_C105\`）：import 求值早于渲染器安装
+- Timers / listeners / \`matchMedia\` / \`localStorage\` → **start in \`onMount\`, clean up in \`onDestroy\`**
+  (**do not hand-write \`typeof window\` guards**)
+- When the **rendered output itself** depends on the browser (window size / \`localStorage\` backfill / \`Date.now\` / random values)
+  → **\`<ClientOnly fallback={…}>\`** (both sides render the fallback on the first pass, so hydration matches)
+- JSX at module top level is **forbidden** (\`VOBS_C105\`): import evaluation runs before the renderer is installed
 
-### 异步取数：\`@vobs/resource\`（Query / Mutation 一体）
+### Async data: \`@vobs/resource\` (Query / Mutation in one)
 
-- **\`resource(fetcher)\` 返回 data / error / loading 三个信号** —— 异步状态就在
-  依赖图里，JSX 里 \`{res.data.value}\`、\`{res.loading.value}\` 正常订阅。
-  **没有第二套异步心智模型**，别再用 effect + 手动 loading 状态拼异步
-- **key 变化自动重取，旧请求自动取消**（AbortSignal）：
-  \`resource({ key: () => [userId.value], fetcher })\` —— key 读信号，输入变了自动失效重拉；
-  **不要**在 effect 里 watch + fetch（\`VOBS_C106\` 的坑）
-- **data 是 \`T | null\`**：未加载就是 null，类型系统强制判空 —— 严禁 \`!\` 断言
-- **写操作**：直接改缓存 \`mutate(next)\`；带请求的乐观更新 \`optimistic(next, action)\`；
-  跨条目失效 \`client.invalidate(key)\`。飞行中的旧结果不会覆盖新数据（revision 防护）
-- **渲染端配 \`<AsyncBoundary resource={…}>\`**（\`VOBS_C002\`：缺属性直接报）——
-  别在边界外手拼 loading/error 分支
-- SSR：\`dehydrate()/hydrate()\` 序列化；**每个请求要 \`resetDefaultResourceClient()\`**
-  （进程级缓存，不复位 = 跨请求数据泄漏）
+- **\`resource(fetcher)\` returns three signals: data / error / loading** — async state lives right in
+  the dependency graph; \`{res.data.value}\` and \`{res.loading.value}\` in JSX subscribe normally.
+  **There is no second async mental model**; stop gluing async together with effect + a manual loading state
+- **Key changes re-fetch automatically; stale requests are cancelled automatically** (AbortSignal):
+  \`resource({ key: () => [userId.value], fetcher })\` — the key reads signals; when inputs change it invalidates and re-pulls automatically;
+  **do not** watch + fetch inside an effect (the \`VOBS_C106\` trap)
+- **data is \`T | null\`**: null until loaded; the type system forces null checks — \`!\` assertions are strictly forbidden
+- **Writes**: mutate the cache directly with \`mutate(next)\`; optimistic updates with a request via \`optimistic(next, action)\`;
+  cross-entry invalidation via \`client.invalidate(key)\`. In-flight stale results never overwrite newer data (revision guard)
+- **Pair the render side with \`<AsyncBoundary resource={…}>\`** (\`VOBS_C002\`: a missing prop reports directly) —
+  do not hand-assemble loading/error branches outside the boundary
+- SSR: \`dehydrate()/hydrate()\` serialization; **call \`resetDefaultResourceClient()\` per request**
+  (process-level cache; failing to reset = cross-request data leakage)
 
-## 五、列表与数据
+## 5. Lists and data
 
-- **数组更新必须换引用**：\`list.value = [...list.value, item]\`；
-  原地 \`push\` / 改字段**不触发更新**
-- JSX **子节点位置**只放四种形态：组件标签 / 元素 / 两分支三元 / \`.map()\`
-- 数据结构里**只存纯描述**（字符串/样式/结构字段），**节点对象别进数据常量**
-  （SSG 序列化会炸，产物出现 \`[object Xxx]\` 时框架会直接报错）
+- **Array updates must swap the reference**: \`list.value = [...list.value, item]\`;
+  in-place \`push\` / field mutation **does not trigger updates**
+- A JSX **child position** accepts only four forms: component tag / element / two-branch ternary / \`.map()\`
+- Data structures store **pure descriptions only** (strings/styles/structural fields); **never put node objects into data constants**
+  (SSG serialization will blow up; when the output contains \`[object Xxx]\` the framework reports an error directly)
 
-### Platform：优先平台原生能力（vobs 渲染器操作真实 DOM）
+### Platform: prefer platform-native capabilities (the vobs renderer operates real DOM)
 
-- **平台原生元素就是 JSX 小写标签** —— 渲染器直接创建真实 DOM：\`<dialog>\`、
-  \`<details>\`、\`<template>\` 等 Web 平台原语按常规语义使用即可。
-  **优先用平台能力，不要自建等价物**（手写 modal、手写 disclosure）
-- **网络请求走 \`@vobs/http\`**：AbortSignal 取消、\`debugContext\` 与 devtools
-  网络追踪贯通 —— 裸 \`fetch\` 拿不到请求追踪与取消联动
-- **异步状态走 \`@vobs/resource\`**（见上节）—— 手写 \`loading\` 信号 + effect 拉数据
-  是双重反模式（\`VOBS_C106\`）
-- **样式接入走 \`@vobs/tailwind\`**（官方集成）；组件级定制用 \`--vobs-*\` token hooks
-  （见各组件文档），不在业务代码里硬编码色值
+- **Platform-native elements are lowercase JSX tags** — the renderer creates real DOM directly: \`<dialog>\`,
+  \`<details>\`, \`<template>\` and other Web platform primitives are used with their ordinary semantics.
+  **Prefer platform capabilities; do not build equivalents by hand** (hand-written modals, hand-written disclosures)
+- **Network requests go through \`@vobs/http\`**: AbortSignal cancellation, and \`debugContext\` wired into
+  devtools network tracing — bare \`fetch\` gets neither request tracing nor cancel coordination
+- **Async state goes through \`@vobs/resource\`** (see the section above) — hand-written \`loading\` signals + effect fetching
+  is a double anti-pattern (\`VOBS_C106\`)
+- **Styling goes through \`@vobs/tailwind\`** (official integration); component-level customization uses \`--vobs-*\` token hooks
+  (see each component's docs); never hard-code color values in business code
 
-## 六、输入
+## 6. Input
 
-- **数字输入走 \`parseNumber\`**（\`<Field type="number">\` 已内置）：
-  空串 / 非法 / 超界**不提交**，保持原值
-  —— \`Number('') === 0\` 会把输入清成 0 并沿联动链路清零兄弟维度
-- \`<select>\` 的 value 直接绑，**不要写 ref 兜底**（1.5.1+ 已修时序）
+- **Numeric input goes through \`parseNumber\`** (built into \`<Field type="number">\`):
+  empty / invalid / out-of-range input is **not committed**; the previous value is kept
+  — \`Number('') === 0\` would wipe the input to 0 and cascade zeros into sibling dimensions
+- Bind \`<select>\` value directly; **do not add a ref fallback** (timing fixed in 1.5.1+)
 
-## 七、图标与 SVG
+## 7. Icons and SVG
 
-- **SVG 直接写 JSX**（\`<svg><path/></svg>\`，1.7.4+ 按 namespace 创建与水合）
-- 图标要**登记进白名单**；查表 miss 时 \`@vobs/icon-core\` 会警告点名（但仍应登记）
+- **Write SVG directly in JSX** (\`<svg><path/></svg>\`; 1.7.4+ creates and hydrates per namespace)
+- Icons must be **registered in the whitelist**; on a lookup miss \`@vobs/icon-core\` warns and names the icon (but you should still register it)
 
-## 八、提交前自测
+## 8. Self-test before committing
 
 \`\`\`bash
-pnpm run check:source            # = vobs check：静态分析 + **编译器诊断**，全仓一次列全
-pnpm run check:source -- --no-compiler   # 只跑静态分析（更快）
-pnpm run check:runtime           # 真实浏览器逐路由跑护栏（需 Chrome）
-pnpm run check:runtime:interact  # 再点所有按钮、触发所有输入
+pnpm run check:source            # = vobs check: static analysis + **compiler diagnostics**, whole repo in one listing
+pnpm run check:source -- --no-compiler   # static analysis only (faster)
+pnpm run check:runtime           # runs guardrails per route in a real browser (needs Chrome)
+pnpm run check:runtime:interact  # additionally clicks every button and triggers every input
 \`\`\`
 
-> 1.8.8 前 \`vobs check\` **不跑编译器**，所以 \`C104\`/\`C105\`/\`C106\`/\`C107\`/\`C108\` 在它那里
-> **一条都不报**（只有 \`vite build\` 看得到）。现在两边规则已合并，\`check:source\` 是真正的全仓入口。
+> Before 1.8.8, \`vobs check\` **did not run the compiler**, so \`C104\`/\`C105\`/\`C106\`/\`C107\`/\`C108\`
+> **never appeared there** (only \`vite build\` saw them). The rule sets on both sides are now merged; \`check:source\` is the real whole-repo entry point.
 
-### 运行时自验（dev server 起来后 Agent 可自主调用）
+### Runtime self-verification (agents can call this themselves once the dev server is up)
 
-- \`GET /__vobs/agent-state\`（vite dev server 的 HTTP 端点）：返回每个打开页面的
-  运行时快照 —— 每个 effect 的**当前订阅集**、最近 20 条更新触发链、护栏判定。
-  Agent 生成代码后先 \`check_source_snippet\`（写前静态自检）→ 写入 → 页面加载后
-  \`curl localhost:<port>/__vobs/agent-state\` 读快照核对「依赖边是否符合预期」，
-  不需要等人跑检查
-- 报告以快照为准（100ms 节流、按页面分桶）；\`vobs check:runtime --json\` 是它的
-  批处理形态（全路由护栏 verdict）
+- \`GET /__vobs/agent-state\` (HTTP endpoint on the vite dev server): returns a runtime snapshot for every open page —
+  each effect's **current subscription set**, the last 20 update trigger chains, and guardrail verdicts.
+  After generating code, an agent first runs \`check_source_snippet\` (static pre-write self-check) → writes → once the page loads,
+  \`curl localhost:<port>/__vobs/agent-state\` to read the snapshot and verify that "dependency edges match expectations",
+  without waiting for a human to run checks
+- Reports are snapshot-based (100ms throttle, bucketed per page); \`vobs check:runtime --json\` is its
+  batch form (guardrail verdicts for all routes)
 
 ---
 
-## 禁止清单（生成前先扫一遍；每条都会被对应的 C 码拦截）
+## Forbidden list (scan before generating; each row is intercepted by its C code)
 
-| 不要写 | 会被 | 改成 |
+| Do not write | Caught by | Write instead |
 |---|---|---|
-| 组件体里 \`const x = signal.value\` 又在 JSX 用 \`{x}\` | \`C118\` | JSX 里直读 \`.value\`，或 \`memo(() => ...)\` |
-| 组件体里 \`const x = props.y\` 又在 JSX 用 \`{x}\` | \`C118\` | \`const x = () => props.y\`，JSX 用 \`{x()}\` |
-| 顶层 \`return cond.value ? <A/> : <B/>\` / \`if (cond.value) return null\` | \`C107\` | 条件下放进 JSX 子节点；路由用 \`RouterView\` |
-| \`const node = <X/>\` 存变量再条件渲染 | \`C108\` | 改成返回节点的函数 \`const r = () => <X/>\` |
-| \`effect(async () => { ... })\` | \`C106\` | \`effect(on(deps, fn))\`；异步取数用 \`@vobs/resource\` |
-| \`effect(() => { s.value = s.value ... })\`（读写同一信号） | \`C210\` | \`effect(on(s, fn))\`；兜底 \`untrack\` |
-| \`list.value.push(...)\` / \`X.value.field = v\` | \`C233\` | 换引用：\`list.value = [...list.value, item]\` |
-| \`on([a], () => { b.value })\`（读了不订阅） | \`C234\` | 期望触发就写进 deps：\`on([a, b], fn)\` |
-| \`state(0)\` 不传调试名 | \`C120\` | \`state(0, 'count')\`（与变量同名） |
-| 模块顶层写 \`const M = <X/>\` | \`C105\` | 返回节点的函数 \`const m = () => <X/>\` |
+| \`const x = signal.value\` in the component body, then used as \`{x}\` in JSX | \`C118\` | Read \`.value\` directly in JSX, or \`memo(() => ...)\` |
+| \`const x = props.y\` in the component body, then used as \`{x}\` in JSX | \`C118\` | \`const x = () => props.y\`, used in JSX as \`{x()}\` |
+| Top-level \`return cond.value ? <A/> : <B/>\` / \`if (cond.value) return null\` | \`C107\` | Put the condition inside a JSX child; routes use \`RouterView\` |
+| \`const node = <X/>\` stored in a variable, then conditionally rendered | \`C108\` | A function returning the node: \`const r = () => <X/>\` |
+| \`effect(async () => { ... })\` | \`C106\` | \`effect(on(deps, fn))\`; async data fetching via \`@vobs/resource\` |
+| \`effect(() => { s.value = s.value ... })\` (read + write on the same signal) | \`C210\` | \`effect(on(s, fn))\`; escape hatch \`untrack\` |
+| \`list.value.push(...)\` / \`X.value.field = v\` | \`C233\` | Swap the reference: \`list.value = [...list.value, item]\` |
+| \`on([a], () => { b.value })\` (read but not subscribed) | \`C234\` | If it should fire, put it in deps: \`on([a, b], fn)\` |
+| \`state(0)\` without a debug name | \`C120\` | \`state(0, 'count')\` (same name as the variable) |
+| \`const M = <X/>\` at module top level | \`C105\` | A function returning the node: \`const m = () => <X/>\` |
 
-## 一句话速记
+## One-line cheat sheet
 
-| 主题 | 一句话 |
+| Topic | One-liner |
 |---|---|
-| 组件体 | 只跑一次，派生进 JSX |
-| 回调 | 触发时重读 \`.value\` |
-| 条件渲染 | 路由用 \`RouterView\`，显隐用 \`Show\`，别在组件体 return 分支 |
-| effect | 别写自己读的信号，用 \`on(deps, fn)\` |
-| async | 别塞进 effect，用 \`@vobs/resource\` |
-| 客户端 | \`onMount\`/\`onDestroy\`/\`ClientOnly\`，别手写 \`typeof window\` |
-| 列表 | 换引用 |
-| 数字 | \`parseNumber\` |
-| SVG | 直接写 |
-| 自测 | \`check:source\` + \`check:runtime\` |
+| Component body | Runs once; put derivations in JSX |
+| Callbacks | Re-read \`.value\` when fired |
+| Conditional rendering | Routes use \`RouterView\`, visibility uses \`Show\`; never return branches from the component body |
+| effect | Never write signals you read; use \`on(deps, fn)\` |
+| async | Never stuff it into an effect; use \`@vobs/resource\` |
+| Client side | \`onMount\`/\`onDestroy\`/\`ClientOnly\`; never hand-write \`typeof window\` |
+| Lists | Swap the reference |
+| Numbers | \`parseNumber\` |
+| SVG | Write it directly |
+| Self-test | \`check:source\` + \`check:runtime\` |
 `

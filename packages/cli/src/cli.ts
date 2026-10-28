@@ -99,35 +99,35 @@ export function createCLI(): ReturnType<typeof cac> {
     })
 
   cli
-    .command('check [dir]', '静态检查源码：effect 自订阅 / 列表写进分支 / 组件体里读信号（行内抑制：上一行写 // vobs-check-ignore-next-line）')
-    .option('--json', '以 JSON 输出（给 AI 与工具消费）')
-    .option('--write', `把结果写到 ${'.vobs/check.json'}（开发台面板读它）`)
-    .option('--include-tests', '把测试文件也纳入检查（默认跳过）')
-    .option('--no-compiler', '不跑编译器诊断（只跑静态分析；更快）')
+    .command('check [dir]', 'Statically check source: effect self-subscription / list written into a branch / signal reads in the component body (inline suppression: write // vobs-check-ignore-next-line on the previous line)')
+    .option('--json', 'Output as JSON (for AI and tools)')
+    .option('--write', `Write the report to ${'.vobs/check.json'} (read by the devtools panel)`)
+    .option('--include-tests', 'Include test files in the check (skipped by default)')
+    .option('--no-compiler', 'Skip compiler diagnostics (static analysis only; faster)')
     .action(async (dir: string | undefined, options: Record<string, unknown>) => {
       await checkCommand({
         dir,
         json: options.json === true,
         write: options.write === true,
         includeTests: options.includeTests === true,
-        // --no-compiler 时 commander 会把 compiler 置为 false
+        // With --no-compiler, commander sets compiler to false
         compiler: options.compiler !== false
       })
     })
 
   cli
-    .command('api [query]', '框架导出索引（哪个包导出了什么名字）')
-    .option('--json', '机器可读输出（给 AI 与工具消费）')
-    .option('--dir <dir>', '仓库根目录')
+    .command('api [query]', 'Framework export index (which package exports which name)')
+    .option('--json', 'Machine-readable output (for AI and tools)')
+    .option('--dir <dir>', 'Repository root directory')
     .action(async (query: string | undefined, options: Record<string, unknown>) => {
       await apiCommand({ query, json: options.json === true, dir: options.dir as string | undefined })
     })
 
   cli
-    .command('explain [code]', '诊断码说明（Rust 的 rustc --explain 模式）')
-    .option('--json', '机器可读输出')
-    .option('--missing', '列出源码里存在但没有条目的码')
-    .option('--dir <dir>', '--missing 用的源码根目录')
+    .command('explain [code]', 'Diagnostic code reference (Rust\'s rustc --explain pattern)')
+    .option('--json', 'Machine-readable output')
+    .option('--missing', 'List codes that exist in the source but have no entry')
+    .option('--dir <dir>', 'Source root directory used by --missing')
     .action(async (code: string | undefined, options: Record<string, unknown>) => {
       await explainCommand({
         code,
@@ -138,12 +138,12 @@ export function createCLI(): ReturnType<typeof cac> {
     })
 
   cli
-    .command('agent-doc', '生成/校验给 LLM 读的框架契约（AGENTS.md + CLAUDE.md）')
-    .option('--dir <dir>', '目标目录', { default: process.cwd() })
-    .option('--write', '写入文件（默认打到 stdout）')
-    .option('--check', '校验项目里那份是否与当前框架版本一致（可进 CI）')
-    .option('--body', '只输出契约正文（不含标记块外说明）')
-    .option('--llms <dir>', '生成 Agent 知识分发文件（llms.txt / vobs-context.md / diagnostics.md）')
+    .command('agent-doc', 'Generate/verify the LLM-facing framework contract (AGENTS.md + CLAUDE.md)')
+    .option('--dir <dir>', 'Target directory', { default: process.cwd() })
+    .option('--write', 'Write files (prints to stdout by default)')
+    .option('--check', 'Verify the project copy matches the current framework version (CI-ready)')
+    .option('--body', 'Print only the contract body (without the marker block)')
+    .option('--llms <dir>', 'Generate agent knowledge-distribution files (llms.txt / vobs-context.md / diagnostics.md)')
     .action(async (options: Record<string, unknown>) => {
       await agentDocCommand({
         dir: options.dir as string | undefined,
@@ -154,23 +154,23 @@ export function createCLI(): ReturnType<typeof cac> {
       })
     })
   cli
-    .command('mcp', 'MCP stdio server（JSON-RPC 2.0）：Agent 自主调用运行时护栏 / 诊断详情 / 契约状态')
+    .command('mcp', 'MCP stdio server (JSON-RPC 2.0): agents autonomously invoke runtime guardrails / diagnostic details / contract status')
     .action(async () => {
       await mcpCommand()
     })
 
   cli
-    .command('dsh [action] [target]', 'DSH 插件工具链（init / dev / build / check / install）')
-    .option('--dir <dir>', 'init：目标目录')
-    .option('--pm <pm>', 'init：包管理器（pnpm/npm）')
-    .option('--port <port>', 'dev：预览端口', { default: 5199 })
-    .option('--profile <name>', 'install：DSH profile 名', { default: 'desktop' })
-    .option('--spec <spec>', 'install：完整安装 spec')
-    .option('--repo <owner/name>', 'install：GitHub owner/name')
-    .option('--tag <ref>', 'install：Git tag / 分支 / commit')
-    .option('--subpath <path>', 'install：仓库内子目录')
-    .option('--from <path>', 'install：从本地目录安装')
-    .option('--dry', 'install：只打印命令，不执行')
+    .command('dsh [action] [target]', 'DSH plugin toolchain (init / dev / build / check / install)')
+    .option('--dir <dir>', 'init: target directory')
+    .option('--pm <pm>', 'init: package manager (pnpm/npm)')
+    .option('--port <port>', 'dev: preview port', { default: 5199 })
+    .option('--profile <name>', 'install: DSH profile name', { default: 'desktop' })
+    .option('--spec <spec>', 'install: full install spec')
+    .option('--repo <owner/name>', 'install: GitHub owner/name')
+    .option('--tag <ref>', 'install: Git tag / branch / commit')
+    .option('--subpath <path>', 'install: subdirectory within the repo')
+    .option('--from <path>', 'install: install from a local directory')
+    .option('--dry', 'install: print the command without executing it')
     .action(async (action: string, target: string | undefined, options: Record<string, unknown>) => {
       await dshCommand(action, target, {
         dir: options.dir as string | undefined,
@@ -203,12 +203,13 @@ export function createCLI(): ReturnType<typeof cac> {
 }
 
 /**
- * 已注册的子命令名（含别名）。
+ * Registered subcommand names (including aliases).
  *
- * 存在的理由：cac 对"没有命令匹配"不做任何兜底（既不报错也不输出，直接返回），
- * 而 `start()` 的 `--version` 短路又用的是 `args.includes('--version')` ——
- * 于是 `vobs chekc`（拼错）静默成功，`vobs check --version` 则只打 banner、check 根本没跑。
- * 用这份清单把"跑某个命令"与"顶层用法错误"分开。
+ * Reason it exists: cac does nothing for "no command matched" (no error, no output — it
+ * just returns), while `start()`'s `--version` short-circuit uses
+ * `args.includes('--version')` — so `vobs chekc` (typo) silently "succeeds", and
+ * `vobs check --version` only prints the banner while check never runs. This list
+ * separates "run a command" from "top-level usage error".
  */
 export const KNOWN_SUBCOMMANDS: readonly string[] = [
   'init', 'create', 'dev', 'build', 'generate', 'g', 'add', 'check', 'dsh', 'agent-doc', 'explain', 'api', 'logo'

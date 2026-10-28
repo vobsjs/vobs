@@ -3,17 +3,19 @@ import { describe, expect, it } from 'vitest'
 import { createHTTPClient, HTTPError, type HTTPResponse } from './index'
 
 /*
- * `Retry-After` 必须被认。
+ * `Retry-After` must be honored.
  *
- * 为什么重要：429/503 上的 `Retry-After` 是服务端在说"**别现在来**"。
- * 零退避连环重试等于把服务端挡下的流量原样打回去 —— 是放大器，也违反协议。
- * 实测（审计探针）：`429 + retry-after: 5` 下，客户端 4ms 内把 3 次请求全打完。
+ * Why it matters: a `Retry-After` on 429/503 is the server saying "**not right now**".
+ * Retrying in a tight loop with zero backoff throws the traffic the server just blocked right
+ * back at it — an amplifier, and a protocol violation.
+ * Measured (audit probe): under `429 + retry-after: 5`, the client fired all 3 requests within 4ms.
  *
- * 测法：用 HTTP-date 形式（`Retry-After: <现在 + N ms>`），这样能把等待压到几十毫秒；
- * 秒数形式另外用一条**不真的等**的断言（只验间隔 >= 请求的下限）会太慢，所以只验解析。
+ * Test approach: use the HTTP-date form (`Retry-After: <now + N ms>`) so the wait can be compressed
+ * to tens of milliseconds; the seconds form with an assertion that **does not actually wait**
+ * (only checking gap >= a request lower bound) would be too slow, so only parsing is verified there.
  */
 
-/** 记录每次调用的时间戳，并总是回同一个状态码 + 头。 */
+/** Records a timestamp for each call and always returns the same status code + headers. */
 function retryAfterAdapter(status: number, headers: Record<string, string>) {
   const calls: number[] = []
   const adapter = async (): Promise<HTTPResponse<unknown>> => {
@@ -29,12 +31,14 @@ function retryAfterAdapter(status: number, headers: Record<string, string>) {
   return { calls, adapter }
 }
 
-describe('http 重试认 Retry-After', () => {
-  it('HTTP-date 形式：两次尝试之间确实等了', async () => {
+describe('http retries honor Retry-After', () => {
+  it('HTTP-date form: the client actually waits between attempts', async () => {
     /*
-     * 注意 HTTP-date **只有秒级精度**：`Date.now()+120` 序列化时毫秒被丢掉，
-     * 解析回来的时刻可能已经很近（实测只剩 30ms）。
-     * 所以这里把目标对齐到**下一个整秒边界**，让等待时间有可预测的下限。
+     * Note that HTTP-date has **second-level precision only**: the milliseconds of
+     * `Date.now()+120` are dropped on serialization, and the parsed moment may already be very
+     * close (measured: only 30ms left).
+     * So the target is aligned to the **next whole-second boundary**, giving the wait a
+     * predictable lower bound.
      */
     const target = Math.ceil((Date.now() + 700) / 1000) * 1000
     const { calls, adapter } = retryAfterAdapter(429, {
@@ -47,11 +51,11 @@ describe('http 重试认 Retry-After', () => {
     expect((error as HTTPError).status).toBe(429)
     expect(calls.length).toBe(2)
     const gap = calls[1]! - calls[0]!
-    // 修复前这里是 0（零退避）。目标至少在未来 700ms，留 100ms 余量抵消定时器精度。
+    // Before the fix this was 0 (zero backoff). The target is at least 700ms in the future; 100ms of slack absorbs timer precision.
     expect(gap).toBeGreaterThanOrEqual(600)
   }, 15_000)
 
-  it('调用方配了更长的 retryDelay 时，取较大值（不被服务端缩短）', async () => {
+  it('when the caller configured a longer retryDelay, the larger value wins (not shortened by the server)', async () => {
     const { calls, adapter } = retryAfterAdapter(503, {
       'retry-after': new Date(Date.now() + 20).toUTCString()
     })
@@ -62,27 +66,28 @@ describe('http 重试认 Retry-After', () => {
     expect(gap).toBeGreaterThanOrEqual(140)
   })
 
-  it('没有 Retry-After 时行为不变（仍是配置的退避，默认 0）', async () => {
+  it('behavior unchanged without Retry-After (still the configured backoff, default 0)', async () => {
     const { calls, adapter } = retryAfterAdapter(503, {})
     const client = createHTTPClient({ adapter: adapter as never, retry: 2 })
     await client.get('/x').catch(() => undefined)
     expect(calls.length).toBe(3)
-    // 默认零退避：总耗时应很短（不会出现"凭空多等 1 秒"这种回归）
+    // Default zero backoff: total duration should be short (no regression like "an extra second appears out of nowhere")
     expect(calls[2]! - calls[0]!).toBeLessThan(1000)
   })
 
-  it('非法的 Retry-After 当作没给，不阻断重试', async () => {
+  it('an invalid Retry-After counts as absent and does not block retries', async () => {
     for (const bogus of ['abc', '', '-5', 'Wed, 99 Xxx 9999']) {
       const { calls, adapter } = retryAfterAdapter(503, { 'retry-after': bogus })
       const client = createHTTPClient({ adapter: adapter as never, retry: 1 })
       await client.get('/x').catch(() => undefined)
-      expect(calls.length, `bogus=${JSON.stringify(bogus)} 时应当照常重试`).toBe(2)
+      expect(calls.length, `with bogus=${JSON.stringify(bogus)} retries should proceed as usual`).toBe(2)
     }
   })
 
-  it('荒谬大的 Retry-After 被上限截断（不会把调用方挂死）', async () => {
-    // 用 HTTP-date 表达"很久以后"，实际等待会被 60s 上限截断 —— 这里不真的等，
-    // 只断言"没有立刻返回"这个可观察结果：请求不该在 200ms 内完成。
+  it('an absurdly large Retry-After is capped (cannot hang the caller forever)', async () => {
+    // Expressed via HTTP-date as "much later"; the actual wait is truncated by the 60s cap — we do
+    // not actually wait here, only assert the observable outcome "did not return immediately":
+    // the request must not complete within 200ms.
     const { adapter } = retryAfterAdapter(503, {
       'retry-after': new Date(Date.now() + 3_600_000).toUTCString()
     })

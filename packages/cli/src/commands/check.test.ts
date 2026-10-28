@@ -3,13 +3,15 @@ import { analyzeSource, VOBS_C118, VOBS_C120, VOBS_C210, VOBS_C232, VOBS_C233, V
 
 const codes = (diagnostics: readonly CheckDiagnostic[]): string[] => diagnostics.map(item => item.code)
 
-describe('vobs check · VOBS_C210 effect 自订阅', () => {
+describe('vobs check · VOBS_C210 effect self-subscription', () => {
   /*
-   * **这条测试原先断言"误报存在"** —— 我用它把已知限制固定下来，等修好那天它会变红。
-   * 那天到了：effect 回调体内**重新声明**过的名字（作用域遮蔽）不再被当成外层信号。
-   * 于是断言反过来：**不该报**。严重度也已恢复成 error。
+   * **This test originally asserted "the false positive exists"** — it pinned the known
+   * limitation and would turn red the day it got fixed. That day came: names
+   * **re-declared** inside the effect callback body (scope shadowing) are no longer
+   * treated as the outer signal. So the assertion is flipped: **must not report**.
+   * Severity has also been restored to error.
    */
-  it('同名局部对象遮蔽**不再**误报（曾经的已知限制，已修）', () => {
+  it('same-named local object shadowing **no longer** mis-reports (former known limitation, fixed)', () => {
     const found = analyzeSource(`
       import { state, effect } from '@vobs/vobs'
       export function P() {
@@ -21,14 +23,16 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
         return count.value
       }
     `, 'a.tsx')
-    expect(codes(found), '这是局部对象，不是信号 —— 不该报 C210').not.toContain(VOBS_C210)
+    expect(codes(found), 'this is a local object, not a signal — C210 must not fire').not.toContain(VOBS_C210)
   })
 
   /*
-   * **外层次遮蔽**：同名局部声明在**组件体**里（不是 effect 体内）—— 之前只处理了体内那一圈。
-   * 现在的判据是「初始化式是不是调用」：非调用初始化式（对象字面量 / 属性访问）**肯定不是信号**。
+   * **Outer-level shadowing**: a same-named local declaration in the **component body**
+   * (not the effect body) — previously only the inner scope was handled. The criterion is
+   * now "is the initializer a call": non-call initializers (object literals / property
+   * access) are **definitely not signals**.
    */
-  it('组件体里的同名对象遮蔽也**不该**报 C210（外层次遮蔽）', () => {
+  it('same-named object shadowing in the component body also **must not** report C210 (outer-level shadowing)', () => {
     const found = analyzeSource(`
       import { effect, state } from '@vobs/vobs'
       const count = state(0)
@@ -38,13 +42,14 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
         return <div>x</div>
       }
     `, 'a.tsx')
-    expect(codes(found), '组件体里的局部对象同样不是信号').not.toContain(VOBS_C210)
+    expect(codes(found), 'a local object in the component body is equally not a signal').not.toContain(VOBS_C210)
   })
 
-  it('但**调用产出的**绑定仍要检查 —— 自定义工厂可能是信号（防过度收窄）', () => {
+  it('but bindings **produced by calls** are still checked — a custom factory may return signals (guards against over-narrowing)', () => {
     /*
-     * 判据的关键：只有"初始化式不是调用"才排除。
-     * 工厂调用（`createStore()` / `useFoo()`）产出的东西**可能就是信号** → 必须保留检查。
+     * Key to the criterion: only "the initializer is not a call" is excluded.
+     * Results of factory calls (`createStore()` / `useFoo()`) **may well be signals**
+     * → the check must be kept.
      */
     const found = analyzeSource(`
       import { effect, createStore } from '@vobs/vobs'
@@ -54,10 +59,10 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
         return <div>x</div>
       }
     `, 'a.tsx')
-    expect(codes(found), '工厂调用产出 → 保留检查，否则会漏掉自定义 store 的自订阅').toContain(VOBS_C210)
+    expect(codes(found), 'factory-call result → keep checking, otherwise custom-store self-subscription gets missed').toContain(VOBS_C210)
   })
 
-  it('属性访问的绑定不算信号（`const c = props.count`）', () => {
+  it('a binding from property access is not a signal (`const c = props.count`)', () => {
     const found = analyzeSource(`
       import { effect, state } from '@vobs/vobs'
       const count = state(0)
@@ -67,28 +72,31 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
         return <div>x</div>
       }
     `, 'a.tsx')
-    expect(codes(found), 'props.count 不是信号').not.toContain(VOBS_C210)
+    expect(codes(found), 'props.count is not a signal').not.toContain(VOBS_C210)
   })
 
   /*
-   * **实测误报（来自真实项目 Labelune）**：JSX 子节点位置里的**立即执行函数**
-   * 每次依赖变化都会重跑，所以它体里的 `const x = signal.value` **不是** run-once 快照。
+   * **Measured false positive (from the real project Labelune)**: an **IIFE** in a JSX
+   * child position re-runs on every dependency change, so `const x = signal.value` inside
+   * it is **not** a run-once snapshot.
    *
-   * 但 `returnsJsx(fn)` 会把这种 IIFE 认成"组件" → 误报 C118。
-   * 这是语料盲区：此前只测过"组件体是直接语句"的形态。
+   * But `returnsJsx(fn)` mistakes such an IIFE for a "component" → mis-reports C118.
+   * This was a corpus blind spot: only the "component body as direct statements" shape
+   * had been tested before.
    *
-   * 修的时候还要注意括号：`(() => {…})()` 里 arrow 的**父节点是
-   * `ParenthesizedExpression` 而不是 `CallExpression`** —— 第一版只查一层，没拦住。
+   * When fixing, mind the parentheses too: in `(() => {…})()` the arrow's **parent is a
+   * `ParenthesizedExpression`, not a `CallExpression`** — the first version checked one
+   * level only and did not catch it.
    */
-  it('JSX 子节点里的立即执行函数**不该**报 C118', () => {
+  it('an IIFE in a JSX child position **must not** report C118', () => {
     const shapes = [
-      // ① 带括号的 IIFE（实测误报的形态，来自真实项目 Labelune）
+      // ① Parenthesized IIFE (the measured false-positive shape, from the real project Labelune)
       `import { state } from '@vobs/vobs'
        export function P() {
          const n = state(0)
          return <div>{(() => { const shown = n.value + 1; return <b>{shown}</b> })()}</div>
        }`,
-      // ② 无括号的 IIFE
+      // ② IIFE without parentheses
       `import { state } from '@vobs/vobs'
        export function P() {
          const n = state(0)
@@ -96,26 +104,29 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
        }`
     ]
     for (const source of shapes) {
-      expect(codes(analyzeSource(source, 'a.tsx')), 'IIFE 会重跑，不是 run-once 快照').not.toContain(VOBS_C118)
+      expect(codes(analyzeSource(source, 'a.tsx')), 'an IIFE re-runs; it is not a run-once snapshot').not.toContain(VOBS_C118)
     }
   })
 
   /*
-   * **曾经的已知残留，现已修掉**：声明在组件体、在 JSX 里被**手动调用**的渲染 helper：
+   * **A former known residue, now fixed**: render helpers declared in the component body
+   * and **manually called** in JSX:
    *
    * ```tsx
    * const render = () => { const shown = n.value + 1; return <b>{shown}</b> }
-   * return <div>{render()}</div>      // 每次求值都重跑 → shown 是新鲜的，代码对
+   * return <div>{render()}</div>      // re-runs on every evaluation → shown is fresh, code is correct
    * ```
    *
-   * 它曾与 `export const Page = () => {…}`（真组件）形态无法区分。现在用**调用位置**分开：
-   * 被 JSX 表达式调用（`{render()}`）的函数是 helper，编译器不会那样"手动调用"组件。
-   * 只认 callee 而不认引用，是为了保住下面那几条真阳性。
+   * It was previously indistinguishable from `export const Page = () => {…}` (a real
+   * component). Now the **call site** separates them: a function called from a JSX
+   * expression (`{render()}`) is a helper; the compiler never "manually calls" components
+   * that way. Matching callee only, not references, preserves the true positives below.
    *
-   * （这条断言原先写的是 `toContain(VOBS_C118)` 并把残留固定住 —— 修好时它变红，
-   * 提示语就是"请把这条断言反过来"。**"已知限制写成测试"第二次发挥作用。**）
+   * (This assertion originally read `toContain(VOBS_C118)` and pinned the residue — it
+   * turned red when the fix landed, with the message "flip this assertion".
+   * **"Known limitations written as tests" paid off a second time.**)
    */
-  it('helper 被 JSX 表达式调用时**不该**报 C118（曾经的残留）', () => {
+  it('a helper called from a JSX expression **must not** report C118 (former residue)', () => {
     const found = analyzeSource(`
       import { state } from '@vobs/vobs'
       export function P() {
@@ -124,12 +135,12 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
         return <div>{render()}</div>
       }
     `, 'a.tsx')
-    expect(codes(found), 'helper 每次求值都重跑，不是 run-once 快照').not.toContain(VOBS_C118)
+    expect(codes(found), 'the helper re-runs on every evaluation; it is not a run-once snapshot').not.toContain(VOBS_C118)
   })
 
-  it('但 helper 只在**非 JSX**处被调用时，仍按组件形态检查（别过度收窄）', () => {
-    // `{render()}` 才认定为 helper；仅从 effect 里调用时无法确定其重跑语义，
-    // 这时应保持原判（宁可少收，不可放过真阳性）
+  it('but a helper called only at **non-JSX** sites is still checked in component form (do not over-narrow)', () => {
+    // Only `{render()}` qualifies as a helper; called from an effect, its re-run semantics
+    // cannot be determined, so the original judgment holds (prefer misses over losing true positives)
     const found = analyzeSource(`
       import { state, effect } from '@vobs/vobs'
       export function P() {
@@ -142,7 +153,7 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
     expect(codes(found)).toContain(VOBS_C118)
   })
 
-  it('**传引用**（未调用）的组件仍要检查 —— 只认 callee 不认引用', () => {
+  it('components **passed by reference** (not called) are still checked — match callee only, not references', () => {
     const found = analyzeSource(`
       import { state } from '@vobs/vobs'
       const Card = () => {
@@ -154,10 +165,10 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
         return <RouterView component={Card} />
       }
     `, 'a.tsx')
-    expect(codes(found), '只是被引用、没被调用 → 仍按组件检查').toContain(VOBS_C118)
+    expect(codes(found), 'merely referenced, never called → still checked as a component').toContain(VOBS_C118)
   })
 
-  it('但**组件体**里的同类写法仍要报（别为了消误报把真阳性一起关掉）', () => {
+  it('but the same pattern inside a **component body** must still report (do not switch off true positives while killing false ones)', () => {
     const found = analyzeSource(`
       import { state } from '@vobs/vobs'
       export function P() {
@@ -169,7 +180,7 @@ describe('vobs check · VOBS_C210 effect 自订阅', () => {
     expect(codes(found)).toContain(VOBS_C118)
   })
 
-  it('抓到读 + 写同一个信号', () => {
+  it('catches read + write on the same signal', () => {
     const found = analyzeSource(`
 import { state, effect } from '@vobs/vobs'
 const count = state(0, 'count')
@@ -180,21 +191,22 @@ effect(() => {
     expect(codes(found)).toContain(VOBS_C210)
     const item = found.find(entry => entry.code === VOBS_C210)!
     /*
-     * **error**（已恢复）。当初降级为 warning 的唯一依据是实测出的误报
-     * 「同名局部对象遮蔽」—— 那个误报已修掉：effect 回调体内**重新声明**过的名字
-     * 不再被当成外层信号（见 analyze.ts 里 `shadowed` 集合的注释），
-     * 对抗测试从 6/7 变成 **7/7**。
+     * **error** (restored). The only basis for the original downgrade to warning was the
+     * measured false positive "same-named local object shadowing" — that one is fixed:
+     * names **re-declared** inside the effect callback body are no longer treated as the
+     * outer signal (see the `shadowed` set comment in analyze.ts); adversarial tests went
+     * from 6/7 to **7/7**.
      */
     expect(item.severity).toBe('error')
     expect(item.message).toContain('"count"')
-    // 文案与运行时护栏**共用同一份**（@vobs/runtime 的 diagnostic-text）：
-    // 先教结构（on()），untrack 是兜底 —— 两处都含这两个关键词
+    // The copy is **shared** with the runtime guardrail (@vobs/runtime's diagnostic-text):
+    // teach the structure first (on()), untrack is the fallback — both keyword present in both places
     expect(item.fix).toContain('on(')
     expect(item.fix).toContain('untrack')
     expect(item.line).toBe(5)
   })
 
-  it('untrack 包住的写入不报 —— 正是建议的写法', () => {
+  it('writes wrapped in untrack do not report — exactly the recommended form', () => {
     const found = analyzeSource(`
 import { state, effect, untrack } from '@vobs/vobs'
 const count = state(0, 'count')
@@ -205,7 +217,7 @@ effect(() => {
     expect(codes(found)).not.toContain(VOBS_C210)
   })
 
-  it('只写不读不算自订阅（例如 effect 里初始化别的信号）', () => {
+  it('write-only does not count as self-subscription (e.g. initializing another signal inside an effect)', () => {
     const found = analyzeSource(`
 import { state, effect } from '@vobs/vobs'
 const a = state(0)
@@ -217,7 +229,7 @@ effect(() => {
     expect(codes(found)).not.toContain(VOBS_C210)
   })
 
-  it('嵌套函数里的读写不算在本次 effect 上', () => {
+  it('reads/writes inside nested functions are not charged to this effect', () => {
     const found = analyzeSource(`
 import { state, effect } from '@vobs/vobs'
 const count = state(0)
@@ -229,7 +241,7 @@ effect(() => {
     expect(codes(found)).not.toContain(VOBS_C210)
   })
 
-  it('> .set() 也算写入', () => {
+  it('> .set() also counts as a write', () => {
     const found = analyzeSource(`
 import { state, effect } from '@vobs/vobs'
 const count = state(0)
@@ -241,18 +253,18 @@ effect(() => {
   })
 })
 
-describe('vobs check · VOBS_C232 列表写进分支', () => {
-  it('三元分支里的 map 会失去 keyed 复用', () => {
+describe('vobs check · VOBS_C232 list written into a branch', () => {
+  it('a map inside a ternary branch loses keyed reuse', () => {
     const found = analyzeSource(`
 export function List(props: { ok: boolean; items: string[] }) {
   return <div>{props.ok ? <span>empty</span> : props.items.map(item => <b key={item}>{item}</b>)}</div>
 }
 `, 'a.tsx')
     expect(codes(found)).toContain(VOBS_C232)
-    expect(found.find(entry => entry.code === VOBS_C232)?.fix).toContain('直接的')
+    expect(found.find(entry => entry.code === VOBS_C232)?.fix).toContain('**direct**')
   })
 
-  it('&& 右侧的 map 简单形态已路由 insertShow —— 不再报警（2026-10-28）', () => {
+  it('the simple map shape on the right of && is routed to insertShow — no longer reports (2026-10-28)', () => {
     const found = analyzeSource(`
 export function List(props: { items: string[] }) {
   return <div>{props.items.length > 0 && props.items.map(item => <b key={item}>{item}</b>)}</div>
@@ -261,7 +273,7 @@ export function List(props: { items: string[] }) {
     expect(codes(found)).not.toContain(VOBS_C232)
   })
 
-  it('直接的子表达式列表不报 —— 这是推荐写法', () => {
+  it('a list as a direct child expression does not report — this is the recommended form', () => {
     const found = analyzeSource(`
 export function List(props: { items: string[] }) {
   return <ul>{props.items.map(item => <li key={item}>{item}</li>)}</ul>
@@ -270,7 +282,7 @@ export function List(props: { items: string[] }) {
     expect(codes(found)).not.toContain(VOBS_C232)
   })
 
-  it('分支里不是 list 的不报', () => {
+  it('a non-list branch does not report', () => {
     const found = analyzeSource(`
 export function A(props: { ok: boolean }) {
   return <div>{props.ok ? <span>a</span> : <em>b</em>}</div>
@@ -280,8 +292,8 @@ export function A(props: { ok: boolean }) {
   })
 })
 
-describe('vobs check · VOBS_C233 数组信号原地修改', () => {
-  it('绑定到 state 的数组用 push —— 引用没变，订阅处永不更新', () => {
+describe('vobs check · VOBS_C233 in-place mutation of array signals', () => {
+  it('push on an array bound to state — the reference never changes, so subscribers never update', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P() {
@@ -295,12 +307,12 @@ export function P() {
     expect(item.severity).toBe('warning')
     expect(item.message).toContain('"list"')
     expect(item.message).toContain('push()')
-    // fix 文案教换引用 —— 与 AGENTS 契约「数组更新必须换引用」同一句话
-    expect(item.fix).toContain('换引用')
+    // The fix copy teaches swapping the reference — the same sentence as the AGENTS contract "array updates must swap the reference"
+    expect(item.fix).toContain('swap the reference')
     expect(item.fix).toContain('[...list.value')
   })
 
-  it('sort / splice 等其它 mutator 也算', () => {
+  it('other mutators like sort / splice count too', () => {
     const shapes = [
       'const rows = state([3, 1]); const f = () => { rows.value.sort() }',
       'const rows = state([1]); const f = () => { rows.value.splice(0, 1) }',
@@ -318,7 +330,7 @@ export function P() {
     }
   })
 
-  it('换引用的写法不报 —— 这正是 fix 推荐的写法', () => {
+  it('the reference-swapping form does not report — exactly what the fix recommends', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P() {
@@ -330,7 +342,7 @@ export function P() {
     expect(codes(found)).not.toContain(VOBS_C233)
   })
 
-  it('普通数组（未绑定 state）的 push 不报 —— 绑定分析是这条规则的地基', () => {
+  it('push on a plain array (not bound to state) does not report — binding analysis is the foundation of this rule', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 const log: number[] = []
@@ -342,10 +354,10 @@ export function P() {
   return <button onClick={() => { count.value++ }}>{count.value}</button>
 }
 `, 'a.tsx')
-    expect(codes(found), '普通数组没有信号语义').not.toContain(VOBS_C233)
+    expect(codes(found), 'a plain array has no signal semantics').not.toContain(VOBS_C233)
   })
 
-  it('同名局部遮蔽（含形参）不报 —— 保守方向：少报不误报', () => {
+  it('same-named local shadowing (including parameters) does not report — conservative direction: prefer misses over false positives', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 const list = state([1])
@@ -354,26 +366,26 @@ export function P(list: { value: number[] }) {
   return <div>{list.value.length}</div>
 }
 `, 'a.tsx')
-    expect(codes(found), '形参 list 不是那个信号').not.toContain(VOBS_C233)
+    expect(codes(found), 'the parameter list is not that signal').not.toContain(VOBS_C233)
   })
 
-  it('内层非信号的同名对象声明遮蔽外层信号 —— 不报', () => {
+  it('an inner same-named non-signal object declaration shadows the outer signal — no report', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 const list = state([1])
 export function P() {
   const inner = () => {
-    const list = { value: [1, 2] }   // 普通对象，不是信号
+    const list = { value: [1, 2] }   // plain object, not a signal
     list.value.push(9)
     return list.value.length
   }
   return <div>{inner()}</div>
 }
 `, 'a.tsx')
-    expect(codes(found), 'inner 里的 list 是普通对象').not.toContain(VOBS_C233)
+    expect(codes(found), 'list inside inner is a plain object').not.toContain(VOBS_C233)
   })
 
-  it('信号声明与变异在同一函数体内 —— 照报（信号自己不算遮蔽，首个对抗用例暴露的 bug）', () => {
+  it('signal declaration and mutation in the same function body — still reports (a signal does not count as shadowing; bug exposed by the first adversarial case)', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P() {
@@ -385,7 +397,7 @@ export function P() {
     expect(codes(found)).toContain(VOBS_C233)
   })
 
-  it('链上带非 value 属性的**数组变异**仍不报（深层 mutator 留给后续；深层字段赋值已收编）', () => {
+  it('**array mutation** with a non-value property in the chain still does not report (deep mutators left for later; deep field assignment is covered)', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P() {
@@ -394,10 +406,10 @@ export function P() {
   return <button onClick={f}>{model.value.rows.length}</button>
 }
 `, 'a.tsx')
-    expect(codes(found), '形态一只认 <name>.value.<mutator> 顶层；深层数组变异另论').not.toContain(VOBS_C233)
+    expect(codes(found), 'form one only matches top-level <name>.value.<mutator>; deep array mutation is another matter').not.toContain(VOBS_C233)
   })
 
-  it('对象字段直接赋值（X.value.name = 新值）—— 与数组变异同一个坑，照报', () => {
+  it('direct object field assignment (X.value.name = newValue) — same trap as array mutation, still reports', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P() {
@@ -409,11 +421,11 @@ export function P() {
     expect(codes(found)).toContain(VOBS_C233)
     const item = found.find(entry => entry.code === VOBS_C233)!
     expect(item.message).toContain('"user"')
-    expect(item.message).toContain('内部字段')
+    expect(item.message).toContain('inner field')
     expect(item.fix).toContain('{ ...user.value')
   })
 
-  it('深层字段赋值（X.value.a.b = 新值）沿链识别，照报', () => {
+  it('deep field assignment (X.value.a.b = newValue) is recognized along the chain and reports', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P() {
@@ -425,7 +437,7 @@ export function P() {
     expect(codes(found)).toContain(VOBS_C233)
   })
 
-  it('整体换引用的对象更新不报 —— fix 推荐的写法', () => {
+  it('whole-object reference-swap updates do not report — the form the fix recommends', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P() {
@@ -438,8 +450,8 @@ export function P() {
   })
 })
 
-describe('vobs check · VOBS_C120 state() 未传调试名', () => {
-  it('单参 state() 报 warning，fix 直接给出与变量同名的建议', () => {
+describe('vobs check · VOBS_C120 state() without a debug name', () => {
+  it('single-arg state() reports a warning, with a fix suggesting the variable name directly', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P() {
@@ -450,10 +462,10 @@ export function P() {
     expect(codes(found)).toContain(VOBS_C120)
     const item = found.find(entry => entry.code === VOBS_C120)!
     expect(item.severity).toBe('warning')
-    expect(item.fix).toContain("state(<初值>, 'count')")
+    expect(item.fix).toContain("state(<initial>, 'count')")
   })
 
-  it('第二参有名字的不报', () => {
+  it('a named second argument does not report', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P() {
@@ -464,7 +476,7 @@ export function P() {
     expect(codes(found)).not.toContain(VOBS_C120)
   })
 
-  it('spread 参数无法确定个数 —— 少报不误报', () => {
+  it('spread arguments make the count unknowable — prefer misses over false positives', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P(args: unknown[]) {
@@ -475,19 +487,19 @@ export function P(args: unknown[]) {
     expect(codes(found)).not.toContain(VOBS_C120)
   })
 
-  it('非变量初始化场景给通用提示（不猜名字）', () => {
+  it('non-variable initialization gets a generic hint (no name guessing)', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 const registry = { flag: state(false) }
 `, 'a.tsx')
     const item = found.find(entry => entry.code === VOBS_C120)!
     expect(item).toBeDefined()
-    expect(item.fix).toContain('通常与变量同名')
+    expect(item.fix).toContain('usually matching the variable')
   })
 })
 
-describe('vobs check · VOBS_C234 on 回调里的隐式断边', () => {
-  it('on 回调读了 deps 之外的信号 —— untrack 作用域内不建立订阅', () => {
+describe('vobs check · VOBS_C234 implicit severed edge inside on callbacks', () => {
+  it('an on callback reads a signal outside deps — no subscription is established inside the untrack scope', () => {
     const found = analyzeSource(`
 import { effect, on, state } from '@vobs/vobs'
 export function P() {
@@ -500,11 +512,11 @@ export function P() {
     expect(codes(found)).toContain(VOBS_C234)
     const item = found.find(entry => entry.code === VOBS_C234)!
     expect(item.message).toContain('"b"')
-    expect(item.message).toContain('不会建立订阅')
-    expect(item.fix).toContain('加进 deps')
+    expect(item.message).toContain('no subscription is established')
+    expect(item.fix).toContain('add it to deps')
   })
 
-  it('deps 数组里有的不报', () => {
+  it('present in the deps array does not report', () => {
     const found = analyzeSource(`
 import { effect, on, state } from '@vobs/vobs'
 export function P() {
@@ -517,7 +529,7 @@ export function P() {
     expect(codes(found)).not.toContain(VOBS_C234)
   })
 
-  it('deps 是取值函数 —— 函数读什么订阅什么，读取集照常比对', () => {
+  it('deps as a getter — whatever the function reads is subscribed; the read set is compared as usual', () => {
     const found = analyzeSource(`
 import { effect, on, state } from '@vobs/vobs'
 export function P() {
@@ -527,7 +539,7 @@ export function P() {
   return <div>{b.value}</div>
 }
 `, 'a.tsx')
-    expect(codes(found), 'deps 函数只读了 a，回调里的 b 仍不在订阅集').toContain(VOBS_C234)
+    expect(codes(found), 'the deps getter only reads a; b in the callback is still outside the subscription set').toContain(VOBS_C234)
     expect(analyzeSource(`
 import { effect, on, state } from '@vobs/vobs'
 export function P() {
@@ -539,7 +551,7 @@ export function P() {
 `, 'a.tsx')).not.toContain(VOBS_C234)
   })
 
-  it('非 state 绑定的 .value 读取不算信号 —— 不报（绑定分析收窄）', () => {
+  it('.value reads not bound to state do not count as signals — no report (binding-analysis narrowing)', () => {
     const found = analyzeSource(`
 import { effect, on, state } from '@vobs/vobs'
 export function P(props: { cfg: { value: string } }) {
@@ -548,12 +560,12 @@ export function P(props: { cfg: { value: string } }) {
   return <div>{a.value}</div>
 }
 `, 'a.tsx')
-    expect(codes(found), 'props.cfg 不是 state 绑定').not.toContain(VOBS_C234)
+    expect(codes(found), 'props.cfg is not a state binding').not.toContain(VOBS_C234)
   })
 })
 
-describe('vobs check · VOBS_C118 组件体里读信号', () => {
-  it('读信号存进 const 又在 JSX 里用 —— 组件体只跑一次', () => {
+describe('vobs check · VOBS_C118 reading signals in the component body', () => {
+  it('a signal read into a const and then used in JSX — the component body runs once', () => {
     const found = analyzeSource(`
 import type { Signal } from '@vobs/vobs'
 export function Panel(props: { name: Signal<string> }) {
@@ -568,7 +580,7 @@ export function Panel(props: { name: Signal<string> }) {
     expect(item.message).toContain('"current"')
   })
 
-  it('读取直接写在 JSX 表达式里不报', () => {
+  it('reads written directly in JSX expressions do not report', () => {
     const found = analyzeSource(`
 import type { Signal } from '@vobs/vobs'
 export function Panel(props: { name: Signal<string> }) {
@@ -578,7 +590,7 @@ export function Panel(props: { name: Signal<string> }) {
     expect(codes(found)).not.toContain(VOBS_C118)
   })
 
-  it('memo 派生不报 —— 那是正确写法', () => {
+  it('memo derivations do not report — that is the correct form', () => {
     const found = analyzeSource(`
 import { memo, type Signal } from '@vobs/vobs'
 export function Panel(props: { name: Signal<string> }) {
@@ -589,7 +601,7 @@ export function Panel(props: { name: Signal<string> }) {
     expect(codes(found)).not.toContain(VOBS_C118)
   })
 
-  it('不是组件的函数不报（不返回 JSX）', () => {
+  it('non-component functions do not report (they do not return JSX)', () => {
     const found = analyzeSource(`
 import type { Signal } from '@vobs/vobs'
 export function read(signal: Signal<string>) {
@@ -601,11 +613,12 @@ export function read(signal: Signal<string>) {
   })
 
   /*
-   * 回归：这条曾经在真实项目里刷出 21 条误报。
-   * `const handler = () => { signal.value }` 里的读取是**延迟**的（点击时才读），
-   * 完全正常 —— 第一版的遍历会钻进函数体，把所有事件处理器都报成「组件体里读信号」。
+   * Regression: this one used to spray 21 false positives in a real project. The read in
+   * `const handler = () => { signal.value }` is **deferred** (happens on click), perfectly
+   * fine — the first version's traversal descended into function bodies and reported every
+   * event handler as "reads a signal in the component body".
    */
-  it('事件处理器里的读取不报 —— 那是延迟读取', () => {
+  it('reads inside event handlers do not report — that is a deferred read', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 const count = state(0)
@@ -619,8 +632,8 @@ export function Panel() {
   })
 })
 
-describe('vobs check · 汇总', () => {
-  it('干净文件没有问题', () => {
+describe('vobs check · summary', () => {
+  it('a clean file yields no diagnostics', () => {
     const found = analyzeSource(`
 import { state, memo } from '@vobs/vobs'
 const count = state(0, 'count')
@@ -632,7 +645,7 @@ export function Counter() {
     expect(found).toEqual([])
   })
 
-  it('诊断按位置排序，且带可定位的 snippet', () => {
+  it('diagnostics are sorted by position and carry a locatable snippet', () => {
     const found = analyzeSource(`
 import { state, effect } from '@vobs/vobs'
 const count = state(0, 'count')
@@ -646,29 +659,30 @@ effect(() => { count.value++ })
 })
 
 /*
- * 行内抑制。三条规则都是启发式的（靠名字与形状判断），有些合法代码恰好长成那样 ——
- * 检查器没有逃生口的话，用户只能关掉整条规则，那比漏报更糟。
+ * Inline suppression. All the rules are heuristics (name- and shape-based), and some legal
+ * code happens to look exactly like the pattern — without an escape hatch users would have
+ * to disable the whole rule, which is worse than a false negative.
  */
-describe('vobs check · 行内抑制', () => {
-  const 自订阅 = (前一行: string) => `
+describe('vobs check · inline suppression', () => {
+  const selfSubscribe = (prevLine: string) => `
 import { state, effect } from '@vobs/vobs'
 const count = state(0, 'count')
 effect(() => {
-${前一行}
+${prevLine}
   count.value++
 })
 `
 
-  it('上一行的 // vobs-check-ignore-next-line 抑制下一行', () => {
-    expect(codes(analyzeSource(自订阅('  // vobs-check-ignore-next-line'), 'a.ts'))).not.toContain(VOBS_C210)
+  it('// vobs-check-ignore-next-line on the previous line suppresses the next line', () => {
+    expect(codes(analyzeSource(selfSubscribe('  // vobs-check-ignore-next-line'), 'a.ts'))).not.toContain(VOBS_C210)
   })
 
-  it('没有注释时照常报', () => {
-    expect(codes(analyzeSource(自订阅('  // 只是普通注释'), 'a.ts'))).toContain(VOBS_C210)
+  it('without the comment it still reports', () => {
+    expect(codes(analyzeSource(selfSubscribe('  // just an ordinary comment'), 'a.ts'))).toContain(VOBS_C210)
   })
 
-  it('只抑制「下一行」，不会顺带放过别的行', () => {
-    // 第 5 行写了自订阅、第 7 行也写一个：抑制注释放在第 4 行只该影响第 5 行
+  it('only "the next line" is suppressed; other lines are not let through', () => {
+    // Line 5 self-subscribes, line 7 does too: a suppression comment on line 4 should only affect line 5
     const source = `
 import { state, effect } from '@vobs/vobs'
 const count = state(0, 'count')

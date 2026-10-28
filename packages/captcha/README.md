@@ -42,50 +42,45 @@ app.mount(document.getElementById('app')!)
 
 Props accept plain values, signals, or getters. The component never fetches anything itself: statuses (`idle`, `loading`, `ready`, `verifying`, `verified`, `expired`, `error`) render built-in messages, retry/cancel actions appear based on status, and `submit` does nothing when no `onSubmit` is present or the status is `loading`/`verifying`. `onSubmit` returns the caller's promise unchanged, so the owner decides when to move to `verified`, `expired`, or `error`.
 
-## SliderCaptcha 契约（名字容易误解的几处）
+## SliderCaptcha contract (the easily-misread parts)
 
-这几个 prop 的名字与实际作用**不一致**，实战里踩过（详见 `docs/dev/` 的踩坑统计 Q 条）。
-按实际语义使用：
+These prop names do **not** match what they actually do; this bit us in practice (see pitfall stats item Q in `docs/dev/`). Use them by their actual semantics:
 
-### `payload` 是**拼图几何**，不是滑块数据
+### `payload` is **puzzle geometry**, not slider data
 
-服务端下发的 `SliderCaptchaChallenge.payload`：
+The `SliderCaptchaChallenge.payload` delivered by the server:
 
 ```ts
 {
-  image?: string          // 底图（见下）
-  width, height           // 拼图区尺寸（px）
-  targetX, targetY        // 缺口位置（px，相对拼图区左上角）
-  pieceWidth, pieceHeight // 拼图块尺寸
+  image?: string          // background image (see below)
+  width, height           // puzzle area size (px)
+  targetX, targetY        // gap position (px, relative to the puzzle area's top-left corner)
+  pieceWidth, pieceHeight // puzzle piece size
   startX?, tolerance?, shape?, decoys?, decoyX/Y/Rotation?
 }
 ```
 
-判定"拖对了"比的是 `targetX` 与落点的差值，容差是 `tolerance`。**手柄文案不在 payload 里**。
+"Dragged correctly" is judged by the difference between `targetX` and the landing point, with `tolerance` as slack. **The handle copy is not part of the payload**.
 
-### `dragLabel` 是**手柄的无障碍名字**（`aria-label`），不是拖动提示
+### `dragLabel` is the **handle's accessible name** (`aria-label`), not the drag hint
 
-默认值是字面量 `'>'`。视觉提示是硬编码的「向右拖动滑块完成拼图」，
-`dragLabel` 只影响读屏器念什么。**默认值作为可读名字并不好** ——
-需要无障碍支持时请显式给一个词（如 `dragLabel="拖动验证"`）。
+The default is the literal `'>'`. The visual hint is the hardcoded "Drag the slider to complete the puzzle"; `dragLabel` only affects what screen readers announce. **The default is a poor accessible name** — pass a real word explicitly when you need accessibility support (e.g. `dragLabel="Slide to verify"`).
 
-其余 `*Label` 同理是**界面文案**（`retryLabel` / `cancelLabel` / `loadingLabel` /
-`emptyLabel` / `expiredLabel` / `errorLabel` / `label`）。
+The other `*Label` props are likewise **UI copy** (`retryLabel` / `cancelLabel` / `loadingLabel` / `emptyLabel` / `expiredLabel` / `errorLabel` / `label`).
 
-### `payload.image` 必须是 **CSS `url()` 能吃的值**
+### `payload.image` must be a **value CSS `url()` accepts**
 
-它会被写进 `background-image: url(…)` —— 所以是 **dataURL 或路径**，
-**不能是节点**。示例用 SVG dataURL；位图 dataURL 也可以。
+It is written into `background-image: url(…)` — so it must be a **dataURL or path**, **never a node**. The example uses an SVG dataURL; a bitmap dataURL works too.
 
-### 提交内容不只是落点：`trail` 与 `analysis` 也在协议里
+### The submission is more than the landing point: `trail` and `analysis` are part of the protocol
 
-`SliderCaptchaResult` = `{ x, y, trail, duration, analysis, deviceSignals? }`。
+`SliderCaptchaResult` = `{ x, y, trail, duration, analysis, deviceSignals? }`.
 
-**服务端可用轨迹做人机判定**（匀速直线 = 机器）。所以：
+**The server can use the trail for bot detection** (constant-speed straight line = machine). So:
 
-- 不要把 `x`/`y` 发上去就丢掉其余字段
-- 拖动过程中**不要人为插点/平滑**，那会毁掉分析依据
-- `collectDeviceSignals: false` 时 `deviceSignals` 才会缺省
+- do not send only `x`/`y` and drop the rest
+- do **not** artificially insert/smooth points during dragging — that destroys the analysis basis
+- `deviceSignals` is only omitted when `collectDeviceSignals: false`
 
 ## API
 

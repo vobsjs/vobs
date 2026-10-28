@@ -13,22 +13,22 @@ import {
 import type { VuiCommonProps } from './types'
 
 export interface PieSlice {
-  /** 名称（无障碍与图例用） */
+  /** Name (for accessibility and legends). */
   readonly label?: string
   readonly value: number
-  /** 扇区色；缺省走内置调色板（data-index） */
+  /** Slice color; defaults to the built-in palette (data-index). */
   readonly color?: string
 }
 
 export interface PieChartProps extends VuiCommonProps {
   readonly slices?: readonly PieSlice[]
-  /** 外径（默认 140） */
+  /** Outer diameter (default 140). */
   readonly size?: number
-  /** 环宽占半径比例（默认 0.6，越小环越细） */
+  /** Ring width as a ratio of the radius (default 0.6; smaller = thinner ring). */
   readonly innerRatio?: number
 }
 
-/** 环形占比图（纯 SVG，无外部依赖；data 驱动重建） */
+/** Donut share chart (pure SVG, no external dependencies; rebuilt from data). */
 export function PieChart(props: PieChartProps = {}): VobsNode {
   const root = createElement('div')
   bindClassList(root, props, () => ['vui-pie'])
@@ -81,17 +81,17 @@ function createPieSvg(props: PieChartProps): VobsNode {
 }
 
 export interface LineChartProps extends VuiCommonProps {
-  /** 数据点（支持负值，零线自动虚线） */
+  /** Data points (negative values supported; the zero line is dashed automatically). */
   readonly values?: readonly number[]
-  /** x 轴标签（与 values 等长） */
+  /** x-axis labels (same length as values). */
   readonly labels?: readonly string[]
-  /** 视图宽（默认 420，svg 以 100% 宽自适应容器） */
+  /** View width (default 420; the svg adapts to the container at 100% width). */
   readonly width?: number
-  /** 视图高（默认 160） */
+  /** View height (default 160). */
   readonly height?: number
 }
 
-/** 折线趋势图（纯 SVG，无外部依赖；data 驱动重建） */
+/** Line trend chart (pure SVG, no external dependencies; rebuilt from data). */
 export function LineChart(props: LineChartProps = {}): VobsNode {
   const root = createElement('div')
   bindClassList(root, props, () => ['vui-line'])

@@ -9,9 +9,11 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * 行右键菜单（rowMenu）：机制沉淀在组件内——委托 contextmenu、`data-row-key` 反查行、
- * fixed 弹层、外点/Escape 关闭；业务词汇全部经 `rowMenu(row)` 工厂由页面注入。
- * 依赖 `rowKey`（行身份反查），无 rowKey 时机制静默不启用。
+ * Row context menu (rowMenu): the mechanism lives in the component — contextmenu
+ * delegation, `data-row-key` row lookup, fixed overlay, outside-click/Escape
+ * close; business vocabulary is injected by the page via the `rowMenu(row)`
+ * factory. Depends on `rowKey` (row identity lookup); without a rowKey the
+ * mechanism silently stays off.
  */
 interface Row { id: number; name: string }
 
@@ -37,10 +39,10 @@ async function mountTable(extra: Record<string, unknown> = {}) {
   return { host, rows, openMenuAt, menu, cleanup: () => { app.destroy(); host.remove() } }
 }
 
-describe('KitDataTable 行右键菜单', () => {
+describe('KitDataTable row context menu', () => {
   beforeEach(() => setRenderer(createDOMRenderer()))
 
-  it('右键行打开菜单：反查到正确的行，preventDefault 生效，定位跟随鼠标', async () => {
+  it('right-clicking a row opens the menu: correct row lookup, preventDefault works, position follows the mouse', async () => {
     const got: Array<[number, string]> = []
     const { rows, openMenuAt, menu, cleanup } = await mountTable({
       rowMenu: (row: Row) => { got.push([row.id, row.name]); return [{ label: 'Edit' }] }
@@ -48,14 +50,14 @@ describe('KitDataTable 行右键菜单', () => {
 
     const prevented = await openMenuAt(rows()[1]!)
     await settle()
-    expect(prevented).toBe(false) // preventDefault 成功时 dispatchEvent 返回 false
+    expect(prevented).toBe(false) // dispatchEvent returns false when preventDefault succeeded
     expect(got).toEqual([[2, 'Lin']])
     expect(menu()?.getAttribute('style')).toContain('left: 66px')
     expect(menu()?.getAttribute('style')).toContain('top: 88px')
     cleanup()
   })
 
-  it('条目点击：先关菜单再跑注入的业务动作', async () => {
+  it('entry click: closes the menu first, then runs the injected business action', async () => {
     const ran: string[] = []
     const { rows, openMenuAt, menu, cleanup } = await mountTable({
       rowMenu: (row: Row) => [{ label: 'Copy', onRun: () => ran.push(row.name) }]
@@ -70,7 +72,7 @@ describe('KitDataTable 行右键菜单', () => {
     cleanup()
   })
 
-  it('danger 与 sep 项按契约渲染', async () => {
+  it('danger and sep items render per the contract', async () => {
     const { rows, openMenuAt, menu, cleanup } = await mountTable({
       rowMenu: () => [
         { label: 'Edit' },
@@ -87,7 +89,7 @@ describe('KitDataTable 行右键菜单', () => {
     cleanup()
   })
 
-  it('icon 通道：节点经固定槽位渲染在 label 之前', async () => {
+  it('icon channel: the node renders in a fixed slot before the label', async () => {
     const { rows, openMenuAt, menu, cleanup } = await mountTable({
       rowMenu: () => [{
         label: 'Edit',
@@ -104,13 +106,13 @@ describe('KitDataTable 行右键菜单', () => {
     const slot = item.querySelector('.vobs-data-table__rowmenu-icon')
     expect(slot).not.toBeNull()
     expect(slot!.querySelector('svg')).not.toBeNull()
-    // icon 槽位在 label 文本之前（文本节点是 entry 的最后一个子节点）
+    // The icon slot comes before the label text (the text node is the entry's last child)
     expect(item.lastChild?.nodeType).toBe(Node.TEXT_NODE)
     expect(item.lastChild?.textContent).toBe('Edit')
     cleanup()
   })
 
-  it('菜单外 mousedown 关闭；菜单内按下不误关', async () => {
+  it('mousedown outside closes the menu; pressing inside does not close it accidentally', async () => {
     const { rows, openMenuAt, menu, cleanup } = await mountTable({
       rowMenu: () => [{ label: 'Edit' }]
     })
@@ -118,19 +120,19 @@ describe('KitDataTable 行右键菜单', () => {
     await settle()
     expect(menu()).not.toBeNull()
 
-    // 菜单内按下 → 不关
+    // Press inside the menu → stays open
     menu()!.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
     await settle()
     expect(menu()).not.toBeNull()
 
-    // 表格外按下 → 关
+    // Press outside the table → closes
     document.body.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
     await settle()
     expect(menu()).toBeNull()
     cleanup()
   })
 
-  it('Escape 关闭', async () => {
+  it('Escape closes', async () => {
     const { rows, openMenuAt, menu, cleanup } = await mountTable({
       rowMenu: () => [{ label: 'Edit' }]
     })
@@ -143,7 +145,7 @@ describe('KitDataTable 行右键菜单', () => {
     cleanup()
   })
 
-  it('空 items 工厂不出弹层；卸载后 document 监听被清', async () => {
+  it('an empty items factory renders no overlay; document listeners are cleared after unmount', async () => {
     const { rows, openMenuAt, menu, cleanup } = await mountTable({ rowMenu: () => [] })
     await openMenuAt(rows()[0]!)
     await settle()
@@ -151,13 +153,13 @@ describe('KitDataTable 行右键菜单', () => {
     cleanup()
   })
 
-  it('没有 rowMenu 的表格：右键不拦默认、不出弹层、不带修饰类', async () => {
+  it('a table without rowMenu: no default prevention, no overlay, no modifier class', async () => {
     const { rows, openMenuAt, menu, cleanup, host } = await mountTable()
     expect(host.querySelector('.vobs-data-table')!.classList.contains('vobs-data-table--rowmenu')).toBe(false)
 
     const prevented = await openMenuAt(rows()[0]!)
     await settle()
-    expect(prevented).toBe(true) // 未拦截默认行为
+    expect(prevented).toBe(true) // default behavior not prevented
     expect(menu()).toBeNull()
     cleanup()
   })

@@ -3,8 +3,9 @@ import type { VobsNode } from '@vobs/vobs'
 export type VuiAttributeValue = string | number | boolean | undefined
 
 /**
- * 条件 JSX 子节点（`{cond ? <A/> : null}`、`{cond && <B/>}`）在类型层面产出
- * null/false，是合法子节点形态（运行时归一化为空），与节点/文本/数组并列。
+ * Conditional JSX children (`{cond ? <A/> : null}`, `{cond && <B/>}`) produce
+ * null/false at the type level; they are legitimate child forms (normalized to
+ * empty at runtime), listed alongside nodes/text/arrays.
  */
 export type VuiChildren =
   | VobsNode

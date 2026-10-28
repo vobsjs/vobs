@@ -7,8 +7,9 @@ export interface VobsRenderer<
   createText(content: string): TextNode
   createElement(tag: string): ElementNode
   /**
-   * 创建 SVG 命名空间元素（http://www.w3.org/2000/svg）。可选：未实现时运行时按
-   * createElement 兜底（HTML namespace，SVG 内容不渲染）。DOM/SSR/水合渲染器均需实现。
+   * Create an SVG-namespace element (http://www.w3.org/2000/svg). Optional: when
+   * unimplemented the runtime falls back to createElement (HTML namespace; SVG content
+   * will not render). DOM/SSR/hydration renderers must all implement it.
    */
   createSvgElement?(tag: string): ElementNode
   createComment(content: string): CommentNode
@@ -17,7 +18,7 @@ export interface VobsRenderer<
   setTextContent(node: TextNode, content: string): void
   setProperty(node: ElementNode, key: string, value: unknown): void
   setAttribute(node: ElementNode, key: string, value: string): void
-  /** 删除 attribute。可选：老自定义渲染器没实现时运行时退回 setAttribute(key, '')。 */
+  /** Remove an attribute. Optional: when older custom renderers don't implement it, the runtime falls back to setAttribute(key, ''). */
   removeAttribute?(node: ElementNode, key: string): void
   addEventListener(node: ElementNode, event: string, handler: EventListener): void
   removeEventListener(node: ElementNode, event: string, handler: EventListener): void

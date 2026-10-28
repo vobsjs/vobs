@@ -1,10 +1,12 @@
 /**
- * @vobs/payment 根入口
+ * @vobs/payment root entry
  *
- * - 通用工厂中 createRefund / createNotifyHandler 在两个提供商间同名，
- *   统一通过 alipay.* / wechat.* 命名空间访问，避免同名不同客户端的隐式误用。
- * - 顶层平铺导出跨提供商无歧义的符号（客户端、配置、错误类、插件、注入键，
- *   以及名称唯一的工厂 createPagePay / createWapPay / createQuery / createPayment）。
+ * - Among the generic factories, createRefund / createNotifyHandler share the same name
+ *   across the two providers; they are accessed uniformly via the alipay.* / wechat.*
+ *   namespaces to avoid implicitly calling the same-named API on the wrong client.
+ * - Top-level flat exports cover provider-agnostic symbols (clients, configs, error classes,
+ *   plugins, injection keys, plus factories whose names are unambiguous: createPagePay /
+ *   createWapPay / createQuery / createPayment).
  */
 export * as alipay from './alipay'
 export * as wechat from './wechat'

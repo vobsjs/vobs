@@ -1,4 +1,4 @@
-// @vobs/compiler 入口
+// @vobs/compiler entry point
 
 export { compile, compileWithSourceMap, createCompiler, describeDiagnostics } from './compile.ts'
 export { createI18nExtractor } from './i18n-extractor.ts'
