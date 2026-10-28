@@ -26,7 +26,17 @@ export interface SegmentedItem {
   readonly tone?: SegmentedTone
 }
 
+/**
+ * 快捷选项形态（2026-10-28，根治「Seg 的值 = 选项标签」死穴）：
+ * - 字符串 = `{ id: s, label: s }`（选中写回该字符串——与既有 string 门面行为兼容）
+ * - SegmentedItem = id 与 label 分离，**选中写回 id** 而非展示标签——
+ *   `opts={[{id:'login', label:'登录'}]}` 的 onChange 拿到 `'login'`
+ */
+export type SegmentedOption = string | SegmentedItem
+
 export interface SegmentedProps extends VuiCommonProps {
+  /** 快捷形态：字符串直通 / 对象分离 id 与 label（与 items 二选一，items 优先） */
+  readonly opts?: readonly SegmentedOption[]
   readonly items?: readonly SegmentedItem[]
   /** 受控当前值（与 bind 二选一；bind 优先） */
   readonly value?: string
@@ -39,15 +49,23 @@ export interface SegmentedProps extends VuiCommonProps {
 export function Segmented(props: SegmentedProps = {}): VobsNode {
   const root = createElement('div')
   bindClassList(root, props, () => ['vui-seg'])
-  bindCommonAttributes(root, props, ['items', 'value', 'bind', 'onChange'])
+  bindCommonAttributes(root, props, ['opts', 'items', 'value', 'bind', 'onChange'])
   bindUserStyle(root, props)
   setAttribute(root, 'role', 'radiogroup')
   insertDynamic(root, null, () => createSegmentedOptions(props))
   return root
 }
 
+function resolveOptions(props: SegmentedProps): readonly SegmentedItem[] {
+  const items = readProp<readonly SegmentedItem[] | undefined>(props, 'items', undefined)
+  if (items !== undefined) return items
+  const opts = readProp<readonly SegmentedOption[] | undefined>(props, 'opts', undefined)
+  if (opts === undefined) return []
+  return opts.map(option => typeof option === 'string' ? { id: option, label: option } : option)
+}
+
 function createSegmentedOptions(props: SegmentedProps): VobsNode {
-  const items = readProp<readonly SegmentedItem[]>(props, 'items', [])
+  const items = resolveOptions(props)
   const active = currentId(props)
   return createFragment((parent, anchor) => {
     for (const item of items) {
