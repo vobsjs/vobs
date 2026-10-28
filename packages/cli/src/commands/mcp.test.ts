@@ -24,13 +24,48 @@ describe('vobs mcp · 协议层', () => {
     expect(handleMcpMessage(state(), { jsonrpc: '2.0', method: 'notifications/initialized' })).toBeNull()
   })
 
-  it('tools/list 暴露三个工具，每个都带 inputSchema 与描述', () => {
+  it('tools/list 暴露四个工具，每个都带 inputSchema 与描述', () => {
     const response = handleMcpMessage(state(), { jsonrpc: '2.0', id: 2, method: 'tools/list' }) as {
       result: { tools: { name: string; description: string; inputSchema: object }[] }
     }
     const names = response.result.tools.map(tool => tool.name)
-    expect(names).toEqual(['check_runtime', 'explain_diagnostic', 'contract_status'])
+    expect(names).toEqual(['check_source_snippet', 'check_runtime', 'explain_diagnostic', 'contract_status'])
     for (const tool of response.result.tools) expect(tool.description.length).toBeGreaterThan(20)
+  })
+
+  it('tools/call check_source_snippet：不写盘的写前自检 —— 违规片段返回 C118 + fix', () => {
+    const response = handleMcpMessage(state(), {
+      jsonrpc: '2.0', id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'check_source_snippet',
+        arguments: {
+          code: "import { state } from '@vobs/vobs'\nexport function P() {\n  const count = state(0)\n  const snapshot = count.value\n  return <div>{snapshot}</div>\n}"
+        }
+      }
+    }) as { result: { content: { text: string }[] } }
+    const verdict = JSON.parse(response.result.content[0]!.text) as {
+      pass: boolean; diagnostics: { code: string; fix: string }[]
+    }
+    expect(verdict.pass).toBe(false)
+    expect(verdict.diagnostics.map(item => item.code)).toContain('VOBS_C118')
+    for (const item of verdict.diagnostics) expect(item.fix.length).toBeGreaterThan(0)
+  })
+
+  it('tools/call check_source_snippet：干净片段零诊断，hint 指向运行时验证', () => {
+    const response = handleMcpMessage(state(), {
+      jsonrpc: '2.0', id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'check_source_snippet',
+        arguments: {
+          code: "import { state } from '@vobs/vobs'\nexport function P() {\n  const count = state(0, 'count')\n  return <div>{count.value}</div>\n}"
+        }
+      }
+    }) as { result: { content: { text: string }[] } }
+    const verdict = JSON.parse(response.result.content[0]!.text) as { pass: boolean; hint: string }
+    expect(verdict.pass).toBe(true)
+    expect(verdict.hint).toContain('check_runtime')
   })
 
   it('tools/call explain_diagnostic 返回含 rewrites 的完整元数据（AI 拿到码即拿到改写指令）', () => {

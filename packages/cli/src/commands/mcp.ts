@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { analyzeSource, compileWithSourceMap } from '@vobs/compiler'
 import { DIAGNOSTIC_GUIDES, findDiagnosticGuide } from '@vobs/runtime'
 import { checkContractSync } from './agent-doc.js'
 
@@ -35,6 +36,18 @@ const PROTOCOL_VERSION = '2024-11-05'
 const SERVER_INFO = { name: 'vobs-mcp', version: '1.8.19' }
 
 const TOOLS = [
+  {
+    name: 'check_source_snippet',
+    description: 'Static-check a vobs component snippet WITHOUT writing it to disk. Returns all VOBS_C* diagnostics (compile + analyze). Use this BEFORE writing generated code into the project — a pure in-memory pass, no Chrome, no dev server. Each diagnostic carries a verified before/after rewrite.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', description: 'The full component source (JSX/TSX), including imports from @vobs/vobs' },
+        filename: { type: 'string', description: 'Virtual filename for diagnostics (default snippet.tsx)' }
+      },
+      required: ['code']
+    }
+  },
   {
     name: 'check_runtime',
     description: 'Run the runtime guardrails in a real Chrome pass and return a machine-readable verdict. Requires scripts/check-runtime.mjs (monorepo). Slow: starts a dev server per run.',
@@ -117,6 +130,7 @@ export function handleMcpMessage(state: McpState, raw: unknown): object | null {
 }
 
 function runTool(state: McpState, name: string, toolArgs: Record<string, unknown>): string {
+  if (name === 'check_source_snippet') return runCheckSourceSnippet(toolArgs)
   if (name === 'check_runtime') return runCheckRuntime(state.root, toolArgs)
   if (name === 'explain_diagnostic') {
     const code = String(toolArgs.code ?? '').trim()
@@ -137,6 +151,42 @@ function runTool(state: McpState, name: string, toolArgs: Record<string, unknown
     }, null, 2)
   }
   throw new Error(`Unknown tool: ${name}. Available: ${TOOLS.map(tool => tool.name).join(', ')}`)
+}
+
+/**
+ * 写前自检（MulFCoder 的 Judger 思路，2026-10-28）：Agent 在把生成代码写进项目**之前**，
+ * 先对片段跑完整的静态通道（编译器诊断 + 分析器诊断）—— 纯内存、零副作用。
+ * 返回的每条诊断带 code/message/fix（fix 指向 vobs explain，rewrites 经 explain --json 可得）。
+ */
+function runCheckSourceSnippet(toolArgs: Record<string, unknown>): string {
+  const code = toolArgs.code
+  if (typeof code !== 'string' || !code.trim()) throw new Error('code is required')
+  const filename = typeof toolArgs.filename === 'string' && toolArgs.filename.trim()
+    ? toolArgs.filename.trim()
+    : 'snippet.tsx'
+  const compiled = compileWithSourceMap(code, { filename }).diagnostics.map(item => ({
+    code: item.code, severity: item.severity, message: item.message, fix: item.fix,
+    line: item.location?.line ?? null, column: item.location?.column ?? null
+  }))
+  const analyzed = analyzeSource(code, filename).map(item => ({
+    code: item.code, severity: item.severity, message: item.message, fix: item.fix,
+    line: item.line, column: item.column
+  }))
+  const seen = new Set<string>()
+  const diagnostics = [...compiled, ...analyzed].filter(item => {
+    const key = `${item.code}|${item.line}|${item.column}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  return JSON.stringify({
+    filename,
+    pass: diagnostics.length === 0,
+    diagnostics,
+    hint: diagnostics.length > 0
+      ? 'Each diagnostic has a fix; verified before→after rewrites: `vobs explain --json <code>` → rewrites[].'
+      : 'Snippet is clean by static channels. Runtime behavior still needs `check_runtime` (Chrome pass).'
+  }, null, 2)
 }
 
 /** 跑运行时护栏（spawnSync —— MCP tools/call 的语义就是拿到完整结果再返回）。 */
