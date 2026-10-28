@@ -68,6 +68,36 @@ function extractBlock(text: string): string | null {
   return text.slice(start, end + END.length)
 }
 
+export type ContractSyncStatus =
+  | { readonly status: 'synced' }
+  | { readonly status: 'missing' }
+  | { readonly status: 'no-block' }
+  | { readonly status: 'drifted'; readonly problems: readonly string[] }
+
+/**
+ * 契约版本对齐检查（供 `vobs check` 主入口与 `agent-doc --check` 共用）。
+ *
+ * 「契约随框架版本分发」不能只停留在生成时的承诺 —— 这里把它变成**每次检查都可验证**的事实：
+ * 项目里已有的契约块（vobs:begin/end）逐字节比对当前框架契约，不一致即漂移。
+ * `missing` / `no-block` 不是漂移 —— agent-doc 是显式 opt-in 的能力，未生成契约的项目
+ * 不该被主入口骚扰（`agent-doc --check` 的 CI 硬校验语义在 agentDocCommand 里单独保留）。
+ */
+export function checkContractSync(root: string): ContractSyncStatus {
+  const agentsPath = resolve(root, 'AGENTS.md')
+  if (!existsSync(agentsPath)) return { status: 'missing' }
+  const existing = readFileSync(agentsPath, 'utf8')
+  const block = extractBlock(existing)
+  if (block === null) return { status: 'no-block' }
+  const generated = buildAgentsDoc(readContract())
+  if (block !== extractBlock(generated)) {
+    return {
+      status: 'drifted',
+      problems: ['AGENTS.md 的 vobs 契约块与当前框架版本不一致 —— 框架新增的诊断码与语义修正不在你现有的契约里']
+    }
+  }
+  return { status: 'synced' }
+}
+
 /**
  * 合并：保留块外内容，只替换块。
  *

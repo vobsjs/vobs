@@ -30,6 +30,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { compileWithSourceMap } from '@vobs/compiler'
 import { analyzeSource, type CheckDiagnostic } from '@vobs/compiler'
 import path from 'node:path'
+import { checkContractSync } from './agent-doc.js'
 import { logger } from '../utils/logger.js'
 
 export interface CheckOptions {
@@ -174,6 +175,16 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
   const errors = diagnostics.filter(item => item.severity === 'error')
   const report = { root, files: files.length, skippedTests: skipped, diagnostics }
 
+  /*
+   * 契约版本对齐（元原则：随框架版本分发的契约，一致性必须是可验证的事实）。
+   * agent-doc --check 是独立命令，AI / CI 的主入口在这里 —— 契约漂移若只有
+   * 主动跑 --check 才能发现，就是「诊断存在但主通道不可见」的同款问题。
+   * 只对已生成过契约的项目提示（drifted）；missing / no-block 不是漂移，静默。
+   * warning 级：不改变 exit code，与「文档漂移不挡构建」的严重度一致。
+   */
+  const contractSync = checkContractSync(root)
+  const contractWarnings = contractSync.status === 'drifted' ? contractSync.problems : []
+
   if (options.write === true) {
     const target = path.join(root, REPORT_PATH)
     await mkdir(path.dirname(target), { recursive: true })
@@ -190,6 +201,7 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
 
   if (diagnostics.length === 0) {
     logger.success(`检查通过 —— ${files.length} 个文件${skipped > 0 ? `（跳过 ${skipped} 个测试文件）` : ''}，没有发现问题`)
+    for (const problem of contractWarnings) logger.warn(`${problem}\n  → 跑 \`vobs agent-doc --write\` 同步契约`)
     return
   }
 
@@ -207,6 +219,7 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
     `  ${errors.length} 个错误 · ${warnings} 个警告 · 共检查 ${files.length} 个文件`
     + `${skipped > 0 ? `（跳过 ${skipped} 个测试文件，用 --include-tests 纳入）` : ''}\n`
   )
+  for (const problem of contractWarnings) logger.warn(`${problem}\n  → 跑 \`vobs agent-doc --write\` 同步契约`)
 
   if (errors.length > 0) process.exitCode = 1
 }

@@ -19,7 +19,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { agentDocCommand } from './agent-doc'
+import { agentDocCommand, checkContractSync } from './agent-doc'
 
 const created: string[] = []
 function makeProject(): string {
@@ -147,5 +147,38 @@ describe('vobs agent-doc', () => {
       write.mockRestore()
     }
     expect(existsSync(join(dir, 'AGENTS.md')), '没加 --write 却写了文件').toBe(false)
+  })
+})
+
+describe('checkContractSync（vobs check 主入口的契约对齐）', () => {
+  it('未生成契约的项目（missing / no-block）不是漂移 —— 主入口静默，不骚扰', () => {
+    const dir = makeProject()
+    expect(checkContractSync(dir).status).toBe('missing')
+
+    writeFileSync(join(dir, 'AGENTS.md'), '# 手写的项目约定\n', 'utf8')
+    expect(checkContractSync(dir).status, '手写 AGENTS.md 没标记块 ≠ 漂移').toBe('no-block')
+  })
+
+  it('--write 生成后 synced；契约块被手改后 drifted', () => {
+    const dir = makeProject()
+    void agentDocCommand({ dir, write: true })
+    expect(checkContractSync(dir).status).toBe('synced')
+
+    const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
+    writeFileSync(join(dir, 'AGENTS.md'), agents.replace('run-once', 'run-once-手改过'), 'utf8')
+    const drifted = checkContractSync(dir)
+    expect(drifted.status).toBe('drifted')
+    if (drifted.status === 'drifted') {
+      expect(drifted.problems[0]).toContain('不一致')
+      expect(drifted.problems[0]).toContain('诊断码')
+    }
+  })
+
+  it('--write 后用户改**块外**内容 —— 仍然 synced（块外是用户自己的地盘）', () => {
+    const dir = makeProject()
+    void agentDocCommand({ dir, write: true })
+    const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
+    writeFileSync(join(dir, 'AGENTS.md'), `${agents}\n- 用户追加规则\n`, 'utf8')
+    expect(checkContractSync(dir).status).toBe('synced')
   })
 })
