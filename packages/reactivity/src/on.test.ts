@@ -131,6 +131,30 @@ describe('on()：让「effect 调用 async 函数」不再自订阅', () => {
     stop.dispose()
   })
 
+  it('持久化首触守卫：defer 下预置存档不会被首触的空值删除（Finora 死穴 §10 回归）', () => {
+    // 场景：顶层 effect(on) 做持久化，首触时依赖恒为初值（null）→ 无 defer 时
+    // 回调当场执行 removeItem 分支，把上次会话存的键删掉（2026-10-25 实证）。
+    const store: Record<string, string> = { 'finora.tabs.active': 'ledger-1' }
+    const activeTab = state<string | null>(null)
+    const stop = effect(on(activeTab, value => {
+      if (value === null) delete store['finora.tabs.active']
+      else store['finora.tabs.active'] = value
+    }, { defer: true }))
+    settle()
+    // 首触只记录不调用 → 预置存档原样保留
+    expect(store['finora.tabs.active']).toBe('ledger-1')
+
+    activeTab.value = 'ledger-2'
+    settle()
+    expect(store['finora.tabs.active']).toBe('ledger-2')
+
+    // 显式变化到 null 仍走删除分支（真实变化，不是首触假象）
+    activeTab.value = null
+    settle()
+    expect(store['finora.tabs.active']).toBeUndefined()
+    stop.dispose()
+  })
+
   it('依赖数组：任一变化都触发，且值是数组', () => {
     const a = state(1)
     const b = state(10)
