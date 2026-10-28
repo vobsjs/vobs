@@ -13,17 +13,23 @@ import { vobsPlugin } from './index'
 /** 从插件里抽出 configureServer 注册的中间件（mock 掉 ViteDevServer 的用到的部分）。 */
 function setupMiddleware() {
   let handler: (req: unknown, res: unknown, next: () => void) => void = () => undefined
+  const wsHandlers = new Map<string, (data: unknown) => void>()
+  const wsSend = vi.fn()
   const plugin = vobsPlugin()
   const server = {
     middlewares: { use: (fn: typeof handler) => { handler = fn } },
-    config: { logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() } }
+    config: { logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() } },
+    ws: {
+      send: wsSend,
+      on: (event: string, handler: (data: unknown) => void) => { wsHandlers.set(event, handler) }
+    }
   }
   ;(plugin.configureServer as (server: unknown) => void)(server)
-  return handler
+  return { handler, wsHandlers, wsSend }
 }
 
 /** 极简 req/res 桩：POST 时 body 通过 'data'/'end' 事件给入。 */
-function call(handler: ReturnType<typeof setupMiddleware>, method: string, url: string, body?: string) {
+function call(handler: (req: unknown, res: unknown, next: () => void) => void, method: string, url: string, body?: string) {
   return new Promise<{ statusCode: number | undefined; body: string }>(resolve => {
     const chunks: string[] = []
     const req = {
@@ -48,7 +54,7 @@ function call(handler: ReturnType<typeof setupMiddleware>, method: string, url: 
 
 describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
   it('POST 落缓存，GET 返回同一份快照（按 page 分桶）', async () => {
-    const handler = setupMiddleware()
+    const { handler } = setupMiddleware()
     await call(handler, 'POST', '/__vobs/agent-state', JSON.stringify({
       page: 'http://localhost:5175/', ts: 1, effects: [{ id: 'effect-1', dependencies: ['signal-1'] }]
     }))
@@ -61,7 +67,7 @@ describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
   })
 
   it('同一 page 的第二次 POST **替换**旧快照（不累积）', async () => {
-    const handler = setupMiddleware()
+    const { handler } = setupMiddleware()
     for (const ts of [1, 2]) {
       await call(handler, 'POST', '/__vobs/agent-state', JSON.stringify({ page: 'http://x/', ts }))
     }
@@ -72,7 +78,7 @@ describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
   })
 
   it('损坏的 JSON 载荷被丢弃（204，不影响已有快照）', async () => {
-    const handler = setupMiddleware()
+    const { handler } = setupMiddleware()
     await call(handler, 'POST', '/__vobs/agent-state', JSON.stringify({ page: 'http://x/', ts: 1 }))
     await call(handler, 'POST', '/__vobs/agent-state', '{ broken')
     const get = await call(handler, 'GET', '/__vobs/agent-state')
@@ -82,7 +88,7 @@ describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
   })
 
   it('页面桶上限 20 —— 防多标签页/轮询刷爆内存', async () => {
-    const handler = setupMiddleware()
+    const { handler } = setupMiddleware()
     for (let index = 0; index < 25; index++) {
       await call(handler, 'POST', '/__vobs/agent-state', JSON.stringify({ page: `http://x/${index}`, ts: index }))
     }
@@ -92,8 +98,41 @@ describe('Agent 运行时快照通道（/__vobs/agent-state）', () => {
   })
 
   it('无关路径直接 next()（不劫持应用请求）', async () => {
-    const handler = setupMiddleware()
+    const { handler } = setupMiddleware()
     const result = await call(handler, 'GET', '/some/app/route')
     expect(result.body).toBe('next() was called')
+  })
+
+  it('GET ?live=1 经 vite WS 广播请求，浏览器应答后返回 stale:false 的实时快照', async () => {
+    const { handler, wsHandlers, wsSend } = setupMiddleware()
+    const pending = call(handler, 'GET', '/__vobs/agent-state?live=1')
+    // 广播已发出（探针在浏览器里监听这个 custom event）
+    expect(wsSend).toHaveBeenCalledWith({ type: 'custom', event: 'vobs:agent-state-request', data: { id: expect.any(Number) } })
+    const id = (wsSend.mock.calls[0]![0] as { data: { id: number } }).data.id
+    // 模拟探针立即回传
+    wsHandlers.get('vobs:agent-state:response')!({
+      id,
+      snapshot: { page: 'http://x/live', ts: Date.now(), effects: [{ id: 'effect-live' }] }
+    })
+    const result = await pending
+    const parsed = JSON.parse(result.body) as { stale: boolean; pages: { page: string }[] }
+    expect(parsed.stale).toBe(false)
+    expect(parsed.pages[0]!.page).toBe('http://x/live')
+  })
+
+  it('live 查询在无浏览器应答时超时回退缓存（stale:true），不挂死', async () => {
+    vi.useFakeTimers()
+    try {
+      const { handler } = setupMiddleware()
+      await call(handler, 'POST', '/__vobs/agent-state', JSON.stringify({ page: 'http://x/', ts: 1 }))
+      const pending = call(handler, 'GET', '/__vobs/agent-state?live=1')
+      await vi.advanceTimersByTimeAsync(700)
+      const result = await pending
+      const parsed = JSON.parse(result.body) as { stale: boolean; pages: { page: string }[] }
+      expect(parsed.stale).toBe(true)
+      expect(parsed.pages[0]!.page).toBe('http://x/')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

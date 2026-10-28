@@ -16,8 +16,10 @@ const AGENT_STATE_ID = '\0virtual:vobs-agent-state-probe'
 const AGENT_STATE_URL = '/@id/__x00__virtual:vobs-agent-state-probe'
 /** 护栏违规上报端点。 */
 const VIOLATION_ENDPOINT = '/__vobs/violation'
-/** Agent 自验通道端点：浏览器上报运行时快照（POST），Agent / CLI 查询（GET）。 */
+/** Agent 自验通道端点：浏览器上报运行时快照（POST），Agent / CLI 查询（GET，`?live=1` 精确到此刻）。 */
 const AGENT_STATE_ENDPOINT = '/__vobs/agent-state'
+/** live 查询的请求序号（vite WS 广播 → 浏览器回传按 id 配对）。 */
+let liveQuerySeq = 0
 
 /**
  * Windows 路径分隔符 → POSIX。
@@ -148,6 +150,19 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
        * POST 写入（浏览器探针节流上报），GET 返回全部 —— Agent / CLI 的只读消费面。
        */
       const agentSnapshots = new Map<string, Record<string, unknown>>()
+      /*
+       * live 查询（`?live=1`）的应答收集：经 vite WS 广播请求，浏览器探针立即采集
+       * 回传。等**首个**应答或 600ms 超时（回退缓存）—— 不等所有连接，多标签页
+       * 场景 Agent 按 page 自行过滤。
+       */
+      const pendingLive = new Map<number, (snapshot: Record<string, unknown>) => void>()
+      server.ws?.on?.('vobs:agent-state:response', (data: { id?: number; snapshot?: Record<string, unknown> }) => {
+        const resolve = data?.id !== undefined ? pendingLive.get(data.id) : undefined
+        if (resolve && data.snapshot) {
+          pendingLive.delete(data.id!)
+          resolve(data.snapshot)
+        }
+      })
       server.middlewares.use((req, res, next) => {
         const urlPath = req.url?.split('?', 1)[0]
         if (urlPath === AGENT_STATE_ENDPOINT) {
@@ -172,6 +187,24 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
             return
           }
           if (req.method === 'GET') {
+            const wantsLive = new URL(req.url ?? '/', 'http://localhost').searchParams.has('live')
+            if (wantsLive && agentStateActive() && server.ws?.send) {
+              const id = ++liveQuerySeq
+              void Promise.race([
+                new Promise<Record<string, unknown>>(resolve => { pendingLive.set(id, resolve) }),
+                new Promise<never>((_, reject) => setTimeout(() => reject(new Error('live timeout')), 600))
+              ])
+                .then(liveSnapshot => ({ pages: [liveSnapshot], stale: false }))
+                .catch(() => ({ pages: [...agentSnapshots.values()], stale: true }))
+                .then(payload => {
+                  pendingLive.delete(id)
+                  res.statusCode = 200
+                  res.setHeader('content-type', 'application/json')
+                  res.end(JSON.stringify({ serverTime: Date.now(), ...payload }))
+                })
+              server.ws?.send?.({ type: 'custom', event: 'vobs:agent-state-request', data: { id } })
+              return
+            }
             res.statusCode = 200
             res.setHeader('content-type', 'application/json')
             res.end(JSON.stringify({
@@ -407,31 +440,36 @@ const endpoint = ${JSON.stringify(AGENT_STATE_ENDPOINT)}
 const start = () => {
   const api = window.__VOBS_DEVTOOLS__
   if (!api || typeof api.subscribe !== 'function') return
-  let lastSent = 0
-  let timer = null
-  const send = () => {
-    timer = null
-    lastSent = Date.now()
+  const collect = () => ({
+    page: window.location.href,
+    ts: Date.now(),
+    effects: api.getEffects(),
+    recentUpdates: api.getUpdates().slice(-20),
+    errors: api.getErrors().slice(-20)
+  })
+  const send = snapshot => {
     try {
       fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          page: window.location.href,
-          ts: Date.now(),
-          effects: api.getEffects(),
-          recentUpdates: api.getUpdates().slice(-20),
-          errors: api.getErrors().slice(-20)
-        })
+        body: JSON.stringify(snapshot)
       }).catch(() => {})
     } catch { /* 上报失败不影响应用 */ }
   }
+  let lastSent = 0
+  let timer = null
   const schedule = () => {
     if (timer) return
     const waitMs = Math.max(0, 100 - (Date.now() - lastSent))
-    timer = setTimeout(() => send(), waitMs)
+    timer = setTimeout(() => { timer = null; lastSent = Date.now(); send(collect()) }, waitMs)
   }
   api.subscribe('*', schedule)
+  // 「精确到此刻」的查询：中间件经 vite WS 广播请求，立即采集回传（不走节流）
+  if (import.meta.hot) {
+    import.meta.hot.on('vobs:agent-state-request', () => {
+      import.meta.hot.send('vobs:agent-state:response', { snapshot: collect() })
+    })
+  }
 }
 
 // devtools 插件可能晚于本探针装载 —— 轮询等它出现（dev 里必然出现）
