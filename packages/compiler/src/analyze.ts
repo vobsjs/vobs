@@ -477,23 +477,36 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
 
     // 组件体里「读信号 + 存进 const」
     const captured: { name: string; node: ts.VariableDeclaration }[] = []
+    // 组件体里「props 属性 + 存进 const」（死穴 §4 快照族，2026-10-28）：
+    // vobs 的动态 props 是 getter 属性（每次读取重算），`const st = props.state`
+    // 存进局部变量即 run-once 快照——JSX 里直接用 st 永远是初值。
+    const propsCaptured: { name: string; node: ts.VariableDeclaration }[] = []
     for (const statement of body.statements) {
       if (!ts.isVariableStatement(statement)) continue
       for (const declaration of statement.declarationList.declarations) {
         if (!ts.isIdentifier(declaration.name) || declaration.initializer === undefined) continue
         if (containsSignalRead(declaration.initializer)) {
           captured.push({ name: declaration.name.text, node: declaration })
+          continue
+        }
+        if (ts.isPropertyAccessExpression(declaration.initializer)
+          && ts.isIdentifier(declaration.initializer.expression)
+          && declaration.initializer.expression.text === 'props') {
+          propsCaptured.push({ name: declaration.name.text, node: declaration })
         }
       }
     }
-    if (captured.length === 0) return
 
-    // 这些名字是否在 JSX 表达式里被用到
+    if (captured.length === 0 && propsCaptured.length === 0) return
+
+    // 这些名字是否在 JSX 表达式里被用到；被**调用**的（`{st()}`）是 getter 形态，不算快照
     const usedInJsx = new Set<string>()
+    const calledInJsxBody = new Set<string>()
     const visit = (node: ts.Node): void => {
       if (ts.isJsxExpression(node) && node.expression !== undefined) {
         const scan = (child: ts.Node): void => {
           if (ts.isIdentifier(child)) usedInJsx.add(child.text)
+          if (ts.isCallExpression(child) && ts.isIdentifier(child.expression)) calledInJsxBody.add(child.expression.text)
           ts.forEachChild(child, scan)
         }
         scan(node.expression)
@@ -510,6 +523,18 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
         message: `组件体里读了信号并存进 "${item.name}" —— 组件体只执行一次，这个值之后永远不会更新`,
         fix: `把读取放进动态表达式（直接在 JSX 里用 .value），或改成 memo 派生值：`
           + `const ${item.name} = memo(() => ...)。`
+      }))
+    }
+
+    for (const item of propsCaptured) {
+      if (!usedInJsx.has(item.name) || calledInJsxBody.has(item.name)) continue
+      found.push(diagnosticAt(source, file, item.node, {
+        code: VOBS_C118,
+        severity: 'warning',
+        message: `组件体里把 props 属性存进了 "${item.name}" —— 动态 props 是 getter（每次读取重算），`
+          + `存进局部变量即 run-once 快照，之后永远是初始值`,
+        fix: `改成 getter 形态并在 JSX 里调用：const ${item.name} = () => props.<属性>，`
+          + `用法 {${item.name}()}；或直接在 JSX 里写 props.<属性>。`
       }))
     }
   }

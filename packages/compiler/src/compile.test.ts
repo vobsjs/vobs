@@ -1011,6 +1011,43 @@ export const width = st(50, 'doc.width')
       expect(diagnostics.filter(d => d.code === 'VOBS_C232')).toHaveLength(1)
     })
   })
+
+  describe('C118 增强：props 属性直接赋局部变量 = run-once 快照（死穴 §4，2026-10-28）', () => {
+    it('const st = props.state 且 JSX 里直接用 → 报快照', () => {
+      const diagnostics = analyzeSource(
+        `export function P(props){ const st = props.state; return <div>{st}</div> }`,
+        'src/Facade.tsx'
+      )
+      const hit = diagnostics.find(d => d.code === 'VOBS_C118')
+      expect(hit).toBeDefined()
+      expect(hit?.message).toContain('props')
+      expect(hit?.fix).toContain('() => props.')
+    })
+
+    it('getter 形态调用 {st()} 不报（正确写法）', () => {
+      const diagnostics = analyzeSource(
+        `export function P(props){ const st = () => props.state; return <div>{st()}</div> }`,
+        'src/Facade.tsx'
+      )
+      expect(diagnostics.filter(d => d.code === 'VOBS_C118')).toHaveLength(0)
+    })
+
+    it('存了但 JSX 里没用 → 不报', () => {
+      const diagnostics = analyzeSource(
+        `export function P(props){ const st = props.state; return <div>ok</div> }`,
+        'src/Facade.tsx'
+      )
+      expect(diagnostics.filter(d => d.code === 'VOBS_C118')).toHaveLength(0)
+    })
+
+    it('非 props 前缀的成员读取不受影响（如 config.state）', () => {
+      const diagnostics = analyzeSource(
+        `export function P(){ const st = config.state; return <div>{st}</div> }`,
+        'src/Facade.tsx'
+      )
+      expect(diagnostics.filter(d => d.code === 'VOBS_C118' && d.message.includes('props'))).toHaveLength(0)
+    })
+  })
 })
 
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
