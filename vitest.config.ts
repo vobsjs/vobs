@@ -1,6 +1,22 @@
 import { defineConfig, mergeConfig } from 'vitest/config'
+import { configDefaults } from 'vitest/config'
 import viteConfig from './vite.config'
 import { workspaceAliases } from './scripts/vite-workspace.mjs'
+
+/*
+ * **需要独立 threads 池的测试文件**：依赖 Node 全局 / 原生 hook，与 vmThreads
+ * 复用的 jsdom 环境不兼容 ——
+ * - `tailwind/index.test.ts`：@tailwindcss/node 的 `registerHooks` 在 vm 上下文被 vitest 拦截
+ * - `payment/alipay.test.ts` / `http/index.test.ts`：undici 求值要 `ReadableStream` 全局
+ * - `vobs/lifecycle.test.ts`：「没有 document 时不执行」的环境切换语义
+ * 新文件若在 vm 池报「xxx is not defined / not available」，把路径加进这里。
+ */
+const NODE_SEMANTICS_FILES = [
+  'packages/tailwind/src/index.test.ts',
+  'packages/payment/src/alipay/alipay.test.ts',
+  'packages/http/src/index.test.ts',
+  'packages/vobs/src/lifecycle.test.ts'
+]
 
 /**
  * 测试配置 = 既有 vite 配置（workspace 别名）+ JSX 转换。
@@ -27,6 +43,32 @@ export default mergeConfig(
       jsxImportSource: '@vobs/vobs'
     },
     test: {
+      /*
+       * **分池**：主组 dom 用 vmThreads 复用 jsdom 环境（默认 threads 池下每个
+       * 测试文件都新建一个 jsdom —— 195 个文件累计 ~350s、占全量 ~78% 耗时，
+       * vitest 自己会在输出末尾提示）；vmThreads 每个 worker 只建一次环境，
+       * 且保持 per-file 模块隔离（instanceof 断言的类身份不受影响）。
+       * 例外组 node-semantics 保留原池，见 NODE_SEMANTICS_FILES 注释。
+       */
+      projects: [
+        {
+          test: {
+            name: 'node-semantics',
+            environment: 'jsdom',
+            include: NODE_SEMANTICS_FILES,
+            setupFiles: ['./scripts/vitest-setup.ts']
+          }
+        },
+        {
+          test: {
+            name: 'dom',
+            environment: 'jsdom',
+            pool: 'vmThreads',
+            exclude: [...configDefaults.exclude, ...NODE_SEMANTICS_FILES],
+            setupFiles: ['./scripts/vitest-setup.ts']
+          }
+        }
+      ],
       /*
        * 只做一件事：把 `@vobs/test-utils` 的 `cleanupMountedApps` 接到 vitest 的 afterEach 上。
        * mount() 会装进程级渲染器单例，忘记 destroy() 的用例会污染同文件后续用例；而包本身
