@@ -142,6 +142,16 @@ pnpm run check:runtime:interact  # 再点所有按钮、触发所有输入
 > 1.8.8 前 \`vobs check\` **不跑编译器**，所以 \`C104\`/\`C105\`/\`C106\`/\`C107\`/\`C108\` 在它那里
 > **一条都不报**（只有 \`vite build\` 看得到）。现在两边规则已合并，\`check:source\` 是真正的全仓入口。
 
+### 运行时自验（dev server 起来后 Agent 可自主调用）
+
+- \`GET /__vobs/agent-state\`（vite dev server 的 HTTP 端点）：返回每个打开页面的
+  运行时快照 —— 每个 effect 的**当前订阅集**、最近 20 条更新触发链、护栏判定。
+  Agent 生成代码后先 \`check_source_snippet\`（写前静态自检）→ 写入 → 页面加载后
+  \`curl localhost:<port>/__vobs/agent-state\` 读快照核对「依赖边是否符合预期」，
+  不需要等人跑检查
+- 报告以快照为准（100ms 节流、按页面分桶）；\`vobs check:runtime --json\` 是它的
+  批处理形态（全路由护栏 verdict）
+
 ---
 
 ## 禁止清单（生成前先扫一遍；每条都会被对应的 C 码拦截）

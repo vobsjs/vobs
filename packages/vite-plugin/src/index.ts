@@ -11,8 +11,13 @@ import { compileHtmlComponent } from './html-component.ts'
 const GUARDRAILS_ID = '\0virtual:vobs-dev-guardrails'
 /** 浏览器里的 URL 形式：vite 把 `\0` 编码成 `__x00__`。 */
 const GUARDRAILS_URL = '/@id/__x00__virtual:vobs-dev-guardrails'
+/** Agent 快照探针虚拟模块（形态与 guardrails 一致）。 */
+const AGENT_STATE_ID = '\0virtual:vobs-agent-state-probe'
+const AGENT_STATE_URL = '/@id/__x00__virtual:vobs-agent-state-probe'
 /** 护栏违规上报端点。 */
 const VIOLATION_ENDPOINT = '/__vobs/violation'
+/** Agent 自验通道端点：浏览器上报运行时快照（POST），Agent / CLI 查询（GET）。 */
+const AGENT_STATE_ENDPOINT = '/__vobs/agent-state'
 
 /**
  * Windows 路径分隔符 → POSIX。
@@ -52,12 +57,24 @@ export interface VobsVitePluginOptions {
    * 页面里没装 `@vobs/vobs` 时自动跳过，只在控制台留一句提示。
    */
   devGuardrails?: boolean
+  /**
+   * Agent 运行时快照通道（默认开启，仅 dev 生效）。开启后页面侧探针会订阅
+   * `window.__VOBS_DEVTOOLS__` 的事件流，节流（100ms）POST 一份运行时快照到
+   * `GET /__vobs__/agent-state` —— Agent 生成代码后无需等人触发，curl 一下就能
+   * 拿到「每个 effect 的当前订阅集 / 最近更新触发链 / 护栏判定」。
+   *
+   * 通道复用 devGuardrails 的既有模式（虚拟模块探针 + POST 中间件），不新开
+   * WebSocket、不要求 Agent 维持长连接。与 devtools 内核解耦：探针只消费
+   * 全局 API（`window.__VOBS_DEVTOOLS__`），devtools 不感知这个通道。
+   */
+  agentState?: boolean
 }
 
 export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
   const include = options.include ?? /\.tsx(?:$|\?)/
   const htmlModules = new Set<string>()
   const guardrailsEnabled = options.devGuardrails ?? true
+  const agentStateEnabled = options.agentState ?? true
   let productionBuild = false
   let hmrStateEnabled = (options.hmr ?? true) && (options.hmrState ?? true)
   /** 项目根（`configResolved` 里取）—— 用于把绝对模块 id 归一成仓库相对路径。 */
@@ -65,6 +82,8 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
 
   /** dev 且未关闭时才装护栏。 */
   const guardrailsActive = (): boolean => !productionBuild && guardrailsEnabled
+  /** dev 且未关闭时才装 Agent 快照探针。 */
+  const agentStateActive = (): boolean => !productionBuild && agentStateEnabled
 
   /**
    * 传给编译器的**稳定**源名：项目相对 + POSIX 分隔符。
@@ -104,19 +123,67 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
     },
 
     transformIndexHtml() {
-      if (!guardrailsActive()) return undefined
-      // 只返回 tag 数组：返回 { html } 会**替换**整份 HTML（不是合并）
-      return [{
-        tag: 'script',
-        attrs: { type: 'module', src: GUARDRAILS_URL },
-        injectTo: 'head-prepend' as const
-      }]
+      const tags = []
+      if (guardrailsActive()) {
+        // 只返回 tag 数组：返回 { html } 会**替换**整份 HTML（不是合并）
+        tags.push({
+          tag: 'script',
+          attrs: { type: 'module', src: GUARDRAILS_URL },
+          injectTo: 'head-prepend' as const
+        })
+      }
+      if (agentStateActive()) {
+        tags.push({
+          tag: 'script',
+          attrs: { type: 'module', src: AGENT_STATE_URL },
+          injectTo: 'head-prepend' as const
+        })
+      }
+      return tags.length > 0 ? tags : undefined
     },
 
     configureServer(server: ViteDevServer) {
-      if (!guardrailsEnabled) return
+      /*
+       * Agent 运行时快照缓存（按页面 href 分桶，每页只留最近一份）。
+       * POST 写入（浏览器探针节流上报），GET 返回全部 —— Agent / CLI 的只读消费面。
+       */
+      const agentSnapshots = new Map<string, Record<string, unknown>>()
       server.middlewares.use((req, res, next) => {
-        if (req.method !== 'POST' || req.url?.split('?', 1)[0] !== VIOLATION_ENDPOINT) {
+        const urlPath = req.url?.split('?', 1)[0]
+        if (urlPath === AGENT_STATE_ENDPOINT) {
+          if (req.method === 'POST' && agentStateActive()) {
+            let body = ''
+            req.on('data', chunk => { body += String(chunk) })
+            req.on('end', () => {
+              try {
+                const snapshot = JSON.parse(body) as Record<string, unknown>
+                if (typeof snapshot.page === 'string') {
+                  agentSnapshots.set(snapshot.page, snapshot)
+                  while (agentSnapshots.size > 20) {
+                    const oldest = agentSnapshots.keys().next().value
+                    if (oldest === undefined) break
+                    agentSnapshots.delete(oldest)
+                  }
+                }
+              } catch { /* 损坏的快照直接丢弃 —— 通道是尽力而为，不影响应用 */ }
+              res.statusCode = 204
+              res.end()
+            })
+            return
+          }
+          if (req.method === 'GET') {
+            res.statusCode = 200
+            res.setHeader('content-type', 'application/json')
+            res.end(JSON.stringify({
+              serverTime: Date.now(),
+              pages: [...agentSnapshots.values()]
+            }))
+            return
+          }
+          next()
+          return
+        }
+        if (req.method !== 'POST' || urlPath !== VIOLATION_ENDPOINT) {
           next()
           return
         }
@@ -132,6 +199,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
 
     resolveId(source: string, importer: string | undefined) {
       if (source === GUARDRAILS_ID) return GUARDRAILS_ID
+      if (source === AGENT_STATE_ID) return AGENT_STATE_ID
       if (!importer || !isHtmlComponent(source, options.html) || !isRelativeModule(source)) return null
       const cleanImporter = importer.split(/[?#]/u, 1)[0]
       const cleanSource = source.split(/[?#]/u, 1)[0]
@@ -144,6 +212,7 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
 
     async load(id: string) {
       if (id === GUARDRAILS_ID) return guardrailsActive() ? createGuardrailsModule() : null
+      if (id === AGENT_STATE_ID) return agentStateActive() ? createAgentStateModule() : null
       // 防御性归一：即使某个调用方（或未来版本的 Vite）传回反斜杠形态也仍然命中
       if (!htmlModules.has(id) && !htmlModules.has(toPosixPath(id))) return null
       return compileHtmlComponent(await readFile(id, 'utf8'), { filename: stableSourceName(id) })
@@ -324,6 +393,56 @@ import('@vobs/vobs/dev').then(guardrails => {
 }).catch(error => {
   console.warn('[vobs] 开发期护栏未启用：页面没有安装 @vobs/vobs。', error?.message ?? error)
 })
+`
+}
+
+/**
+ * Agent 快照探针（虚拟模块）。
+ *
+ * 依赖 `window.__VOBS_DEVTOOLS__`（devtools 插件装上后全局可用）—— 探针只消费
+ * 全局 API，与 devtools 内核零耦合。事件驱动 + 100ms 节流：任何 devtools 事件
+ * （update / effect-run / network / error …）都会安排一次快照上报，POST 到
+ * `/__vobs/agent-state`。没有事件就不发 —— 空闲页面零流量。
+ */
+function createAgentStateModule(): string {
+  return `
+const endpoint = ${JSON.stringify(AGENT_STATE_ENDPOINT)}
+
+const start = () => {
+  const api = window.__VOBS_DEVTOOLS__
+  if (!api || typeof api.subscribe !== 'function') return
+  let lastSent = 0
+  let timer = null
+  const send = () => {
+    timer = null
+    lastSent = Date.now()
+    try {
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          page: window.location.href,
+          ts: Date.now(),
+          effects: api.getEffects(),
+          recentUpdates: api.getUpdates().slice(-20),
+          errors: api.getErrors().slice(-20)
+        })
+      }).catch(() => {})
+    } catch { /* 上报失败不影响应用 */ }
+  }
+  const schedule = () => {
+    if (timer) return
+    const waitMs = Math.max(0, 100 - (Date.now() - lastSent))
+    timer = setTimeout(() => send(), waitMs)
+  }
+  api.subscribe('*', schedule)
+}
+
+// devtools 插件可能晚于本探针装载 —— 轮询等它出现（dev 里必然出现）
+const poll = setInterval(() => {
+  if (window.__VOBS_DEVTOOLS__) { clearInterval(poll); start() }
+}, 200)
+setTimeout(() => clearInterval(poll), 30000)
 `
 }
 
