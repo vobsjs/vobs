@@ -82,6 +82,22 @@ return cond.value ? <A/> : null        // ❌ 冻结
   → **\`<ClientOnly fallback={…}>\`**（首轮两侧都渲染 fallback，水合对得上）
 - 模块顶层**禁止** JSX（\`VOBS_C105\`）：import 求值早于渲染器安装
 
+### 异步取数：\`@vobs/resource\`（Query / Mutation 一体）
+
+- **\`resource(fetcher)\` 返回 data / error / loading 三个信号** —— 异步状态就在
+  依赖图里，JSX 里 \`{res.data.value}\`、\`{res.loading.value}\` 正常订阅。
+  **没有第二套异步心智模型**，别再用 effect + 手动 loading 状态拼异步
+- **key 变化自动重取，旧请求自动取消**（AbortSignal）：
+  \`resource({ key: () => [userId.value], fetcher })\` —— key 读信号，输入变了自动失效重拉；
+  **不要**在 effect 里 watch + fetch（\`VOBS_C106\` 的坑）
+- **data 是 \`T | null\`**：未加载就是 null，类型系统强制判空 —— 严禁 \`!\` 断言
+- **写操作**：直接改缓存 \`mutate(next)\`；带请求的乐观更新 \`optimistic(next, action)\`；
+  跨条目失效 \`client.invalidate(key)\`。飞行中的旧结果不会覆盖新数据（revision 防护）
+- **渲染端配 \`<AsyncBoundary resource={…}>\`**（\`VOBS_C002\`：缺属性直接报）——
+  别在边界外手拼 loading/error 分支
+- SSR：\`dehydrate()/hydrate()\` 序列化；**每个请求要 \`resetDefaultResourceClient()\`**
+  （进程级缓存，不复位 = 跨请求数据泄漏）
+
 ## 五、列表与数据
 
 - **数组更新必须换引用**：\`list.value = [...list.value, item]\`；

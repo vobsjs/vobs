@@ -778,8 +778,9 @@ function renderSignalsInspector(snapshot: DevToolsSnapshot, query: string): Vobs
 function renderEffectsInspector(snapshot: DevToolsSnapshot, query: string): VobsNode {
   const list = createElement('div')
   setAttribute(list, 'class', 'vobs-devtools-list')
+  const signalsById = new Map(snapshot.signals.map(signal => [signal.id, signal]))
   const effects = snapshot.effects.filter(effect => matchesQuery(query, effect.name, effect.component, effect.id)).slice(0, 50)
-  for (const effect of effects) insertBefore(list, renderEffectRow(effect), null)
+  for (const effect of effects) insertBefore(list, renderEffectRow(effect, signalsById), null)
   if (effects.length === 0) appendMuted(list, query ? 'No effects match the search.' : 'No effects recorded.')
   return list
 }
@@ -1101,7 +1102,8 @@ function renderSignalMutationControl(signal: SignalDebugInfo, api: DevToolsAPI):
 }
 
 function renderEffectRow(
-  effect: EffectDebugInfo
+  effect: EffectDebugInfo,
+  signalsById: ReadonlyMap<string, SignalDebugInfo> = new Map()
 ): VobsNode {
   const row = createElement('details')
   setAttribute(row, 'class', 'vobs-devtools-list__row')
@@ -1116,6 +1118,28 @@ function renderEffectRow(
   if (effect.lastExecutionTime > 0) appendText(row, `last execution ${effect.lastDuration?.toFixed(2) ?? '0.00'} ms · ${effect.lastRunStatus ?? 'unknown'} · ${effect.lastDomUpdates ?? 0} DOM updates`, 'vobs-devtools-muted')
   if (effect.lastUpdateId) appendText(row, `last update ${effect.lastUpdateId}`, 'vobs-devtools-code')
   if (effect.lastError) appendText(row, `${effect.lastError.name}: ${effect.lastError.message}`, 'vobs-devtools-error')
+  /*
+   * 依赖边视图（元原则：运行时依赖图要有显式出口）。`effect.dependencies` 是
+   * devtools 内核按 `dependencyTracked/Untracked` 实时维护的**当前订阅集** ——
+   * 分支未走时依赖边不存在，所以这份清单随执行路径动态收缩扩张。
+   * 展开即见「这一刻实际连了哪几条边」，这正是文本里看不到的部分。
+   */
+  const liveDependencies = effect.dependencies
+    .map(id => signalsById.get(id))
+    .filter((signal): signal is SignalDebugInfo => signal !== undefined)
+  if (liveDependencies.length > 0) {
+    appendText(row, 'Live dependencies:', 'vobs-devtools-code')
+    for (const dependency of liveDependencies) {
+      const dependencyRow = createElement('div')
+      setAttribute(dependencyRow, 'class', 'vobs-devtools-effect-dep-row')
+      appendText(dependencyRow, displaySignalName(dependency), 'vobs-devtools-list__name')
+      appendText(dependencyRow, dependency.kind ?? 'state', 'vobs-devtools-muted')
+      appendText(dependencyRow, previewValue(dependency.value), 'vobs-devtools-code')
+      insertBefore(row, dependencyRow, null)
+    }
+  } else {
+    appendText(row, 'No live dependencies — edges appear when this effect actually reads a signal (dynamic graph).', 'vobs-devtools-muted')
+  }
   return row
 }
 
