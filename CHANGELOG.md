@@ -6,65 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.8.19] - 2026-10-28
 
+### Upgrade notes
+
+- **Node.js >= 24.22.1 is required** (2026-10-21 security line; Node 22 support dropped).
+  Declared in `engines`; CI runs Node 24.
+- **Three new `warning` diagnostics may fire on existing code.** Each message carries the fix;
+  details via `vobs explain <code>`:
+  - `VOBS_C120` — `state()` without a debug name.
+  - `VOBS_C233` — in-place array mutation and direct field assignment on state-bound receivers.
+  - `VOBS_C234` — reads of non-deps signals inside an `on()` callback (those reads never subscribe).
+- **`VOBS_C107` now also catches empty-guard returns** (`if (signal) return null` in a component body).
+- **`VOBS_C118` now also catches props snapshots** (`const x = props.y` used directly in JSX).
+- **`VOBS_C232` no longer warns on simple conditional branches** (`cond ? list : null` /
+  `cond && list`) — the compiler routes them correctly now; mixed node/list branches still warn.
+- Dependency upgrades (see Security) may surface peer/constraint changes in downstream lockfiles.
+
 ### Added
 
-- **Three new static diagnostics** (`@vobs/compiler`, surfaced through `vobs check` and `vite build`):
-  - `VOBS_C233` — in-place array mutation (`list.value.push(...)`) and object field assignment
-    (`X.value.name = ...`, any depth) on state-bound receivers. Closes the last silent-failure
-    entry from `docs/silent-failures.md` via the newly added state-binding analysis.
-  - `VOBS_C234` — reads of non-deps signals inside an `on()` callback (the callback runs in an
-    untrack scope, so those reads never subscribe — updates are silently lost). Suggests adding
-    the signal to deps or making the intent explicit with `untrack`.
-  - `VOBS_C120` — `state()` without a debug name; runtime diagnostics would report
-    `(未命名信号)`, which is unlocatable across a page.
-- **`VOBS_C107` extended: empty-guard returns.** `if (signal) return null` in a component body
-  is now caught (host function must contain a JSX return; pure data functions with `T | null`
-  guards stay exempt; named JSX-only helpers keep the existing caller exemption). The AI
-  mistake corpus coverage reaches 13/13 (100%) — no silent failure classes remain.
-- **`VOBS_C232` compiler auto-route.** Lists inside simple conditional branches
-  (`cond ? list : null`, `cond && list`) now compile to `insertShow` (conditional container +
-  keyed `insertList`) instead of polymorphic insertion — keyed reuse survives, and the analyzer
-  shares the same routing so `vobs check` stops flagging the simple shapes.
-- **`@vobs/runtime` `useDismiss`.** Standard popup-dismissal primitive (outside mousedown +
-  Escape), fixing the two classic traps: menu clicks swallowed by capture-phase close, and
-  `execCommand` losing focus/selection. Internal owner auto-disposes with the caller.
-- **`@vobs/router` launch flags.** `hasLaunchFlag` / `readLaunchQuery` capture `location.search`
-  and hash at module load — the standard replacement for hand-rolled one-shot URL flags.
-- **`@vobs/ui` `Segmented` object options.** `opts` accepts `{ id, label }` items; selection
-  writes back the **id**, not the label string (kills the "Seg value equals label" trap).
-- **`@vobs/table` `hauto`.** Height-adaptive table mode: empty/short tables stretch to fill,
-  pagination sticks to the bottom; only the state row stretches, never data rows.
-- **`vobs agent-doc --llms <dir>`.** Writes `llms.txt` (index), `vobs-context.md` (full AI
-  contract) and `diagnostics.md` (every `VOBS_C*` with why/correct/wrong) for public hosting —
-  agents can understand the framework contract **without installing vobs**. Context-cost token
-  estimates included. The website prerender emits these into `dist/`.
-- **Contract sync check in `vobs check`.** Projects that generated their `AGENTS.md` contract
-  get a warning when it drifts from the installed framework version (`missing` / `no-block`
-  stay silent). "Contract travels with the framework version" is now a verifiable fact on
-  every check, not a write-time promise.
-- **Agent contract additions.** Reactive-graph dynamic semantics (conditional reads are
-  conditional dependencies; `on` pins, `untrack` cuts; "is this edge visible in the text?")
-  and an `@vobs/resource` section (Query/Mutation semantics, key-driven refetch, `T | null`
-  null-checks, SSR cache reset).
-- **DevTools dependency-edge view.** The Effects inspector now lists each effect's **live
-  dependency set** (signal name + kind + value snapshot) — maintained in real time by
-  `dependencyTracked`/`dependencyUntracked`. Edges appear and disappear with the execution
-  path, exactly what source text cannot show.
+- **`vobs agent-doc --llms <dir>`** — emits `llms.txt`, `vobs-context.md` (full AI contract) and
+  `diagnostics.md` (all diagnostic codes with why/correct/wrong) for public hosting: agents can
+  read the contract **without installing vobs**. Context-cost token estimates included; the
+  website prerender emits these into `dist/`.
+- **`vobs check` contract-sync warning** — if your project's generated `AGENTS.md` contract has
+  drifted from the installed framework version, check now says so and points to
+  `vobs agent-doc --write`. Projects that never generated a contract stay silent.
+- **`check:runtime --json`** — machine-readable runtime-guardrail verdict
+  (`{ pass, routes: [{ route, status, guardFailures }] }`) so agents can self-verify generated
+  code against a real Chrome pass without waiting for a human.
+- **`@vobs/runtime` `useDismiss`** — standard popup dismissal (outside click + Escape) without
+  the two classic traps (menu clicks swallowed by capture-phase close; `execCommand` losing
+  focus/selection).
+- **`@vobs/router` `hasLaunchFlag` / `readLaunchQuery`** — one-shot URL flags captured at module
+  load, replacing hand-rolled module-state patterns.
+- **DevTools Effects inspector shows each effect's live dependency set** — signal name, kind and
+  value snapshot, maintained in real time as the execution path changes.
 
 ### Changed
 
-- **`VOBS_C118` extended to props snapshots.** `const x = props.y` used directly in JSX is
-  flagged (props are getters; storing them is a run-once snapshot). First real hit fixed in
-  dsh-devkit per the rule's own fix text.
-- **Node.js baseline is now `>= 24.22.1`** (2026-10-21 security release line; Node 22 support
-  dropped). `engines` declared, CI updated to Node 24.
-- Dependency security upgrades clearing all 20 Dependabot alerts (2 critical): handlebars
-  4.7.10, follow-redirects 1.16.2, vite 7.3.7, undici 8.12.3, vitest 5.0.5, source-map-js
-  1.2.2, qs 6.17.0.
+- **`@vobs/ui` `Segmented` supports object options** — `opts` accepts `{ id, label }` items;
+  selection reports the **id**, not the label string.
+- **`@vobs/table` `hauto`** — height-adaptive mode: empty/short tables stretch to fill the
+  container with pagination pinned to the bottom; data rows never stretch.
+- All diagnostic codes are documented in `vobs explain <code>` and in `diagnostics.md`
+  (generated by `vobs agent-doc --llms`).
 
-### Fixed
+### Security
 
-- `.gitignore` whitelist corruption that had silently excluded `docs/silent-failures.md`.
+- Dependency upgrades clearing all 20 Dependabot alerts (2 critical): handlebars 4.7.10,
+  follow-redirects 1.16.2, vite 7.3.7, undici 8.12.3, vitest 5.0.5, source-map-js 1.2.2,
+  qs 6.17.0.
 
 ## [1.8.16] - 2026-10-23
 

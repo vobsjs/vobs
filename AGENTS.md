@@ -97,6 +97,13 @@
 ## 八、提交与发布
 
 - 提交信息用中文，写**为什么**（含踩过的坑），不只写改了什么
+- **Changelog 与 commit 分层**（2026-10-28）：`CHANGELOG.md` 只写**用户可感知**的变化
+  （新增能力 / 修了什么 / 哪个诊断码行为变了 / 升级注意什么），语义修正条目只引用
+  诊断码（细节在 `vobs explain <code>`，不重复展开）；内部细节（silent-failures 收编、
+  绑定分析实现、语料/验证过程）的归宿是**语义修正类 commit 的 body** —— 不新建
+  maintainer 日志文件。commit 分两层：常规改动一行标题；语义修正 / 诊断变更 /
+  破坏性变更写全决策记录（改前行为、实测证据、为什么选这个方向），body 里用
+  `Refs: VOBS_Cxxx` 挂诊断码锚点
 - 提交前跑 `pwsh -NoProfile -File .artifacts/gate.ps1`（test:run + typecheck +
   check:scripts + check:source，看**退出码**不数输出）
 - 发布走 `docs/npm-release.md`；**标签只校验，发布是手动的**（这是决定，不是过渡）
