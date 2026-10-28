@@ -252,13 +252,13 @@ export function List(props: { ok: boolean; items: string[] }) {
     expect(found.find(entry => entry.code === VOBS_C232)?.fix).toContain('直接的')
   })
 
-  it('&& 右侧的 map 同样报', () => {
+  it('&& 右侧的 map 简单形态已路由 insertShow —— 不再报警（2026-10-28）', () => {
     const found = analyzeSource(`
 export function List(props: { items: string[] }) {
   return <div>{props.items.length > 0 && props.items.map(item => <b key={item}>{item}</b>)}</div>
 }
 `, 'a.tsx')
-    expect(codes(found)).toContain(VOBS_C232)
+    expect(codes(found)).not.toContain(VOBS_C232)
   })
 
   it('直接的子表达式列表不报 —— 这是推荐写法', () => {

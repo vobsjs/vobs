@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createDOMRenderer, createVobs, state } from '@vobs/vobs'
 import { createComponent } from '@vobs/runtime'
 import { scheduler } from '@vobs/reactivity'
-import { Segmented } from './segmented'
+import { Segmented, type SegmentedProps } from './segmented'
 
 /*
  * Segmented 的 opts 快捷形态（2026-10-28）。
@@ -14,7 +14,7 @@ import { Segmented } from './segmented'
  */
 const flush = () => { scheduler.flush(); scheduler.flush() }
 
-function mountSegmented(props: Record<string, unknown>) {
+function mountSegmented(props: SegmentedProps) {
   const host = document.createElement('div')
   const app = createVobs({ renderer: createDOMRenderer(), render: () => createComponent(Segmented, props) })
   app.mount(host)

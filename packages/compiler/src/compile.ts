@@ -2188,7 +2188,7 @@ function transformShowListExpression(
   const mount = ts.factory.createArrowFunction(
     undefined,
     undefined,
-    [ts.factory.createParameterDeclaration(undefined, undefined, undefined, container)],
+    [ts.factory.createParameterDeclaration(undefined, undefined, container)],
     undefined,
     ts.factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
     mountBody
