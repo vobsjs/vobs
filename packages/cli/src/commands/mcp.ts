@@ -178,14 +178,18 @@ function runCheckSourceSnippet(toolArgs: Record<string, unknown>): string {
     if (seen.has(key)) return false
     seen.add(key)
     return true
-  })
+  }).map(item => ({
+    ...item,
+    // 内嵌改写指令（元数据第一条）—— AI 拿到诊断即拿到 before/after，不用二次调 explain
+    rewrite: DIAGNOSTIC_GUIDES.find(guide => guide.code === item.code)?.rewrites?.[0] ?? null
+  }))
   return JSON.stringify({
     filename,
     pass: diagnostics.length === 0,
     diagnostics,
     hint: diagnostics.length > 0
-      ? 'Each diagnostic has a fix; verified before→after rewrites: `vobs explain --json <code>` → rewrites[].'
-      : 'Snippet is clean by static channels. Runtime behavior still needs `check_runtime` (Chrome pass).'
+        ? 'Each diagnostic embeds a verified rewrite (before→after). Runtime behavior still needs `check_runtime` (Chrome pass).'
+        : 'Snippet is clean by static channels. Runtime behavior still needs `check_runtime` (Chrome pass).'
   }, null, 2)
 }
 

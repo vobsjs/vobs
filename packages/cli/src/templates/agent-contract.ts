@@ -106,6 +106,18 @@ return cond.value ? <A/> : null        // ❌ 冻结
 - 数据结构里**只存纯描述**（字符串/样式/结构字段），**节点对象别进数据常量**
   （SSG 序列化会炸，产物出现 \`[object Xxx]\` 时框架会直接报错）
 
+### Platform：优先平台原生能力（vobs 渲染器操作真实 DOM）
+
+- **平台原生元素就是 JSX 小写标签** —— 渲染器直接创建真实 DOM：\`<dialog>\`、
+  \`<details>\`、\`<template>\` 等 Web 平台原语按常规语义使用即可。
+  **优先用平台能力，不要自建等价物**（手写 modal、手写 disclosure）
+- **网络请求走 \`@vobs/http\`**：AbortSignal 取消、\`debugContext\` 与 devtools
+  网络追踪贯通 —— 裸 \`fetch\` 拿不到请求追踪与取消联动
+- **异步状态走 \`@vobs/resource\`**（见上节）—— 手写 \`loading\` 信号 + effect 拉数据
+  是双重反模式（\`VOBS_C106\`）
+- **样式接入走 \`@vobs/tailwind\`**（官方集成）；组件级定制用 \`--vobs-*\` token hooks
+  （见各组件文档），不在业务代码里硬编码色值
+
 ## 六、输入
 
 - **数字输入走 \`parseNumber\`**（\`<Field type="number">\` 已内置）：
