@@ -265,17 +265,11 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
       if (!reads.has(name)) continue
       found.push(diagnosticAt(source, file, writeNode, {
         /*
-         * **恢复 error**：当初降级为 warning 的**唯一依据**是实测出的那个误报
-         * （同名局部对象遮蔽）—— 那个误报已经修掉了（见上面 `shadowed` 集合的注释），
-         * 对抗测试从 6/7 变成 **7/7**。
-         *
-         * 降级时我写下的恢复条件就是"给规则补上作用域/绑定解析" —— 现在补的是
-         * **作用域遮蔽**这一半（effect 体内重新声明的名字不再当成外层信号）。
-         * 真自订阅是货真价实的 error，值得让 CI 失败。
+         * **error**：真自订阅值得让 CI 失败；已知误报形态（同名遮蔽）已由上面的
+         * 作用域解析消除。
          *
          * 说明：这条的判定仍是**按变量名**比对，不是"真的订阅了"。真正的硬门禁
          * 仍由运行时护栏提供（按真实依赖集判定，跨函数/跨模块精确）。
-         * 但静态这条现在只在"名字未被遮蔽"时开口，已知的误报形态已消除。
          */
         code: VOBS_C210,
         severity: 'error',
@@ -432,7 +426,7 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
 
   const inspectComponent = (fn: ts.FunctionLikeDeclaration): void => {
     /*
-     * **被 JSX 表达式调用的函数是 helper，不是组件**（实测残留，本次修掉）。
+     * **被 JSX 表达式调用的函数是 helper，不是组件。**
      *
      * ```tsx
      * const render = () => { const shown = n.value + 1; return <b>{shown}</b> }
@@ -470,8 +464,7 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
      */
     /*
      * **要注意括号**：`(() => {...})()` 里那个 arrow 的**父节点是
-     * `ParenthesizedExpression`，不是 `CallExpression`** —— 实测确认过
-     * （第一版我只查了 `parent` 一层，于是这个误报没被拦住）。
+     * `ParenthesizedExpression`，不是 `CallExpression`** —— 只查一层 `parent` 拦不住。
      */
     let callee: ts.Node = fn
     let up: ts.Node | undefined = fn.parent

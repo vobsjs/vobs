@@ -18,10 +18,9 @@ function isFlag(token: string): boolean {
 /**
  * 单命令分发。
  *
- * 此前 `start()` 在 `--version` 之后直接 `createCLI().parse()` 就结束，而 cac 对
- * "没有命令匹配"**不做任何兜底**：既不报错、也不输出、退出码还是 0。
- * 于是 `vobs chekc`（拼错）在 CI 里静默成功；`vobs --totally-unknown` 同样 0 字节 + exit 0。
- * 这里补上兜底：未知子命令与未知顶层 flag 都进 stderr 且 **exit 1**。
+ * cac 对"没有命令匹配"**不做任何兜底**：既不报错、也不输出、退出码还是 0
+ * —— `vobs chekc`（拼错）会在 CI 里静默成功。这里补上兜底：
+ * 未知子命令与未知顶层 flag 都进 stderr 且 **exit 1**。
  */
 export async function start(args: string[]): Promise<void> {
   // No args (or explicit `cli`) → launch the interactive REPL
@@ -34,9 +33,8 @@ export async function start(args: string[]): Promise<void> {
   const hasSubcommand = KNOWN_SUBCOMMANDS.includes(first)
 
   /*
-   * `--version` / `-V` 只有在**没有子命令**时才表示"打印版本"。
-   * 此前是 `args.includes('--version')` —— 任何位置出现都会短路，
-   * 于是 `vobs check --version` 只打 banner、check 根本没跑（静默吞掉一个真命令）。
+   * `--version` / `-V` 只有在**没有子命令**时才表示"打印版本"——
+   * 任何位置都匹配的话，`vobs check --version` 会只打 banner、check 根本没跑。
    */
   if (!hasSubcommand && (args.includes('--version') || args.includes('-V'))) {
     showBanner()
@@ -70,9 +68,8 @@ export async function start(args: string[]): Promise<void> {
     createCLI().parse()
   } catch (error) {
     /*
-     * cac 对**已匹配子命令**的未知选项/缺值会抛 `CACError`。此前它一路冒到
-     * `bin/vobs.js` 的顶层 `await start(...)`（无 try/catch），用户看到的是
-     * 半屏 Node 栈而不是一句可读的错误。
+     * cac 对**已匹配子命令**的未知选项/缺值会抛 `CACError` —— 不在这里接住，
+     * 用户看到的就是半屏 Node 栈而不是一句可读的错误。
      */
     const message = error instanceof Error ? error.message : String(error)
     process.stderr.write(`✖ ${message}\n`)

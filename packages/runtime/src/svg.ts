@@ -5,8 +5,8 @@
  * - 运行期：`document.createElement('rect')` 得到的是 HTMLUnknownElement，
  *   整棵 SVG 子树都不渲染（且没有报错），所以必须走 createElementNS
  * - 编译期：静态子树被提升成 HTML 模板串再 cloneNode，而模板串是**用 HTML 解析器**
- *   解析的 —— `<g>`、`<rect>` 同样变成 HTMLUnknownElement。这条路径漏了整整一个大版本
- *   （1.7.4 只修了 createElement 那条入口，svg.test.ts 也只测那条）。
+ *   解析的 —— `<g>`、`<rect>` 同样变成 HTMLUnknownElement，所以静态提升路径
+ *   也必须走同一份标签表（两路共用，才不会再漏入口）。
  */
 export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
 

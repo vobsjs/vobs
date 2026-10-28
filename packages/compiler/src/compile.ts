@@ -17,9 +17,8 @@ import type {
 /**
  * 单次编译的全部可变状态。
  *
- * 此前这些字段是模块级变量，编译器因此不可重入：嵌套调用 compile()
- * （如插件内部再次编译片段）会互相污染状态。现在每次 compile 调用
- * 创建独立的 CompileState 并显式穿参，编译器对并发与嵌套完全安全。
+ * 每次 `compile` 调用创建**独立实例**并显式穿参（不用模块级变量）——
+ * 嵌套调用（如插件内部再编译片段）与并发互不污染，编译器完全可重入。
  */
 interface CompileState {
   /** 临时标识符计数器（_el0、_el1…）。 */
@@ -274,12 +273,9 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
       location: { file: state.filename, line, column },
       codeFrame,
       /*
-       * fix 文案指向 1.8.0 新增的原语，不再推荐手拼工具类。
-       *
-       * 1.8.0 的文案是 `<A class={cond ? 'is-on' : 'is-off'} />` —— 实战反馈：
-       * 那依赖一个**全局** `.is-off` 工具类，而项目里往往只有组合选择器
-       * （`.seq-param-group.is-off`），照着改会得到"类名加上了但样式不生效"。
-       * `Show` 与 `classList` 都不需要预先存在工具类。
+       * fix 文案**不推荐手拼工具类**：`cond ? 'is-on' : 'is-off'` 需要一个**全局**
+       * `.is-off` 工具类，而项目里往往只有组合选择器——照着改会得到
+       * "类名加上了但样式不生效"。`Show` 与 `classList` 都不需要预先存在工具类。
        */
       fix: '路由分支用 `<RouterView/>`（声明式处理路由切换）；'
         + '要保留挂载、只切可见性用 `<Show when={cond}><A/></Show>`；'
@@ -2216,7 +2212,7 @@ function createNodeConditional(
 
 /**
  * 转换单个分支：JSX → 节点工厂；null/false 原样保留；嵌套的三元与 `&&`
- * 动态节点表达式递归转换（此前嵌套三元只编译第一个分支，其余分支被静默丢弃）。
+ * 动态节点表达式递归转换（嵌套三元的**每一个**分支都必须转换，漏一个就是静默丢分支）。
  * 其余表达式（字符串、数值等）返回 null，由调用方回落为 null 分支。
  */
 function transformDynamicBranch(state: CompileState, expression: ts.Expression): ts.Expression | null {
@@ -2355,8 +2351,8 @@ function findKeyExpression(node: ts.JsxElement | ts.JsxSelfClosingElement): ts.E
 /**
  * 剥掉对运行时取值没有影响的包装：括号、`as` / `satisfies` 断言、非空断言。
  *
- * 此前只剥括号，于是 `items.map(item => (<li />) as any)` 里的 `as any`（很常见，
- * 用来压住类型报错）会让编译器认不出列表，静默退化成多态插入 —— keyed 复用与 key 一起失效。
+ * 漏剥 `as any` / `satisfies`（很常见，用来压住类型报错）会让编译器认不出列表，
+ * 静默退化成多态插入 —— keyed 复用与 key 一起失效。
  */
 function unwrapExpression(node: ts.Expression | ts.ConciseBody): ts.Expression {
   let current = node as ts.Expression

@@ -190,8 +190,7 @@ function Guardrails() {
  * API 详情。
  *
  * 这里刻意用 `memo` 把「当前选中的条目」变成派生值 —— **绝不在组件体里读 signal**：
- * 组件体只执行一次，在体里读到的是当时的值，之后永远不会更新。这正是开发台
- * 「护栏」页讲的那个坑，第一版的面板自己踩了一次（点击左侧 API 右侧纹丝不动）。
+ * 组件体只执行一次，在体里读到的是当时的值，之后永远不会更新。
  */
 function ApiDetail(props: { readonly name: Signal<string> }) {
   const current = memo(() => findEntry(props.name.value))

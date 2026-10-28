@@ -487,7 +487,7 @@ export function createResourceClient(options: ResourceClientOptions = {}): Resou
     },
     /*
      * prefetchAll() 刻意不抛错（SSR 不该因一个请求失败整页 500），失败落在各条目的 error 上。
-     * 但"只持有 client 的调用方"此前无法一次问出失败清单：dehydrate() 跳过失败项，
+     * 但 dehydrate() 跳过失败项，"只持有 client 的调用方"无法一次问出失败清单：
      * 于是连失败 key 都不可枚举，只能由调用方自己另存一份 key 列表再逐个 get() —— 那份列表
      * 一旦漏了缓存里的 key（响应式 key、插件/路由建的 key）就永远发现不了失败。
      * 这里把同一批缓存条目反过来筛一遍，给出一次性、只读、免序列化的失败视图。

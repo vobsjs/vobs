@@ -181,8 +181,7 @@ function serialize(node: SSRNode | SSRElement): string {
   /*
    * textContent / innerText 是**文本通道**，不是属性通道：
    * `propertyAttribute` 的声明式白名单里没有它们（也不该有 —— 文本必须转义后当**子节点**输出），
-   * 于是它们此前被静默丢弃、连警告都没有，客户端水合随即以 `extra-node` 失败
-   * （.artifacts/reports/ssr.md 缺点 1，实测探针 probe-audit-ssr-2 H1/H3）。
+   * 于是它们会被静默丢弃、连警告都没有，客户端水合随即以 `extra-node` 失败。
    * 这不是假想用法：packages/table/src/data-table.ts:472 与 column-settings.ts:184 直接这么调，
    * 而且不在 effect 里，SSR 下必然命中。
    * 走 serializeChildren 而不是直接拼串，是为了保留「相邻文本插 <!----> 分隔符」与转义。

@@ -2,8 +2,8 @@
  * JSX 属性名 → DOM 设置方式的**单一来源**。
  *
  * compiler 在编译期用它决定生成 setProperty/bindProperty 还是 setAttribute/bindAttribute，
- * runtime 在展开 `{...props}` 时用同一套判断。此前两边各写了一份**逐字重复**的实现
- * （compile.ts 与 ops.ts），注释还写着「保持一致」—— 分叉即静默改道，所以收到这里。
+ * runtime 在展开 `{...props}` 时用同一套判断 —— 分开写就会出现编译期与运行期
+ * 各一份**逐字重复**的实现，分叉即静默改道，所以收到这里。
  *
  * 这张表只描述「名字」，不占用户包体：compiler 侧是构建期用，runtime 侧是几十个字符串。
  */

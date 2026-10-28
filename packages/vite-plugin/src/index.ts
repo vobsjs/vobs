@@ -285,8 +285,8 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
       /*
        * 分析器诊断（`C118`/`C232`/`C210` 静态规则）**也要在这里报**。
        *
-       * 它们此前只在 `@vobs/cli` 的 `vobs check` 里可见 —— `vite dev`/`vite build`
-       * **一条都不报**。后果：开发时看不到，只有人主动跑 `vobs check` 或 CI 才发现。
+       * 只在 `vobs check` 里报的话，`vite dev`/`vite build` **一条都不报** ——
+       * 开发时看不到，问题要等人跑 CI 才发现。
        * 这与「错了不能静默」直接冲突：**AI 改完代码、`vite build` 通过，但问题还在。**
        *
        * 规则本体已抽到 `@vobs/compiler`（vite-plugin 与 CLI 都依赖它），直接调用即可 ——

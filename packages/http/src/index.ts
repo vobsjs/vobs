@@ -953,8 +953,7 @@ function resolveRetryDelay(retryDelay: RetryDelay, attempt: number, error: Error
  *
  * 为什么必须认它：`429`/`503` 上的 `Retry-After` 是服务端在明确说
  * "**别现在来**"。客户端零退避连环重试等于把它挡的那部分流量原样打回去 —— 是**放大器**，
- * 而且违反协议。实测（审计探针）：服务端回 `429 + retry-after: 5`，客户端在 4ms 内
- * 把 3 次请求全打完（间隔 `[2,0]` ms）。全仓此前 grep `retry-after` 零命中。
+ * 而且违反协议 —— 不认它，客户端就会在服务端明确说"别现在来"时连环重试。
  *
  * 支持两种合法格式（RFC 9110 §10.2.3）：
  * - 秒数：`Retry-After: 5`

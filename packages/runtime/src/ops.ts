@@ -240,8 +240,7 @@ const selectSyncScheduled = new WeakSet<Element>()
 
 /**
  * `<select value>` 在 option 子节点存在前赋值不生效（HTML 规范：select 的 value
- * 由已存在的 option 决定）。编译产物先设置属性、后插入子节点，静态写法必然丢初始值
- * （消费方此前只能用 ref + queueMicrotask 规避）。
+ * 由已存在的 option 决定）。编译产物先设置属性、后插入子节点，静态写法必然丢初始值。
  * 这里对 select 的 value 赋值统一延迟到微任务重放一次：静态子节点在同一同步任务内
  * 插入完毕，重放即命中。动态（insertList/insertDynamic）插入的 option 晚于该微任务时，
  * 由 value 的绑定 effect 在后续信号更新中正常覆盖。
@@ -436,7 +435,7 @@ export function parseClassList(value: unknown): string[] {
  *
  * 存在的理由（外部踩坑文档 C 条）：条件分支里的输入控件会丢焦点 ——
  * `insertDynamic` 按引用比较（`next === current`），写条件表达式就会重建子树。
- * 文档给出的对策是「固定渲染 + 响应式 class 显隐」，但此前只能手写字符串模板：
+ * 文档给出的对策是「固定渲染 + 响应式 class 显隐」，对应写法：
  *
  * ```tsx
  * <div class={open.value ? 'panel is-open' : 'panel'}>   // 易漏、易写错
@@ -659,10 +658,9 @@ export function clear(container: Node): void {
  * 返回类型**必须包含空值**：`null` / `undefined` / `false` 都是合法的 JSX 写法
  * （`cond ? <X/> : null`、`cond && <X/>`），运行时会把它们统一归一化成空注释节点。
  *
- * ⚠️ 这里此前写的是 `=> VobsNode`，比运行时真实值域**窄**（1.8.0 的运行时归一化
- * 修好了崩溃，但类型声明没跟着改）。后果是实际伤人的：
- * `return cond ? <div/> : null` 会报 `Type 'null' is not assignable to type 'VobsNode'`，
- * 于是写的人被劝退去改成早退式 —— 而运行时其实完全支持 `null`。
+ * ⚠️ 声明写窄了会实际伤人：`return cond ? <div/> : null` 会报
+ * `Type 'null' is not assignable to type 'VobsNode'`，把写的人劝退去改成早退式
+ * —— 而运行时其实完全支持 `null`。
  *
  * `VobsNode` 本身**不**放宽：它表示"真的节点"，`insertBefore` 等位置传 `null`
  * 仍然是错的。空只在"组件返回值"这个位置合法。
@@ -770,12 +768,12 @@ export function createComponent<Component extends VobsComponent>(
     owner.disposeSince(renderScope)
     const rawNext = owner.run(() => untrack(() => component(props)))
     /*
-     * 重渲染路径**同样**要把空返回值归一化 —— 这是 1.8.0 那次修复漏掉的另一半。
+     * 重渲染路径**同样**要把空返回值归一化 —— 只修首屏路径漏掉重渲染。
      *
      * 首屏路径（上面的 `isRenderableNode(rendered) ? … : createComment('vobs:empty')`）
      * 处理了空值，但这条更新路径没有：组件在**重渲染**时返回 `null`，
      * `nodeOwners.set(next as object, owner)` 就会拿到 `null` 当 WeakMap 的 key →
-     * 抛 `Invalid value used as weak map key`，与 9/30 发版黑屏是同一个错误。
+     * 抛 `Invalid value used as weak map key`。
      *
      * 之所以一直没暴露：触发它需要"组件首次渲染返回节点、之后某次重渲染返回空"，
      * 而首次就返回空的场景（更常见）走的是上面那条已被修复的路径。
