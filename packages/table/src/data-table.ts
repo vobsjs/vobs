@@ -65,6 +65,7 @@ export function KitDataTable<Row = Record<string, unknown>>(props: KitDataTableP
   bindClassList(root, props, () => [
     'vobs-data-table',
     readProp(props, 'stickyHeader', true) ? 'vobs-data-table--sticky-header' : undefined,
+    readProp(props, 'hauto', false) ? 'vobs-data-table--hauto' : undefined,
     hasProp(props, 'rowMenu') ? 'vobs-data-table--rowmenu' : undefined
   ])
   bindCommonAttributes(root, props, [

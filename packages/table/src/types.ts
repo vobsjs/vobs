@@ -159,6 +159,13 @@ export interface KitDataTableProps<Row = Record<string, unknown>> extends DataTa
   readonly virtualHeight?: number
   readonly rowHeight?: number
   readonly overscan?: number
+  /**
+   * 满高自适应形态（2026-10-28 收编，Finora ui.css 实证形态）：根转 flex column、
+   * viewport 吸收剩余高度、**table 仅在状态行（空态/加载/错误）存在时拉伸**——
+   * 空态/少行时表格撑满容器、分页条贴底；无条件拉伸会让 tr 均分多余高度（行高爆炸）。
+   * 容器需有确定高度（应用层滚动链提供）。
+   */
+  readonly hauto?: boolean
   readonly loading?: DataTableChildren
   readonly empty?: DataTableChildren
   readonly error?: (error: Error, retry: () => Promise<unknown>) => DataTableChildren

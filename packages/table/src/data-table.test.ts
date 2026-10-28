@@ -214,6 +214,34 @@ describe('@vobs/table', () => {
     disabledApp.destroy()
   })
 
+  it('hauto: true 挂满高自适应形态类（默认不挂）', () => {
+    const container = document.createElement('div')
+    const app = createVobs({
+      render: () => KitDataTable<User>({
+        columns,
+        rows: [{ id: 1, name: 'Ada', role: 'Admin' }],
+        hauto: true
+      })
+    })
+    app.mount(container)
+    const root = container.querySelector('.vobs-data-table')
+    expect(root?.classList.contains('vobs-data-table--hauto')).toBe(true)
+    // 形态契约：viewport 是 flex 容器（jsdom 不算样式，锚定结构即可——CSS 规则在 table.css）
+    expect(root?.querySelector(':scope > .vobs-data-table__viewport')).not.toBeNull()
+    app.destroy()
+
+    const plainContainer = document.createElement('div')
+    const plainApp = createVobs({
+      render: () => KitDataTable<User>({
+        columns,
+        rows: [{ id: 1, name: 'Ada', role: 'Admin' }]
+      })
+    })
+    plainApp.mount(plainContainer)
+    expect(plainContainer.querySelector('.vobs-data-table')?.classList.contains('vobs-data-table--hauto')).toBe(false)
+    plainApp.destroy()
+  })
+
   it('使用列设置应用列显隐、顺序和宽度', () => {
     const container = document.createElement('div')
     const app = createVobs({

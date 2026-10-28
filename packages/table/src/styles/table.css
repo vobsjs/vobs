@@ -16,6 +16,32 @@
 .vobs-data-table__footer { border-top: 1px solid var(--vobs-table-border, var(--border-neutral-l1, #d0d7de)); }
 .vobs-data-table__viewport { width: 100%; overflow-x: auto; }
 .vobs-data-table__table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+
+/*
+ * 满高自适应形态（--hauto，2026-10-28 自 Finora ui.css 收编）：
+ * 容器有确定高度时（应用层滚动链提供）空态/少行表格撑满、分页条贴底。
+ * ⚠ table 只在状态行（空态/加载/错误）存在时拉伸——无条件拉伸会让
+ * tr 均分多余高度（2 行数据摊满整区、行高爆炸）。拉伸的是状态行不是数据行。
+ */
+.vobs-data-table--hauto {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.vobs-data-table--hauto > .vobs-data-table__viewport {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.vobs-data-table--hauto > .vobs-data-table__viewport > .vobs-data-table__table {
+  flex: 0 0 auto;
+}
+.vobs-data-table--hauto > .vobs-data-table__viewport > .vobs-data-table__table:has(.vobs-data-table__state) {
+  flex: 1 0 auto;
+}
+.vobs-data-table--hauto .vobs-data-table__state {
+  height: 100%;
+}
 .vobs-data-table th,
 .vobs-data-table td {
   padding: var(--vobs-table-cell-padding, 10px 12px);
