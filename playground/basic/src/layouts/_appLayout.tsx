@@ -17,10 +17,9 @@ export function AppLayout(props: AppLayoutProps) {
   const route = useRoute()
   const router = useRouter()
   const i18n = useI18n()
-  const activeKey = route.value.path.split('/')[1] ?? ''
   // pin:'bottom' 演示：钉在侧边栏底部的收件箱入口，悬浮角标由信号驱动；
   // 点击不跳转、角标 +1，用于人工验证 badgePill 函数形态的响应式重建
-  const inboxBadge = state(0)
+  const inboxBadge = state(0, 'inboxBadge')
   const menuItems: readonly KitMenuItem[] = [
     {
       key: '',
@@ -105,7 +104,7 @@ export function AppLayout(props: AppLayoutProps) {
       logo={<span class="demo-logo">V</span>}
       headerActions={() => <HeaderActions />}
       userMenu={<UserMenu />}
-      activeKey={activeKey}
+      activeKey={route.value.path.split('/')[1] ?? ''}
       sidebarWidth={216}
       sidebar={() => (
         <PlaygroundSidebar
@@ -124,7 +123,7 @@ export function AppLayout(props: AppLayoutProps) {
 function HeaderActions() {
   const i18n = useI18n()
   const notification = useNotification()
-  const localeLoading = state(false)
+  const localeLoading = state(false, 'localeLoading')
 
   const handleLocaleToggle = (): void => {
     const next = i18n.locale.value === 'en-US' ? 'zh-CN' : 'en-US'
@@ -194,7 +193,7 @@ function UserMenu() {
 
 function PlaygroundStatusBar() {
   const i18n = useI18n()
-  const errorCount = state(getDevTools()?.getErrors().length ?? 0)
+  const errorCount = state(getDevTools()?.getErrors().length ?? 0, 'errorCount')
   const devtools = getDevTools()
   if (devtools) {
     const updateErrorCount = () => { errorCount.value = devtools.getErrors().length }

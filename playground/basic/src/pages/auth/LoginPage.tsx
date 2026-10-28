@@ -1,7 +1,7 @@
-﻿import { useAuth } from '@vobs/auth'
+import { useAuth } from '@vobs/auth'
 import { useJWTAuth } from '@vobs/jwt-auth'
 import { useRoute, useRouter } from '@vobs/router'
-import { onDispose, state } from '@vobs/vobs'
+import { memo, onDispose, state } from '@vobs/vobs'
 import { Alert, Button, Card, Icon, Input, Tag } from '@vobs/ui'
 import { KitPage } from '@vobs/kit'
 import { useI18n } from '@vobs/i18n'
@@ -12,11 +12,11 @@ export function LoginPage() {
   const i18n = useI18n()
   const route = useRoute()
   const router = useRouter()
-  const mode = state<'session' | 'jwt'>('session')
-  const username = state('playground')
-  const password = state('')
-  const submitting = state(false)
-  const error = state('')
+  const mode = state<'session' | 'jwt'>('session', 'mode')
+  const username = state('playground', 'username')
+  const password = state('', 'password')
+  const submitting = state(false, 'submitting')
+  const error = state('', 'error')
 
   async function submit(event: Event): Promise<void> {
     event.preventDefault()
@@ -62,10 +62,10 @@ export function LoginPage() {
 function JwtConsole() {
   const jwt = useJWTAuth()
   const i18n = useI18n()
-  const nowSeconds = state(Math.floor(Date.now() / 1000))
-  const apiResult = state('')
-  const apiError = state('')
-  const calling = state(false)
+  const nowSeconds = state(Math.floor(Date.now() / 1000), 'nowSeconds')
+  const apiResult = state('', 'apiResult')
+  const apiError = state('', 'apiError')
+  const calling = state(false, 'calling')
   const timer = setInterval(() => { nowSeconds.value = Math.floor(Date.now() / 1000) }, 1000)
   onDispose(() => { clearInterval(timer) })
 
@@ -84,29 +84,34 @@ function JwtConsole() {
     }
   }
 
-  const info = getTokenInfo(jwt.accessToken.value)
-  const remaining = info ? info.payload.exp - nowSeconds.value : 0
+  // token 变化时派生值必须跟着动 —— 组件体直读是 run-once 快照（C118），
+  // 登录/登出/刷新后 Tag、按钮 disabled 会全部冻结在旧值上
+  const info = memo(() => getTokenInfo(jwt.accessToken.value))
+  const remaining = memo(() => {
+    const current = info.value
+    return current ? current.payload.exp - nowSeconds.value : 0
+  })
 
   return (
     <Card title={i18n.t('auth.jwtConsoleTitle')} description={i18n.t('auth.jwtConsoleDescription')}>
       <div class="demo-control-stack">
-        <Tag tone={info ? (remaining > 0 ? 'success' : 'danger') : 'neutral-strong'}>
-          {info
-            ? (remaining > 0 ? i18n.t('auth.jwtRemaining', { value: remaining }) : i18n.t('auth.jwtExpired'))
+        <Tag tone={info.value ? (remaining.value > 0 ? 'success' : 'danger') : 'neutral-strong'}>
+          {info.value
+            ? (remaining.value > 0 ? i18n.t('auth.jwtRemaining', { value: remaining.value }) : i18n.t('auth.jwtExpired'))
             : i18n.t('auth.jwtNoToken')}
         </Tag>
-        {info ? (
+        {info.value ? (
           <div class="demo-control-stack">
-            <span class="demo-muted">{i18n.t('auth.jwtSub')}: <code>{info.payload.sub}</code></span>
-            <span class="demo-muted">{i18n.t('auth.jwtExp')}: <code>{new Date(info.payload.exp * 1000).toLocaleTimeString()}</code></span>
-            <span class="demo-muted">{i18n.t('auth.jwtToken')}: <code>{info.token.slice(0, 40)}...</code></span>
+            <span class="demo-muted">{i18n.t('auth.jwtSub')}: <code>{info.value.payload.sub}</code></span>
+            <span class="demo-muted">{i18n.t('auth.jwtExp')}: <code>{new Date(info.value.payload.exp * 1000).toLocaleTimeString()}</code></span>
+            <span class="demo-muted">{i18n.t('auth.jwtToken')}: <code>{info.value.token.slice(0, 40)}...</code></span>
           </div>
         ) : null}
         <div class="demo-button-row">
-          <Button size="sm" variant="secondary" disabled={!info} loading={calling.value} onClick={() => { void runCall('raw') }}>{i18n.t('auth.jwtCallRaw')}</Button>
-          <Button size="sm" variant="brand" disabled={!info} loading={calling.value} onClick={() => { void runCall('replay') }}>{i18n.t('auth.jwtCallReplay')}</Button>
-          <Button size="sm" variant="ghost" disabled={!info} onClick={() => { void jwt.refreshToken().catch(() => { /* onAuthFailure 已清理会话 */ }) }}>{i18n.t('auth.jwtRefresh')}</Button>
-          <Button size="sm" variant="ghost" disabled={!info} onClick={() => { void jwt.logout() }}>{i18n.t('common.signOut')}</Button>
+          <Button size="sm" variant="secondary" disabled={!info.value} loading={calling.value} onClick={() => { void runCall('raw') }}>{i18n.t('auth.jwtCallRaw')}</Button>
+          <Button size="sm" variant="brand" disabled={!info.value} loading={calling.value} onClick={() => { void runCall('replay') }}>{i18n.t('auth.jwtCallReplay')}</Button>
+          <Button size="sm" variant="ghost" disabled={!info.value} onClick={() => { void jwt.refreshToken().catch(() => { /* onAuthFailure 已清理会话 */ }) }}>{i18n.t('auth.jwtRefresh')}</Button>
+          <Button size="sm" variant="ghost" disabled={!info.value} onClick={() => { void jwt.logout() }}>{i18n.t('common.signOut')}</Button>
         </div>
         {apiResult.value ? <Alert tone="success" title={i18n.t('auth.jwtCallOk')} description={apiResult.value} icon={<Icon name="check-circle" />} /> : null}
         {apiError.value ? <Alert tone="danger" title={i18n.t('auth.jwtCallFailed')} description={apiError.value} icon={<Icon name="alert-triangle" />} /> : null}
