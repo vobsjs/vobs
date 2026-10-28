@@ -4,6 +4,68 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.19] - 2026-10-28
+
+### Added
+
+- **Three new static diagnostics** (`@vobs/compiler`, surfaced through `vobs check` and `vite build`):
+  - `VOBS_C233` — in-place array mutation (`list.value.push(...)`) and object field assignment
+    (`X.value.name = ...`, any depth) on state-bound receivers. Closes the last silent-failure
+    entry from `docs/silent-failures.md` via the newly added state-binding analysis.
+  - `VOBS_C234` — reads of non-deps signals inside an `on()` callback (the callback runs in an
+    untrack scope, so those reads never subscribe — updates are silently lost). Suggests adding
+    the signal to deps or making the intent explicit with `untrack`.
+  - `VOBS_C120` — `state()` without a debug name; runtime diagnostics would report
+    `(未命名信号)`, which is unlocatable across a page.
+- **`VOBS_C107` extended: empty-guard returns.** `if (signal) return null` in a component body
+  is now caught (host function must contain a JSX return; pure data functions with `T | null`
+  guards stay exempt; named JSX-only helpers keep the existing caller exemption). The AI
+  mistake corpus coverage reaches 13/13 (100%) — no silent failure classes remain.
+- **`VOBS_C232` compiler auto-route.** Lists inside simple conditional branches
+  (`cond ? list : null`, `cond && list`) now compile to `insertShow` (conditional container +
+  keyed `insertList`) instead of polymorphic insertion — keyed reuse survives, and the analyzer
+  shares the same routing so `vobs check` stops flagging the simple shapes.
+- **`@vobs/runtime` `useDismiss`.** Standard popup-dismissal primitive (outside mousedown +
+  Escape), fixing the two classic traps: menu clicks swallowed by capture-phase close, and
+  `execCommand` losing focus/selection. Internal owner auto-disposes with the caller.
+- **`@vobs/router` launch flags.** `hasLaunchFlag` / `readLaunchQuery` capture `location.search`
+  and hash at module load — the standard replacement for hand-rolled one-shot URL flags.
+- **`@vobs/ui` `Segmented` object options.** `opts` accepts `{ id, label }` items; selection
+  writes back the **id**, not the label string (kills the "Seg value equals label" trap).
+- **`@vobs/table` `hauto`.** Height-adaptive table mode: empty/short tables stretch to fill,
+  pagination sticks to the bottom; only the state row stretches, never data rows.
+- **`vobs agent-doc --llms <dir>`.** Writes `llms.txt` (index), `vobs-context.md` (full AI
+  contract) and `diagnostics.md` (every `VOBS_C*` with why/correct/wrong) for public hosting —
+  agents can understand the framework contract **without installing vobs**. Context-cost token
+  estimates included. The website prerender emits these into `dist/`.
+- **Contract sync check in `vobs check`.** Projects that generated their `AGENTS.md` contract
+  get a warning when it drifts from the installed framework version (`missing` / `no-block`
+  stay silent). "Contract travels with the framework version" is now a verifiable fact on
+  every check, not a write-time promise.
+- **Agent contract additions.** Reactive-graph dynamic semantics (conditional reads are
+  conditional dependencies; `on` pins, `untrack` cuts; "is this edge visible in the text?")
+  and an `@vobs/resource` section (Query/Mutation semantics, key-driven refetch, `T | null`
+  null-checks, SSR cache reset).
+- **DevTools dependency-edge view.** The Effects inspector now lists each effect's **live
+  dependency set** (signal name + kind + value snapshot) — maintained in real time by
+  `dependencyTracked`/`dependencyUntracked`. Edges appear and disappear with the execution
+  path, exactly what source text cannot show.
+
+### Changed
+
+- **`VOBS_C118` extended to props snapshots.** `const x = props.y` used directly in JSX is
+  flagged (props are getters; storing them is a run-once snapshot). First real hit fixed in
+  dsh-devkit per the rule's own fix text.
+- **Node.js baseline is now `>= 24.22.1`** (2026-10-21 security release line; Node 22 support
+  dropped). `engines` declared, CI updated to Node 24.
+- Dependency security upgrades clearing all 20 Dependabot alerts (2 critical): handlebars
+  4.7.10, follow-redirects 1.16.2, vite 7.3.7, undici 8.12.3, vitest 5.0.5, source-map-js
+  1.2.2, qs 6.17.0.
+
+### Fixed
+
+- `.gitignore` whitelist corruption that had silently excluded `docs/silent-failures.md`.
+
 ## [1.8.16] - 2026-10-23
 
 ### Added
