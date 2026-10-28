@@ -15,6 +15,8 @@ export { Show } from '@vobs/runtime'
 export { ClientOnly } from '@vobs/runtime'
 export type { ClientOnlyProps } from '@vobs/runtime'
 export type { ShowProps } from '@vobs/runtime'
+export { useDismiss } from '@vobs/runtime'
+export type { DismissEvent, DismissOptions } from '@vobs/runtime'
 export {
   getRuntimeDebugContext,
   getRuntimeDebugHooks,

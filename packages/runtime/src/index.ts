@@ -88,6 +88,8 @@ export type { ProfilerOptions, ProfilerProps, ProfilerRenderInfo } from './profi
 
 export { Show } from './show'
 export type { ShowProps } from './show'
+export { useDismiss } from './dismiss'
+export type { DismissEvent, DismissOptions } from './dismiss'
 
 export { applyClassList, parseClassList } from './ops'
 
