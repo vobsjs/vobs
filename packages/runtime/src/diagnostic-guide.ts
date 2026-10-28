@@ -21,6 +21,13 @@
  * 每条必须回答四个问题（少一个就退回成"只有一句报错"）：
  * **是什么** / **为什么是坑** / **正确写法** / **反例**。
  */
+export interface DiagnosticGuideRewrite {
+  /** 触发该码的最小形态（机器可直接对照替换的 before）。 */
+  readonly wrong: string
+  /** 按 fix 改写后的形态（after）—— 由 guide-verification 保证零诊断。 */
+  readonly correct: string
+}
+
 export interface DiagnosticGuide {
   readonly code: string
   /** 默认严重度（静态规则与运行时可能不同，这里是给人看的典型值）。 */
@@ -33,6 +40,12 @@ export interface DiagnosticGuide {
   readonly correct: string
   /** 反例（触发它的形态）。 */
   readonly wrong: string
+  /**
+   * 可直接执行的改写对（before/after）。**这里的夹具是 guide-verification.test.ts
+   * 的验证对象**（按 correct 改写必须零诊断）—— 元数据是真相，测试消费它，
+   * 两者不可能漂移。`vobs explain --json` 与 `diagnostics.md` 原样透出给 AI。
+   */
+  readonly rewrites?: readonly DiagnosticGuideRewrite[]
 }
 
 export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
@@ -44,7 +57,13 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
       + '只有"返回值会被渲染"时才是问题，所以规则只认含 JSX 的形态。',
     correct: '把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`）—— 编译期生成响应式条件工厂；'
       + '只切显隐用 `<Show when={cond}>`；路由用 `<RouterView/>`。',
-    wrong: '`return cond.value ? <A/> : null`'
+    wrong: '`return cond.value ? <A/> : null`',
+    rewrites: [
+      {
+        wrong: 'export function P(){ return open.value ? <div>a</div> : null }',
+        correct: 'export function P(){ return <div>{open.value ? <div>a</div> : null}</div> }'
+      }
+    ]
   },
   {
     code: 'VOBS_C105',
@@ -54,7 +73,13 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
       + '运行时必炸「渲染器未初始化」，而堆栈指向 import 它的地方，与真正原因隔得很远。',
     correct: '把 JSX 移进组件体；需要「数据 + 节点」的常量，改成**返回节点的函数**'
       + '（`const menu = () => [<Item/>]`）。',
-    wrong: '`const MENU = <KitMenuItem />`（写在模块顶层）'
+    wrong: '`const MENU = <KitMenuItem />`（写在模块顶层）',
+    rewrites: [
+      {
+        wrong: 'export const MENU = <div>顶层</div>',
+        correct: 'export const menu = () => <div>顶层</div>'
+      }
+    ]
   },
   {
     code: 'VOBS_C106',
@@ -64,7 +89,13 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
       + '「effect 只调了个函数」不等于没依赖。而且 effect 不等返回的 Promise，清理契约也对不上。',
     correct: '只想声明依赖用 `effect(on(deps, () => { … }))`；只想跑一次副作用放 `onMount`；'
       + '异步取数用 `@vobs/resource`；确要保留就显式 `untrack(() => { void fn() })`。',
-    wrong: '`effect(async () => { if (!s.value.on) return; s.value = { on: true } })`'
+    wrong: '`effect(async () => { if (!s.value.on) return; s.value = { on: true } })`',
+    rewrites: [
+      {
+        wrong: 'export function P(){ effect(async () => { await load() }) }',
+        correct: 'export function P(){ effect(on(deps, () => { void load() })) }'
+      }
+    ]
   },
   {
     code: 'VOBS_C107',
@@ -74,7 +105,17 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
       + '所以 `return cond.value ? <A/> : <B/>` 即使两支都是 JSX 也**一样冻结**（实测编译产物无 insertDynamic）。',
     correct: '路由分支用 `<RouterView/>`；保留挂载只切显隐用 `<Show when={cond}>`；'
       + '普通条件渲染放进 JSX 子节点位置。',
-    wrong: '`return router.currentRoute.value.path === "/login" ? <Login/> : <Shell/>`'
+    wrong: '`return router.currentRoute.value.path === "/login" ? <Login/> : <Shell/>`',
+    rewrites: [
+      {
+        wrong: 'export function P(){ return cond.value ? <div>a</div> : <div>b</div> }',
+        correct: 'export function P(){ return <div>{cond.value ? <div>a</div> : <div>b</div>}</div> }'
+      },
+      {
+        wrong: 'export function P(){\n  if (loading.value) return null\n  return <div>done</div>\n}',
+        correct: 'export function P(){\n  return <div>{loading.value ? null : "done"}</div>\n}'
+      }
+    ]
   },
   {
     code: 'VOBS_C108',
@@ -85,7 +126,13 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
     correct: '① 写在 JSX 子节点位置；② 组件顶层 return 处**别改成三元**（会命中 C107），用 `Show`/`RouterView`；'
       + '③ 要复用就用**返回节点的函数**（延迟求值）；④ 别把节点存进数据常量（会进 SSG 序列化）；'
       + '⑤ 有内部状态要保留时，常驻挂载 + 传状态对象 + 内部判空。',
-    wrong: '`const node = <Picker el={p.value} />; return open.value ? node : null`'
+    wrong: '`const node = <Picker el={p.value} />; return open.value ? node : null`',
+    rewrites: [
+      {
+        wrong: 'export function P(){ const node = <div>x</div>; return open.value ? node : null }',
+        correct: 'export function P(){ const render = () => <div>x</div>; return open.value ? render() : null }'
+      }
+    ]
   },
   {
     code: 'VOBS_C118',
@@ -94,7 +141,13 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
     why: '组件体只执行一次，所以这个常量是**创建时刻的快照**，之后信号变化它永不更新 —— '
       + '界面看起来"卡住了"，但没有任何报错。',
     correct: '把读取放进 JSX（`<div>{count.value}</div>`）或回调体内；派生值用 `memo`。',
-    wrong: '`const snapshot = count.value; return <div>{snapshot}</div>`'
+    wrong: '`const snapshot = count.value; return <div>{snapshot}</div>`',
+    rewrites: [
+      {
+        wrong: 'export function Page() {\n  const count = state(0)\n  const snapshot = count.value\n  return <div>{snapshot}</div>\n}',
+        correct: 'export function Page() {\n  const count = state(0, \'count\')\n  return <div>{count.value}</div>\n}'
+      }
+    ]
   },
   {
     code: 'VOBS_C210',
@@ -106,7 +159,13 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
       + '次选改成派生值 / `memo`；兜底才是 `untrack(() => { x.value = next })`。'
       + '静态规则按变量名判定，可能误报（同名局部遮蔽），所以是 warning；'
       + '运行时护栏按真实依赖集判定，是 error。',
-    wrong: '`effect(() => { count.value = count.value + 1 })`'
+    wrong: '`effect(() => { count.value = count.value + 1 })`',
+    rewrites: [
+      {
+        wrong: 'export function P() {\n  const count = state(0)\n  effect(() => { count.value = count.value + 1 })\n  return <div>{count.value}</div>\n}',
+        correct: 'export function P() {\n  const count = state(0, \'count\')\n  effect(on(count, () => { count.value = count.value + 1 }))\n  return <div>{count.value}</div>\n}'
+      }
+    ]
   },
   {
     code: 'VOBS_C211',
@@ -129,9 +188,14 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
       + '只订阅列表源。'
       + '影响大小看**条目数与是否有状态**：几项无状态按钮可忽略；几十项、或条目内有焦点/输入/滚动状态时必须改。',
     correct: '把 list 提成**直接的**子表达式：先写条件分支，再单独写 `{items.map(...)}`。',
-    wrong: '`{cond ? items.value.map(i => <li key={i}/>) : <b/>}`'
+    wrong: '`{cond ? items.value.map(i => <li key={i}/>) : <b/>}`',
+    rewrites: [
+      {
+        wrong: 'export function P(){ return <div>{open.value ? items.value.map(i => <li key={i}/>) : <b/>}</div> }',
+        correct: 'export function P(){ return <div>{open.value ? <b/> : null}{items.value.map(i => <li key={i}/>)}</div> }'
+      }
+    ]
   },
-
   {
     code: 'VOBS_C233',
     severity: 'warning',
@@ -140,7 +204,17 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
       + '所以订阅它的 JSX 永远不会更新，界面停留在旧数据且没有任何报错。',
     correct: '数组更新必须**换引用**：push 用 `list.value = [...list.value, item]`；'
       + '排序/截断先拷贝再改：`list.value = [...list.value].sort(...)`。',
-    wrong: '`list.value.push(item)`（`list` 绑定到 `state([...])`）'
+    wrong: '`list.value.push(item)`（`list` 绑定到 `state([...])`）',
+    rewrites: [
+      {
+        wrong: 'export function P() {\n  const list = state([1, 2])\n  const add = () => { list.value.push(3) }\n  return <button onClick={add}>{list.value.length}</button>\n}',
+        correct: 'export function P() {\n  const list = state([1, 2], \'list\')\n  const add = () => { list.value = [...list.value, 3] }\n  return <button onClick={add}>{list.value.length}</button>\n}'
+      },
+      {
+        wrong: 'export function P() {\n  const user = state({ name: \'a\' })\n  const rename = () => { user.value.name = \'b\' }\n  return <button onClick={rename}>{user.value.name}</button>\n}',
+        correct: 'export function P() {\n  const user = state({ name: \'a\' }, \'user\')\n  const rename = () => { user.value = { ...user.value, name: \'b\' } }\n  return <button onClick={rename}>{user.value.name}</button>\n}'
+      }
+    ]
   },
 
   {
@@ -150,7 +224,13 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
     why: '运行时诊断（如 C210 自订阅、C211 循环）会把这个信号显示为 **"(未命名信号)"** —— '
       + '页面上有多个信号时，你无法从报错定位是哪一个。排查成本全部后置到了出错的时刻。',
     correct: '创建时给第二个参数传与变量同名的调试名：`const count = state(0, \'count\')`。',
-    wrong: '`const count = state(0)`'
+    wrong: '`const count = state(0)`',
+    rewrites: [
+      {
+        wrong: 'export function P() {\n  const count = state(0)\n  return <div>{count.value}</div>\n}',
+        correct: 'export function P() {\n  const count = state(0, \'count\')\n  return <div>{count.value}</div>\n}'
+      }
+    ]
   },
 
   {
@@ -163,7 +243,13 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
     correct: '期望它也触发 → 加进 deps：`on([a, b], fn)`（声明即订阅）。'
       + '若只要最新值、由 deps 触发刷新（刻意不订阅）→ 可忽略，'
       + '或用 `untrack(() => b.value)` 显式表达意图。',
-    wrong: '`effect(on([a], () => { use(b.value) }))`（b 变化不会触发）'
+    wrong: '`effect(on([a], () => { use(b.value) }))`（b 变化不会触发）',
+    rewrites: [
+      {
+        wrong: 'export function P() {\n  const a = state(1, \'a\')\n  const b = state(2, \'b\')\n  effect(on([a], () => { console.log(a.value, b.value) }))\n  return <div>{b.value}</div>\n}',
+        correct: 'export function P() {\n  const a = state(1, \'a\')\n  const b = state(2, \'b\')\n  effect(on([a, b], () => { console.log(a.value, b.value) }))\n  return <div>{b.value}</div>\n}'
+      }
+    ]
   },
 
   /* ---------- 构建器 / 配置层（补齐 --missing 指出的缺口） ---------- */

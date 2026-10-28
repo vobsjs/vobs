@@ -73,6 +73,13 @@ export async function explainCommand(options: ExplainOptions = {}): Promise<void
 
   if (options.code === undefined) {
     if (options.json === true) {
+      /*
+       * **schema 稳定契约**（2026-10-28）：本输出的字段集合（code/severity/title/
+       * why/correct/wrong/rewrites）与诊断码同级稳定 —— additive-only，不在 minor
+       * 内移除或改形。AI 可以信任 `vobs explain --json <code>` 的结构直接解析
+       * `rewrites[].wrong → .correct` 做机械替换（guide-verification 保证
+       * after 形态零诊断）。
+       */
       process.stdout.write(`${JSON.stringify(DIAGNOSTIC_GUIDES, null, 2)}\n`)
       return
     }

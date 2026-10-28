@@ -132,6 +132,21 @@ pnpm run check:runtime:interact  # 再点所有按钮、触发所有输入
 
 ---
 
+## 禁止清单（生成前先扫一遍；每条都会被对应的 C 码拦截）
+
+| 不要写 | 会被 | 改成 |
+|---|---|---|
+| 组件体里 \`const x = signal.value\` 又在 JSX 用 \`{x}\` | \`C118\` | JSX 里直读 \`.value\`，或 \`memo(() => ...)\` |
+| 组件体里 \`const x = props.y\` 又在 JSX 用 \`{x}\` | \`C118\` | \`const x = () => props.y\`，JSX 用 \`{x()}\` |
+| 顶层 \`return cond.value ? <A/> : <B/>\` / \`if (cond.value) return null\` | \`C107\` | 条件下放进 JSX 子节点；路由用 \`RouterView\` |
+| \`const node = <X/>\` 存变量再条件渲染 | \`C108\` | 改成返回节点的函数 \`const r = () => <X/>\` |
+| \`effect(async () => { ... })\` | \`C106\` | \`effect(on(deps, fn))\`；异步取数用 \`@vobs/resource\` |
+| \`effect(() => { s.value = s.value ... })\`（读写同一信号） | \`C210\` | \`effect(on(s, fn))\`；兜底 \`untrack\` |
+| \`list.value.push(...)\` / \`X.value.field = v\` | \`C233\` | 换引用：\`list.value = [...list.value, item]\` |
+| \`on([a], () => { b.value })\`（读了不订阅） | \`C234\` | 期望触发就写进 deps：\`on([a, b], fn)\` |
+| \`state(0)\` 不传调试名 | \`C120\` | \`state(0, 'count')\`（与变量同名） |
+| 模块顶层写 \`const M = <X/>\` | \`C105\` | 返回节点的函数 \`const m = () => <X/>\` |
+
 ## 一句话速记
 
 | 主题 | 一句话 |

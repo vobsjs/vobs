@@ -106,13 +106,14 @@ export function checkContractSync(root: string): ContractSyncStatus {
   return { status: 'synced' }
 }
 
-/** 诊断码知识文档：全部 `VOBS_C*` 的 why / correct / wrong（`vobs explain` 的可 fetch 版）。 */
+/** 诊断码知识文档：全部 `VOBS_C*` 的 why / correct / wrong / rewrites（`vobs explain` 的可 fetch 版）。 */
 export function buildDiagnosticsDoc(): string {
   const lines: string[] = [
     '# vobs diagnostics',
     '',
-    'All `VOBS_C*` codes with why / correct / wrong. Runtime query: `vobs explain <code>`.',
-    'Static rules come from `@vobs/compiler` (analyze + compile), runtime guardrails from `@vobs/vobs/dev`.',
+    'All `VOBS_C*` codes with why / correct / wrong, plus machine-applicable `rewrites`',
+    '(before → after pairs verified by guide-verification: rewriting to `after` yields zero diagnostics).',
+    'Runtime query: `vobs explain <code>` / `vobs explain --json`.',
     ''
   ]
   for (const guide of DIAGNOSTIC_GUIDES) {
@@ -126,6 +127,17 @@ export function buildDiagnosticsDoc(): string {
       `wrong: ${guide.wrong}`,
       ''
     )
+    for (const rewrite of guide.rewrites ?? []) {
+      lines.push(
+        '```ts',
+        `// before (triggers ${guide.code})`,
+        rewrite.wrong,
+        '// after (zero diagnostics)',
+        rewrite.correct,
+        '```',
+        ''
+      )
+    }
   }
   return lines.join('\n')
 }
