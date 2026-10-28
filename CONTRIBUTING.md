@@ -4,7 +4,7 @@ Thanks for your interest in contributing to vobs.
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 24.22.1+（2026-10-21 安全释放线，不再支持 22）
 - pnpm 9+
 
 ## Setup
