@@ -147,7 +147,8 @@ export function buildLlmsIndex(): string {
     '',
     '- `vobs agent-doc --write`: write this contract into your project AGENTS.md (marker-block merge, user content preserved).',
     '- `vobs check`: whole-repo static analysis + compiler diagnostics; also verifies the contract is in sync with the installed framework version.',
-    '- `vobs explain <code>`: query any diagnostic at runtime.'
+    '- `vobs explain <code>`: query any diagnostic at runtime.',
+    '- `vobs check:runtime --json`: machine-readable runtime guardrail verdict `{ pass, routes: [{ route, status, guardFailures }] }` from a real Chrome pass — run it after generating code to self-verify before asking a human.'
   ].join('\n')
 }
 

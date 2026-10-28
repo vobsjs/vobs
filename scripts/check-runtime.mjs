@@ -14,6 +14,10 @@
  *
  * 用法：
  *   node scripts/check-runtime.mjs [--root <dir>] [--routes <a,b,c>] [--port 5390] [--ignore <a,b>]
+ *   node scripts/check-runtime.mjs --json   # 机器可读 verdict（Agent 自验闭环：生成 → 跑护栏 → 读码 → 修正）
+ *
+ * `--json` 输出结构化结论：{ version, mode, pass, routes: [{ route, status, guardFailures, clicks }] }。
+ * Agent 生成代码后可自主运行本检查并解析失败的具体路由与护栏条目，无需等人触发。
  *
  * `--ignore` 用于**已记录在案的已知问题**（例如 `.artifacts/KNOWN-BUGS.md` 里搁置的
  * `/devtools` 循环）。它必须是一条条显式写出来的路由，而不是"整体放宽" ——
@@ -194,6 +198,8 @@ const server = await createServer({
 await server.listen()
 
 const userDataDir = mkdtempSync(join(tmpdir(), 'vobs-check-'))
+/** 逐路由结果 —— 文本输出与 `--json` verdict 的共同来源。 */
+const routeResults = []
 const failures = []
 const ignored = new Set(
   flag('ignore', '').split(',').map(route => route.trim()).filter(Boolean)
@@ -208,7 +214,9 @@ try {
     const raw = /data-guard-errors="([^"]*)"/u.exec(dom)
     const clicks = Number(/data-guard-clicks="(\d+)"/u.exec(dom)?.[1] ?? '-1')
     if (stage === null) {
-      failures.push({ route, errors: ['页面未就绪（收集器没跑起来；检查 dev server 是否正常）'] })
+      const failure = { route, errors: ['页面未就绪（收集器没跑起来；检查 dev server 是否正常）'] }
+      failures.push(failure)
+      routeResults.push({ route, status: 'failed', guardFailures: failure.errors, clicks: null })
       continue
     }
     /*
@@ -217,21 +225,48 @@ try {
      * 这正是我先前踩过的"测试没有牙齿"：检查绿了，但它验的东西根本没跑。
      */
     if (interact && stage !== 'interacted') {
-      failures.push({
+      const failure = {
         route,
         errors: [`交互驱动没有跑完（stage=${stage}，clicks=${clicks}）—— 本次的"零报错"不能采信`]
-      })
+      }
+      failures.push(failure)
+      routeResults.push({ route, status: 'failed', guardFailures: failure.errors, clicks })
       continue
     }
     if (interact) clickCounts.push(clicks)
     const errors = raw ? JSON.parse(decode(raw[1])) : []
-    if (errors.length === 0) continue
-    if (ignored.has(route)) acknowledged.push({ route, errors })
-    else failures.push({ route, errors })
+    if (errors.length === 0) {
+      routeResults.push({ route, status: 'pass', guardFailures: [], clicks })
+      continue
+    }
+    if (ignored.has(route)) {
+      acknowledged.push({ route, errors })
+      routeResults.push({ route, status: 'acknowledged', guardFailures: errors, clicks })
+    } else {
+      failures.push({ route, errors })
+      routeResults.push({ route, status: 'failed', guardFailures: errors, clicks })
+    }
   }
 } finally {
   await server.close()
   try { rmSync(userDataDir, { recursive: true, force: true }) } catch { /* 临时目录清理失败不影响结论 */ }
+}
+
+/*
+ * --json：机器可读 verdict（Agent 自验闭环）。结构稳定可解析：
+ *   { version: 1, mode, pass, routesChecked, routes: [{ route, status, guardFailures, clicks }] }
+ * status ∈ pass / failed / acknowledged —— Agent 读 failed 条目的 guardFailures
+ * 定位具体路由与护栏条目，修正后重跑即可自验，无需等人触发 check:runtime。
+ */
+if (args.includes('--json')) {
+  console.log(JSON.stringify({
+    version: 1,
+    mode: interact ? 'interact' : 'render',
+    pass: failures.length === 0,
+    routesChecked: routes.length,
+    routes: routeResults
+  }, null, 2))
+  process.exit(failures.length === 0 ? 0 : 1)
 }
 
 if (failures.length === 0) {
