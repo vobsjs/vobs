@@ -19,5 +19,6 @@ docs/*
 !docs/npm-release.md
 !docs/checks.md
 !docs/silent-failures.md
+!docs/dsh.md
 .figma-token
 .fig-extract
