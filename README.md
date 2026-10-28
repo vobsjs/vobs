@@ -1,21 +1,22 @@
 # vobs
 
-Signals First · Zero Re-renders · Ultra Lightweight
+AI-first 前端框架：Signal 细粒度响应式、run-once 组件、编译期诊断。
 
 > 发布于 npm 的 `@vobs/*` 作用域 —— 37 个包，统一版本号。
 >
-> **AI 读者**：本 README 是入口，不是完整契约。在你的项目里运行
-> `vobs agent-doc` 生成 AGENTS.md（与框架版本强一致），加 `--llms <dir>`
-> 可同时产出 llms.txt / vobs-context.md / diagnostics.md 知识分发文件。
+> **AI 读者**：本 README 是入口，不是完整契约。在你的项目里运行 `vobs agent-doc`
+> 生成 AGENTS.md（与框架版本强一致），加 `--llms <dir>` 同时产出
+> llms.txt / vobs-context.md / diagnostics.md 知识分发文件。
 > 写代码前先读下面的 **Forbidden** 一节 —— 那些反模式会被编译诊断拦截。
 
-## Core model
+## 为什么 AI 友好
 
-- **Signals** —— 细粒度响应式（`state` / `memo` / `effect`）：push 失效 + pull 求值，脏检查去重，微任务批量刷新带环检测。
-- **Compiler** —— JSX 在构建期编译成定向 DOM 绑定（`bindText` / `bindAttribute` / `bindProperty`），控制流编译成 `insertDynamic`，列表编译成 `insertList`（keyed / indexed 调和）。每个属性是独立 effect，改一个 prop 不碰别的。
-- **Run-once components** —— 组件函数体只执行一次，没有 re-render。动态部分是信号与 effect；`Owner` 树追踪每个组件实例，离开树时自动释放信号、effect 与监听。
+- **Run-once components** —— 组件函数体只执行一次，没有 re-render。动态部分是 signals 与 effects；`Owner` 树追踪每个实例，卸载时自动释放信号、effect 与监听。
+- **编译期诊断** —— C104–C234 拦截 React 习惯迁移错误（props 快照、JSX 存变量、条件 return 冻结、effect 自订阅…），`vobs check` 全仓一次列全。
+- **契约随版本分发** —— `vobs agent-doc` 生成的 AGENTS.md 与框架版本强一致，AI 不必依赖训练数据里可能过期的框架知识。
+- **五层约束** —— 文档 → 类型 → 静态分析 → 编译诊断 → 运行时护栏（dev 浏览器里按真实依赖集判定，比静态分析更精确）。
 
-## Quick start
+## 最小示例
 
 ```bash
 npm install @vobs/vobs @vobs/vite-plugin
@@ -50,13 +51,12 @@ const app = createVobs({ render: () => <Counter /> })
 app.mount(document.getElementById('app')!)
 ```
 
-编译产物是一段直线式 DOM 操作；更新由信号驱动的 effect 完成，粒度到单个 DOM 绑定。
-
-与 React 的关键差异：组件体只执行一次。`{count.value}` 不是"求值一次的文本"，
+**注意与 React 的不同**：组件体只执行一次。`{count.value}` 不是"求值一次的文本"，
 而是编译器生成的独立文本绑定 —— 点击时只有这个文本节点更新，`Counter` 函数不会重跑。
-由此带来的全部约束见下一节。
+JSX 在构建期编译成定向 DOM 操作（文本、属性各自成独立 effect，列表走 keyed 调和），
+初始渲染是一段直线代码，没有虚拟 DOM diff。由此带来的全部约束见下一节。
 
-## Forbidden — 会被诊断拦截的反模式
+## Forbidden / 常见反模式
 
 React 习惯直接迁移到 vobs 的典型错误。每一条都有对应的编译期诊断码（`vobs explain <code>` 查详情与改法）：
 
