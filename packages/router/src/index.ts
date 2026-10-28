@@ -1063,6 +1063,45 @@ export function useRoute(): ReadableSignal<RouteLocation> {
   return useRouter().currentRoute
 }
 
+/* ---------------- 启动开关（2026-10-28，Finora 死穴「URL 开关参数」的标准件） ---------------- */
+
+/**
+ * 模块加载时捕获一次的启动开关集合。
+ *
+ * `?cloud` / `?shell=cockpit` 这类**应用级开关**的正确读取方式：模块加载时捕获一次，
+ * SPA 内跳转不重读——路由切换会改写 URL，运行时重读 `location.search` 会让开关漂移
+ * 回落（踩坑实证）。history 形态（`/?cloud`）与 hash 形态（`/#/path?cloud`）都识别。
+ */
+const launchFlags: ReadonlySet<string> = ((): ReadonlySet<string> => {
+  if (typeof window === 'undefined') return new Set<string>()
+  const flags = new Set<string>()
+  const hashQuery = window.location.hash.includes('?')
+    ? window.location.hash.slice(window.location.hash.indexOf('?') + 1)
+    : ''
+  for (const source of [window.location.search, hashQuery]) {
+    for (const key of new URLSearchParams(source).keys()) flags.add(key)
+  }
+  return flags
+})()
+
+/** 是否带启动开关（应用生命周期内不变；见 launchFlags 的捕获语义）。 */
+export function hasLaunchFlag(name: string): boolean {
+  return launchFlags.has(name)
+}
+
+/** 读取启动开关的值；无该开关返回 null（布尔开关用 hasLaunchFlag）。 */
+export function readLaunchQuery(name: string): string | null {
+  if (typeof window === 'undefined') return null
+  const hashQuery = window.location.hash.includes('?')
+    ? window.location.hash.slice(window.location.hash.indexOf('?') + 1)
+    : ''
+  for (const source of [hashQuery, window.location.search]) {
+    const value = new URLSearchParams(source).get(name)
+    if (value !== null) return value
+  }
+  return null
+}
+
 export function routerPlugin(options: RouterPluginOptions = {}): VobsPlugin {
   return {
     name: '@vobs/router',
