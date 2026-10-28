@@ -40,23 +40,25 @@ const TABS: readonly { readonly key: DevKitTab; readonly label: string }[] = [
 
 /** 一条检查结果。 */
 function IssueRow(props: { readonly item: CheckDiagnostic }) {
-  const item = props.item
-  const isError = item.severity === 'error'
+  // props 是 getter（每次读取重算），存进 const 即 run-once 快照 —— C118 首例真阳性：
+  // keyed 复用时同 key 行的 props 可能被换成新对象（重新读取报告），快照会渲染旧内容
+  const item = () => props.item
+  const isError = () => item().severity === 'error'
   return (
     <div class="vk-card">
       <div class="vk-card__head">
-        <span class={isError ? 'vk-sev vk-sev--err' : 'vk-sev vk-sev--warn'}>
-          {isError ? '错误' : '警告'}
+        <span class={isError() ? 'vk-sev vk-sev--err' : 'vk-sev vk-sev--warn'}>
+          {isError() ? '错误' : '警告'}
         </span>
-        <span class="vk-mono" style="font-size:11.5px">{item.code}</span>
-        <span class="vk-card__hint vk-mono">{item.file}:{item.line}:{item.column}</span>
+        <span class="vk-mono" style="font-size:11.5px">{item().code}</span>
+        <span class="vk-card__hint vk-mono">{item().file}:{item().line}:{item().column}</span>
       </div>
       <div class="vk-card__body">
-        <div class="vk-desc">{item.message}</div>
-        {item.snippet === undefined || item.snippet === ''
+        <div class="vk-desc">{item().message}</div>
+        {item().snippet === undefined || item().snippet === ''
           ? null
-          : <pre class="vk-code" style="margin-top:8px">{item.snippet}</pre>}
-        <div class="vk-why" style="padding:9px 0 0">→ {item.fix}</div>
+          : <pre class="vk-code" style="margin-top:8px">{item().snippet}</pre>}
+        <div class="vk-why" style="padding:9px 0 0">→ {item().fix}</div>
       </div>
     </div>
   )
