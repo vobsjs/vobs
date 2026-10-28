@@ -91,8 +91,13 @@ const CORPUS: readonly Mistake[] = [
     caughtBy: 'VOBS_C105'
   },
   {
-    why: 'React 里 `{cond && list.map(...)}` 很常见，keyed 复用仍由 React 调度；vobs 里 list 写在分支中会失去 insertList。',
-    source: 'export function P(){ return <div>{open.value && items.value.map(i => <li key={i}/>)}</div> }',
+    /*
+     * 2026-10-28 起，`cond && list` / `cond ? list : null` 的**简单形态**已被编译器
+     * 自动路由 insertShow（条件容器 + 容器内 keyed insertList），不再报警 ——
+     * 语料保留**仍会报警**的混排形态（节点与 list 两支，编译器无法安全改写）。
+     */
+    why: 'React 里 `{cond ? <Empty/> : list.map(...)}`（空态与列表混排）很常见；vobs 里 list 分支不会走 insertList（编译器只对「list 分支 + null/false 分支」的简单形态自动路由 insertShow，混排需人工拆：空态单独一行 {empty.value ? <Empty/> : null}，list 提为直接子表达式）。',
+    source: 'export function P(){ return <div>{open.value ? <b>empty</b> : items.value.map(i => <li key={i}/>)}</div> }',
     caughtBy: 'VOBS_C232'
   },
 

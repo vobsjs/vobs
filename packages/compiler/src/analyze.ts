@@ -19,6 +19,7 @@
  */
 import ts from 'typescript'
 import { VOBS_C210 as C210_CODE, vobsC210Fix } from '@vobs/runtime'
+import { isKeyedListCall, routeShowList, unwrapExpr } from './show-route'
 
 export interface CheckDiagnostic {
   /** 稳定错误码，AI 与文档按它检索。 */
@@ -297,13 +298,6 @@ function ruleEffectSelfSubscription(source: ts.SourceFile, file: string): CheckD
 
 /* -------------------------------------- 规则 B：列表写在分支位置（C232） */
 
-function isKeyedListCall(node: ts.Node): boolean {
-  if (!ts.isCallExpression(node)) return false
-  if (!ts.isPropertyAccessExpression(node.expression) || node.expression.name.text !== 'map') return false
-  const callback = node.arguments[0]
-  return callback !== undefined && ts.isFunctionLike(callback) && returnsJsx(callback)
-}
-
 function ruleListInBranch(source: ts.SourceFile, file: string): CheckDiagnostic[] {
   const found: CheckDiagnostic[] = []
   const message = 'list 写在三元/&& 的分支里 —— 会走多态插入，失去 keyed 复用；'
@@ -315,22 +309,45 @@ function ruleListInBranch(source: ts.SourceFile, file: string): CheckDiagnostic[
     + '且 cond 变化同样触发重建（那个 getter 读了它）；后者按 key 复用/移动，只订阅列表源。）'
     + '影响大小取决于**条目数与是否有状态**：几项无状态按钮可忽略；'
     + '几十项、或条目内有焦点/输入/滚动状态时必须改。'
+    + '（2026-10-28 起，`cond ? list : null` / `cond && list` 这类简单形态已由编译器'
+    + '自动路由 insertShow —— 条件容器内 keyed 复用，本规则不再对它们报警；'
+    + '仍报警的是节点与 list 混排等编译器无法安全改写的形态。）'
 
-  const visit = (node: ts.Node): void => {
-    if (ts.isConditionalExpression(node)) {
-      for (const branch of [node.whenTrue, node.whenFalse]) {
-        if (isKeyedListCall(branch)) {
-          found.push(diagnosticAt(source, file, branch, { code: VOBS_C232, severity: 'warning', message, fix }))
-        }
-      }
-    } else if (ts.isBinaryExpression(node)
-      && node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
-      && isKeyedListCall(node.right)) {
-      found.push(diagnosticAt(source, file, node.right, { code: VOBS_C232, severity: 'warning', message, fix }))
+  /*
+   * 与编译器 appendChildren 严格同构：C232 只对「会走 insertDynamicValue 的列表」有意义。
+   * - JsxExpression 顶层：routeShowList 命中 = 已被编译器路由 insertShow（整棵子树被吸收，
+   *   条件部分编译为 getter、list 分支走容器内 insertList）—— 跳过，不报也不深入。
+   * - 未路由：检查顶层三元/&& 分支里的 keyed map（unwrap 后），并深入子树
+   *   （嵌套形态的内层仍会走多态插入，照报）。
+   */
+  const visit = (node: ts.Node, routed: boolean): void => {
+    if (routed) return
+    if (ts.isJsxExpression(node)) {
+      const expression = node.expression
+      if (expression === undefined) return
+      if (routeShowList(expression) !== null) return
+      visit(unwrapExpr(expression), false)
+      return
     }
-    ts.forEachChild(node, visit)
+    if (ts.isConditionalExpression(node)) {
+      const trueList = isKeyedListCall(unwrapExpr(node.whenTrue))
+      const falseList = isKeyedListCall(unwrapExpr(node.whenFalse))
+      if (trueList) found.push(diagnosticAt(source, file, node.whenTrue, { code: VOBS_C232, severity: 'warning', message, fix }))
+      if (falseList) found.push(diagnosticAt(source, file, node.whenFalse, { code: VOBS_C232, severity: 'warning', message, fix }))
+      visit(node.whenTrue, false)
+      visit(node.whenFalse, false)
+      return
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+      if (isKeyedListCall(unwrapExpr(node.right))) {
+        found.push(diagnosticAt(source, file, node.right, { code: VOBS_C232, severity: 'warning', message, fix }))
+      }
+      visit(node.right, false)
+      return
+    }
+    ts.forEachChild(node, child => visit(child, false))
   }
-  visit(source)
+  visit(source, false)
 
   return found
 }

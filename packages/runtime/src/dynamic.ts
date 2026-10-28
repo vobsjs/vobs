@@ -487,3 +487,78 @@ function disposeEntry(parent: Node, entry: ListEntry<unknown>): void {
   removeChild(parent, entry.node)
   entry.owner.dispose()
 }
+
+/**
+ * 条件容器 + 容器内挂载（编译器「三元/`&&` 分支里的 keyed 列表」专用产物，C232 根治）。
+ *
+ * `{cond ? items.map(...) : null}` 走多态插入时，数组值没有身份（每次 factory 求值
+ * 创建全新节点），运行时无从复用 —— cond 与 items 任一变化都重建整列。本指令把
+ * **条件**与**列表**拆成两层订阅：cond 只管容器的挂载/卸载；列表在容器内部走标准
+ * `insertList`，按 key 复用/移动，cond 抖动不再触碰列表。
+ *
+ * 实现注意：容器**不能是注释节点**（DOM 规范 Comment 不可有子节点，insertBefore
+ * 直抛 HierarchyRequestError）——用一对注释标记包夹行区，mount 收到的 container
+ * 是把插入转发到 parent（锚定 endMark）的轻量代理；卸载 = 删标记区间节点 + dispose
+ * 容器 scope（列表行与行内 effect 一并销毁）。与 `Show`（hidden/inert 保留挂载）分工：
+ * 这里是「真正卸载」语义。
+ */
+export function insertShow(
+  parent: Node,
+  anchor: Node | null,
+  condition: () => unknown,
+  mount: (container: Node) => void
+): void {
+  const startMark = createComment('vobs:show')
+  const endMark = createComment('vobs:show-end')
+  insertBefore(parent, startMark, anchor)
+  insertBefore(parent, endMark, anchor)
+  const container = createShowContainer(parent, endMark)
+  let mounted = false
+  let scope: Owner | null = null
+
+  effect(() => {
+    const visible = Boolean(condition())
+    if (visible) {
+      if (mounted) return
+      mounted = true
+      scope = createOwner()
+      scope.run(() => mount(container))
+      return
+    }
+    if (mounted) {
+      mounted = false
+      let node = startMark.nextSibling
+      while (node !== null && node !== endMark) {
+        const next = node.nextSibling
+        removeChild(parent, node)
+        node = next
+      }
+      scope?.dispose()
+      scope = null
+    }
+  })
+}
+
+/**
+ * insertShow 的容器代理：只实现 insertList 家族实际触碰的两个操作
+ * （insertBefore / removeChild / appendChild），插入一律锚定 endMark——
+ * 对外仍以 Node 形态出现（mount 产物的类型是 (container: Node) => void）。
+ */
+function createShowContainer(parent: Node, endMark: Node): Node {
+  const container = {
+    nodeType: 1,
+    insertBefore(node: Node, reference: Node | null): Node {
+      parent.insertBefore(node, reference ?? endMark)
+      return node
+    },
+    removeChild(node: Node): Node {
+      parent.removeChild(node)
+      return node
+    },
+    appendChild(node: Node): Node {
+      parent.insertBefore(node, endMark)
+      return node
+    }
+  }
+  return container as unknown as Node
+}

@@ -3,6 +3,7 @@ import { VobsError } from '@vobs/runtime/error'
 import { domAttributeName, isPropertyName } from '@vobs/runtime/dom-props'
 import { isSvgTag } from '@vobs/runtime/svg'
 import { resolveEventNameForDiagnostics } from './dom-events'
+import { routeShowList } from './show-route'
 import type {
   CompilerContext,
   CompilerOptions,
@@ -1999,6 +2000,18 @@ function appendChildren(
         statements.push(callStatement(state, 'insertList', list, child))
         continue
       }
+      const show = transformShowListExpression(state, expression)
+      if (show) {
+        // C232 根治（2026-10-28）：三元/`&&` 分支里的 keyed 列表编译为 insertShow ——
+        // cond 只管容器挂载/卸载，列表在容器内走标准 insertList（keyed 复用），不再整列重建。
+        statements.push(callStatement(state, 'insertShow', [
+          element,
+          anchor,
+          createGetter(show.condition),
+          show.mount
+        ], child))
+        continue
+      }
       const dynamic = transformDynamicExpression(state, expression)
       if (dynamic) {
         statements.push(callStatement(state, 'insertDynamic', [element, anchor, dynamic], child))
@@ -2152,6 +2165,35 @@ function transformDynamicBranch(state: CompileState, expression: ts.Expression):
     return convertDynamicNodeExpression(state, branch)
   }
   return null
+}
+
+/**
+ * C232 根治（2026-10-28）：三元 / `&&` 分支里的 keyed 列表 —— 编译为 insertShow。
+ *
+ * cond 与列表拆成两层订阅：cond 只管容器挂载/卸载；列表在容器内走标准 insertList
+ * （keyed 复用/移动），cond 抖动不再整列重建。只处理 routeShowList 命中的形态
+ * （list 分支 + null/false 分支，含嵌套条件合并）；节点与 list 混排的复杂形态
+ * 返回 null 回落多态插入（C232 警告继续提示人工改写）。
+ */
+function transformShowListExpression(
+  state: CompileState,
+  expression: ts.Expression
+): { condition: ts.Expression; mount: ts.ArrowFunction } | null {
+  const route = routeShowList(expression)
+  if (route === null) return null
+  const container = ts.factory.createUniqueName('showContainer')
+  const list = transformListExpression(state, container, route.mapCall, ts.factory.createNull())
+  if (list === null) return null
+  const mountBody = ts.factory.createCallExpression(helperRef(state, 'insertList'), undefined, list)
+  const mount = ts.factory.createArrowFunction(
+    undefined,
+    undefined,
+    [ts.factory.createParameterDeclaration(undefined, undefined, undefined, container)],
+    undefined,
+    ts.factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    mountBody
+  )
+  return { condition: route.condition ?? ts.factory.createTrue(), mount }
 }
 
 function transformListExpression(

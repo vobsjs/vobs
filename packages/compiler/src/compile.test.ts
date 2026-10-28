@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
-import { compile, compileWithSourceMap, createCompiler, createI18nExtractor, type CompilerPlugin } from './index'
+import { analyzeSource, compile, compileWithSourceMap, createCompiler, createI18nExtractor, type CompilerPlugin } from './index'
 import { VobsError } from '@vobs/runtime'
 
 describe('compiler', () => {
@@ -945,6 +945,71 @@ export const width = st(50, 'doc.width')
     // 报诊断的同时产物仍可打印，便于 source map 配对与调试
     expect(result.code).toContain('createElement("Foo.Bar")')
     expect(result.map).toBeDefined()
+  })
+
+  describe('C232 根治：三元/&& 分支里的 keyed 列表路由 insertShow（2026-10-28）', () => {
+    it('cond ? list : null 编译为条件容器 + 容器内 insertList', () => {
+      const result = compile(`const el = <div>{open.value ? items.value.map(i => <span key={i}>{i}</span>) : null}</div>`)
+      expect(result).toContain('insertShow')
+      expect(result).toContain('insertList')
+      // 条件与列表分两层订阅：cond 只出现在 insertShow 的条件 getter 里
+      expect(result).toMatch(/insertShow\([^)]*\(\) => open\.value/)
+    })
+
+    it('cond && list 同样路由 insertShow（条件 = 左表达式）', () => {
+      const result = compile(`const el = <ul>{open.value && items.value.map(i => <li key={i} />)}</ul>`)
+      expect(result).toContain('insertShow')
+      expect(result).toContain('insertList')
+    })
+
+    it('列表在 false 分支时条件取反', () => {
+      const result = compile(`const el = <div>{open.value ? null : items.value.map(i => <li key={i} />)}</div>`)
+      expect(result).toContain('insertShow')
+      expect(result).toContain('!open.value')
+    })
+
+    it('嵌套条件链合并（cond ? (x ? list : null) : null）', () => {
+      const result = compile(`const el = <div>{open.value ? (ready.value ? items.value.map(i => <li key={i} />) : null) : null}</div>`)
+      expect(result).toContain('insertShow')
+      expect(result).toContain('insertList')
+    })
+
+    it('混排形态（节点与 list 两支）保持多态插入，不路由 insertShow', () => {
+      const result = compile(`const el = <div>{open.value ? <b>x</b> : items.value.map(i => <li key={i} />)}</div>`)
+      expect(result).not.toContain('insertShow')
+      expect(result).toContain('insertDynamicValue')
+    })
+
+    it('字符串 map（非 JSX 产出）不走 insertShow', () => {
+      const result = compile(`const el = <div>{open.value ? items.value.map(i => i.name) : null}</div>`)
+      expect(result).not.toContain('insertShow')
+    })
+  })
+
+  describe('C232 分析器与 insertShow 路由同构（2026-10-28）', () => {
+    it('简单形态不再报 C232（已被编译器路由）', () => {
+      const diagnostics = analyzeSource(
+        `const el = <div>{open.value ? items.value.map(i => <span key={i} />) : null}</div>`,
+        'src/Show.tsx'
+      )
+      expect(diagnostics.filter(d => d.code === 'VOBS_C232')).toHaveLength(0)
+    })
+
+    it('&& 形态不再报 C232', () => {
+      const diagnostics = analyzeSource(
+        `const el = <div>{open.value && items.value.map(i => <span key={i} />)}</div>`,
+        'src/Show.tsx'
+      )
+      expect(diagnostics.filter(d => d.code === 'VOBS_C232')).toHaveLength(0)
+    })
+
+    it('混排形态仍报 C232（编译器无法安全改写）', () => {
+      const diagnostics = analyzeSource(
+        `const el = <div>{open.value ? <b>x</b> : items.value.map(i => <span key={i} />)}</div>`,
+        'src/Show.tsx'
+      )
+      expect(diagnostics.filter(d => d.code === 'VOBS_C232')).toHaveLength(1)
+    })
   })
 })
 
