@@ -1,5 +1,6 @@
 import { cac } from 'cac'
 import { initCommand } from './commands/init.js'
+import { mcpCommand } from './commands/mcp.js'
 import { devCommand } from './commands/dev.js'
 import { buildCommand } from './commands/build.js'
 import { generateCommand } from './commands/generate.js'
@@ -151,6 +152,11 @@ export function createCLI(): ReturnType<typeof cac> {
         body: options.body === true,
         llms: options.llms as string | undefined
       })
+    })
+  cli
+    .command('mcp', 'MCP stdio server（JSON-RPC 2.0）：Agent 自主调用运行时护栏 / 诊断详情 / 契约状态')
+    .action(async () => {
+      await mcpCommand()
     })
 
   cli

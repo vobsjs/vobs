@@ -106,6 +106,32 @@ export function checkContractSync(root: string): ContractSyncStatus {
   return { status: 'synced' }
 }
 
+/** 单个诊断码的文档节（diagnostics.md 与 diagnostics/<code>.md 单码页共用）。 */
+function renderGuideSection(guide: (typeof DIAGNOSTIC_GUIDES)[number]): string[] {
+  const lines: string[] = [
+    `## ${guide.code} · ${guide.severity} — ${guide.title}`,
+    '',
+    `why: ${guide.why}`,
+    '',
+    `correct: ${guide.correct}`,
+    '',
+    `wrong: ${guide.wrong}`,
+    ''
+  ]
+  for (const rewrite of guide.rewrites ?? []) {
+    lines.push(
+      '```ts',
+      `// before (triggers ${guide.code})`,
+      rewrite.wrong,
+      '// after (zero diagnostics)',
+      rewrite.correct,
+      '```',
+      ''
+    )
+  }
+  return lines
+}
+
 /** 诊断码知识文档：全部 `VOBS_C*` 的 why / correct / wrong / rewrites（`vobs explain` 的可 fetch 版）。 */
 export function buildDiagnosticsDoc(): string {
   const lines: string[] = [
@@ -113,33 +139,22 @@ export function buildDiagnosticsDoc(): string {
     '',
     'All `VOBS_C*` codes with why / correct / wrong, plus machine-applicable `rewrites`',
     '(before → after pairs verified by guide-verification: rewriting to `after` yields zero diagnostics).',
-    'Runtime query: `vobs explain <code>` / `vobs explain --json`.',
+    'Runtime query: `vobs explain <code>` / `vobs explain --json`. Single-code pages: `diagnostics/<code>.md`.',
     ''
   ]
-  for (const guide of DIAGNOSTIC_GUIDES) {
-    lines.push(
-      `## ${guide.code} · ${guide.severity} — ${guide.title}`,
-      '',
-      `why: ${guide.why}`,
-      '',
-      `correct: ${guide.correct}`,
-      '',
-      `wrong: ${guide.wrong}`,
-      ''
-    )
-    for (const rewrite of guide.rewrites ?? []) {
-      lines.push(
-        '```ts',
-        `// before (triggers ${guide.code})`,
-        rewrite.wrong,
-        '// after (zero diagnostics)',
-        rewrite.correct,
-        '```',
-        ''
-      )
-    }
-  }
+  for (const guide of DIAGNOSTIC_GUIDES) lines.push(...renderGuideSection(guide))
   return lines.join('\n')
+}
+
+/** 单码页：按需 fetch 一个诊断码，不拉全表。 */
+export function buildSingleDiagnosticDoc(code: string): string | null {
+  const guide = DIAGNOSTIC_GUIDES.find(item => item.code === code)
+  if (!guide) return null
+  return [
+    `# ${guide.code} · ${guide.severity} — ${guide.title}`,
+    '',
+    ...renderGuideSection(guide).slice(1)
+  ].join('\n')
 }
 
 /** llms.txt 索引（llms.txt 规范：H1 + blockquote 摘要 + 链接分节）。 */
@@ -159,8 +174,10 @@ export function buildLlmsIndex(): string {
     '',
     '- `vobs agent-doc --write`: write this contract into your project AGENTS.md (marker-block merge, user content preserved).',
     '- `vobs check`: whole-repo static analysis + compiler diagnostics; also verifies the contract is in sync with the installed framework version.',
-    '- `vobs explain <code>`: query any diagnostic at runtime.',
-    '- `vobs check:runtime --json`: machine-readable runtime guardrail verdict `{ pass, routes: [{ route, status, guardFailures }] }` from a real Chrome pass — run it after generating code to self-verify before asking a human.'
+    '- `vobs explain <code>` / `vobs explain --json`: query any diagnostic (schema is stable, additive-only; includes verified `rewrites`).',
+    '- `vobs check:runtime --json`: machine-readable runtime guardrail verdict `{ pass, routes: [{ route, status, guardFailures }] }` from a real Chrome pass — run it after generating code to self-verify before asking a human.',
+    '- `vobs mcp`: MCP stdio server (JSON-RPC 2.0) exposing `check_runtime`, `explain_diagnostic`, `contract_status` — point a coding agent at it for autonomous verification.',
+    '- Per-diagnostic pages: [diagnostics/VOBS_C233.md](/diagnostics/VOBS_C233.md) pattern (one file per code, fetch on demand instead of pulling the full table).'
   ].join('\n')
 }
 
@@ -238,10 +255,15 @@ export async function agentDocCommand(options: AgentDocOptions = {}): Promise<vo
     writeFileSync(resolve(llmsDir, 'llms.txt'), `${buildLlmsIndex()}\n`, 'utf8')
     writeFileSync(resolve(llmsDir, 'vobs-context.md'), context, 'utf8')
     writeFileSync(resolve(llmsDir, 'diagnostics.md'), diagnostics, 'utf8')
+    // 按需 fetch 的单码页：Agent 查单个诊断码不用拉全表（层级化分发）
+    mkdirSync(resolve(llmsDir, 'diagnostics'), { recursive: true })
+    for (const guide of DIAGNOSTIC_GUIDES) {
+      writeFileSync(resolve(llmsDir, 'diagnostics', `${guide.code}.md`), `${buildSingleDiagnosticDoc(guide.code)}\n`, 'utf8')
+    }
     console.log(`[agent-doc] Agent 知识分发文件已写入 ${llmsDir}`)
     console.log(`  - llms.txt（索引）`)
     console.log(`  - vobs-context.md（契约全文，约 ${estimateTokens(context)} tokens）`)
-    console.log(`  - diagnostics.md（${DIAGNOSTIC_GUIDES.length} 个诊断码，约 ${estimateTokens(diagnostics)} tokens）`)
+    console.log(`  - diagnostics.md（${DIAGNOSTIC_GUIDES.length} 个诊断码，约 ${estimateTokens(diagnostics)} tokens）+ diagnostics/<code>.md 单码页`)
     console.log(`部署到公网任意路径后，Agent 无需安装 vobs 即可 fetch 读懂契约。`)
     return
   }
