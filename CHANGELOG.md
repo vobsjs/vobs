@@ -99,8 +99,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   checking (Finora's `Children` includes `null`). Runtime already handled nullish via
   `resolveSlot` — this aligns the type with `@vobs/ui`'s `VuiChildren`.
 
-## [1.8.14] - 2026-10-21
-
 ### Added
 
 - **`@vobs/table` column `head` nodes.** `DataTableColumn` gains an optional `head` — a
@@ -124,8 +122,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   (the same class-mismatch family as the hidden-input rule fixed in Finora earlier; that
   app-level patch masked the base label styles but could not cover the checked/::after/disabled
   rules). All five selectors now target `.vui-checkbox`; `.vui-radio` was already correct.
-
-## [1.8.13] - 2026-10-21
 
 ### Added
 
@@ -183,8 +179,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `error`, derived from rows when omitted), skeleton rows via `loadingRows`, an error area with
   optional `onRetry` button, `rowActive` marking rows with `data-active`, `rowHeight`, and
   per-column `width` on `TableColumn`.
-
-## [1.8.11] - 2026-10-12
 
 ### Fixed
 
@@ -599,7 +593,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - This release also contains two DSH plugin packages that are **not** published to npm — `dsh-plugin-vobs` (the minimal reference plugin, migrated onto `@vobs/dsh`, with its client entry reduced from 87 to 25 lines) and `dsh-plugin-vobs-console` (Vobs Console). Both are distributed through Git tags and installed with `github:vobsjs/vobs#<tag>&path:/packages/<name>`; each ships committed prebuilt `lib/` artifacts and its own jsdom conformance script (54 and 62 assertions respectively). Their manifests share the repository-wide lockstep version.
 
-## [1.7.5] - 2026-09-30
 
 ### Added
 
@@ -611,8 +604,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Runtime: SVG namespace support. `createElement` now dispatches SVG tags (the full `SVGElementTagNameMap` key set) to a new optional `VobsRenderer.createSvgElement(tag)` — the DOM renderer creates via `createElementNS`, so JSX `<svg><rect/></svg>` produces real, renderable, queryable SVG elements. Previously `createElement('rect')` yielded an `HTMLUnknownElement` and the whole SVG subtree silently failed to render (no error) — the framework's own icon system had to work around it with `innerHTML` injection. Hydration claims SVG nodes by namespace + tag name; SSR serialization is unchanged (nodes are data). Renderers that don't implement `createSvgElement` keep the previous behavior via fallback. Deliberately excludes tags that share names with HTML elements (`a`, `script`, `style`, `title`) — those keep HTML creation, matching the JSX typings. Known limitation: HTML children inside `foreignObject` are still created with the SVG namespace.
-
-## [1.7.3] - 2026-09-29
 
 ### Changed
 
