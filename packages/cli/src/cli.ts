@@ -142,12 +142,14 @@ export function createCLI(): ReturnType<typeof cac> {
     .option('--write', '写入文件（默认打到 stdout）')
     .option('--check', '校验项目里那份是否与当前框架版本一致（可进 CI）')
     .option('--body', '只输出契约正文（不含标记块外说明）')
+    .option('--llms <dir>', '生成 Agent 知识分发文件（llms.txt / vobs-context.md / diagnostics.md）')
     .action(async (options: Record<string, unknown>) => {
       await agentDocCommand({
         dir: options.dir as string | undefined,
         write: options.write === true,
         check: options.check === true,
-        body: options.body === true
+        body: options.body === true,
+        llms: options.llms as string | undefined
       })
     })
 

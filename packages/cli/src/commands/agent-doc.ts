@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { DIAGNOSTIC_GUIDES } from '@vobs/runtime'
 import { AGENT_CONTRACT } from '../templates/agent-contract.js'
 
 /**
@@ -35,6 +36,13 @@ export interface AgentDocOptions {
   readonly check?: boolean
   /** 只输出框架契约正文（不含标记块外的说明）。 */
   readonly body?: boolean
+  /**
+   * Agent 轻量知识分发通道（项目外可发现）：往指定目录写三个公网可 fetch 的文件
+   * —— `llms.txt`（索引，llms.txt 规范）、`vobs-context.md`（完整契约）、
+   * `diagnostics.md`（全部诊断码的 why/correct/wrong）。
+   * 目标是让**还没安装 vobs** 的 Agent 先读懂契约再决定采用。
+   */
+  readonly llms?: string
 }
 
 /** 契约正文内联在 `templates/agent-contract.ts`（见那里的注释：读文件在全量测试下会失败）。 */
@@ -98,6 +106,59 @@ export function checkContractSync(root: string): ContractSyncStatus {
   return { status: 'synced' }
 }
 
+/** 诊断码知识文档：全部 `VOBS_C*` 的 why / correct / wrong（`vobs explain` 的可 fetch 版）。 */
+export function buildDiagnosticsDoc(): string {
+  const lines: string[] = [
+    '# vobs diagnostics',
+    '',
+    'All `VOBS_C*` codes with why / correct / wrong. Runtime query: `vobs explain <code>`.',
+    'Static rules come from `@vobs/compiler` (analyze + compile), runtime guardrails from `@vobs/vobs/dev`.',
+    ''
+  ]
+  for (const guide of DIAGNOSTIC_GUIDES) {
+    lines.push(
+      `## ${guide.code} · ${guide.severity} — ${guide.title}`,
+      '',
+      `why: ${guide.why}`,
+      '',
+      `correct: ${guide.correct}`,
+      '',
+      `wrong: ${guide.wrong}`,
+      ''
+    )
+  }
+  return lines.join('\n')
+}
+
+/** llms.txt 索引（llms.txt 规范：H1 + blockquote 摘要 + 链接分节）。 */
+export function buildLlmsIndex(): string {
+  return [
+    '# vobs',
+    '',
+    '> Signals-first compiled UI framework: run-once components, fine-grained updates, standard JSX.',
+    '> AI-first: machine-generated contract, dual-layer diagnostics (static + runtime guardrails), every fix verified.',
+    '',
+    '## Start here',
+    '',
+    '- [vobs-context.md](/vobs-context.md): the full AI contract — component model (run-once), reactive graph semantics (conditional dependencies, on/untrack), JSX rules, error codes. Load this first.',
+    '- [diagnostics.md](/diagnostics.md): every `VOBS_C*` code with why / correct / wrong.',
+    '',
+    '## CLI',
+    '',
+    '- `vobs agent-doc --write`: write this contract into your project AGENTS.md (marker-block merge, user content preserved).',
+    '- `vobs check`: whole-repo static analysis + compiler diagnostics; also verifies the contract is in sync with the installed framework version.',
+    '- `vobs explain <code>`: query any diagnostic at runtime.'
+  ].join('\n')
+}
+
+/** 上下文成本指标（可验证的 Agent 友好性：ArrowJS 用「文档占上下文窗口比例」做卖点，同一思路）。 */
+export function estimateTokens(text: string): number {
+  // 近似：CJK 字符约 1 token/字，ASCII 约 4 字符/token。契约中日文混排，取保守上界。
+  const cjk = (text.match(/[\u4e00-\u9fff\u3040-\u30ff]/gu) ?? []).length
+  const rest = text.length - cjk
+  return cjk + Math.ceil(rest / 4)
+}
+
 /**
  * 合并：保留块外内容，只替换块。
  *
@@ -153,6 +214,22 @@ export async function agentDocCommand(options: AgentDocOptions = {}): Promise<vo
       return
     }
     console.log('[agent-doc] 契约与当前框架版本一致 ✓')
+    return
+  }
+
+  if (options.llms !== undefined) {
+    const llmsDir = resolve(root, options.llms)
+    mkdirSync(llmsDir, { recursive: true })
+    const context = `${readContract()}\n`
+    const diagnostics = buildDiagnosticsDoc()
+    writeFileSync(resolve(llmsDir, 'llms.txt'), `${buildLlmsIndex()}\n`, 'utf8')
+    writeFileSync(resolve(llmsDir, 'vobs-context.md'), context, 'utf8')
+    writeFileSync(resolve(llmsDir, 'diagnostics.md'), diagnostics, 'utf8')
+    console.log(`[agent-doc] Agent 知识分发文件已写入 ${llmsDir}`)
+    console.log(`  - llms.txt（索引）`)
+    console.log(`  - vobs-context.md（契约全文，约 ${estimateTokens(context)} tokens）`)
+    console.log(`  - diagnostics.md（${DIAGNOSTIC_GUIDES.length} 个诊断码，约 ${estimateTokens(diagnostics)} tokens）`)
+    console.log(`部署到公网任意路径后，Agent 无需安装 vobs 即可 fetch 读懂契约。`)
     return
   }
 

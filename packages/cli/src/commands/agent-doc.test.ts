@@ -32,7 +32,7 @@ afterEach(() => {
 })
 
 /** 跑一次命令并吃掉它的 stdout（测试只关心退出码与文件）。 */
-async function run(dir: string, options: Record<string, boolean>): Promise<void> {
+async function run(dir: string, options: Record<string, boolean | string | undefined>): Promise<void> {
   const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
   const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -180,5 +180,30 @@ describe('checkContractSync（vobs check 主入口的契约对齐）', () => {
     const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
     writeFileSync(join(dir, 'AGENTS.md'), `${agents}\n- 用户追加规则\n`, 'utf8')
     expect(checkContractSync(dir).status).toBe('synced')
+  })
+})
+
+describe('--llms：Agent 轻量知识分发通道（项目外可发现）', () => {
+  it('落盘三个文件：llms.txt 索引 + vobs-context.md 契约全文 + diagnostics.md 全码表', async () => {
+    const dir = makeProject()
+    await run(dir, { llms: 'dist' })
+
+    const llms = readFileSync(join(dir, 'dist', 'llms.txt'), 'utf8')
+    expect(llms).toContain('# vobs')
+    expect(llms).toContain('[vobs-context.md](/vobs-context.md)')
+    expect(llms).toContain('[diagnostics.md](/diagnostics.md)')
+
+    // 契约全文 —— Agent 不装 vobs 也能读到同一份语义
+    const context = readFileSync(join(dir, 'dist', 'vobs-context.md'), 'utf8')
+    for (const key of ['run-once', 'VOBS_C107', 'VOBS_C234', 'on(deps']) {
+      expect(context, `契约缺 ${key}`).toContain(key)
+    }
+
+    // 诊断码全表 —— 每码带 why/correct/wrong
+    const diagnostics = readFileSync(join(dir, 'dist', 'diagnostics.md'), 'utf8')
+    for (const code of ['VOBS_C107', 'VOBS_C233', 'VOBS_C234', 'VOBS_C120']) {
+      expect(diagnostics, `diagnostics.md 缺 ${code}`).toContain(`## ${code}`)
+    }
+    expect(diagnostics).toContain('correct:')
   })
 })
