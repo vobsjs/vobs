@@ -385,7 +385,7 @@ export function P() {
     expect(codes(found)).toContain(VOBS_C233)
   })
 
-  it('链上带非 value 属性的不报（obj.value.rows.push 是内层数组，另论）', () => {
+  it('链上带非 value 属性的**数组变异**仍不报（深层 mutator 留给后续；深层字段赋值已收编）', () => {
     const found = analyzeSource(`
 import { state } from '@vobs/vobs'
 export function P() {
@@ -394,7 +394,47 @@ export function P() {
   return <button onClick={f}>{model.value.rows.length}</button>
 }
 `, 'a.tsx')
-    expect(codes(found), '只认 <name>.value.<mutator> 顶层形态；嵌套对象变异留给后续').not.toContain(VOBS_C233)
+    expect(codes(found), '形态一只认 <name>.value.<mutator> 顶层；深层数组变异另论').not.toContain(VOBS_C233)
+  })
+
+  it('对象字段直接赋值（X.value.name = 新值）—— 与数组变异同一个坑，照报', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P() {
+  const user = state({ name: 'a' })
+  const rename = () => { user.value.name = 'b' }
+  return <button onClick={rename}>{user.value.name}</button>
+}
+`, 'a.tsx')
+    expect(codes(found)).toContain(VOBS_C233)
+    const item = found.find(entry => entry.code === VOBS_C233)!
+    expect(item.message).toContain('"user"')
+    expect(item.message).toContain('内部字段')
+    expect(item.fix).toContain('{ ...user.value')
+  })
+
+  it('深层字段赋值（X.value.a.b = 新值）沿链识别，照报', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P() {
+  const model = state({ a: { b: 1 } })
+  const f = () => { model.value.a.b = 2 }
+  return <button onClick={f}>{model.value.a.b}</button>
+}
+`, 'a.tsx')
+    expect(codes(found)).toContain(VOBS_C233)
+  })
+
+  it('整体换引用的对象更新不报 —— fix 推荐的写法', () => {
+    const found = analyzeSource(`
+import { state } from '@vobs/vobs'
+export function P() {
+  const user = state({ name: 'a' })
+  const rename = () => { user.value = { ...user.value, name: 'b' } }
+  return <button onClick={rename}>{user.value.name}</button>
+}
+`, 'a.tsx')
+    expect(codes(found)).not.toContain(VOBS_C233)
   })
 })
 

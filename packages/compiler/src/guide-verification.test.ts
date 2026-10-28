@@ -206,6 +206,26 @@ const PAIRS: readonly Pair[] = [
       '  return <div>{b.value}</div>',
       '}'
     ].join('\n')
+  },
+  {
+    // C233 字段版（2026-10-28）：对象字段直接赋值 → 整体换引用
+    code: 'VOBS_C233',
+    wrong: [
+      "import { state } from '@vobs/vobs'",
+      'export function P() {',
+      "  const user = state({ name: 'a' }, 'user')",
+      "  const rename = () => { user.value.name = 'b' }",
+      '  return <button onClick={rename}>{user.value.name}</button>',
+      '}'
+    ].join('\n'),
+    correct: [
+      "import { state } from '@vobs/vobs'",
+      'export function P() {',
+      "  const user = state({ name: 'a' }, 'user')",
+      "  const rename = () => { user.value = { ...user.value, name: 'b' } }",
+      '  return <button onClick={rename}>{user.value.name}</button>',
+      '}'
+    ].join('\n')
   }
 ]
 

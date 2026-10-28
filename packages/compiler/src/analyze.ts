@@ -628,6 +628,23 @@ function shadowedByName(from: ts.Identifier, name: string): boolean {
  * 方向是保守的：只认 `state` 标识符直调（自定义 store 工厂不认 = 漏报不误报），
  * severity 先给 warning —— 等全仓实测误报后再决定是否升 error。
  */
+/**
+ * 字段赋值的接收者是否落在某 state 绑定信号的 **`.value` 链**上
+ * （`X.value.name = …` / 深层 `X.value.a.b = …`）→ 返回那个标识符 `X`；否则 null。
+ */
+function fieldMutationOwner(left: ts.Node, stateBindings: Set<string>): ts.Identifier | null {
+  let current = left
+  while (ts.isPropertyAccessExpression(current)) {
+    const up = current.expression
+    if (ts.isPropertyAccessExpression(up) && up.name.text === 'value'
+      && ts.isIdentifier(up.expression) && stateBindings.has(up.expression.text)) {
+      return up.expression
+    }
+    current = up
+  }
+  return null
+}
+
 function ruleSignalArrayMutation(source: ts.SourceFile, file: string): CheckDiagnostic[] {
   const found: CheckDiagnostic[] = []
 
@@ -636,7 +653,7 @@ function ruleSignalArrayMutation(source: ts.SourceFile, file: string): CheckDiag
   if (stateBindings.size === 0) return found
 
   const visit = (node: ts.Node): void => {
-    // 形态：<name>.value.<mutator>(...) —— 三层属性访问链 + 调用
+    // 形态一：<name>.value.<mutator>(...) —— 三层数组变异 + 调用
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
       && ts.isPropertyAccessExpression(node.expression.expression)) {
       const mutator = node.expression.name
@@ -654,6 +671,23 @@ function ruleSignalArrayMutation(source: ts.SourceFile, file: string): CheckDiag
               + `排序/截断同理先拷贝再改：${name}.value = [...${name}.value].sort(...)。`
           }))
         }
+      }
+    }
+    // 形态二（对称缺口，2026-10-28）：<name>.value.<...字段...> = 新值 —— 对象字段原地赋值。
+    // 改内部字段引用没变，订阅处同样不会更新 —— 与数组变异是同一个坑的两种写法。
+    // 沿属性链找 X.value 前缀：一层（X.value.name）与深层（X.value.a.b）都算。
+    if (ts.isBinaryExpression(node) && isWriteOperator(node.operatorToken.kind)
+      && ts.isPropertyAccessExpression(node.left)) {
+      const ownerIdentifier = fieldMutationOwner(node.left, stateBindings)
+      if (ownerIdentifier !== null && !shadowedByName(ownerIdentifier, ownerIdentifier.text)) {
+        const owner = ownerIdentifier.text
+        found.push(diagnosticAt(source, file, node, {
+          code: VOBS_C233,
+          severity: 'warning',
+          message: `信号 "${owner}" 的内部字段被原地修改 —— 引用没变，订阅它的 JSX 永远不会更新`,
+          fix: `对象更新必须整体换引用：${owner}.value = { ...${owner}.value, 字段: 新值 }`
+            + `（深层字段沿路径逐层展开）。改字段/数组原地变异都不触发更新，引用变了才触发。`
+        }))
       }
     }
     ts.forEachChild(node, visit)
