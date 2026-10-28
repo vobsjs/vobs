@@ -165,6 +165,25 @@ const PAIRS: readonly Pair[] = [
       '  return <div>{count.value}</div>',
       '}'
     ].join('\n')
+  },
+  {
+    // C107 空值守卫（2026-10-28 收编）：fix 的推荐是守卫下放进 JSX
+    code: 'VOBS_C107',
+    wrong: [
+      "import { state } from '@vobs/vobs'",
+      'export function P() {',
+      "  const loading = state(true, 'loading')",
+      '  if (loading.value) return null',
+      '  return <div>done</div>',
+      '}'
+    ].join('\n'),
+    correct: [
+      "import { state } from '@vobs/vobs'",
+      'export function P() {',
+      "  const loading = state(true, 'loading')",
+      '  return <div>{loading.value ? null : "done"}</div>',
+      '}'
+    ].join('\n')
   }
 ]
 

@@ -153,3 +153,49 @@ describe('VOBS_C107 调用点豁免（有名函数仅被 JSX 上下文调用 = �
 }`)).toHaveLength(2)
   })
 })
+
+describe('VOBS_C107 情况三：空值守卫（2026-10-28 收编，silent-failures 最后一条静默）', () => {
+  it('`if (信号) return null` + 同函数 JSX return —— 组件形态照报', () => {
+    const found = c107(`export function S(){
+  if (loading.value) return null
+  return <div>{content}</div>
+}`)
+    expect(found).toHaveLength(1)
+    expect(found[0]!.message).toContain('空值守卫')
+    expect(found[0]!.fix).toContain('下放进 JSX')
+  })
+
+  it('`return undefined` / `return false` 变体同样算空守卫', () => {
+    expect(c107(`export function S(){ if (loading.value) return undefined; return <A/> }`)).toHaveLength(1)
+    expect(c107(`export function S(){ if (loading.value) return false; return <A/> }`)).toHaveLength(1)
+  })
+
+  it('纯数据函数的空守卫**不报** —— 函数级收窄（无 JSX return = 不渲染，谈不上冻结）', () => {
+    expect(c107(`export function S(props){
+  const find = (id: string) => { if (id === '') return null; return props.items.find(i => i.id === id) }
+  return <div>{find('a')?.name}</div>
+}`)).toEqual([])
+  })
+
+  it('守卫版 helper **只在 JSX 调用** —— 豁免照常生效（真实案例 groupCards 的 null 变体）', () => {
+    expect(c107(`export function S(){
+  const groupCards = () => { if (planGroup.value) return null; return <B/> }
+  return <div>{groupCards()}</div>
+}`)).toEqual([])
+  })
+
+  it('守卫版 helper **组件体同步调用** —— 真冻结，照报', () => {
+    expect(c107(`export function S(){
+  const groupCards = () => { if (planGroup.value) return null; return <B/> }
+  const cards = groupCards()
+  return <div>{cards}</div>
+}`)).toHaveLength(1)
+  })
+
+  it('守卫版 helper **无调用点**（跨文件使用/组件本身）—— 无法证明安全，保守照报', () => {
+    expect(c107(`export function S(){
+  if (loading.value) return null
+  return <B/>
+}`)).toHaveLength(1)
+  })
+})

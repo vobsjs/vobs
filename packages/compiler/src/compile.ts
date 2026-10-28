@@ -542,20 +542,28 @@ function reportFrozenReactiveReturn(state: CompileState): void {
   const sourceFile = state.sourceFile
   if (!sourceFile) return
 
-  const report = (target: ts.Node): void => {
+  const report = (target: ts.Node, emptyGuard: boolean): void => {
     const { line, column, codeFrame } = buildCodeFrame(sourceFile, target.getStart(sourceFile), target.getWidth(sourceFile))
     state.diagnostics.push({
       code: 'VOBS_C107',
       severity: 'warning',
-      message: '这里在**组件体**里读了信号并据此 `return` 节点。组件体只执行一次，'
+      message: emptyGuard
+        ? '这个**空值守卫**（`if (信号) return null`）在组件体里固化了 —— 函数体只执行一次，'
+          + '挂载后信号恢复也不会重新分支：界面永远停在首次走到的那个分支（空白、或首次的内容）。'
+          + '顶层 return 处没有 parent/anchor，任何据此 return 的分支都只求值一次。'
+        : '这里在**组件体**里读了信号并据此 `return` 节点。组件体只执行一次，'
         + '所以这个分支在挂载时就被固化，之后信号变化不会再切换 —— 编译期合法、运行期冻结。',
       location: { file: state.filename, line, column },
       codeFrame,
-      fix: '路由分支用 `<RouterView/>`（它内部用 insertDynamic + resetKey，声明式处理）；'
-        + '其它条件渲染把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`），'
-        + '或用 `<Show when={cond}>` 保留挂载只切可见性。'
-        + '**注意：把三元提到组件顶层 return 处不管用** —— 那里没有 parent/anchor，'
-        + '两支都是 JSX 也一样冻结。'
+      fix: emptyGuard
+        ? '把守卫下放进 JSX 子节点位置：`return <div>{loading.value ? null : content}</div>`；'
+          + '要保留挂载、只切可见性用 `<Show when={!loading.value} fallback={null}><Content/></Show>`。'
+          + '组件顶层 return 处没有 parent/anchor —— 提前 return（无论 null 还是 JSX）都只求值一次。'
+        : '路由分支用 `<RouterView/>`（它内部用 insertDynamic + resetKey，声明式处理）；'
+          + '其它条件渲染把条件放进 JSX 子节点位置（`<div>{cond ? <A/> : <B/>}</div>`），'
+          + '或用 `<Show when={cond}>` 保留挂载只切可见性。'
+          + '**注意：把三元提到组件顶层 return 处不管用** —— 那里没有 parent/anchor，'
+          + '两支都是 JSX 也一样冻结。'
     })
   }
 
@@ -602,19 +610,74 @@ function reportFrozenReactiveReturn(state: CompileState): void {
     return found
   }
 
+  /** 分支里有没有**空守卫 return**（`return null` / `undefined` / `false` / 裸 `return`；不下钻嵌套函数）。 */
+  const branchReturnsEmpty = (statement: ts.Node): boolean => {
+    let found = false
+    const walk = (node: ts.Node): void => {
+      if (found) return
+      if (node !== statement && (ts.isFunctionLike(node) || ts.isClassLike(node))) return
+      if (ts.isReturnStatement(node)) {
+        const expression = node.expression
+        const isEmpty = expression === undefined
+          || expression.kind === ts.SyntaxKind.NullKeyword
+          || (ts.isIdentifier(expression) && expression.text === 'undefined')
+          || expression.kind === ts.SyntaxKind.FalseKeyword
+        if (isEmpty) { found = true; return }
+      }
+      ts.forEachChild(node, walk)
+    }
+    walk(statement)
+    return found
+  }
+
+  /**
+   * 从 `if` 向上找最近的函数宿主：它体内是否存在**含 JSX 的 return**。
+   *
+   * 这是空守卫判据的**函数级收窄**：`if (信号) return null` 在纯数据函数里只是
+   * 普通的空值建模（`T | null`），不渲染就谈不上冻结 —— 只有「函数里另有 JSX return」
+   * （即它确实是渲染函数）才可能把组件固化在空分支上。这个收窄把最大的一类误报面
+   * （数据函数的空守卫）整个排除，剩余误报面与情况二完全同构（跨文件渲染 helper）。
+   */
+  const hostFunctionHasJsxReturn = (from: ts.Node): boolean => {
+    let current: ts.Node = from
+    while (current.parent !== undefined && !ts.isSourceFile(current)) {
+      if (ts.isFunctionLike(current)) {
+        const body = (current as ts.FunctionLikeDeclaration).body
+        if (body === undefined) return false
+        let found = false
+        const walk = (node: ts.Node): void => {
+          if (found) return
+          if (node !== body && (ts.isFunctionLike(node) || ts.isClassLike(node))) return
+          if (ts.isReturnStatement(node) && node.expression && containsJsx(node.expression)) { found = true; return }
+          ts.forEachChild(node, walk)
+        }
+        walk(body)
+        return found
+      }
+      current = current.parent
+    }
+    return false
+  }
+
   const visit = (node: ts.Node): void => {
     // 情况一：`return <读了信号的表达式>`
     if (ts.isReturnStatement(node) && node.expression) {
       const expression = node.expression
       if (containsJsx(expression) && readsReactiveValueOutsideJsx(expression)) {
-        if (!isJsxOnlyCaller(node)) report(expression)
+        if (!isJsxOnlyCaller(node)) report(expression, false)
       }
     }
     // 情况二：`if (<读了信号>) return <JSX/>` —— 读取在 if 的 test 上，不在 return 表达式里
+    // 情况三（2026-10-28，silent-failures 最后一条静默收编）：`if (<读了信号>) return null`
+    //   —— return null 不含 JSX，情况二抓不到。收窄：宿主函数体内另有 JSX return
+    //   （渲染函数）才报，纯数据函数的空守卫不报；豁免沿用 isJsxOnlyCaller。
     if (ts.isIfStatement(node) && readsReactiveValueOutsideJsx(node.expression)) {
-      if (branchReturnsNode(node.thenStatement)
-        || (node.elseStatement !== undefined && branchReturnsNode(node.elseStatement))) {
-        if (!isJsxOnlyCaller(node)) report(node)
+      const returnsNode = branchReturnsNode(node.thenStatement)
+        || (node.elseStatement !== undefined && branchReturnsNode(node.elseStatement))
+      const returnsEmpty = branchReturnsEmpty(node.thenStatement)
+        || (node.elseStatement !== undefined && branchReturnsEmpty(node.elseStatement))
+      if ((returnsNode || returnsEmpty) && (returnsNode || hostFunctionHasJsxReturn(node))) {
+        if (!isJsxOnlyCaller(node)) report(node, !returnsNode && returnsEmpty)
       }
     }
     ts.forEachChild(node, visit)

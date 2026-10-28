@@ -112,15 +112,12 @@ const CORPUS: readonly Mistake[] = [
     caughtBy: 'VOBS_C233'
   },
 
-  /* ---------- 以下为**当前静默**的形态：P2 的工作清单 ---------- */
-  {
-    why: '组件体内提前 return null 做守卫 —— React 每次渲染重算，vobs 里挂载时固化。',
-    source: 'export function P(){ if (loading.value) return null; return <div>done</div> }',
-    caughtBy: null,
-    silentNote: '**这是有意不做的**：同形态在"渲染辅助函数"里是**正确代码**'
-      + '（`function renderRow(x) { if (empty.value) return null; return <tr/> }` 每次求值都重跑）。'
-      + '要区分必须知道"这个函数是不是组件"，静态分析决定不了 —— 加了会误报。'
-  },
+  /*
+   * 2026-10-28：曾经唯一的静默（组件体提前 return null 守卫）已被 C107 情况三收编 ——
+   * 判据 = 空守卫 return + 宿主函数内有 JSX return（渲染函数）+ isJsxOnlyCaller
+   * 豁免有名 helper；纯数据函数的空守卫（`T | null` 建模）不报。全仓实测 0 误报。
+   * **静默清单清零。**
+   */
   {
     /*
      * 这条**部分**被覆盖：把查表结果读进 const 这件事被 C118 抓到
@@ -181,16 +178,17 @@ describe('AI 错误语料：已被编译期拦住的形态（回归）', () => {
   }
 })
 
-describe('AI 错误语料：**当前静默**的形态（P2 工作清单）', () => {
-  for (const item of silent) {
-    it(`静默：${item.why.slice(0, 40)}…`, () => {
-      // 断言**现状**（静默）。这条测试的作用是让缺口**可见**而不是被忘记：
-      // 哪天补上了诊断，它会变红，提示把 caughtBy 改成对应的码。
-      const codes = codesOf(item.source)
-      expect(codes, `这条现在有诊断了（${codes.join(', ')}）—— 请把它移到"已覆盖"并填 caughtBy`).toEqual([])
-      expect(item.silentNote, '静默项必须写清为什么不做的原因').toBeDefined()
-    })
-  }
+describe('AI 错误语料：静默清单（2026-10-28 起清零）', () => {
+  it('**静默必须保持为零** —— 新静默条目要过完整的「不做」流程', () => {
+    /*
+     * 历史上这里有两条静默（数组原地修改、组件体提前 return null 守卫），
+     * 都已收编（C233 / C107 情况三）。将来若语料里再次出现 `caughtBy: null`，
+     * 这条断言变红 —— 提醒走完整流程：silentNote 写清为什么不做、
+     * silent-failures.md 记档、覆盖率相应回退。
+     */
+    expect(silent, '出现新的静默条目 —— 请补 silentNote 并同步 docs/silent-failures.md')
+      .toHaveLength(0)
+  })
 })
 
 describe('覆盖率（P4 的测量面）', () => {
