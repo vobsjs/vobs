@@ -213,5 +213,5 @@ export async function checkCommand(options: CheckOptions = {}): Promise<void> {
 
 
 // 搬迁到 @vobs/compiler 后继续从这里再导出，避免既有导入方失效
-export { analyzeSource, VOBS_C118, VOBS_C120, VOBS_C210, VOBS_C232, VOBS_C233 } from '@vobs/compiler'
+export { analyzeSource, VOBS_C118, VOBS_C120, VOBS_C210, VOBS_C232, VOBS_C233, VOBS_C234 } from '@vobs/compiler'
 export type { CheckDiagnostic } from '@vobs/compiler'

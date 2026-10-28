@@ -184,6 +184,28 @@ const PAIRS: readonly Pair[] = [
       '  return <div>{loading.value ? null : "done"}</div>',
       '}'
     ].join('\n')
+  },
+  {
+    // C234（2026-10-28）：期望触发的信号要写进 deps（声明即订阅）
+    code: 'VOBS_C234',
+    wrong: [
+      "import { effect, on, state } from '@vobs/vobs'",
+      'export function P() {',
+      "  const a = state(1, 'a')",
+      "  const b = state(2, 'b')",
+      '  effect(on([a], () => { console.log(a.value, b.value) }))',
+      '  return <div>{b.value}</div>',
+      '}'
+    ].join('\n'),
+    correct: [
+      "import { effect, on, state } from '@vobs/vobs'",
+      'export function P() {',
+      "  const a = state(1, 'a')",
+      "  const b = state(2, 'b')",
+      '  effect(on([a, b], () => { console.log(a.value, b.value) }))',
+      '  return <div>{b.value}</div>',
+      '}'
+    ].join('\n')
   }
 ]
 

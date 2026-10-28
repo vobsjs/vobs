@@ -46,6 +46,8 @@ export const VOBS_C118 = 'VOBS_C118'
 export const VOBS_C233 = 'VOBS_C233'
 /** state() 未传调试名 —— 运行时诊断显示 "(未命名信号)"，无法定位。 */
 export const VOBS_C120 = 'VOBS_C120'
+/** on 回调里读了 deps 之外的信号 —— untrack 作用域内读取不建立订阅。 */
+export const VOBS_C234 = 'VOBS_C234'
 
 function returnsJsx(node: ts.Node): boolean {
   let seen = false
@@ -630,18 +632,7 @@ function ruleSignalArrayMutation(source: ts.SourceFile, file: string): CheckDiag
   const found: CheckDiagnostic[] = []
 
   // 全文件收集「绑定到 state(...) 调用」的名字 —— 这就是 silentNote 里说的绑定分析
-  const stateBindings = new Set<string>()
-  const collectBindings = (node: ts.Node): void => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined) {
-      let init: ts.Expression = node.initializer
-      while (ts.isParenthesizedExpression(init) || ts.isAsExpression(init)) init = init.expression
-      if (ts.isCallExpression(init) && ts.isIdentifier(init.expression) && init.expression.text === 'state') {
-        stateBindings.add(node.name.text)
-      }
-    }
-    ts.forEachChild(node, collectBindings)
-  }
-  collectBindings(source)
+  const stateBindings = collectStateBindings(source)
   if (stateBindings.size === 0) return found
 
   const visit = (node: ts.Node): void => {
@@ -710,6 +701,107 @@ function ruleUnnamedSignal(source: ts.SourceFile, file: string): CheckDiagnostic
   return found
 }
 
+/**
+ * 全文件收集「绑定到 `state(...)` 调用」的名字 —— C233 / C234 共用的绑定分析。
+ */
+function collectStateBindings(source: ts.SourceFile): Set<string> {
+  const stateBindings = new Set<string>()
+  const collectBindings = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined) {
+      let init: ts.Expression = node.initializer
+      while (ts.isParenthesizedExpression(init) || ts.isAsExpression(init)) init = init.expression
+      if (ts.isCallExpression(init) && ts.isIdentifier(init.expression) && init.expression.text === 'state') {
+        stateBindings.add(node.name.text)
+      }
+    }
+    ts.forEachChild(node, collectBindings)
+  }
+  collectBindings(source)
+  return stateBindings
+}
+
+/** 函数体内读到的**纯标识符信号**名（`X.value` 且 X 是标识符、X ∈ stateBindings）。 */
+function collectSignalReads(body: ts.Node, stateBindings: Set<string>): Set<string> {
+  const reads = new Set<string>()
+  const walk = (node: ts.Node): void => {
+    if (ts.isPropertyAccessExpression(node) && node.name.text === 'value'
+      && ts.isIdentifier(node.expression) && stateBindings.has(node.expression.text)) {
+      reads.add(node.expression.text)
+    }
+    ts.forEachChild(node, walk)
+  }
+  walk(body)
+  return reads
+}
+
+/**
+ * on 回调里的**隐式断边**（AI「以为读了就依赖」在 on 语境下的必然踩法，2026-10-28）。
+ *
+ * ```ts
+ * effect(on([a], () => {
+ *   use(b.value)   // ⚠️ on 的回调跑在 untrack 作用域里 —— b 不会建立订阅
+ * }))              //    b 变化不触发本 effect，更新静默丢失
+ * ```
+ *
+ * ## 为什么是提示而不是错误
+ *
+ * on 回调里读非 deps 信号有**两种意图**：
+ * (a) 期望它也触发 → 漏写 deps，是真 bug（欠订阅）；
+ * (b) 只要最新值、由 deps 触发刷新 —— **合法模式**（每次重跑读到新值）。
+ * 静态分不出意图，所以 severity = warning，文案把两种意图都说清楚让作者自认。
+ *
+ * deps 形态：数组 → 元素标识符；单信号 → 名字本身；**取值函数** → 函数体内
+ * 读到的绑定信号（函数读什么订阅什么）；其余（spread 等）→ 跳过（少报不误报）。
+ */
+function ruleOnCallbackUntracked(source: ts.SourceFile, file: string): CheckDiagnostic[] {
+  const found: CheckDiagnostic[] = []
+  const stateBindings = collectStateBindings(source)
+  if (stateBindings.size === 0) return found
+
+  const depsSignalNames = (depsExpr: ts.Expression): Set<string> | null => {
+    if (ts.isArrayLiteralExpression(depsExpr)) {
+      return new Set(depsExpr.elements.filter(ts.isIdentifier).map(item => item.text))
+    }
+    if (ts.isIdentifier(depsExpr)) return new Set([depsExpr.text])
+    if (ts.isArrowFunction(depsExpr) || ts.isFunctionExpression(depsExpr)) {
+      const body = depsExpr.body
+      return ts.isBlock(body) || ts.isExpression(body) ? collectSignalReads(body, stateBindings) : null
+    }
+    return null
+  }
+
+  const visit = (node: ts.Node): void => {
+    // 形态：effect(on(deps, callback))
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'effect'
+      && node.arguments.length > 0) {
+      const arg0 = node.arguments[0]
+      if (ts.isCallExpression(arg0) && ts.isIdentifier(arg0.expression) && arg0.expression.text === 'on'
+        && arg0.arguments.length >= 2) {
+        const depsSet = depsSignalNames(arg0.arguments[0])
+        const callback = arg0.arguments[1]
+        if (depsSet !== null && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))
+          && callback.body !== undefined) {
+          for (const name of collectSignalReads(callback.body, stateBindings)) {
+            if (depsSet.has(name)) continue
+            found.push(diagnosticAt(source, file, callback, {
+              code: VOBS_C234,
+              severity: 'warning',
+              message: `on 的回调跑在 untrack 作用域里 —— 这里读了 "${name}" 但它不在 deps 里，`
+                + `不会建立订阅：${name} 变化不会触发本 effect`,
+              fix: `期望它也触发 → 加进 deps：on([…, ${name}], fn)。`
+                + `若只要最新值、由 deps 触发刷新（刻意不订阅）→ 可忽略本提示，`
+                + `或用 untrack(() => ${name}.value) 显式表达意图。`
+            }))
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return found
+}
+
 /* -------------------------------------------------------------- 入口 */
 
 /**
@@ -743,7 +835,8 @@ export function analyzeSource(text: string, file: string): CheckDiagnostic[] {
     ...ruleListInBranch(source, file),
     ...ruleSignalCapturedInBody(source, file),
     ...ruleSignalArrayMutation(source, file),
-    ...ruleUnnamedSignal(source, file)
+    ...ruleUnnamedSignal(source, file),
+    ...ruleOnCallbackUntracked(source, file)
   ]
     .filter(item => !suppressed.has(item.line))
     .sort((a, b) => a.line - b.line || a.column - b.column)

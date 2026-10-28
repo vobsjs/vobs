@@ -40,7 +40,7 @@ describe('诊断说明登记表', () => {
   it('**覆盖了本轮落地的全部诊断**（漏一个就等于那条规则不可查）', () => {
     const covered = new Set(DIAGNOSTIC_GUIDES.map(item => item.code))
     // 这些都是这一轮实际加过/改过的码；它们必须可查
-    for (const code of ['VOBS_C104', 'VOBS_C105', 'VOBS_C106', 'VOBS_C107', 'VOBS_C108', 'VOBS_C118', 'VOBS_C120', 'VOBS_C210', 'VOBS_C211', 'VOBS_C232', 'VOBS_C233']) {
+    for (const code of ['VOBS_C104', 'VOBS_C105', 'VOBS_C106', 'VOBS_C107', 'VOBS_C108', 'VOBS_C118', 'VOBS_C120', 'VOBS_C210', 'VOBS_C211', 'VOBS_C232', 'VOBS_C233', 'VOBS_C234']) {
       expect(covered.has(code), `${code} 没有说明条目 —— 它不可查`).toBe(true)
     }
   })

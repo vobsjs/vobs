@@ -18,5 +18,5 @@ export type {
   VobsSourceMap
 } from './plugin.ts'
 
-export { analyzeSource, VOBS_C118, VOBS_C120, VOBS_C210, VOBS_C232, VOBS_C233 } from './analyze'
+export { analyzeSource, VOBS_C118, VOBS_C120, VOBS_C210, VOBS_C232, VOBS_C233, VOBS_C234 } from './analyze'
 export type { CheckDiagnostic } from './analyze'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeSource, VOBS_C118, VOBS_C120, VOBS_C210, VOBS_C232, VOBS_C233, type CheckDiagnostic } from './check'
+import { analyzeSource, VOBS_C118, VOBS_C120, VOBS_C210, VOBS_C232, VOBS_C233, VOBS_C234, type CheckDiagnostic } from './check'
 
 const codes = (diagnostics: readonly CheckDiagnostic[]): string[] => diagnostics.map(item => item.code)
 
@@ -443,6 +443,72 @@ const registry = { flag: state(false) }
     const item = found.find(entry => entry.code === VOBS_C120)!
     expect(item).toBeDefined()
     expect(item.fix).toContain('通常与变量同名')
+  })
+})
+
+describe('vobs check · VOBS_C234 on 回调里的隐式断边', () => {
+  it('on 回调读了 deps 之外的信号 —— untrack 作用域内不建立订阅', () => {
+    const found = analyzeSource(`
+import { effect, on, state } from '@vobs/vobs'
+export function P() {
+  const a = state(1, 'a')
+  const b = state(2, 'b')
+  effect(on([a], () => { console.log(a.value, b.value) }))
+  return <div>{b.value}</div>
+}
+`, 'a.tsx')
+    expect(codes(found)).toContain(VOBS_C234)
+    const item = found.find(entry => entry.code === VOBS_C234)!
+    expect(item.message).toContain('"b"')
+    expect(item.message).toContain('不会建立订阅')
+    expect(item.fix).toContain('加进 deps')
+  })
+
+  it('deps 数组里有的不报', () => {
+    const found = analyzeSource(`
+import { effect, on, state } from '@vobs/vobs'
+export function P() {
+  const a = state(1, 'a')
+  const b = state(2, 'b')
+  effect(on([a, b], () => { console.log(a.value, b.value) }))
+  return <div>{b.value}</div>
+}
+`, 'a.tsx')
+    expect(codes(found)).not.toContain(VOBS_C234)
+  })
+
+  it('deps 是取值函数 —— 函数读什么订阅什么，读取集照常比对', () => {
+    const found = analyzeSource(`
+import { effect, on, state } from '@vobs/vobs'
+export function P() {
+  const a = state(1, 'a')
+  const b = state(2, 'b')
+  effect(on(() => a.value, () => { console.log(a.value, b.value) }))
+  return <div>{b.value}</div>
+}
+`, 'a.tsx')
+    expect(codes(found), 'deps 函数只读了 a，回调里的 b 仍不在订阅集').toContain(VOBS_C234)
+    expect(analyzeSource(`
+import { effect, on, state } from '@vobs/vobs'
+export function P() {
+  const a = state(1, 'a')
+  const b = state(2, 'b')
+  effect(on(() => a.value + b.value, () => { console.log(a.value, b.value) }))
+  return <div>{b.value}</div>
+}
+`, 'a.tsx')).not.toContain(VOBS_C234)
+  })
+
+  it('非 state 绑定的 .value 读取不算信号 —— 不报（绑定分析收窄）', () => {
+    const found = analyzeSource(`
+import { effect, on, state } from '@vobs/vobs'
+export function P(props: { cfg: { value: string } }) {
+  const a = state(1, 'a')
+  effect(on([a], () => { console.log(props.cfg.value) }))
+  return <div>{a.value}</div>
+}
+`, 'a.tsx')
+    expect(codes(found), 'props.cfg 不是 state 绑定').not.toContain(VOBS_C234)
   })
 })
 

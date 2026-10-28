@@ -153,6 +153,19 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
     wrong: '`const count = state(0)`'
   },
 
+  {
+    code: 'VOBS_C234',
+    severity: 'warning',
+    title: 'on 的回调里读了 deps 之外的信号（untrack 断边）',
+    why: '`on` 的回调跑在 **untrack 作用域**里 —— 回调内读到的信号**不会建立订阅**。'
+      + '若你期望那个信号也触发本 effect，更新会静默丢失：代码在跑、值也新鲜，'
+      + '只是它变化时没人通知。',
+    correct: '期望它也触发 → 加进 deps：`on([a, b], fn)`（声明即订阅）。'
+      + '若只要最新值、由 deps 触发刷新（刻意不订阅）→ 可忽略，'
+      + '或用 `untrack(() => b.value)` 显式表达意图。',
+    wrong: '`effect(on([a], () => { use(b.value) }))`（b 变化不会触发）'
+  },
+
   /* ---------- 构建器 / 配置层（补齐 --missing 指出的缺口） ---------- */
   {
     code: 'VOBS_C002',
