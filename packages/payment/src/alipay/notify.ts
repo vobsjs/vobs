@@ -33,12 +33,11 @@ export function createNotifyHandler(client: AlipayClient) {
      * 验签只保证通知确实来自支付宝，不保证通知与你系统中的订单一致；
      * 所以 `expected` 是**必填**的两项：`outTradeNo` 订单号与 `totalAmount` 订单金额（单位元）。
      *
-     * 为什么是必填而不是可选的"有就比对"：此前两个比对项都写成可选链
-     * （`expected?.outTradeNo`、`expected?.totalAmount`），于是 `validate(params)`
-     * 只校验 app_id 就返回 `valid: true` —— 任何金额、任何订单号都能通过。
-     * 更隐蔽的一条：`expected.totalAmount` 是**空串**时被 falsy 短路，整条金额比对被**跳过**
-     * （实测探针 probe-audit-payment-2 N2：`notify="" expected="" => valid=true`）。
-     * 现在缺任何一项都以 `valid: false` + 明确 errors 收场（失败关闭）。
+     * 为什么是必填而不是可选的"有就比对"：可选链（`expected?.outTradeNo`）的姿势下
+     * `validate(params)` 只校验 app_id 就返回 `valid: true` —— 任何金额、任何订单号都能通过；
+     * 更隐蔽的一条：`expected.totalAmount` 是**空串**时被 falsy 短路，整条金额比对被**跳过**。
+     * 缺任何一项都以 `valid: false` + 明确 errors 收场（失败关闭）——文字警告拦不住
+     * "省略即通过"的 API 外形，只有类型才能拦住。
      * @param params 异步通知参数
      * @param expected 商户侧期望值：outTradeNo 订单号、totalAmount 订单金额（单位元）
      */

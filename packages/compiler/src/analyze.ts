@@ -3,19 +3,13 @@
  *
  * ## 为什么放在 `@vobs/compiler` 而不是 CLI
  *
- * 这些规则此前在 `@vobs/cli` 的 `check.ts` 里，于是**只有 `vobs check` 能看到它们** ——
- * `vite dev` / `vite build` 里 `C118` / `C232` / `C210`（静态规则）**一条都不报**。
- * 后果：开发时看不到，只有人主动跑 `vobs check` 或 CI 才发现。
- * 这与「错了不能静默」直接冲突：**AI 改完代码、`vite build` 通过，但问题还在。**
+ * 这些规则必须同时被 `vobs check` 和 `vite dev`/`vite build` 看见 ——
+ * 只在 check 里报的话，**AI 改完代码、`vite build` 通过，但问题还在**，
+ * 与「错了不能静默」直接冲突。
  *
  * 而 `@vobs/vite-plugin` 需要这些规则，却**不能依赖 CLI**（依赖方向反了 —— CLI 是应用侧
- * 工具）。所以抽到双方都已经依赖的 `@vobs/compiler`。
- *
- * 顺序也对称了：编译器诊断（`C104`–`C108`）与分析器诊断（`C118`/`C210`/`C232`）现在同在
- * `@vobs/compiler`，`vobs check` 与 `vite build` 都能拿到全部规则。
- *
- * **本文件是从 `packages/cli/src/commands/check.ts` 原样搬过来的**，行为不变：
- * 搬迁的验收标准就是 `vobs check` 对全仓的输出与搬迁前**逐字节一致**。
+ * 工具）。所以放在双方都已经依赖的 `@vobs/compiler`：编译器诊断（`C104`–`C108`）与
+ * 分析器诊断（`C118`/`C210`/`C232`/`C233`/`C234`）同在此处，两条通道拿到全部规则。
  */
 import ts from 'typescript'
 import { VOBS_C210 as C210_CODE, vobsC210Fix } from '@vobs/runtime'
@@ -460,7 +454,6 @@ function ruleSignalCapturedInBody(source: ts.SourceFile, file: string): CheckDia
      * 所以它体里的 `const x = signal.value` **不是** run-once 快照，代码是对的。
      *
      * 但 `returnsJsx(fn)` 会把它认成"组件"，于是报 C118 —— **误报**。
-     * （这条规则此前只在组件体是直接语句时被验证过，IIFE 形态是盲区。）
      */
     /*
      * **要注意括号**：`(() => {...})()` 里那个 arrow 的**父节点是

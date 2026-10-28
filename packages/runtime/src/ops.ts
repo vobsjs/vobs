@@ -538,11 +538,9 @@ export function addEventListener(
   /*
    * 这个 (node,event) 在 Owner 清理表里只占**一个**槽，替换 handler 时**原地**换掉它做的事。
    *
-   * 此前是在**每次** addEventListener 里无条件 `owner.onDispose(...)`，而 `Owner.cleanups`
-   * 是只 push 的数组（reactivity/src/owner.ts:57,84）→ 换一次 handler 就多一条永不执行的
-   * 清理项，旧的 handler 闭包也被一并扣住。实测（.artifacts/reports/runtime.supplement.md
-   * 缺点 4 与既有报告缺点 1，两轮独立复现）：500 次替换 → `cleanups.length === 500`；
-   * 一轮 `{...props}` 换 onClick → 202。组件的 effect 每次重跑都会重绑事件，
+   * 如果**每次** addEventListener 都无条件 `owner.onDispose(...)`：`Owner.cleanups`
+   * 是只 push 的数组（reactivity/src/owner.ts）→ 换一次 handler 就多一条永不执行的
+   * 清理项，旧的 handler 闭包也被一并扣住。组件的 effect 每次重跑都会重绑事件，
    * 所以这是热路径上的**无界增长**（长寿命页面里等价于内存泄漏）。
    *
    * `binding` 是 `const`，所以槽里必须包一层可变的 `current` —— 换绑时改的是 `current`，
@@ -555,11 +553,9 @@ export function addEventListener(
   /*
    * **每个 (node,event) 在 Owner 清理表里只占一个槽。**
    *
-   * 此前是在**每次** addEventListener 里无条件 `owner.onDispose(...)`，而 `Owner.cleanups`
-   * 是只 push 的数组（reactivity/src/owner.ts:57,84）→ 换一次 handler 就多一条永不执行的
-   * 清理项，旧的 handler 闭包也被一并扣住。实测（.artifacts/reports/runtime.supplement.md
-   * 缺点 4 与既有报告缺点 1，两轮独立复现）：500 次替换 → `cleanups.length === 500`；
-   * 一轮 `{...props}` 换 onClick → 202。组件 effect 每次重跑都会重绑事件，
+   * 如果**每次** addEventListener 都无条件 `owner.onDispose(...)`：`Owner.cleanups`
+   * 是只 push 的数组（reactivity/src/owner.ts）→ 换一次 handler 就多一条永不执行的
+   * 清理项，旧的 handler 闭包也被一并扣住。组件 effect 每次重跑都会重绑事件，
    * 所以这是热路径上的**无界增长**（长寿命页面里等价于内存泄漏）。
    *
    * 做法：清理槽里存的是**间接引用**（owner → (node,event) → 当前 handle），

@@ -54,11 +54,10 @@ export function onDestroy(callback: () => void): void {
 /**
  * 组件/作用域**挂载之后**跑一次。
  *
- * 为什么需要它（外部踩坑文档 D 条 + 能力覆盖度分析）：
- * 定时器、`matchMedia`、`localStorage`、量元素尺寸这些只能在客户端做的事，
- * 此前**没有一个正式位置** —— 业务只能手写 `typeof window !== 'undefined'`，
- * 或者在组件体里直接调用（于是 SSG/预渲染阶段就炸或泄漏）。这是文档里
- * 「生命周期零记录」那条能力缺口的实体。
+ * 为什么需要它：定时器、`matchMedia`、`localStorage`、量元素尺寸这些只能在客户端
+ * 做的事，组件体里**没有一个安全的位置** —— 业务只能手写
+ * `typeof window !== 'undefined'` 守卫，或者在组件体里直接调用
+ * （于是 SSG/预渲染阶段就炸或泄漏）。这是生命周期能力的正式入口。
  *
  * 语义（与 run-once 一致，别按 React 的 `useEffect` 直觉理解）：
  *

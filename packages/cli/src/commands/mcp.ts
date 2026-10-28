@@ -4,15 +4,16 @@ import { spawnSync } from 'node:child_process'
 import { analyzeSource, compileWithSourceMap } from '@vobs/compiler'
 import { DIAGNOSTIC_GUIDES, findDiagnosticGuide } from '@vobs/runtime'
 import { checkContractSync } from './agent-doc.js'
+import { cliVersion } from '../version.js'
 
 /**
  * `vobs mcp` —— Model Context Protocol 的 **stdio** server（零依赖，手写 JSON-RPC 2.0）。
  *
- * ## 为什么做它（2026-10-28）
+ * ## 为什么做它
  *
- * 运行时反馈闭环此前是「人触发」的：Agent 拿不到标准协议入口，只能等
- * `check:runtime` 被跑。行业事实标准是 MCP（Next.js 的 next-devtools-mcp、
- * neo.mjs 的 neural-link 都在把运行时状态暴露成 Agent 可自主调用的 tools）。
+ * 运行时反馈闭环不能是「人触发」的：Agent 需要标准协议入口自主调用
+ * `check:runtime`。MCP 是行业事实标准（Next.js 的 next-devtools-mcp、
+ * neo.mjs 的 neural-link 都把运行时状态暴露成 Agent 可自主调用的 tools）。
  * 这里暴露三个 tools，全部基于**已存在的纯函数/脚本**，不引入新能力只换协议：
  *
  * - `check_runtime` — 跑运行时护栏，返回机器可读 verdict（check-runtime.mjs --json）
@@ -33,7 +34,7 @@ import { checkContractSync } from './agent-doc.js'
  */
 
 const PROTOCOL_VERSION = '2024-11-05'
-const SERVER_INFO = { name: 'vobs-mcp', version: '1.8.19' }
+const SERVER_INFO = { name: 'vobs-mcp', version: cliVersion }
 
 const TOOLS = [
   {

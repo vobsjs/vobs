@@ -59,13 +59,11 @@ export function createNotifyHandler(client: WechatClient) {
      *
      * `expected` 是**必填**的两项：`outTradeNo` 订单号与 `total` 订单金额（分）。
      *
-     * 为什么是必填而不是可选的"有就比对"：此前两个比对项都写成可选链
-     * （`expected?.outTradeNo`、`expected?.total`），于是**最省事的调用姿势**
-     * `validate(payload)` 直接返回 `valid: true` —— 把"只验了商户号"包装成"校验通过"，
-     * 攻击者只要把 mchid 对上（那是公开的）就能让任意订单号/任意金额通过。
-     * 同类形态在支付宝侧也一样（.artifacts/reports/payment.md 缺点 2）；README:108-127
-     * 的文字警告拦不住这种"省略即通过"的 API 外形。
-     * 现在缺任何一项都以 `valid: false` + 明确 errors 收场（失败关闭）。
+     * 为什么是必填而不是可选的"有就比对"：可选链（`expected?.outTradeNo`）的姿势下
+     * **最省事的调用** `validate(payload)` 直接返回 `valid: true` —— 把"只验了商户号"
+     * 包装成"校验通过"，攻击者只要把 mchid 对上（那是公开的）就能让任意订单号/任意金额通过。
+     * 缺任何一项都以 `valid: false` + 明确 errors 收场（失败关闭）——文字警告拦不住
+     * "省略即通过"的 API 外形，只有类型才能拦住。
      */
     validate(
       payload: WechatNotifyTransaction | WechatNotifyRefund,

@@ -22,7 +22,7 @@ export interface OnOptions {
  * effect(on(session, () => { void syncEnterpriseTemplates() }))
  * ```
  *
- * ## 为什么需要它（真实项目 2026-10-02 踩坑 3）
+ * ## 为什么需要它
  *
  * `effect` 的依赖是**自动收集**的：回调体内读到的任何信号都会变成依赖。
  * 而**「effect 只调了个函数」不等于没依赖** —— 被调函数在**首个 `await` 之前**的代码
@@ -35,7 +35,7 @@ export interface OnOptions {
  * //   → sync() 里写 ent.sync → 再次触发 effect → 无限重同步（C210 + C211）
  * ```
  *
- * 对策此前只有 `untrack`：
+ * 对策用 `untrack` 也能写：
  *
  * ```ts
  * effect(() => { if (session.value) untrack(() => { void sync() }) })
@@ -46,8 +46,8 @@ export interface OnOptions {
  *
  * ## 与 async 无关
  *
- * 它管的是「effect 不该被它调用的函数碰到的信号牵着走」，**不管那个函数是不是 async**。
- * 踩坑 3 只是它的一个实例。
+ * 它管的是「effect 不该被它调用的函数碰到的信号牵着走」，**不管那个函数是不是 async**——
+ * 同步段读写信号只是它的一个实例。
  *
  * ## 语义（对齐 SolidJS 的 `on()`）
  *

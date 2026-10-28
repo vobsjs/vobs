@@ -29,7 +29,7 @@ export interface DismissOptions {
  * })
  * ```
  *
- * ## 根治的两类坑（2026-10-24 实证，此前靠手写监听各自踩坑）
+ * ## 根治的两类坑（手写 document mousedown capture 监听时高频复发）
  *
  * 1. **菜单项点击全部无效**：手写 `document mousedown` capture 监听做「点外关闭」，
  *    点菜单项时捕获先于 click、立即 close() 把浮层 DOM 连根移除 → click 落死节点。

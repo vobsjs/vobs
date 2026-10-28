@@ -23,11 +23,11 @@ const AGENT_STATE_ENDPOINT = '/__vobs/agent-state'
  * Windows 路径分隔符 → POSIX。
  *
  * 这不是样式偏好，而是**接口约定**：Vite/Rollup 的模块 id 一律用正斜杠，
- * 所以 `resolveId` 返回什么形态，`load` 随后收到的就是那个形态的**规范化结果**。
- * 此前 `resolveId` 返回 `path.resolve(...)` 的原始串（Windows 上是反斜杠），
- * 而 `load` 拿 `htmlModules.has(id)` 去查正斜杠 id —— `Set` 是精确匹配，永远不命中，
- * `load` 返回 null，裸 HTML 落到 `vite:import-analysis` 被当 JS 解析并抛
- * `Failed to parse source for import analysis`。整个 HTML 组件功能在 Windows 上失效。
+ * 所以 `resolveId` 返回什么形态，`load` 随后收到的就是那个形态的**规范化结果**——
+ * 返回 `path.resolve(...)` 的原始串（Windows 上是反斜杠），`load` 拿正斜杠 id 查
+ * `htmlModules.has(id)` 就永远不命中，裸 HTML 落到 `vite:import-analysis` 被当 JS
+ * 解析并抛 `Failed to parse source for import analysis`，整个 HTML 组件功能在
+ * Windows 上失效。
  *
  * 只把反斜杠换成斜杠，不做 `resolve`/`realpath` 之类的规范化，
  * 以免改变大小写或消解符号链接（那会让 `htmlModules` 与实际 `readFile` 的目标不一致）。
@@ -265,15 +265,11 @@ export function vobsPlugin(options: VobsVitePluginOptions = {}): Plugin {
         })
       }
       /*
-       * **warning 必须也报出来**（真实项目 2026-10-02 反馈）。
+       * **warning 必须也报出来**。
        *
-       * 此前这里只处理错误：`describeDiagnostics` 内部
-       * `diagnostics.filter(item => item.severity === 'error')`，没有错误就返回 `null`，
-       * 于是**警告被静默丢弃**。实测后果：`VOBS_C105`（模块顶层 JSX）与
-       * `VOBS_C104`（顶层条件 return，1.8.1 起降为 warning）在 `vite build` 里
-       * **完全隐形** —— 只有 `vobs check` 能看到。用户的原话是
-       * 「vite build 未拦属另一隐患」，这比"隐患"更严重：那两条诊断在主构建路径上
-       * 等于不存在。
+       * 只处理 error 的话（`describeDiagnostics` 没有错误就返回 `null`），
+       * **警告被静默丢弃**：`VOBS_C105`（模块顶层 JSX）与 `VOBS_C104`（顶层条件
+       * return）在 `vite build` 里**完全隐形**——那两条诊断在主构建路径上等于不存在。
        *
        * 走 Vite 自己的告警通道（`this.warn`），构建输出与 dev server 都能看到；
        * 拿不到 PluginContext 时退回 `console.warn`（不静默）。

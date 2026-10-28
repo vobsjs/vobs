@@ -6,8 +6,8 @@
  *   once={fn}     → "ce"            垃圾事件名，同样静默失效
  *   onclick       → "click"         碰巧能工作
  *
- * ⚠️ **别名表与解析函数的单一来源在 `@vobs/runtime` 的 `dom-events.ts`**，这里只是再导出。
- * 此前两边各写一份，而运行期的 `{...props}` 展开路径**根本没有别名表** —— 于是
+ * ⚠️ **别名表与解析函数的单一来源在 `@vobs/runtime` 的 `dom-events.ts`**，这里只是再导出——
+ * 运行期的 `{...props}` 展开路径必须与编译期同一份别名表，否则
  * `<div {...props} onDoubleClick={…}>` 挂的是不存在的 `"doubleclick"`，
  * 而 `<div onDoubleClick={…}>` 挂的是正确的 `dblclick`：同一个属性名，两条路径两种行为。
  * 收拢到 runtime 是因为它同时被运行期用；编译期只剩诊断需要额外信息（见下）。

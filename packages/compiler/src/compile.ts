@@ -243,10 +243,10 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
   /**
    * 这个表达式是不是**渲染节点**（JSX 元素 / 组件 / fragment）。
    *
-   * ⚠️ 这条判据是 1.8.1 补上的**收窄** —— 1.8.0 的版本不检查返回值是不是节点，
-   * 于是把纯数据函数的 `return cond && value`、`return x ? x : null` 全部当成
-   * "组件顶层条件 return" 报了出来。实战反馈：**18 处命中里约 16 处是纯数据函数**
-   * （`T | null` 是正常的空值建模），而这条是 **error** —— 直接挡构建。
+   * ⚠️ 这条判据**必须收窄到渲染节点** —— 不检查返回值是不是节点的话，纯数据函数的
+   * `return cond && value`、`return x ? x : null` 会被全部当成"组件顶层条件 return"
+   * 报出来。实战反馈：**18 处命中里约 16 处是纯数据函数**
+   * （`T | null` 是正常的空值建模），而这条曾是 **error** —— 直接挡构建。
    *
    * 立论只在"返回值会被渲染"时成立：组件 run-once 导致那个 return 永不重算；
    * 纯数据函数每次调用都执行，条件 return 完全正常。
@@ -412,7 +412,7 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
 /**
  * `VOBS_C108`：**JSX 被存进变量**（节点被急切创建）。
  *
- * ## 为什么是坑（真实项目 2026-10-02 崩溃）
+ * ## 为什么是坑（真实项目崩溃场景）
  *
  * ```ts
  * const node = <ElementVarPicker el={pickerElement.value} />   // ← 组件体，急切创建
@@ -424,12 +424,12 @@ function reportTopLevelConditionalReturn(state: CompileState): void {
  *
  * 关键区分：**属性表达式不是被编译器提升的**。标准形态
  * `<div>{open.value ? <Picker el={picker.value}/> : null}</div>` 的产物是安全的
- * （`createComponent` 在条件内部、prop 是 getter）—— 实测确认。真正的差异是
+ * （`createComponent` 在条件内部、prop 是 getter）。真正的差异是
  * **JSX 被写在了条件外面**。
  *
  * ## 它同时覆盖用户文档里两条"靠纪律"的禁区
  *
- * 这两条此前**没有任何诊断**（实测 B/C/D 三类全静默），是典型的静默失败：
+ * 这两条**没有任何诊断**，是典型的静默失败：
  * 编译通过、类型通过、运行期偶发崩。
  *
  * 1. 「组件体 run-once 派生节点」—— 组件体只跑一次，这个节点身份被固化

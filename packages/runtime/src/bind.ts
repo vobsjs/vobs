@@ -37,8 +37,8 @@ export function bindAttribute(
      * - **布尔属性**（disabled / checked / autofocus…）只看"存在与否"、与值无关 ——
      *   那类必须走 **property 通道**（`bindProperty` + 布尔清除值 false）才能正确移除。
      *
-     * 曾经试过在这里把 `false` 一律当"移除"来修 `autoFocus={false}`，结果把 spellCheck
-     * 的语义弄反了（`false` 变成"移除属性" = 回到缺省 true = 打开拼写检查，与意图相反）。
+     * 在这里把 `false` 一律当"移除"看似能修 `autoFocus={false}`，实际会把 spellCheck
+     * 的语义弄反（`false` 变成"移除属性" = 回到缺省 true = 打开拼写检查，与意图相反）。
      * 正确做法是让**布尔属性走 property 通道**，见 `dom-props.ts` 的 PROPERTY_NAMES。
      */
     if (value === null || value === undefined) return
