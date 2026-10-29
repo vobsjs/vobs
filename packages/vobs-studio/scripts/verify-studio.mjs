@@ -168,18 +168,19 @@ const fakeServices = {
   },
   remote: {
     workspaceFiles: {
-      // The client sends ABSOLUTE paths (workspace + rel) per the Host contract.
+      // The client sends ABSOLUTE paths (workspace + rel) per the Host contract, and the
+      // Host wraps every result in the wire envelope ({ok, value} / {ok, error}).
       stat: async (sessionId, filePath) => {
         const p = String(filePath)
-        if (p.endsWith('.vobs/studio/preview.json')) return { version: 1, bytes: MANIFEST_JSON.length }
-        if (p.endsWith('demo-app/DESIGN.md')) return { version: 1, bytes: DESIGN_MD.length }
-        return undefined
+        if (p.endsWith('.vobs/studio/preview.json')) return { ok: true, value: { version: 'v1', bytes: MANIFEST_JSON.length } }
+        if (p.endsWith('demo-app/DESIGN.md')) return { ok: true, value: { version: 'v1', bytes: DESIGN_MD.length } }
+        return { ok: false, error: { code: 'workspace-file/not-found', message: p } }
       },
       read: async (sessionId, filePath, range) => {
         const p = String(filePath)
-        if (p.endsWith('.vobs/studio/preview.json')) return { text: MANIFEST_JSON, eof: true }
-        if (p.endsWith('demo-app/DESIGN.md')) return { text: DESIGN_MD, eof: true }
-        return undefined
+        if (p.endsWith('.vobs/studio/preview.json')) return { ok: true, value: { text: MANIFEST_JSON, lines: MANIFEST_JSON.split('\n').length, eof: true } }
+        if (p.endsWith('demo-app/DESIGN.md')) return { ok: true, value: { text: DESIGN_MD, lines: DESIGN_MD.split('\n').length, eof: true } }
+        return { ok: false, error: { code: 'workspace-file/not-found', message: p } }
       }
     }
   }
@@ -333,12 +334,14 @@ const applyAndMount = () => {
   return element.shadowRoot
 }
 
-// 8a. stat reports a concrete empty file (bytes: 0) — decisive missing.
-fakeServices.remote.workspaceFiles.stat = async () => ({ version: 9, bytes: 0 })
-fakeServices.remote.workspaceFiles.read = async () => ({ text: MANIFEST_JSON, eof: true })
+// 8a. The read completes with EMPTY content — decisive missing (stat is no longer part
+// of the flow; the read is the single source of truth for existence).
+fakeServices.remote.workspaceFiles.stat = async () => ({ ok: true, value: { version: 'v9', bytes: 0 } })
+fakeServices.remote.workspaceFiles.read = async () => ({ ok: true, value: { text: '', lines: 0, eof: true } })
 const shadowEmpty = applyAndMount()
 const gone = await until(() => shadowEmpty?.querySelector('.studio__steps') !== null)
-check('empty manifest (bytes 0) shows the setup card', gone)
+check('empty manifest content shows the setup card', gone)
+check('empty state carries the diagnostic', (shadowEmpty?.querySelector('.studio__diag')?.textContent ?? '').includes('exists but is empty'))
 check('no error notice in the empty state', shadowEmpty?.querySelector('.studio__error') === null)
 
 // 8b. Services that throw like the real Host does for an absent file.

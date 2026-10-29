@@ -1948,15 +1948,51 @@ function pickSession(ctx) {
   if (rows.length === 0) return void 0;
   return rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
 }
+function unwrapCall(raw) {
+  if (raw !== null && typeof raw === "object" && "ok" in raw) {
+    const r = raw;
+    if (r.ok === true) return { kind: "value", value: r.value };
+    const code = String(r.error?.code ?? "unknown");
+    const message = String(r.error?.message ?? "remote call failed");
+    return { kind: "failure", reason: `${code}: ${message}` };
+  }
+  return { kind: "value", value: raw };
+}
 function workspaceFilesOf(ctx) {
   const remote = ctx?.get?.("remote");
   return remote?.workspaceFiles;
+}
+function workspaceFacesOf(ctx) {
+  const faces = [];
+  const viaProp = ctx?.remote?.workspaceFiles;
+  if (viaProp !== void 0) faces.push(viaProp);
+  const viaGet = workspaceFilesOf(ctx);
+  if (viaGet !== void 0 && viaGet !== viaProp) faces.push(viaGet);
+  return faces;
 }
 function asBytes(value) {
   if (value === null || typeof value !== "object") return void 0;
   const candidate = value.data ?? value;
   if (candidate === null || typeof candidate !== "object") return void 0;
   return typeof candidate.byteLength === "number" ? candidate : void 0;
+}
+async function readFileBest(faces, sessionId, path) {
+  if (faces.length === 0) return { kind: "unreadable", reason: "no workspaceFiles face available" };
+  const reports = [];
+  let allEmptyOk = true;
+  for (let i = 0; i < faces.length; i += 1) {
+    const read = await readTextWithReason(faces[i], sessionId, path);
+    const tag = `face[${i}]`;
+    if (read.kind === "ok") {
+      if (read.text.trim() !== "") return { kind: "ok", text: read.text };
+      reports.push(`${tag}: ok but empty${read.debug ? ` (${read.debug})` : ""}`);
+    } else {
+      allEmptyOk = false;
+      reports.push(`${tag}: ${read.reason}${read.debug ? ` (${read.debug})` : ""}`);
+    }
+  }
+  if (allEmptyOk) return { kind: "ok", text: "" };
+  return { kind: "unreadable", reason: reports.join(" | ") };
 }
 async function readTextWithReason(api, sessionId, path) {
   let sawChannel = false;
@@ -1966,12 +2002,18 @@ async function readTextWithReason(api, sessionId, path) {
   if (typeof api.readBytes === "function") {
     sawChannel = true;
     try {
-      const result = await api.readBytes(sessionId, path, {});
-      const bytes = asBytes(result);
-      const len = bytes !== void 0 ? bytes.byteLength : -1;
-      debug.push(`readBytes{byteLength:${len}}`);
-      if (bytes !== void 0 && bytes.byteLength > 0) return { kind: "ok", text: new TextDecoder().decode(bytes) };
-      reason = "readBytes returned no data";
+      const unwrapped = unwrapCall(await api.readBytes(sessionId, path, {}));
+      if (unwrapped.kind === "failure") {
+        allEmpty = false;
+        reason = unwrapped.reason;
+        debug.push(`readBytes failed: ${reason}`);
+      } else {
+        const bytes = asBytes(unwrapped.value);
+        const len = bytes !== void 0 ? bytes.byteLength : -1;
+        debug.push(`readBytes{byteLength:${len}}`);
+        if (bytes !== void 0 && bytes.byteLength > 0) return { kind: "ok", text: new TextDecoder().decode(bytes) };
+        reason = "readBytes returned no data";
+      }
     } catch (error) {
       allEmpty = false;
       reason = error instanceof Error ? error.message : String(error);
@@ -1985,14 +2027,20 @@ async function readTextWithReason(api, sessionId, path) {
       let offset = 1;
       for (let page = 0; page < 20; page += 1) {
         const before = text;
-        const result = await api.read(sessionId, path, { offset });
+        const unwrapped = unwrapCall(await api.read(sessionId, path, { offset }));
+        if (unwrapped.kind === "failure") {
+          allEmpty = false;
+          reason = unwrapped.reason;
+          debug.push(`read failed: ${reason}`);
+          break;
+        }
+        const result = unwrapped.value;
         if (result === void 0) {
           debug.push(`read{page:${page},result:undefined}`);
           break;
         }
         if (page === 0) {
-          const r = result;
-          debug.push(`read{textLen:${typeof r.text === "string" ? r.text.length : "N/A"},lines:${JSON.stringify(r.lines)},eof:${JSON.stringify(r.eof)},absolutePath:${JSON.stringify(r.absolutePath)},version:${JSON.stringify(r.version)},bytes:${JSON.stringify(r.bytes)}}`);
+          debug.push(`read{textLen:${typeof result.text === "string" ? result.text.length : "N/A"},lines:${JSON.stringify(result.lines)},eof:${JSON.stringify(result.eof)},absolutePath:${JSON.stringify(result.absolutePath)},version:${JSON.stringify(result.version)},bytes:${JSON.stringify(result.bytes)}}`);
         }
         if (page > 0 && !text.endsWith("\n")) text += "\n";
         text += result.text ?? "";
@@ -2024,7 +2072,6 @@ function createStudioSource(ctx, options = {}) {
   const pollMs = options.pollMs ?? 2500;
   const studioState2 = options.sink ?? state(EMPTY, "studio.state");
   studioState2.value = EMPTY;
-  let lastVersion;
   let lastDesignVersion;
   let disposed = false;
   let inFlight = false;
@@ -2032,7 +2079,6 @@ function createStudioSource(ctx, options = {}) {
     studioState2.value = { ...studioState2.value, ...patch };
   };
   const showMissing = (sessionId, workspace, diagnostic) => {
-    lastVersion = void 0;
     lastDesignVersion = void 0;
     setState({ status: "missing", sessionId, workspace, message: MISSING_MESSAGE, diagnostic, manifest: void 0 });
   };
@@ -2043,8 +2089,8 @@ function createStudioSource(ctx, options = {}) {
     let workspace;
     try {
       const session = pickSession(ctx);
-      const api = workspaceFilesOf(ctx);
-      if (session === void 0 || api === void 0) {
+      const faces = workspaceFacesOf(ctx);
+      if (session === void 0 || faces.length === 0) {
         setState({
           status: "unavailable",
           message: session === void 0 ? "Waiting for the sessions service (it registers after plugins load) — retrying…" : "Waiting for the workspace-files service — retrying…"
@@ -2054,27 +2100,13 @@ function createStudioSource(ctx, options = {}) {
       sessionId = String(session.sessionId ?? "");
       workspace = session.cwd;
       const manifestPath = joinPath(workspace, MANIFEST_PATH);
-      if (typeof api.stat === "function") {
-        try {
-          const info = await api.stat(sessionId, manifestPath);
-          if (info !== void 0 && typeof info.bytes === "number") {
-            if (info.bytes === 0) {
-              showMissing(sessionId, workspace);
-              return;
-            }
-            if (info.version !== void 0 && info.version === lastVersion && studioState2.value.status === "ready") return;
-            lastVersion = info.version;
-          }
-        } catch {
-        }
-      }
-      const read = await readTextWithReason(api, sessionId, manifestPath);
+      const read = await readFileBest(faces, sessionId, manifestPath);
       if (read.kind === "unreadable") {
-        if (studioState2.value.status !== "ready") showMissing(sessionId, workspace, [read.reason, read.debug].filter(Boolean).join(" · "));
+        if (studioState2.value.status !== "ready") showMissing(sessionId, workspace, read.reason);
         return;
       }
       if (read.text.trim() === "") {
-        showMissing(sessionId, workspace, ["the manifest file exists but is empty", read.debug].filter(Boolean).join(" · "));
+        showMissing(sessionId, workspace, "the manifest file exists but is empty");
         return;
       }
       let parsed;
@@ -2105,13 +2137,13 @@ function createStudioSource(ctx, options = {}) {
       if (version !== lastDesignVersion) {
         lastDesignVersion = version;
         const designPath = joinPath(joinPath(workspace, String(manifest.project?.dir ?? "")), "DESIGN.md");
-        const design = await readTextWithReason(api, sessionId, designPath);
+        const design = await readFileBest(faces, sessionId, designPath);
         if (design.kind === "ok" && design.text.trim() !== "") {
           setState({ designMdText: design.text, designMdNote: void 0 });
         } else {
           setState({
             designMdText: void 0,
-            designMdNote: design.kind === "unreadable" ? design.reason : "DESIGN.md exists but is empty"
+            designMdNote: design.kind === "ok" ? "DESIGN.md exists but is empty" : design.reason
           });
         }
       }
