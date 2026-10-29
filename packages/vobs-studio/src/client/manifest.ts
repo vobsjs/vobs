@@ -120,25 +120,38 @@ function asBytes(value: unknown): ArrayBufferView | undefined {
     : undefined
 }
 
-async function readWholeFile(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<string> {
-  if (typeof api.readBytes === 'function') {
-    const bytes = asBytes(await api.readBytes(sessionId, path, {}))
-    if (bytes !== undefined) return new TextDecoder().decode(bytes)
-  }
-  if (typeof api.read !== 'function') throw new Error('workspaceFiles has no usable read method')
+/**
+ * Read the whole manifest. Returns undefined when nothing could be read.
+ *
+ * Verified against the Host's wire contract (dsh-api-workspace-files typert): every
+ * result schema is a plain object with no "absent" shape — a missing file surfaces as
+ * a thrown Remote error (often an opaque transport message like "Unexpected end of
+ * JSON input"), never as a clean `undefined`. Callers must treat "could not read" as
+ * "no manifest yet", not as an error.
+ */
+async function readManifestText(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<string | undefined> {
+  try {
+    if (typeof api.readBytes === 'function') {
+      const bytes = asBytes(await api.readBytes(sessionId, path, {}))
+      if (bytes !== undefined) return new TextDecoder().decode(bytes)
+    }
+    if (typeof api.read !== 'function') return undefined
 
-  let text = ''
-  let offset = 1
-  for (let page = 0; page < 20; page += 1) {
-    const result = await api.read(sessionId, path, { offset })
-    if (result === undefined) break
-    if (page > 0) text += '\n'
-    text += result.text ?? ''
-    if (result.eof === true) break
-    const lines = typeof result.lines === 'number' && result.lines > 0 ? result.lines : 1
-    offset += lines
+    let text = ''
+    let offset = 1 // line numbers are 1-based — the official paged reader starts at 1
+    for (let page = 0; page < 20; page += 1) {
+      const result = await api.read(sessionId, path, { offset })
+      if (result === undefined) break
+      if (page > 0 && !text.endsWith('\n')) text += '\n'
+      text += result.text ?? ''
+      if (result.eof === true) break
+      const lines = typeof result.lines === 'number' && result.lines > 0 ? result.lines : 1
+      offset += lines
+    }
+    return text
+  } catch {
+    return undefined
   }
-  return text
 }
 
 /* ---------------------------------------------------------------- Data source */
@@ -151,6 +164,8 @@ export interface StudioSourceOptions {
 }
 
 const EMPTY: StudioState = { status: 'loading', message: 'Reading the preview manifest…' }
+
+const MISSING_MESSAGE = 'No preview manifest yet. Generate pages first (the skill writes .vobs/studio/preview.json).'
 
 export function createStudioSource(ctx: DshClientContext | undefined, options: StudioSourceOptions = {}): StudioSource {
   const pollMs = options.pollMs ?? 2500
@@ -171,6 +186,11 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
    * fails (the exact bug seen in a real install — the Console avoids it by hot-swapping).
    * "unavailable" is therefore a retrying state, never terminal.
    */
+  const showMissing = (sessionId: string, workspace: string | undefined): void => {
+    lastVersion = undefined
+    setState({ status: 'missing', sessionId, workspace, message: MISSING_MESSAGE, manifest: undefined })
+  }
+
   const load = async (): Promise<void> => {
     if (disposed || inFlight) return
     inFlight = true
@@ -191,22 +211,65 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
       sessionId = String(session.sessionId ?? '')
       workspace = session.cwd
 
+      /**
+       * stat is a cheap skip, NOT an existence oracle: the Host's stat result carries no
+       * "absent" state (bytes is optional) and a missing file may resolve or throw alike.
+       * Only a concrete `bytes` number is acted on; everything else falls through to the
+       * read, which is the single source of truth for existence.
+       */
       if (typeof api.stat === 'function') {
-        const info = await api.stat(sessionId, MANIFEST_PATH)
-        if (info === undefined) {
-          lastVersion = undefined
-          setState({ status: 'missing', sessionId, workspace, message: 'No preview manifest yet. Generate pages first (the skill writes .vobs/studio/preview.json).', manifest: undefined })
-          return
+        try {
+          const info = await api.stat(sessionId, MANIFEST_PATH)
+          if (info !== undefined && typeof info.bytes === 'number') {
+            if (info.bytes === 0) {
+              showMissing(sessionId, workspace)
+              return
+            }
+            if (info.version !== undefined && info.version === lastVersion && studioState.value.status === 'ready') return
+            lastVersion = info.version
+          }
+        } catch {
+          /* existence is decided by the read below */
         }
-        if (info.version !== undefined && info.version === lastVersion && studioState.value.status === 'ready') return
-        lastVersion = info.version
       }
-      const text = await readWholeFile(api, sessionId, MANIFEST_PATH)
-      const parsed: unknown = JSON.parse(text)
-      if (parsed === null || typeof parsed !== 'object') throw new Error('manifest is not an object')
+
+      const text = await readManifestText(api, sessionId, MANIFEST_PATH)
+      if (text === undefined) {
+        // Read failed: either no manifest (the common case — a missing file throws on the
+        // real Host) or a transient transport failure. An already-ready panel keeps its
+        // preview instead of flashing the setup card on every poll.
+        if (studioState.value.status !== 'ready') showMissing(sessionId, workspace)
+        return
+      }
+      if (text.trim() === '') {
+        // The read cycle completed with empty content: definitively no manifest.
+        showMissing(sessionId, workspace)
+        return
+      }
+
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(text)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        setState({
+          status: 'error',
+          sessionId,
+          workspace,
+          message: `Preview manifest is not valid JSON (${reason}). Rebuild the preview to rewrite it.`
+        })
+        return
+      }
+      if (parsed === null || typeof parsed !== 'object') {
+        setState({ status: 'error', sessionId, workspace, message: 'Preview manifest is not an object. Rebuild the preview to rewrite it.' })
+        return
+      }
       const manifest = parsed as PreviewManifest
       const pages = Array.isArray(manifest.pages) ? manifest.pages : []
-      if (pages.length === 0) throw new Error('manifest has no pages')
+      if (pages.length === 0) {
+        setState({ status: 'error', sessionId, workspace, message: 'Preview manifest has no pages. Rebuild the preview to rewrite it.' })
+        return
+      }
       setState({ status: 'ready', sessionId, workspace, message: '', manifest })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

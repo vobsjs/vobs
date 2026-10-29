@@ -12,6 +12,9 @@
  *      through: the panel reaches `ready`, the page list renders, the iframe points at
  *      the static server, and page switching updates the iframe
  *   7. After effect cleanup the shadow root is emptied
+ *   8. Real-Host missing-file semantics (stat/read THROW for an absent file — the wire
+ *      schema has no "absent" shape): the panel shows the setup card, never a JSON
+ *      error; a genuinely broken manifest still surfaces as an actionable error
  *
  * Run: node scripts/verify-studio.mjs
  */
@@ -274,6 +277,76 @@ section('7. Cleanup')
 for (const cleanup of cleanups) cleanup()
 for (const dispose of disposers) dispose()
 check('shadow root emptied after cleanup', (hostElement.shadowRoot?.childNodes.length ?? -1) === 0)
+
+/* ------------------------------- 8. Real-Host missing-file semantics (recon'ed contract) */
+
+// The asar's dsh-api-workspace-files typert shows every result schema is a plain object
+// with no "absent" shape, so the Host THROWS for a missing file (observed live as
+// "Unexpected end of JSON input"). The panel must answer that with the setup card.
+// NOTE: section 7's cleanup already tore the data source down, so every case below
+// re-applies the plugin (a fresh apply resets the module state and starts a new source).
+section('8. Missing / broken manifest → guidance, not a JSON error')
+
+const applyAndMount = () => {
+  for (const cleanup of cleanups.splice(0)) cleanup()
+  for (const dispose of disposers.splice(0)) dispose()
+  mainRegistrations.length = 0
+  railRegistrations.length = 0
+  const effectMark = reactEffects.length
+  plugin.apply({
+    slots: slotsStub,
+    get(name) {
+      if (!declaredInject.has(name)) throw new Error(`service "${name}" used but not declared in inject/injectServices`)
+      return fakeServices[name]
+    },
+    effect(callback) {
+      const dispose = callback()
+      if (typeof dispose === 'function') disposers.push(dispose)
+    }
+  })
+  const mounted = mainRegistrations[0].component()
+  const element = dom.window.document.createElement('div')
+  mounted.props.ref.current = element
+  dom.window.document.body.appendChild(element)
+  for (const effect of reactEffects.slice(effectMark)) {
+    const cleanup = effect()
+    if (typeof cleanup === 'function') cleanups.push(cleanup)
+  }
+  return element.shadowRoot
+}
+
+// 8a. stat reports a concrete empty file (bytes: 0) — decisive missing.
+fakeServices.remote.workspaceFiles.stat = async () => ({ version: 9, bytes: 0 })
+fakeServices.remote.workspaceFiles.read = async () => ({ text: MANIFEST_JSON, eof: true })
+const shadowEmpty = applyAndMount()
+const gone = await until(() => shadowEmpty?.querySelector('.studio__steps') !== null)
+check('empty manifest (bytes 0) shows the setup card', gone)
+check('no error notice in the empty state', shadowEmpty?.querySelector('.studio__error') === null)
+
+// 8b. Services that throw like the real Host does for an absent file.
+const realHostMissing = async () => {
+  throw new Error('Unexpected end of JSON input')
+}
+fakeServices.remote.workspaceFiles.stat = realHostMissing
+fakeServices.remote.workspaceFiles.read = realHostMissing
+const shadow2 = applyAndMount()
+const guided = await until(() => shadow2?.querySelector('.studio__steps') !== null)
+check('host-style thrown "missing" shows the setup card', guided)
+check('thrown missing state shows no error notice', shadow2?.querySelector('.studio__error') === null)
+
+// 8c. A present but broken manifest is a real error, with an actionable message.
+fakeServices.remote.workspaceFiles.stat = async () => ({ version: 2, bytes: 5 })
+fakeServices.remote.workspaceFiles.read = async () => ({ text: '{"pag', eof: true })
+shadow2.querySelector('.studio__btn')?.click()
+const failed = await until(() => shadow2?.querySelector('.studio__error') !== null)
+const errorText = shadow2?.querySelector('.studio__error')?.textContent ?? ''
+check('broken manifest JSON surfaces as an error', failed, errorText)
+check('error message names the file and the fix', errorText.includes('not valid JSON') && errorText.includes('Rebuild'), errorText)
+
+section('9. Final cleanup')
+for (const cleanup of cleanups.splice(0)) cleanup()
+for (const dispose of disposers.splice(0)) dispose()
+check('second mount emptied after cleanup', (shadow2?.childNodes.length ?? -1) === 0)
 
 /* ------------------------------------------------------------------- Result */
 

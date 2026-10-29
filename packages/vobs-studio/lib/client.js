@@ -1995,26 +1995,31 @@ function asBytes(value) {
   if (candidate === null || typeof candidate !== "object") return void 0;
   return typeof candidate.byteLength === "number" ? candidate : void 0;
 }
-async function readWholeFile(api, sessionId, path) {
-  if (typeof api.readBytes === "function") {
-    const bytes = asBytes(await api.readBytes(sessionId, path, {}));
-    if (bytes !== void 0) return new TextDecoder().decode(bytes);
+async function readManifestText(api, sessionId, path) {
+  try {
+    if (typeof api.readBytes === "function") {
+      const bytes = asBytes(await api.readBytes(sessionId, path, {}));
+      if (bytes !== void 0) return new TextDecoder().decode(bytes);
+    }
+    if (typeof api.read !== "function") return void 0;
+    let text = "";
+    let offset = 1;
+    for (let page = 0; page < 20; page += 1) {
+      const result = await api.read(sessionId, path, { offset });
+      if (result === void 0) break;
+      if (page > 0 && !text.endsWith("\n")) text += "\n";
+      text += result.text ?? "";
+      if (result.eof === true) break;
+      const lines = typeof result.lines === "number" && result.lines > 0 ? result.lines : 1;
+      offset += lines;
+    }
+    return text;
+  } catch {
+    return void 0;
   }
-  if (typeof api.read !== "function") throw new Error("workspaceFiles has no usable read method");
-  let text = "";
-  let offset = 1;
-  for (let page = 0; page < 20; page += 1) {
-    const result = await api.read(sessionId, path, { offset });
-    if (result === void 0) break;
-    if (page > 0) text += "\n";
-    text += result.text ?? "";
-    if (result.eof === true) break;
-    const lines = typeof result.lines === "number" && result.lines > 0 ? result.lines : 1;
-    offset += lines;
-  }
-  return text;
 }
 const EMPTY = { status: "loading", message: "Reading the preview manifest…" };
+const MISSING_MESSAGE = "No preview manifest yet. Generate pages first (the skill writes .vobs/studio/preview.json).";
 function createStudioSource(ctx, options = {}) {
   const pollMs = options.pollMs ?? 2500;
   const studioState2 = options.sink ?? state(EMPTY, "studio.state");
@@ -2024,6 +2029,10 @@ function createStudioSource(ctx, options = {}) {
   let inFlight = false;
   const setState = (patch) => {
     studioState2.value = { ...studioState2.value, ...patch };
+  };
+  const showMissing = (sessionId, workspace) => {
+    lastVersion = void 0;
+    setState({ status: "missing", sessionId, workspace, message: MISSING_MESSAGE, manifest: void 0 });
   };
   const load = async () => {
     if (disposed || inFlight) return;
@@ -2043,21 +2052,51 @@ function createStudioSource(ctx, options = {}) {
       sessionId = String(session.sessionId ?? "");
       workspace = session.cwd;
       if (typeof api.stat === "function") {
-        const info = await api.stat(sessionId, MANIFEST_PATH);
-        if (info === void 0) {
-          lastVersion = void 0;
-          setState({ status: "missing", sessionId, workspace, message: "No preview manifest yet. Generate pages first (the skill writes .vobs/studio/preview.json).", manifest: void 0 });
-          return;
+        try {
+          const info = await api.stat(sessionId, MANIFEST_PATH);
+          if (info !== void 0 && typeof info.bytes === "number") {
+            if (info.bytes === 0) {
+              showMissing(sessionId, workspace);
+              return;
+            }
+            if (info.version !== void 0 && info.version === lastVersion && studioState2.value.status === "ready") return;
+            lastVersion = info.version;
+          }
+        } catch {
         }
-        if (info.version !== void 0 && info.version === lastVersion && studioState2.value.status === "ready") return;
-        lastVersion = info.version;
       }
-      const text = await readWholeFile(api, sessionId, MANIFEST_PATH);
-      const parsed = JSON.parse(text);
-      if (parsed === null || typeof parsed !== "object") throw new Error("manifest is not an object");
+      const text = await readManifestText(api, sessionId, MANIFEST_PATH);
+      if (text === void 0) {
+        if (studioState2.value.status !== "ready") showMissing(sessionId, workspace);
+        return;
+      }
+      if (text.trim() === "") {
+        showMissing(sessionId, workspace);
+        return;
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        setState({
+          status: "error",
+          sessionId,
+          workspace,
+          message: `Preview manifest is not valid JSON (${reason}). Rebuild the preview to rewrite it.`
+        });
+        return;
+      }
+      if (parsed === null || typeof parsed !== "object") {
+        setState({ status: "error", sessionId, workspace, message: "Preview manifest is not an object. Rebuild the preview to rewrite it." });
+        return;
+      }
       const manifest = parsed;
       const pages = Array.isArray(manifest.pages) ? manifest.pages : [];
-      if (pages.length === 0) throw new Error("manifest has no pages");
+      if (pages.length === 0) {
+        setState({ status: "error", sessionId, workspace, message: "Preview manifest has no pages. Rebuild the preview to rewrite it." });
+        return;
+      }
       setState({ status: "ready", sessionId, workspace, message: "", manifest });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
