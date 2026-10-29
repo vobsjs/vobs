@@ -2655,15 +2655,19 @@ function StudioIcon() {
   return (() => {
     const _el0 = createElement("svg");
     setStaticProps(_el0, {
+      "width": "18",
+      "height": "18",
       "viewBox": "0 0 24 24",
-      "width": "100%",
-      "height": "100%"
+      "fill": "none",
+      "stroke": "currentColor",
+      "stroke-width": "1.8",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round"
     });
     insertBefore(_el0, (() => {
       const _el1 = createElement("path");
       setStaticProps(_el1, {
-        "d": "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z",
-        "fill": "currentColor"
+        "d": "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"
       });
       return _el1;
     })(), null);
@@ -2672,9 +2676,7 @@ function StudioIcon() {
       setStaticProps(_el2, {
         "cx": "18.5",
         "cy": "18.5",
-        "r": "2",
-        "fill": "currentColor",
-        "opacity": "0.55"
+        "r": "2"
       });
       return _el2;
     })(), null);
@@ -2683,9 +2685,7 @@ function StudioIcon() {
       setStaticProps(_el3, {
         "cx": "5.5",
         "cy": "18",
-        "r": "1.4",
-        "fill": "currentColor",
-        "opacity": "0.35"
+        "r": "1.4"
       });
       return _el3;
     })(), null);

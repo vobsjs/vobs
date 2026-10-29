@@ -17,14 +17,13 @@ import { disposeStudio, startStudioSource } from './store'
 import { TOOLVIEW_CSS, TOOLVIEW_TOOLS, studioToolRow } from './toolview'
 
 function StudioIcon() {
+  // Fixed pixel size — the panellist host has no intrinsic constraint, so width="100%"
+  // blows the icon up to fill the whole sidebar card (seen in a real install).
   return (
-    <svg viewBox="0 0 24 24" width="100%" height="100%">
-      <path
-        d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"
-        fill="currentColor"
-      />
-      <circle cx="18.5" cy="18.5" r="2" fill="currentColor" opacity="0.55" />
-      <circle cx="5.5" cy="18" r="1.4" fill="currentColor" opacity="0.35" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+      <circle cx="18.5" cy="18.5" r="2" />
+      <circle cx="5.5" cy="18" r="1.4" />
     </svg>
   )
 }
