@@ -521,6 +521,12 @@ importers:
         specifier: workspace:*
         version: link:../runtime
 
+  packages/vobs-studio:
+    dependencies:
+      '@vobs/compiler':
+        specifier: 1.9.1
+        version: 1.9.1
+
   playground/basic:
     dependencies:
       '@vobs/auth':
@@ -1290,6 +1296,15 @@ packages:
 
   '@vitest/spy@5.0.5':
     resolution: {integrity: sha512-lwJRExuH417257Q5wv9QYugN9IMJkoxcrKrYxGPQkBzl7wlNpTUxD/5yNX4ESKVUIShKPgkGchYPFMWOOk0wzw==}
+
+  '@vobs/compiler@1.9.1':
+    resolution: {integrity: sha512-zJ9xStMGLcPmrwZSwT3Zd7B9VgeFOMN08O9SEz7P5ot1HJppTj+QjCqypk5quY1IhsYHjzW4WX+upUB4zSOGbQ==}
+
+  '@vobs/reactivity@1.9.1':
+    resolution: {integrity: sha512-hLe6xoiZB9d7yh1zcHh03VUhiIe1cEkipHdFZuzz5ERMMUDU8UibMpU9+pRrJzMEA72fwwN6J2jkbRsiyAJxDg==}
+
+  '@vobs/runtime@1.9.1':
+    resolution: {integrity: sha512-8R4/890zjMWpGM4QCPq9fbieh0+CnJ53ZvXvH6e455goZutNlJ3Dc9EpXW26+Kw3MYy3vjaj8b0xlXltmhkAYg==}
 
   acorn@8.18.0:
     resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
@@ -2682,6 +2697,17 @@ snapshots:
       vite: 7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)
 
   '@vitest/spy@5.0.5': {}
+
+  '@vobs/compiler@1.9.1':
+    dependencies:
+      '@vobs/runtime': 1.9.1
+      typescript: 5.9.3
+
+  '@vobs/reactivity@1.9.1': {}
+
+  '@vobs/runtime@1.9.1':
+    dependencies:
+      '@vobs/reactivity': 1.9.1
 
   acorn@8.18.0: {}
 
