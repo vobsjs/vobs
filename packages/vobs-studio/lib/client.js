@@ -1835,6 +1835,49 @@ function resolveScheme() {
   return prefersDark ? "dark" : "light";
 }
 const DSH_ROOT_CLASS = "vobs-dsh-root";
+function createVobsPropsSlotHost(render, options = {}) {
+  const hostStyle = options.hostStyle ?? DEFAULT_PANEL_HOST_STYLE;
+  const readScheme = options.scheme ?? resolveScheme;
+  const styles = options.styles;
+  return function VobsPropsSlotHost(props = {}) {
+    const React = resolveDshReact();
+    const holder = React.useRef(null);
+    const propsSignal = React.useRef(null);
+    if (propsSignal.current === null) propsSignal.current = state(props, "dsh.slotProps");
+    React.useEffect(() => {
+      propsSignal.current.value = props;
+    });
+    React.useEffect(() => {
+      const host = holder.current;
+      if (!host) return void 0;
+      const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+      if (styles) {
+        const style = document.createElement("style");
+        style.textContent = styles;
+        shadow.appendChild(style);
+      }
+      const root = document.createElement("div");
+      root.className = DSH_ROOT_CLASS;
+      root.dataset.scheme = readScheme();
+      root.style.width = "100%";
+      root.style.height = "100%";
+      shadow.appendChild(root);
+      const media = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+      const onSchemeChange = () => {
+        root.dataset.scheme = readScheme();
+      };
+      media?.addEventListener("change", onSchemeChange);
+      const app = createVobs({ render: () => render(() => propsSignal.current.value) });
+      app.mount(root);
+      return () => {
+        media?.removeEventListener("change", onSchemeChange);
+        app.destroy();
+        host.shadowRoot?.replaceChildren();
+      };
+    }, []);
+    return React.createElement("div", { ref: holder, style: hostStyle });
+  };
+}
 function createVobsSlotHost(render, options = {}) {
   const hostStyle = options.hostStyle ?? DEFAULT_OVERLAY_HOST_STYLE;
   const readScheme = options.scheme ?? resolveScheme;
@@ -2062,7 +2105,7 @@ function disposeStudio() {
   source?.dispose();
   source = void 0;
 }
-const _tpl6 = createTemplate("<code>.vobs/studio/preview.json</code>");
+const _tpl6$1 = createTemplate("<code>.vobs/studio/preview.json</code>");
 const _tpl15 = createTemplate("<h3>Project</h3>");
 const _tpl22 = createTemplate('<span class="studio__brand">Vobs Studio</span>');
 const _tpl23 = createTemplate('<span class="studio__tag">AI Build</span>');
@@ -2097,7 +2140,7 @@ function StatusNotice() {
       const _el5 = createElement("p");
       insertBefore(_el5, createText("Ask the agent to build pages, or run the preview build — it writes"), null);
       insertDynamicValue(_el5, null, () => " ");
-      insertBefore(_el5, cloneTemplate(_tpl6), null);
+      insertBefore(_el5, cloneTemplate(_tpl6$1), null);
       insertBefore(_el5, createText(" and this panel picks it up automatically."), null);
       return _el5;
     })() : null);
@@ -2466,6 +2509,148 @@ const STUDIO_CSS = `
 .studio__error { color: #e5695f; }
 .studio__state { padding: 14px; font-size: 12px; color: var(--s-muted); }
 `;
+const _tpl1 = createTemplate('<span class="studio-row__dot"></span>');
+const _tpl6 = createTemplate("<summary>output</summary>");
+const TOOL_LABELS = {
+  design_contract: "Design contract",
+  design_scaffold: "Scaffold project",
+  design_check: "Self-check snippet",
+  design_preview_build: "Build & preview"
+};
+function summarizeInput(tool, args) {
+  const dir = typeof args.dir === "string" ? args.dir : void 0;
+  if (tool === "design_scaffold" || tool === "design_preview_build")
+    return dir ?? "";
+  if (tool === "design_check") {
+    const filename = typeof args.filename === "string" ? args.filename : "snippet.tsx";
+    const size = typeof args.code === "string" ? `${args.code.split("\n").length} lines` : "";
+    return `${filename}${size !== "" ? ` · ${size}` : ""}`;
+  }
+  return "";
+}
+function parseBlock(block) {
+  const fallback = { settled: false, args: {}, outputText: "" };
+  if (block === null || typeof block !== "object")
+    return fallback;
+  const b = block;
+  const settled = typeof b.kind === "string";
+  const call = settled && b.call !== null && typeof b.call === "object" ? b.call : b;
+  let args = {};
+  try {
+    const parsed = JSON.parse(typeof call.argsRaw === "string" && call.argsRaw !== "" ? call.argsRaw : "{}");
+    if (parsed !== null && typeof parsed === "object")
+      args = parsed;
+  } catch {
+    args = {};
+  }
+  const rawOutput = call.output ?? call.result;
+  const outputText = typeof rawOutput === "string" ? rawOutput : rawOutput !== null && rawOutput !== void 0 && typeof rawOutput === "object" ? JSON.stringify(rawOutput) : "";
+  return { settled, args, outputText };
+}
+function Row(props) {
+  const p = props();
+  const tool = typeof p.key === "string" ? p.key : typeof p.tool === "string" ? p.tool : "";
+  const label = TOOL_LABELS[tool] ?? tool;
+  const preparing = p.phase === "preparing";
+  const call = parseBlock(p.block);
+  const summary = summarizeInput(tool, call.args);
+  const stateLabel = preparing ? "running" : "done";
+  return (() => {
+    const _el0 = createElement("div");
+    setStaticProps(_el0, {
+      "class": "studio-row"
+    });
+    bindAttribute(_el0, "data-tool", () => tool);
+    bindAttribute(_el0, "data-state", () => stateLabel);
+    insertBefore(_el0, cloneTemplate(_tpl1), null);
+    insertBefore(_el0, (() => {
+      const _el2 = createElement("span");
+      setStaticProps(_el2, {
+        "class": "studio-row__title"
+      });
+      insertDynamicValue(_el2, null, () => label);
+      return _el2;
+    })(), null);
+    insertDynamic(_el0, null, () => summary !== "" ? (() => {
+      const _el3 = createElement("span");
+      setStaticProps(_el3, {
+        "class": "studio-row__summary"
+      });
+      insertDynamicValue(_el3, null, () => summary);
+      return _el3;
+    })() : null);
+    insertBefore(_el0, (() => {
+      const _el4 = createElement("span");
+      setStaticProps(_el4, {
+        "class": "studio-row__state"
+      });
+      insertDynamicValue(_el4, null, () => preparing ? "running…" : "done");
+      return _el4;
+    })(), null);
+    insertDynamic(_el0, null, () => call.outputText !== "" ? (() => {
+      const _el5 = createElement("details");
+      setStaticProps(_el5, {
+        "class": "studio-row__details"
+      });
+      insertBefore(_el5, cloneTemplate(_tpl6), null);
+      insertBefore(_el5, (() => {
+        const _el7 = createElement("pre");
+        insertDynamicValue(_el7, null, () => call.outputText.slice(0, 2e3));
+        return _el7;
+      })(), null);
+      return _el5;
+    })() : null);
+    return _el0;
+  })();
+}
+const TOOLVIEW_TOOLS = Object.keys(TOOL_LABELS);
+const TOOLVIEW_CSS = `
+.studio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-border-color, rgba(127,127,127,.25));
+  border-radius: 8px;
+  background: var(--dsw-bg-elevated, transparent);
+  font: 400 12px/1.4 var(--dsw-font-family, -apple-system, "Segoe UI", sans-serif);
+  color: var(--dsw-text-primary, inherit);
+  max-width: 100%;
+}
+.studio-row__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--dsw-text-tertiary, #8f8f96);
+}
+.studio-row[data-state="running"] .studio-row__dot {
+  background: var(--dsw-brand-primary, #4d6bfe);
+  animation: studio-row-pulse 1.1s ease-in-out infinite;
+}
+.studio-row__title { font-weight: 600; flex: none; }
+.studio-row__summary {
+  color: var(--dsw-text-tertiary, #8f8f96);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.studio-row__state { margin-left: auto; flex: none; color: var(--dsw-text-tertiary, #8f8f96); font-size: 11px; }
+.studio-row__details { min-width: 0; flex-basis: 100%; }
+.studio-row__details summary { cursor: pointer; color: var(--dsw-text-tertiary, #8f8f96); font-size: 11px; }
+.studio-row__details pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--dsw-bg-color, rgba(127,127,127,.08));
+  overflow: auto;
+  max-height: 180px;
+  font: 400 11px/1.5 ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+}
+@keyframes studio-row-pulse { 50% { opacity: .35; } }
+`;
 function StudioIcon() {
   return (() => {
     const _el0 = createElement("svg");
@@ -2507,7 +2692,7 @@ function StudioIcon() {
     return _el0;
   })();
 }
-const index = defineDshPanel({
+const panelPlugin = defineDshPanel({
   key: "vobs-studio",
   label: "Vobs Studio",
   order: 5,
@@ -2523,6 +2708,15 @@ const index = defineDshPanel({
     };
   }
 }, () => createComponent(resolveComponent(Studio, "src/client/index.tsx", "Studio"), {}));
+const index = defineDshPlugin({
+  inject: panelPlugin.inject,
+  setup(ctx) {
+    panelPlugin.apply(ctx);
+    for (const tool of TOOLVIEW_TOOLS) {
+      ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({ name: "tool.call.toolview", key: tool }, createVobsPropsSlotHost(Row, { styles: TOOLVIEW_CSS })));
+    }
+  }
+});
 exports.default = index;
 var out=module.exports;
 return (out&&out.__esModule&&Object.prototype.hasOwnProperty.call(out,"default"))?out.default:out;

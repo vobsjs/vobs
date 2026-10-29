@@ -18,12 +18,14 @@ export {
 
 export {
   createVobsSlotHost,
+  createVobsPropsSlotHost,
   DSH_ROOT_CLASS,
   DEFAULT_ICON_HOST_STYLE,
   DEFAULT_OVERLAY_HOST_STYLE,
   DEFAULT_PANEL_HOST_STYLE,
   resolveScheme,
   type DshHostStyle,
+  type DshPropsSlotHostComponent,
   type DshSlotHostComponent,
   type DshSurfaceOptions
 } from './host.js'

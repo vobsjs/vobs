@@ -1,15 +1,20 @@
 /**
- * Client half entry. Built by dshBundle() into lib/client.js:
+ * Client half entry. Built by build-dsh-plugins.mjs into lib/client.js:
  *
- *   window.__ModuleLoader__.load({ id: 'vobs-studio', factory: function (require) { … } })
+ *   window.__ModuleLoader__.load({ id: 'dsh-plugin-vobs-studio', factory: function (require) { … } })
+ *
+ * Composes two registrations on one plugin:
+ *   - the full-page Studio panel (`main` keyed slot + sidebar entry)
+ *   - in-chat toolview rows for the Studio MCP tools (`tool.call.toolview`, key = tool name)
  *
  * `setup(ctx)` runs as soon as the plugin loads (before the panel is ever rendered) and
  * starts the preview-manifest data source; the view binds the module-level signals.
  */
-import { defineDshPanel } from '@vobs/dsh'
+import { createVobsPropsSlotHost, defineDshPlugin, defineDshPanel } from '@vobs/dsh'
 import { Studio } from './panel'
 import { STUDIO_CSS } from './styles'
 import { disposeStudio, startStudioSource } from './store'
+import { TOOLVIEW_CSS, TOOLVIEW_TOOLS, studioToolRow } from './toolview'
 
 function StudioIcon() {
   return (
@@ -24,7 +29,7 @@ function StudioIcon() {
   )
 }
 
-export default defineDshPanel(
+const panelPlugin = defineDshPanel(
   {
     key: 'vobs-studio',
     label: 'Vobs Studio',
@@ -43,3 +48,18 @@ export default defineDshPanel(
   },
   () => <Studio />
 )
+
+export default defineDshPlugin({
+  inject: panelPlugin.inject,
+  setup(ctx) {
+    panelPlugin.apply(ctx)
+    for (const tool of TOOLVIEW_TOOLS) {
+      ctx.slots.inject('tool.call.toolview', () =>
+        ctx.slots.register(
+          { name: 'tool.call.toolview', key: tool },
+          createVobsPropsSlotHost(studioToolRow, { styles: TOOLVIEW_CSS })
+        )
+      )
+    }
+  }
+})

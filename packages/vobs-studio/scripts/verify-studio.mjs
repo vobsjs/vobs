@@ -162,6 +162,7 @@ const fakeServices = {
 
 const mainRegistrations = []
 const railRegistrations = []
+const toolviewRegistrations = []
 const reactEffects = []
 
 const slotsStub = {
@@ -171,6 +172,7 @@ const slotsStub = {
   register(options, component) {
     if (options.name === 'main') mainRegistrations.push({ options, component })
     else if (options.name === 'sidebar.panellist') railRegistrations.push({ options, component })
+    else if (options.name === 'tool.call.toolview') toolviewRegistrations.push({ options, component })
     return () => {}
   }
 }
@@ -210,6 +212,20 @@ check(
   'sidebar entry id links to the panel key',
   railRegistrations[0]?.options?.id === 'vobs-studio',
   JSON.stringify(railRegistrations[0]?.options)
+)
+
+section('4b. toolview rows for the Studio MCP tools')
+check(
+  'four tool.call.toolview registrations (one per MCP tool)',
+  toolviewRegistrations.length === 4,
+  `toolview=${toolviewRegistrations.length}`
+)
+check(
+  'toolview keys match the MCP tool names',
+  ['design_contract', 'design_scaffold', 'design_check', 'design_preview_build'].every(tool =>
+    toolviewRegistrations.some(r => r.options.key === tool)
+  ),
+  toolviewRegistrations.map(r => r.options.key).join(',')
 )
 
 /* --------------------------------------------- 5. Mount + manifest flows through */

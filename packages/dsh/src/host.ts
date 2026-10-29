@@ -1,4 +1,4 @@
-import { createVobs, type VobsNode } from '@vobs/vobs'
+import { createVobs, state, type VobsNode } from '@vobs/vobs'
 import { resolveDshReact } from './react.js'
 
 /** React inline style object. */
@@ -61,6 +61,80 @@ export const DSH_ROOT_CLASS = 'vobs-dsh-root'
 
 /** React component produced by createVobsSlotHost. */
 export type DshSlotHostComponent = () => unknown
+
+/**
+ * React component produced by createVobsPropsSlotHost. Receives the slot host's props
+ * (e.g. a toolview row gets `{ t, phase, callId, block, inspect, ...injected }`).
+ */
+export type DshPropsSlotHostComponent = (props: Record<string, unknown>) => unknown
+
+/**
+ * Like createVobsSlotHost, but for slots whose entries receive **changing props** (toolview
+ * rows: `phase` flips preparing→settled, `block` streams in). The host mirrors the React
+ * props into a vobs signal on every React render; `render` reads them through the getter,
+ * so only the bound text nodes update — the shadow root is created once and never rebuilt.
+ */
+export function createVobsPropsSlotHost(
+  render: (props: () => Record<string, unknown>) => VobsNode,
+  options: DshSurfaceOptions = {}
+): DshPropsSlotHostComponent {
+  const hostStyle = options.hostStyle ?? DEFAULT_PANEL_HOST_STYLE
+  const readScheme = options.scheme ?? resolveScheme
+  const styles = options.styles
+
+  return function VobsPropsSlotHost(props: Record<string, unknown> = {}): unknown {
+    const React = resolveDshReact()
+    const holder = React.useRef<HTMLElement | null>(null)
+    /*
+     * The signal is created once per component instance (this body runs once per mount);
+     * the effect mirrors every React render's props into it, so vobs bindings track the
+     * latest tool-call state without the host subtree ever being recreated.
+     */
+    const propsSignal = React.useRef<{ value: Record<string, unknown> } | null>(null)
+    if (propsSignal.current === null) propsSignal.current = state<Record<string, unknown>>(props, 'dsh.slotProps')
+
+    React.useEffect(() => {
+      propsSignal.current!.value = props
+    })
+
+    React.useEffect(() => {
+      const host = holder.current
+      if (!host) return undefined
+
+      const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' })
+
+      if (styles) {
+        const style = document.createElement('style')
+        style.textContent = styles
+        shadow.appendChild(style)
+      }
+
+      const root = document.createElement('div')
+      root.className = DSH_ROOT_CLASS
+      root.dataset.scheme = readScheme()
+      root.style.width = '100%'
+      root.style.height = '100%'
+      shadow.appendChild(root)
+
+      const media = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null
+      const onSchemeChange = (): void => {
+        root.dataset.scheme = readScheme()
+      }
+      media?.addEventListener('change', onSchemeChange)
+
+      const app = createVobs({ render: () => render(() => propsSignal.current!.value) })
+      app.mount(root)
+
+      return () => {
+        media?.removeEventListener('change', onSchemeChange)
+        app.destroy()
+        host.shadowRoot?.replaceChildren()
+      }
+    }, [])
+
+    return React.createElement('div', { ref: holder, style: hostStyle })
+  }
+}
 
 /**
  * Wraps a vobs render function into a React component that DSH slots accept.
