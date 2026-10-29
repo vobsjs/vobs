@@ -148,8 +148,8 @@ const MANIFEST_JSON = JSON.stringify({
   server: { origin: 'http://127.0.0.1:5218' },
   project: { name: 'demo-app', dir: 'demo-app' },
   pages: [
-    { id: 'dashboard', title: 'Dashboard', route: '/', file: 'demo-app/dist/dashboard.html' },
-    { id: 'settings', title: 'Settings', route: '/settings', file: 'demo-app/dist/settings.html' }
+    { id: 'dashboard', title: 'Dashboard', route: '/pages/dashboard.html', file: 'pages/dashboard.html' },
+    { id: 'settings', title: 'Settings', route: '/pages/settings.html', file: 'pages/settings.html' }
   ]
 })
 
@@ -305,12 +305,12 @@ const pageButtons = () => [...shadow.querySelectorAll('.studio__page')]
 check('page titles render', pageButtons().map(b => b.textContent).join('|').includes('Dashboard') && pageButtons().map(b => b.textContent).join('|').includes('Settings'))
 
 const frame = shadow.querySelector('.studio__frame')
-check('iframe points at the static server (first page selected automatically)', frame?.getAttribute('src') === 'http://127.0.0.1:5218/demo-app/dist/dashboard.html', String(frame?.getAttribute('src')))
+check('iframe points at the static server (first page selected automatically)', frame?.getAttribute('src') === 'http://127.0.0.1:5218/pages/dashboard.html', String(frame?.getAttribute('src')))
 
 section('6. Page switching')
 pageButtons()[1].click()
 await tick()
-check('clicking the second page switches the iframe', shadow.querySelector('.studio__frame')?.getAttribute('src') === 'http://127.0.0.1:5218/demo-app/dist/settings.html', String(shadow.querySelector('.studio__frame')?.getAttribute('src')))
+check('clicking the second page switches the iframe', shadow.querySelector('.studio__frame')?.getAttribute('src') === 'http://127.0.0.1:5218/pages/settings.html', String(shadow.querySelector('.studio__frame')?.getAttribute('src')))
 check(
   'active page is visually marked',
   pageButtons()[1].getAttribute('data-active') === 'true' && pageButtons()[0].getAttribute('data-active') !== 'true'

@@ -123,9 +123,11 @@ do exactly this — no other steps, no questions:
    <ref>: use the tag the user names, otherwise main. Afterwards CHECK that the profile
    dependency spec still contains `&path:/packages/<dir>`; if it lost the spec (the shim
    trap), `plugin remove` and redo via the direct invocation.
-2. Register the package name (not the dir name) in
+2. VERIFY the package name (not the dir name) is present in
    ~/.dsh/profiles/desktop/package.json → dsh.profile.bundles (append if absent).
-   The CLI does not do this step; without it the plugin will not load.
+   Since DSH 0.2.0-rc.2 the CLI's reconcile() auto-registers new bundles, so this is
+   normally a no-op check; older versions need the manual append. Without the entry
+   the plugin will not load.
 3. Remind the user: fully quit DSH (including the tray) and reopen it — plugin patches
    compose at startup.
 

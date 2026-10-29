@@ -183,9 +183,13 @@ on every call, because one MCP server process serves every session:
   "version": 1,
   "server": { "origin": "http://127.0.0.1:5218" },
   "project": { "name": "my-app", "dir": "my-app" },
-  "pages": [{ "id": "dashboard", "title": "Dashboard", "route": "/", "file": "my-app/dist/dashboard.html" }]
+  "pages": [{ "id": "home", "title": "Home", "route": "/pages/home.html", "file": "pages/home.html" }]
 }
 ```
+
+`file` is **dist-relative** (the panel resolves it as `server.origin + '/' + file`, and
+the static server's root IS the project's `dist/`) — the tool writes it correctly, do
+not hand-edit it to workspace-relative.
 
 The Studio panel polls this file. Adding a page = add one `pages/<id>.html` entry +
 rebuild + rewrite the manifest.
