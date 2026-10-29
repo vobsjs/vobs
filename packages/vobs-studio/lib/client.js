@@ -1810,27 +1810,44 @@ function asBytes(value) {
   return typeof candidate.byteLength === "number" ? candidate : void 0;
 }
 async function readTextWithReason(api, sessionId, path) {
-  try {
-    if (typeof api.readBytes === "function") {
+  let sawChannel = false;
+  let allEmpty = true;
+  let reason;
+  if (typeof api.readBytes === "function") {
+    sawChannel = true;
+    try {
       const bytes = asBytes(await api.readBytes(sessionId, path, {}));
-      if (bytes !== void 0) return { kind: "ok", text: new TextDecoder().decode(bytes) };
+      if (bytes !== void 0 && bytes.byteLength > 0) return { kind: "ok", text: new TextDecoder().decode(bytes) };
+      reason = "readBytes returned no data";
+    } catch (error) {
+      allEmpty = false;
+      reason = error instanceof Error ? error.message : String(error);
     }
-    if (typeof api.read !== "function") return { kind: "unreadable", reason: "workspaceFiles has no usable read method" };
-    let text = "";
-    let offset = 1;
-    for (let page = 0; page < 20; page += 1) {
-      const result = await api.read(sessionId, path, { offset });
-      if (result === void 0) break;
-      if (page > 0 && !text.endsWith("\n")) text += "\n";
-      text += result.text ?? "";
-      if (result.eof === true) break;
-      const lines = typeof result.lines === "number" && result.lines > 0 ? result.lines : 1;
-      offset += lines;
-    }
-    return { kind: "ok", text };
-  } catch (error) {
-    return { kind: "unreadable", reason: error instanceof Error ? error.message : String(error) };
   }
+  if (typeof api.read === "function") {
+    sawChannel = true;
+    try {
+      let text = "";
+      let offset = 1;
+      for (let page = 0; page < 20; page += 1) {
+        const result = await api.read(sessionId, path, { offset });
+        if (result === void 0) break;
+        if (page > 0 && !text.endsWith("\n")) text += "\n";
+        text += result.text ?? "";
+        if (result.eof === true) break;
+        const lines = typeof result.lines === "number" && result.lines > 0 ? result.lines : 1;
+        offset += lines;
+      }
+      if (text !== "") return { kind: "ok", text };
+      reason = reason ?? "the paged read returned empty text";
+    } catch (error) {
+      allEmpty = false;
+      reason = error instanceof Error ? error.message : String(error);
+    }
+  }
+  if (!sawChannel) return { kind: "unreadable", reason: "workspaceFiles has no usable read method" };
+  if (allEmpty) return { kind: "ok", text: "" };
+  return { kind: "unreadable", reason: reason ?? "the file could not be read" };
 }
 async function readWorkspaceText(api, sessionId, path) {
   const read = await readTextWithReason(api, sessionId, path);

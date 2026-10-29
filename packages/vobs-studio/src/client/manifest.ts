@@ -138,30 +138,55 @@ function asBytes(value: unknown): ArrayBufferView | undefined {
  * Read a whole file. Discriminated result: 'ok' carries the text; 'unreadable' carries
  * the Host's real error message — the panel surfaces it, because a silent missing state
  * cost us a full debugging round (the absolute-path incident).
+ *
+ * Two channels, cross-checked: readBytes (single binary shot) and the paged text read.
+ * Field round #3 caught readBytes resolving with EMPTY data for a non-empty file — so an
+ * empty readBytes payload is never trusted alone; the paged read must confirm it. Only
+ * when every channel that ran completed without throwing and all were empty is the file
+ * reported as truly empty ('ok' with '').
  */
 export async function readTextWithReason(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<{ kind: 'ok'; text: string } | { kind: 'unreadable'; reason: string }> {
-  try {
-    if (typeof api.readBytes === 'function') {
-      const bytes = asBytes(await api.readBytes(sessionId, path, {}))
-      if (bytes !== undefined) return { kind: 'ok', text: new TextDecoder().decode(bytes) }
-    }
-    if (typeof api.read !== 'function') return { kind: 'unreadable', reason: 'workspaceFiles has no usable read method' }
+  let sawChannel = false
+  let allEmpty = true
+  let reason: string | undefined
 
-    let text = ''
-    let offset = 1 // line numbers are 1-based — the official paged reader starts at 1
-    for (let page = 0; page < 20; page += 1) {
-      const result = await api.read(sessionId, path, { offset })
-      if (result === undefined) break
-      if (page > 0 && !text.endsWith('\n')) text += '\n'
-      text += result.text ?? ''
-      if (result.eof === true) break
-      const lines = typeof result.lines === 'number' && result.lines > 0 ? result.lines : 1
-      offset += lines
+  if (typeof api.readBytes === 'function') {
+    sawChannel = true
+    try {
+      const bytes = asBytes(await api.readBytes(sessionId, path, {}))
+      if (bytes !== undefined && bytes.byteLength > 0) return { kind: 'ok', text: new TextDecoder().decode(bytes) }
+      reason = 'readBytes returned no data'
+    } catch (error) {
+      allEmpty = false
+      reason = error instanceof Error ? error.message : String(error)
     }
-    return { kind: 'ok', text }
-  } catch (error) {
-    return { kind: 'unreadable', reason: error instanceof Error ? error.message : String(error) }
   }
+
+  if (typeof api.read === 'function') {
+    sawChannel = true
+    try {
+      let text = ''
+      let offset = 1 // line numbers are 1-based — the official paged reader starts at 1
+      for (let page = 0; page < 20; page += 1) {
+        const result = await api.read(sessionId, path, { offset })
+        if (result === undefined) break
+        if (page > 0 && !text.endsWith('\n')) text += '\n'
+        text += result.text ?? ''
+        if (result.eof === true) break
+        const lines = typeof result.lines === 'number' && result.lines > 0 ? result.lines : 1
+        offset += lines
+      }
+      if (text !== '') return { kind: 'ok', text }
+      reason = reason ?? 'the paged read returned empty text'
+    } catch (error) {
+      allEmpty = false
+      reason = error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  if (!sawChannel) return { kind: 'unreadable', reason: 'workspaceFiles has no usable read method' }
+  if (allEmpty) return { kind: 'ok', text: '' } // the file exists with zero content
+  return { kind: 'unreadable', reason: reason ?? 'the file could not be read' }
 }
 
 /** Back-compat wrapper: text or undefined. */
