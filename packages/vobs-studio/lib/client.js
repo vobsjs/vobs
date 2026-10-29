@@ -2019,19 +2019,6 @@ function createStudioSource(ctx, options = {}) {
   const pollMs = options.pollMs ?? 2500;
   const studioState2 = options.sink ?? state(EMPTY, "studio.state");
   studioState2.value = EMPTY;
-  const session = pickSession(ctx);
-  const api = workspaceFilesOf(ctx);
-  if (session === void 0 || api === void 0) {
-    studioState2.value = {
-      status: "unavailable",
-      message: session === void 0 ? "Cannot read the session list (sessions service unavailable), so the workspace is unknown." : "Cannot read the workspace-files service (remote.workspaceFiles unavailable), so workspace files cannot be read."
-    };
-    return { state: studioState2, refresh: () => {
-    }, dispose: () => {
-    } };
-  }
-  const sessionId = String(session.sessionId ?? "");
-  const workspace = session.cwd;
   let lastVersion;
   let disposed = false;
   let inFlight = false;
@@ -2041,7 +2028,20 @@ function createStudioSource(ctx, options = {}) {
   const load = async () => {
     if (disposed || inFlight) return;
     inFlight = true;
+    let sessionId = "";
+    let workspace;
     try {
+      const session = pickSession(ctx);
+      const api = workspaceFilesOf(ctx);
+      if (session === void 0 || api === void 0) {
+        setState({
+          status: "unavailable",
+          message: session === void 0 ? "Waiting for the sessions service (it registers after plugins load) — retrying…" : "Waiting for the workspace-files service — retrying…"
+        });
+        return;
+      }
+      sessionId = String(session.sessionId ?? "");
+      workspace = session.cwd;
       if (typeof api.stat === "function") {
         const info = await api.stat(sessionId, MANIFEST_PATH);
         if (info === void 0) {

@@ -157,21 +157,6 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
   const studioState = options.sink ?? state<StudioState>(EMPTY, 'studio.state')
   studioState.value = EMPTY
 
-  const session = pickSession(ctx)
-  const api = workspaceFilesOf(ctx)
-
-  if (session === undefined || api === undefined) {
-    studioState.value = {
-      status: 'unavailable',
-      message: session === undefined
-        ? 'Cannot read the session list (sessions service unavailable), so the workspace is unknown.'
-        : 'Cannot read the workspace-files service (remote.workspaceFiles unavailable), so workspace files cannot be read.'
-    }
-    return { state: studioState, refresh: () => {}, dispose: () => {} }
-  }
-
-  const sessionId = String(session.sessionId ?? '')
-  const workspace = session.cwd
   let lastVersion: unknown
   let disposed = false
   let inFlight = false
@@ -180,10 +165,32 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
     studioState.value = { ...studioState.value, ...patch }
   }
 
+  /**
+   * Services are probed **on every tick**, not once at setup: on a real DSH the sessions /
+   * remote services register AFTER client plugins load, so a setup-time probe permanently
+   * fails (the exact bug seen in a real install — the Console avoids it by hot-swapping).
+   * "unavailable" is therefore a retrying state, never terminal.
+   */
   const load = async (): Promise<void> => {
     if (disposed || inFlight) return
     inFlight = true
+    let sessionId = ''
+    let workspace: string | undefined
     try {
+      const session = pickSession(ctx)
+      const api = workspaceFilesOf(ctx)
+      if (session === undefined || api === undefined) {
+        setState({
+          status: 'unavailable',
+          message: session === undefined
+            ? 'Waiting for the sessions service (it registers after plugins load) — retrying…'
+            : 'Waiting for the workspace-files service — retrying…'
+        })
+        return
+      }
+      sessionId = String(session.sessionId ?? '')
+      workspace = session.cwd
+
       if (typeof api.stat === 'function') {
         const info = await api.stat(sessionId, MANIFEST_PATH)
         if (info === undefined) {
