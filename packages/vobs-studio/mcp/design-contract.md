@@ -29,28 +29,35 @@ absence of one. Producing it uninvited is a rejected result even when the code i
 Before writing any page code, derive from the user's description and state in chat (a
 short paragraph is enough):
 
-1. **Layout archetype** — choose from an OPEN set, justified by the content: top-nav
+1. **Tone** — pick an aesthetic extreme and commit to it with precision: brutally
+   minimal, maximalist, retro-futuristic, organic/natural, luxury/refined, playful,
+   editorial/magazine, brutalist/raw, geometric/art-deco, soft/pastel,
+   industrial/utilitarian… Intentionality beats intensity — refined minimalism and bold
+   maximalism both win; hedging in the middle loses.
+2. **Layout archetype** — choose from an OPEN set, justified by the content: top-nav
    editorial, sidebar workbench, split-view master/detail, card canvas, kanban, document
    flow, kiosk/full-bleed, wizard… or a hybrid. An admin console is one option among
    many, chosen because the content demands it — never the default.
-2. **Typography** — name the font stack (a deliberate system stack is fine; say WHY) and
-   the scale intent: heading sizes/weights/tracking, body size, numeric treatment
-   (tabular figures for data-heavy pages). Serif/display families fit editorial moods,
-   mono technical ones. Bundling an open webfont (`assets/fonts/*.woff2` + `@font-face`
-   in `src/styles/index.css`) is encouraged when it carries the mood — network is
-   available at build time.
-3. **Color story** — light or dark, one dominant neutral scheme + one accent with a
-   semantic reason (brand? status? data highlight?). Map it through
-   `useTheme().setBrand(...)` / token overrides. Never default blue-or-green "because".
-4. **Density & shape** — generous vs dense, radius feel (sharp / soft / pill), shadow
+3. **Typography** — the identity font must be distinctive: Inter/Roboto/Arial/system-ui
+   are NON-identities (a deliberate system stack is acceptable only as an argued
+   exception). Pair a characterful display face with a refined body face; bundle open
+   webfonts as `assets/fonts/*.woff2` + `@font-face` in `src/styles/index.css` (network
+   is available at build time). State the scale: heading sizes/weights/tracking, body
+   size, numeric treatment (tabular figures for data-heavy pages).
+4. **Color story** — light or dark, one DOMINANT scheme with sharp accents outperforms
+   timid evenly-spread palettes. The accent needs a semantic reason (brand? status?
+   data highlight?), mapped through `useTheme().setBrand(...)` / token overrides. Never
+   default blue-or-green "because", never purple-gradient-on-white.
+5. **Density & shape** — generous vs dense, radius feel (sharp / soft / pill), shadow
    policy (flat / bordered / elevated).
-5. **One signature element** — a single memorable detail this app owns: a distinctive
+6. **One signature element** — a single memorable detail this app owns: a distinctive
    header treatment, an unusual list-row anatomy, a data-viz accent, a recurring motif.
    One is enough; it must recur on every page.
 
 Write these decisions into the scaffolded `DESIGN.md` before writing pages, so every
 later page and every later session stays consistent. Cohesion across pages beats
-per-page cleverness.
+per-page cleverness — and NEVER converge across generations: two users with similar
+briefs must still get visibly different tone, fonts and palettes.
 
 ## 1. Framework rules (breaking any of these is a rejected build)
 
@@ -138,6 +145,15 @@ layout templates:
    signature element.
 10. **No statistically-default output**: if the rendered page could be mistaken for a
     stock template of its domain, the design phase failed — go back to §0.5.
+11. **Motion with purpose**: ONE well-orchestrated page load (staggered reveals via
+    `animation-delay`) plus hover/focus micro-interactions — CSS-first. Scattered
+    decorative animation is noise.
+12. **Atmosphere over flat fills**: backgrounds carry depth where the tone calls for it
+    — layered transparencies, subtle grain/noise, geometric patterns, dramatic shadows —
+    built from tokens and opacity, never raw hex.
+13. **Composition beats uniformity**: asymmetry, overlap, generous negative space OR
+    controlled density per the archetype — never rows of identical equal-width cards as
+    the whole answer.
 
 ## 4. Page shape (multi-page contract)
 
@@ -187,6 +203,9 @@ rebuild + rewrite the manifest.
 | Forbidden | Instead |
 | --- | --- |
 | The default look for the domain (dark sidebar + topbar + striped table + green CTA for anything "admin") | The §0.5 direction derived from THIS user's description — archetype, typography, color story, signature element |
+| Inter/Roboto/Arial/system-ui as the IDENTITY font | A characterful display + body pairing (bundled woff2, or an argued deliberate system stack) |
+| Purple-gradient-on-white; timid evenly-spread palettes | One dominant scheme with sharp accents (§0.5 color story) |
+| Whole pages made of identical equal-width card rows | Composition per the archetype: asymmetry, overlap, negative space or controlled density |
 | Global scroll (`body { overflow: auto }`) | Page shell `h-screen overflow-hidden`; scroll inside table/panel containers |
 | Hard-coded colors (`#2563eb`, `bg-blue-500`) | Token classes (`bg-brand`) |
 | `!important` | Specificity via layer order; fix the selector |

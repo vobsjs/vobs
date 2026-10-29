@@ -8,6 +8,10 @@
 - Adjectives:
 - Audience / usage context:
 
+## Tone (aesthetic extreme — commit, don't hedge)
+
+- Chosen (e.g. brutally minimal / editorial / luxury / retro-futuristic / industrial…):
+
 ## Layout archetype
 
 - Chosen (and why this fits the content):
