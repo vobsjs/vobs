@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2026-10-29
+
+### Fixed
+
+- **Republish with fresh build artifacts.** The 1.9.0 tarballs were packed from stale
+  `dist/` directories: they contained pre-anglicization Chinese strings in package CSS and
+  missing the `VOBS_C120` / `VOBS_C233` / `VOBS_C234` diagnostics added in 1.8.19
+  (`@vobs/cli` failed to load at runtime against them — "does not provide an export named
+  'VOBS_C120'"). Discovered by the first external consumer flow (`vobs dsh init`).
+- `publish:local` / `publish:packages` now run `build:packages` first, so a release can no
+  longer pack stale artifacts. `check:release` only verifies version consistency — it never
+  verified artifact freshness; the build is now wired into the publish path itself.
+
 ## [1.9.0] - 2026-10-29
 
 ### Fixed
