@@ -33,13 +33,13 @@ describe('Field default-input passthrough props', () => {
     const { app, form, container } = mountField({
       name: 'email',
       type: 'email',
-      placeholder: '请输入邮箱',
+      placeholder: 'Enter your email',
       autocomplete: 'email',
       inputMode: 'email',
       required: true
     })
     const input = container.querySelector('input') as HTMLInputElement
-    expect(input.getAttribute('placeholder')).toBe('请输入邮箱')
+    expect(input.getAttribute('placeholder')).toBe('Enter your email')
     expect(input.getAttribute('autocomplete')).toBe('email')
     expect(input.getAttribute('inputmode')).toBe('email')
     expect(input.getAttribute('required')).toBe('true')
@@ -59,24 +59,24 @@ describe('Field default-input passthrough props', () => {
   it('aria-* and data-* are passed through too (accessibility labels no longer lost)', () => {
     const { app, form, container } = mountField({
       name: 'phone',
-      'aria-label': '手机号',
+      'aria-label': 'Phone number',
       'data-testid': 'phone-input'
     })
     const input = container.querySelector('input') as HTMLInputElement
-    expect(input.getAttribute('aria-label')).toBe('手机号')
+    expect(input.getAttribute('aria-label')).toBe('Phone number')
     expect(input.getAttribute('data-testid')).toBe('phone-input')
     app.destroy()
     form.dispose()
   })
 
   it('the 5 framework-consumed fields do not leak into attributes', () => {
-    const { app, form, container } = mountField({ name: 'title', label: '标题', type: 'text' })
+    const { app, form, container } = mountField({ name: 'title', label: 'Title', type: 'text' })
     const input = container.querySelector('input') as HTMLInputElement
     for (const leaked of ['form', 'label', 'children', 'component', 'name']) {
       expect(input.hasAttribute(leaked), `${leaked} must not land as an input attribute`).toBe(false)
     }
     // label still goes through the <label> element; name still lands only on the wrapper's data-vobs-field
-    expect(container.querySelector('label')?.textContent).toBe('标题')
+    expect(container.querySelector('label')?.textContent).toBe('Title')
     expect(container.querySelector('[data-vobs-field]')?.getAttribute('data-vobs-field')).toBe('title')
     app.destroy()
     form.dispose()

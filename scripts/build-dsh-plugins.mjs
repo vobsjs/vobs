@@ -1,20 +1,23 @@
 /**
- * 构建仓库内的 DSH 插件包。
+ * Build the DSH plugin packages in this repository.
  *
- *   <pkg>/lib/index.js   —— Host 半侧（cordis 插件，ESM）
- *   <pkg>/lib/client.js  —— Client 半侧（浏览器 bundle，__ModuleLoader__ factory）
+ *   <pkg>/lib/index.js   — Host half (cordis plugin, ESM)
+ *   <pkg>/lib/client.js  — Client half (browser bundle, __ModuleLoader__ factory)
  *
- * 客户端那一半完全交给 @vobs/dsh 的 `dshBundle()`：外壳包装、自包含纯度门禁、
- * react 外置与平台引导都由适配层负责。这个脚本因此只是「怎么构建一个插件项目」的示范，
- * 也正是插件作者会写的 vite.config 的等价物。
+ * The client half is entirely delegated to @vobs/dsh's `dshBundle()`: shell wrapping,
+ * self-contained purity gating, react externalization, and platform bootstrapping are
+ * all handled by the adapter. This script is therefore just a demonstration of "how to
+ * build a plugin project" — the equivalent of the vite.config a plugin author writes.
  *
- * 依赖解析：脚本位于 <root>/scripts/，因此 `import 'vite'` 命中根 node_modules；
- * @vobs/vite-plugin 与 @vobs/dsh 直接用各自 dist 的相对路径导入。这样插件包自己的
- * package.json 可以保持零依赖 —— GitHub `#path:` 直装时不会因为 workspace: 协议炸掉。
+ * Dependency resolution: this script lives in <root>/scripts/, so `import 'vite'` hits
+ * the root node_modules; @vobs/vite-plugin and @vobs/dsh are imported directly from
+ * their dist folders via relative paths. This keeps the plugin packages' own
+ * package.json dependency-free — a GitHub `#path:` direct install then never breaks
+ * on the workspace: protocol.
  *
- * 用法：pnpm build:dsh                    # 全部
- *       pnpm build:dsh-plugin             # 只构建 dsh-plugin
- *       node scripts/build-dsh-plugins.mjs dsh-console
+ * Usage: pnpm build:dsh                    # all
+ *        pnpm build:dsh-plugin             # dsh-plugin only
+ *        node scripts/build-dsh-plugins.mjs dsh-console
  */
 import { mkdir, readFile, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -37,7 +40,7 @@ for (const [label, target] of [
   ['@vobs/dsh', dshAdapterEntry]
 ]) {
   if (!(await exists(target))) {
-    throw new Error(`找不到 ${label} 的构建产物（${path.relative(root, target)}）。先运行 pnpm build:packages。`)
+    throw new Error(`Missing build output for ${label} (${path.relative(root, target)}). Run pnpm build:packages first.`)
   }
 }
 
@@ -60,12 +63,12 @@ for (const name of packageNames) {
   const manifest = JSON.parse(await readFile(path.join(packageDir, 'package.json'), 'utf8'))
 
   if (manifest.dsh?.client === undefined) {
-    throw new Error(`${manifest.name} 没有声明 dsh.client，不是 DSH 客户端插件包。`)
+    throw new Error(`${manifest.name} does not declare dsh.client and is not a DSH client plugin package.`)
   }
 
   await mkdir(libDir, { recursive: true })
 
-  /* -------------------------------------------------------------- Host 半侧 */
+  /* -------------------------------------------------------------- Host half */
 
   await build({
     configFile: false,
@@ -85,7 +88,7 @@ for (const name of packageNames) {
     }
   })
 
-  /* ------------------------------------------------------------- Client 半侧 */
+  /* ------------------------------------------------------------- Client half */
 
   await build({
     configFile: false,
@@ -120,9 +123,10 @@ for (const name of packageNames) {
     }
   })
 
-  // 自包含性由 dshBundle 的 generateBundle 用 chunk 元数据判定（精确）。这里曾经用
-  // 正则在产物文本上找 `from '@vobs/...'`，但那会把**作为内容展示的示例代码**也算进去 ——
-  // 开发台面板就展示了 vobs 的 import 写法，直接造成误报。
+  // Self-containment is decided precisely by dshBundle's generateBundle using chunk
+  // metadata. This used to be a regex scan of the output text for `from '@vobs/...'`,
+  // but that also counted **example code displayed as content** — the devkit panel
+  // itself shows vobs import snippets, which caused false positives.
 
   const hostSize = (await stat(path.join(libDir, 'index.js'))).size
   const clientSize = (await stat(path.join(libDir, 'client.js'))).size

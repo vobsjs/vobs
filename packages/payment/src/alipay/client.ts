@@ -3,10 +3,10 @@ import { AlipayConfig } from './config'
 import type { AlipayClientOptions, AlipayKeyType } from './types'
 
 /**
- * 支付宝客户端封装
+ * Alipay client wrapper
  *
- * 封装 alipay-sdk 的 AlipaySdk 实例，提供统一的生命周期管理。
- * 可独立使用，也可通过 alipayPlugin 注册到 vobs 框架。
+ * Wraps the alipay-sdk AlipaySdk instance with unified lifecycle management.
+ * Can be used standalone or registered into the vobs framework via alipayPlugin.
  *
  * @example
  * ```ts
@@ -28,20 +28,20 @@ export class AlipayClient {
     this._sdk = this.createSdk(options)
   }
 
-  /** 获取底层 AlipaySdk 实例 */
+  /** Get the underlying AlipaySdk instance */
   get sdk(): AlipaySdk {
     this.ensureActive()
     return this._sdk
   }
 
-  /** 更新配置并重建 SDK 实例 */
+  /** Update configuration and rebuild the SDK instance */
   updateConfig(patch: Partial<AlipayClientOptions>): void {
     this.ensureActive()
     this.config.update(patch)
     this._sdk = this.createSdk(this.config.options as AlipayClientOptions)
   }
 
-  /** 销毁客户端 */
+  /** Dispose the client */
   dispose(): void {
     this._disposed = true
     ;(this._sdk as any) = null
@@ -61,7 +61,7 @@ export class AlipayClient {
 
   private ensureActive(): void {
     if (this._disposed) {
-      throw new Error('AlipayClient: 客户端已销毁')
+      throw new Error('AlipayClient: client has been disposed')
     }
   }
 }

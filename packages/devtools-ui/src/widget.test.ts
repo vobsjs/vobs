@@ -14,12 +14,12 @@ describe('DevToolsWidget smoke', () => {
     const host = document.createElement('div')
     const app = createVobs({
       renderer: createDOMRenderer(),
-      render: () => DevToolsWidget({ label: '打开调试台' })
+      render: () => DevToolsWidget({ label: 'Open DevTools' })
     })
     app.mount(host)
 
     expect(host.querySelector('.vobs-devtools-widget')).toBeTruthy()
-    expect(host.querySelector('button')?.getAttribute('aria-label')).toBe('打开调试台')
+    expect(host.querySelector('button')?.getAttribute('aria-label')).toBe('Open DevTools')
 
     app.destroy()
     expect(host.childNodes.length).toBe(0)
@@ -29,7 +29,7 @@ describe('DevToolsWidget smoke', () => {
     const host = document.createElement('div')
     const app = createVobs({
       renderer: createDOMRenderer(),
-      render: () => DevToolsWidget({ label: '打开调试台' })
+      render: () => DevToolsWidget({ label: 'Open DevTools' })
     })
     app.mount(host)
 

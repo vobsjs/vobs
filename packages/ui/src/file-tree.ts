@@ -69,13 +69,14 @@ export function FileTree(props: FileTreeProps = {}): VobsNode {
   if (!hasProp(props, 'role')) setAttribute(root, 'role', 'tree')
   if (!hasProp(props, 'aria-label')) setAttribute(root, 'aria-label', 'Files')
   /*
-   * roving tabindex 的落点：键盘焦点所在的行。
+   * Where the roving tabindex lands: the row that holds keyboard focus.
    *
-   * 原来每行 `tabIndex = 0`（除禁用行）→ 键盘用户按 Tab 要**依次穿过整棵树的每一行**
-   * 才能走到后面的内容；而 `role="tree"`/`treeitem` 的标准模型是**整棵树只有一个 Tab 停靠点**，
-   * 内部用方向键移动。
+   * Every row used to have `tabIndex = 0` (except disabled ones) → a keyboard user had to Tab
+   * **through every row of the entire tree** to reach later content; the standard `role="tree"` /
+   * `treeitem` model is **a single Tab stop for the whole tree**, with arrow keys moving inside.
    *
-   * 用内部状态而不是只看选中项：受控 `value` 不更新的场景下，光看选中会让焦点与 tabindex 分家。
+   * Internal state rather than just reading the selection: in scenarios where the controlled
+   * `value` doesn't update, relying on selection alone splits focus from the tabindex.
    */
   const focusedId = state<string | undefined>(undefined, 'focusedId')
   addEventListener(root, 'keydown', event => {
@@ -97,7 +98,7 @@ export function FileTree(props: FileTreeProps = {}): VobsNode {
     const target = rows[nextIndex]
     const id = target.getAttribute('data-file-id') ?? undefined
     if (id === undefined) return
-    // 标准树模式：焦点移动即选中（这里只做选中，不切换文件夹展开）
+    // Standard tree behavior: moving focus selects (here only selection, no folder expansion toggle)
     if (readProp<string | undefined>(props, 'value', undefined) === undefined) focusedId.value = id
     const onSelect = readProp<unknown>(props, 'onSelect', undefined)
     if (typeof onSelect === 'function') (onSelect as FileTreeProps['onSelect'])!(id, keyboardEvent as unknown as MouseEvent)
@@ -118,7 +119,7 @@ function createTreeRows(
   const expanded = new Set(readProp<readonly string[] | undefined>(props, 'expanded', undefined) ?? internalExpanded.value)
   const visible = flattenVisible(items, expanded)
   const selected = activeId(props, items)
-  // 整棵树只有一个 Tab 停靠点：优先焦点行，其次选中项，最后第一个可用行。
+  // A single Tab stop for the whole tree: prefer the focused row, then the selection, then the first enabled row.
   const enabled = visible.filter(entry => entry.item.disabled !== true)
   const tabbableId = focusedId.value ?? selected ?? enabled[0]?.item.id
   return createFragment((parent, anchor) => {
@@ -190,10 +191,13 @@ function createTreeRow(
     if (typeof onSelect === 'function') (onSelect as FileTreeProps['onSelect'])!(item.id, event as MouseEvent)
   })
   /*
-   * 焦点落在哪一行，哪一行就成为下一个 Tab 停靠点 —— **只改 DOM 属性，不走状态**。
+   * Whichever row receives focus becomes the next Tab stop — **DOM attribute changes only, no
+   * state writes**.
    *
-   * 走状态会让 focusedId 变化触发整棵树重建，而重建会立刻把刚刚获得焦点的那个节点换掉，
-   * 焦点掉回 body（实测踩到：方向键因此完全失灵，因为事件根本到不了树根）。
+   * Going through state would make the focusedId change rebuild the whole tree, and the rebuild
+   * would immediately swap out the node that just received focus, dropping focus back to body
+   * (hit in practice: arrow keys completely stopped working, because the events never reached
+   * the tree root).
    */
   addEventListener(row, 'focus', () => {
     const container = row.parentElement
@@ -210,7 +214,7 @@ function createTreeRow(
   return row
 }
 
-/** 把焦点移到目标行：等更新落地后再重新查节点（行会因 tabindex/选中变化而重建）。 */
+/** Move focus to the target row: re-query the node after the update lands (rows rebuild on tabindex/selection changes). */
 function focusRow(container: Element, id: string): void {
   queueMicrotask(() => {
     const target = [...container.querySelectorAll('[data-file-id]')]

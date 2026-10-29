@@ -307,7 +307,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **`vobs check` now runs the compiler diagnostics, not just the CLI's own rules.** The batch
   entrypoint only ran `analyzeSource` (C118/C210/C232), so the compiler's five rules
   (`VOBS_C104`–`VOBS_C108`) were invisible there — a file with module-level JSX (which should
-  report `VOBS_C105`) printed "✔ 检查通过 —— 1 个文件，没有发现问题". This is the third instance of
+  report `VOBS_C105`) printed "✔ Check passed —— 1 file, no problems found". This is the third instance of
   the same channel defect that 1.8.2 fixed for `warn`-level output: **a diagnostic that is not
   visible on a given channel does not exist.** `check.ts` now merges `compileWithSourceMap`
   diagnostics, deduplicating against `analyzeSource` by `code|file|line|column`, and a single file

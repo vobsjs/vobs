@@ -39,7 +39,7 @@ export function DataPage() {
   const actionScenario = state<Scenario>('success', 'actionScenario')
   const fetcherScenario = state<Scenario>('success', 'fetcherScenario')
 
-  // DataPage 的 action/fetcher 流程完全同构：abort → loading → track → 成功/取消/失败。
+  // DataPage's action/fetcher flows are fully isomorphic: abort → loading → track → success/cancel/failure.
   function createRunner(
     kind: 'action' | 'fetcher',
     controllerRef: { current?: AbortController }

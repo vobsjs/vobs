@@ -71,7 +71,7 @@ describe('@vobs/upload', () => {
       http,
       url: '/upload',
       concurrency: 1,
-      response: () => { throw new Error('响应结构不符合预期') }
+      response: () => { throw new Error('unexpected response shape') }
     })
 
     const task = uploader.upload(createFile('report.pdf', 'application/pdf'))

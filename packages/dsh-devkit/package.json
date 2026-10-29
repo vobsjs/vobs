@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-vobs-devkit",
   "version": "1.7.8",
-  "description": "Vobs 开发台：在 DSH 里查阅 vobs 的 API、示例与护栏规则",
+  "description": "Vobs DevKit: browse vobs APIs, examples, and guardrail rules inside DSH",
   "license": "MIT",
   "type": "module",
   "repository": {

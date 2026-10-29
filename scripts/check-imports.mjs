@@ -1,20 +1,25 @@
 /**
- * 校验「包源码里 import 的 @vobs/* 都在自己 package.json 里声明了」。
+ * Verify that every @vobs/* import in a package's source is declared in its own
+ * package.json.
  *
- * 为什么必须单独查：`pnpm run verify:packages` 把 37 个包装进同一个临时工程，
- * 于是「A 用了 B 却没声明」在那里**永远能解析成功** —— 结构性发现不了。
- * 实测查出 3 处真幻影依赖（captcha / devtools-ui / test-utils 直接用 @vobs/reactivity
- * 但没声明），另有一处是**误报**：vite-plugin 把 `import ... from '@vobs/vobs'` 写在
- * 注入浏览器的模板字符串里，正则扫描会把它当真 import。
- * 所以这里用 TypeScript 的 AST 取真实 import，不做文本匹配。
+ * Why this needs a dedicated check: `pnpm run verify:packages` packs all 37 packages
+ * into one temporary project, so "A uses B without declaring it" **always resolves
+ * there** — structurally undetectable. Real runs found 3 genuine phantom dependencies
+ * (captcha / devtools-ui / test-utils used @vobs/reactivity without declaring it), plus
+ * one **false positive**: vite-plugin puts `import ... from '@vobs/vobs'` inside a
+ * template string injected into the browser, which a regex scan mistakes for a real
+ * import. So this check uses the TypeScript AST to collect real imports, no text matching.
  *
- * 包清单直接枚举 packages/ 下的 package.json —— 不再多一份硬编码名单。
+ * The package list is enumerated directly from packages/ package.json files — no second
+ * hard-coded manifest.
  *
- * 例外：**打包型**包（manifest 里有 `dsh` 字段）。它们的源码 import 全部在构建期被
- * 内联进自包含产物，而 manifest 必须**任何地方都不出现 `workspace:`** —— 它们是从
- * `github:…#path:` 直接安装的，工作区协议在仓库外解析不了（三个插件包的校验脚本各有一条
- * 断言把守这个不变量）。所以这类包整包跳过，而不是给它们补 devDependencies：
- * 试过补 `workspace:*`，立刻把那条断言打红了。
+ * Exception: **bundle-type** packages (manifest has a `dsh` field). All of their source
+ * imports are inlined into self-contained artifacts at build time, and their manifest
+ * must **never contain `workspace:` anywhere** — they are installed directly via
+ * `github:…#path:`, where the workspace protocol cannot resolve (each of the three
+ * plugin packages' verify scripts has an assertion guarding this invariant). So such
+ * packages are skipped entirely rather than given devDependencies: adding
+ * `workspace:*` was tried once and immediately turned that assertion red.
  */
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -24,7 +29,7 @@ import ts from 'typescript'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const packagesDir = path.join(root, 'packages')
 
-/** 收集一个文件里真实的模块说明符（含动态 import 与 re-export）。 */
+/** Collect the real module specifiers in a file (including dynamic imports and re-exports). */
 function collectSpecifiers(fileName, source) {
   const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const specifiers = []
@@ -45,7 +50,7 @@ function collectSpecifiers(fileName, source) {
   return specifiers
 }
 
-/** `@vobs/runtime/error` → `@vobs/runtime`。 */
+/** `@vobs/runtime/error` → `@vobs/runtime`. */
 function packageNameOf(specifier) {
   const parts = specifier.split('/')
   return parts[0].startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0]
@@ -61,7 +66,7 @@ async function sourceFiles(directory) {
         continue
       }
       if (!/\.tsx?$/u.test(entry.name)) continue
-      // 测试文件用的是 devDependencies，不在本门禁范围内（本门禁只保证可发布源码自洽）
+      // Test files use devDependencies and are out of scope for this gate (it only guarantees publishable source is self-consistent)
       if (/\.test\.tsx?$/u.test(entry.name)) continue
       found.push(full)
     }
@@ -88,7 +93,7 @@ for (const entry of entries) {
     ...Object.keys(manifest.dependencies ?? {}),
     ...Object.keys(manifest.peerDependencies ?? {})
   ])
-  // 打包型包整包跳过（见文件头说明）
+  // Bundle-type packages are skipped entirely (see the file header)
   if (manifest.dsh !== undefined) {
     skipped.push(manifest.name)
     continue
@@ -110,7 +115,7 @@ for (const entry of entries) {
       const name = packageNameOf(specifier)
       if (name === manifest.name) continue
       if (declared.has(name)) continue
-      // 同一个缺失依赖只报一次，附第一个出现的位置
+      // Report each missing dependency once, with its first occurrence's location
       if (!missing.has(name)) {
         missing.set(name, `${path.relative(root, file).split(path.sep).join('/')} (imports ${specifier})`)
       }
@@ -119,16 +124,16 @@ for (const entry of entries) {
 
   checked += 1
   for (const [name, where] of missing) {
-    problems.push(`${manifest.name}: 使用了 ${name} 但未在 dependencies / peerDependencies 中声明 — ${where}`)
+    problems.push(`${manifest.name}: uses ${name} but does not declare it in dependencies / peerDependencies — ${where}`)
   }
 }
 
 if (problems.length > 0) {
-  console.error(`\n发现 ${problems.length} 处未声明的依赖：\n`)
+  console.error(`\nFound ${problems.length} undeclared dependencies:\n`)
   for (const problem of problems) console.error(`  ${problem}`)
-  console.error('\n声明它们（通常用 workspace:*），否则严格 node_modules 布局下解析会失败。\n')
+  console.error('\nDeclare them (usually with workspace:*), otherwise resolution fails under a strict node_modules layout.\n')
   process.exit(1)
 }
 
-const skipNote = skipped.length > 0 ? `（跳过 ${skipped.length} 个打包型包：${skipped.join(', ')}）` : ''
-console.log(`✔ 依赖声明自洽 —— 检查了 ${checked} 个包的源码 import${skipNote}`)
+const skipNote = skipped.length > 0 ? ` (skipping ${skipped.length} bundle-type packages: ${skipped.join(', ')})` : ''
+console.log(`✔ Dependency declarations are self-consistent — checked source imports of ${checked} packages${skipNote}`)

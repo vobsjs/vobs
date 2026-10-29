@@ -13,9 +13,10 @@ import type { WechatClientOptions, WechatNotifyTransaction } from './types'
 import type { VobsContext } from '@vobs/vobs'
 
 /**
- * 在模块边界 mock Wechatpay 类：其构造函数返回的是"魔法链 Proxy"，
- * 原型注入不可行；链式方法与 request 全部落在假实现的 per-instance spy 上。
- * Rsa / Aes / Formatter 保持真实现，测试内完成真实签名与 AES-GCM 往返。
+ * Mock the Wechatpay class at the module boundary: its constructor returns a "magic chain Proxy",
+ * so prototype injection is not feasible; chained methods and request all land on per-instance
+ * spies with fake implementations. Rsa / Aes / Formatter stay real, so tests do real signing
+ * and a real AES-GCM round trip.
  */
 vi.mock('wechatpay-axios-plugin', async (importOriginal) => {
   const actual = await importOriginal<typeof import('wechatpay-axios-plugin')>()
@@ -115,7 +116,7 @@ const BASE_OPTIONS: WechatClientOptions = {
 }
 
 describe('wechat client config validation', () => {
-  it('缺少 certs 或 apiv3Key 长度错误时拒绝构建', () => {
+  it('rejects construction when certs is missing or apiv3Key length is wrong', () => {
     expect(() => new WechatConfig({ ...BASE_OPTIONS, privateKey: 'K', certs: {} })).toThrow('certs')
     expect(() => new WechatConfig({
       ...BASE_OPTIONS,
@@ -131,7 +132,7 @@ describe('wechat payment', () => {
     vi.clearAllMocks()
   })
 
-  it('jsapiPay 返回可验真的调起签名参数', async () => {
+  it('jsapiPay returns launch signing params that can be verified', async () => {
     const { client } = makeTestClient()
     sdkOf(client).spies.jsapiPost.mockResolvedValue({ data: { prepay_id: 'wx29prepay' }, status: 200 })
 
@@ -150,7 +151,7 @@ describe('wechat payment', () => {
     expect(Rsa.verify(message, result.paySign, client.config.options.certs['PUB_KEY_ID_TEST_1'])).toBe(true)
   })
 
-  it('jsapiPay 下单请求体包含 openid、金额与回调地址', async () => {
+  it('jsapiPay order request body includes openid, amount, and notify URL', async () => {
     const { client } = makeTestClient()
     sdkOf(client).spies.jsapiPost.mockResolvedValue({ data: { prepay_id: 'p1' }, status: 200 })
 
@@ -172,7 +173,7 @@ describe('wechat payment', () => {
     expect(body.payer).toEqual({ openid: 'oX-openid' })
   })
 
-  it('nativePay 映射 code_url，h5Pay 携带 payer_client_ip', async () => {
+  it('nativePay maps code_url; h5Pay carries payer_client_ip', async () => {
     const { client } = makeTestClient()
     const spies = sdkOf(client).spies
     spies.nativePost.mockResolvedValue({
@@ -202,7 +203,7 @@ describe('wechat payment', () => {
     expect(h5Body.scene_info.payer_client_ip).toBe('1.2.3.4')
   })
 
-  it('query 按商户订单号请求并映射响应', async () => {
+  it('query requests by merchant order number and maps the response', async () => {
     const { client } = makeTestClient()
     sdkOf(client).spies.request.mockResolvedValue({
       data: {
@@ -222,7 +223,7 @@ describe('wechat payment', () => {
     expect(result.payerTotal).toBe(29800)
   })
 
-  it('接口失败时抛出 WechatApiError 并携带状态码与业务码', async () => {
+  it('throws WechatApiError with status and business code on API failure', async () => {
     const { client } = makeTestClient()
     sdkOf(client).spies.jsapiPost.mockRejectedValue(
       axiosFailure(400, 'PARAM_ERROR', 'openid 与 appid 不匹配')
@@ -242,7 +243,7 @@ describe('wechat payment', () => {
     })
   })
 
-  it('toWechatApiError 归一化网络层错误', () => {
+  it('toWechatApiError normalizes network-level errors', () => {
     const error = new Error('connect ECONNREFUSED') as any
     error.code = 'ECONNREFUSED'
     const apiError = toWechatApiError(error)
@@ -257,7 +258,7 @@ describe('wechat refund', () => {
     vi.clearAllMocks()
   })
 
-  it('refund 提交并映射退款单', async () => {
+  it('refund submits and maps the refund order', async () => {
     const { client } = makeTestClient()
     sdkOf(client).spies.refundPost.mockResolvedValue({
       data: {
@@ -284,7 +285,7 @@ describe('wechat refund', () => {
     expect(result.userReceivedAmount).toBe(100)
   })
 
-  it('queryRefund 对路径参数做 URL 编码', async () => {
+  it('queryRefund URL-encodes the path param', async () => {
     const { client } = makeTestClient()
     sdkOf(client).spies.request.mockResolvedValue({ data: { refund_id: 're 1', status: 'SUCCESS', amount: { refund: 1 } } })
 
@@ -295,7 +296,7 @@ describe('wechat refund', () => {
 })
 
 describe('wechat notify', () => {
-  it('verify 用对应序列号的公钥验签原文', () => {
+  it('verify checks the payload signature with the public key for the given serial', () => {
     const { client, privateKeyPem } = makeTestClient()
     const handler = createNotifyHandler(client)
     const body = JSON.stringify({ id: 'evt-1', resource: {} })
@@ -312,7 +313,7 @@ describe('wechat notify', () => {
     expect(handler.verify({ ...headers, serial: 'UNKNOWN' }, body)).toBe(false)
   })
 
-  it('decrypt 走真实 AES-256-GCM 解密', () => {
+  it('decrypt performs a real AES-256-GCM decryption', () => {
     const { client } = makeTestClient()
     const handler = createNotifyHandler(client)
     const transaction: WechatNotifyTransaction = {
@@ -339,7 +340,7 @@ describe('wechat notify', () => {
     expect((payload as WechatNotifyTransaction).amount.total).toBe(29900)
   })
 
-  it('validate 比对商户号、订单号与金额', () => {
+  it('validate compares merchant ID, order number, and amount', () => {
     const { client } = makeTestClient()
     const handler = createNotifyHandler(client)
     const payload = {
@@ -354,7 +355,7 @@ describe('wechat notify', () => {
     expect(handler.validate(payload, { outTradeNo: 'ORDER-1', total: 1 }).errors[0]).toContain('amount.total')
   })
 
-  it('省略 expected 时失败关闭（不再把"只验了 mchid"当成校验通过）', () => {
+  it('fails closed when expected is omitted (no longer treats "only mchid checked" as valid)', () => {
     const { client } = makeTestClient()
     const handler = createNotifyHandler(client)
     const payload = {
@@ -363,31 +364,31 @@ describe('wechat notify', () => {
       amount: { total: 1 }
     } as WechatNotifyTransaction
 
-    // 类型上 expected 已改为必填，所以这里显式把整个**调用**降级成 never 来走运行期路径
-    // （要验的正是"JS 调用方漏传时怎么办"——类型挡不住 JS 调用方）
+    // expected is now required at the type level, so demote the whole **call** to never to exercise the runtime path
+    // (what we are testing is "what if a JS caller omits it" — types cannot stop JS callers)
     const omitted = handler.validate as never as (payload: unknown, expected?: unknown) => { valid: boolean; errors: string[] }
-    // 修复前：validate(payload) => valid: true（订单号与金额一项都没比）
+    // before the fix: validate(payload) => valid: true (neither order number nor amount was compared)
     const result = omitted(payload)
     expect(result.valid).toBe(false)
     expect(result.errors.some(error => error.includes('expected.outTradeNo'))).toBe(true)
     expect(result.errors.some(error => error.includes('expected.total'))).toBe(true)
 
-    // 只给一项也必须失败关闭（此前"只给 total"就能过）
+    // providing only one field must still fail closed (previously "only total" would pass)
     const onlyTotal = omitted(payload, { total: 1 })
     expect(onlyTotal.valid).toBe(false)
     expect(onlyTotal.errors.some(error => error.includes('expected.outTradeNo'))).toBe(true)
   })
 
-  it('应答体符合微信支付约定', () => {
+  it('response bodies follow the WeChat Pay convention', () => {
     const { client } = makeTestClient()
     const handler = createNotifyHandler(client)
     expect(handler.successResponse()).toEqual({ code: 'SUCCESS' })
-    expect(handler.failResponse()).toEqual({ code: 'FAIL', message: '处理失败' })
+    expect(handler.failResponse()).toEqual({ code: 'FAIL', message: 'Processing failed' })
   })
 })
 
 describe('wechat plugin lifecycle', () => {
-  it('安装自建客户端并在卸载时销毁', () => {
+  it('installs its own client and disposes it on uninstall', () => {
     const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
     const provide = vi.fn()
     const plugin = wechatPlugin({
@@ -402,10 +403,10 @@ describe('wechat plugin lifecycle', () => {
     expect(provide).toHaveBeenCalledWith(WECHAT_KEY, client)
     expect(typeof cleanup).toBe('function')
     cleanup!()
-    expect(() => client.sdk).toThrow('客户端已销毁')
+    expect(() => client.sdk).toThrow('client has been disposed')
   })
 
-  it('外部传入的客户端在卸载时不被销毁', () => {
+  it('does not dispose an externally provided client on uninstall', () => {
     const { client } = makeTestClient()
     const provide = vi.fn()
     const plugin = wechatPlugin({ client })

@@ -6,11 +6,12 @@ import { scheduler } from '@vobs/reactivity'
 import { Segmented, type SegmentedProps } from './segmented'
 
 /*
- * Segmented 的 opts 快捷形态（2026-10-28）。
+ * The Segmented opts shortcut form (2026-10-28).
  *
- * 背景：Finora 两机都踩过「Seg 的值 = 选项标签」死穴——string[] opts 选中写回
- * 展示标签，拿语义 id 比较永远不等。根治 = 支持 {id, label} 对象形态：选中写回
- * id 而非 label；字符串选项保持旧行为（写回自身）。
+ * Background: both Finora machines hit the "Seg's value = the option label" dead end —
+ * with string[] opts, selection wrote back the display label, so comparing against a semantic
+ * id never matched. The cure = support the {id, label} object form: selection writes back the
+ * id rather than the label; string options keep the old behavior (writing back themselves).
  */
 const flush = () => { scheduler.flush(); scheduler.flush() }
 
@@ -28,8 +29,8 @@ const clickOption = (host: HTMLElement, index: number): void => {
   flush()
 }
 
-describe('Segmented opts 快捷形态', () => {
-  it('字符串选项：渲染 label、选中写回自身（旧行为兼容）', () => {
+describe('Segmented opts shortcut form', () => {
+  it('string options: render the label, selection writes back themselves (back-compat)', () => {
     const value = state('月')
     const { host } = mountSegmented({ opts: ['月', '季', '年'], bind: value })
     expect(host.querySelectorAll('.vui-seg__opt')).toHaveLength(3)
@@ -40,7 +41,7 @@ describe('Segmented opts 快捷形态', () => {
     expect(host.querySelector('.vui-seg__opt.is-active')?.textContent).toBe('季')
   })
 
-  it('对象选项：展示 label，选中写回 id（根治「值 = 标签」）', () => {
+  it('object options: display the label, selection writes back the id (cures "value = label")', () => {
     const value = state('login')
     const seen: string[] = []
     const { host } = mountSegmented({
@@ -52,12 +53,12 @@ describe('Segmented opts 快捷形态', () => {
     expect(host.querySelector('.vui-seg__opt.is-active')?.textContent).toBe('登录')
 
     clickOption(host, 1)
-    // 核心断言：写回的是语义 id，不是展示标签「注册企业」
+    // Core assertion: the semantic id is written back, not the display label「注册企业」
     expect(value.value).toBe('register')
     expect(seen).toEqual(['register'])
   })
 
-  it('对象选项的受控高亮跟随 id（外部写 id 同步，写标签不误亮）', () => {
+  it('controlled highlight of object options follows the id (writing an id syncs; writing a label does not mis-highlight)', () => {
     const value = state('login')
     const { host } = mountSegmented({
       opts: [{ id: 'login', label: '登录' }, { id: 'register', label: '注册企业' }],
@@ -67,13 +68,13 @@ describe('Segmented opts 快捷形态', () => {
     flush()
     expect(host.querySelector('.vui-seg__opt.is-active')?.textContent).toBe('注册企业')
 
-    // 存量标签值（如旧数据写了「注册企业」）不匹配任何 id —— 不高亮而非误亮
+    // A legacy label value (e.g. old data stored「注册企业」) matches no id — no highlight rather than a wrong one
     value.value = '注册企业'
     flush()
     expect(host.querySelector('.vui-seg__opt.is-active')).toBeNull()
   })
 
-  it('items 优先于 opts（同传时 items 赢）', () => {
+  it('items takes precedence over opts (when both are passed, items wins)', () => {
     const value = state('x')
     const { host } = mountSegmented({
       opts: ['a', 'b'],

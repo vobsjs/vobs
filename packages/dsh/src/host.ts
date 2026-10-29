@@ -1,22 +1,22 @@
 import { createVobs, type VobsNode } from '@vobs/vobs'
 import { resolveDshReact } from './react.js'
 
-/** React 内联样式对象。 */
+/** React inline style object. */
 export interface DshHostStyle {
   [key: string]: string | number
 }
 
-/** 面板外观与定位选项。 */
+/** Panel appearance and positioning options. */
 export interface DshSurfaceOptions {
-  /** 注入到 shadow root 的样式表。样式双向隔离：DSH 的全局 CSS 进不来，这里也漏不出去。 */
+  /** Stylesheet injected into the shadow root. Styles are isolated both ways: DSH's global CSS cannot get in, and these rules cannot leak out. */
   styles?: string
-  /** 宿主元素的内联样式，决定面板挂在页面哪里。 */
+  /** Inline style of the host element; determines where the panel sits on the page. */
   hostStyle?: DshHostStyle
-  /** 配色解析；默认读 DSH 主题写下的 color-scheme，退到 prefers-color-scheme。 */
+  /** Scheme resolution; by default reads the color-scheme written by DSH's theme, falling back to prefers-color-scheme. */
   scheme?: () => 'light' | 'dark'
 }
 
-/** 浮层默认宿主样式：固定右下角、压过一切。 */
+/** Default overlay host style: pinned to the bottom-right corner, above everything else. */
 export const DEFAULT_OVERLAY_HOST_STYLE: DshHostStyle = {
   position: 'fixed',
   right: '18px',
@@ -26,7 +26,7 @@ export const DEFAULT_OVERLAY_HOST_STYLE: DshHostStyle = {
   contain: 'layout style'
 }
 
-/** 主区域整页默认宿主样式：铺满父容器。 */
+/** Default full-page host style for the main area: fills the parent container. */
 export const DEFAULT_PANEL_HOST_STYLE: DshHostStyle = {
   display: 'block',
   width: '100%',
@@ -35,7 +35,7 @@ export const DEFAULT_PANEL_HOST_STYLE: DshHostStyle = {
   minHeight: 0
 }
 
-/** 侧栏入口图标默认宿主样式。 */
+/** Default host style for the sidebar entry icon. */
 export const DEFAULT_ICON_HOST_STYLE: DshHostStyle = {
   display: 'block',
   width: '100%',
@@ -43,8 +43,9 @@ export const DEFAULT_ICON_HOST_STYLE: DshHostStyle = {
 }
 
 /**
- * 当前配色。DSH 的主题服务把 `color-scheme` 写在根元素上，
- * 读不到就退到 `prefers-color-scheme`，两者都是标准 API，不依赖 DSH 内部实现。
+ * Current color scheme. DSH's theme service writes `color-scheme` on the root element;
+ * if that is unavailable we fall back to `prefers-color-scheme`. Both are standard APIs,
+ * with no dependency on DSH internals.
  */
 export function resolveScheme(): 'light' | 'dark' {
   if (typeof document === 'undefined') return 'light'
@@ -55,21 +56,22 @@ export function resolveScheme(): 'light' | 'dark' {
   return prefersDark ? 'dark' : 'light'
 }
 
-/** vobs 面板根节点的类名；配色变量由使用方的样式表定义在它上面。 */
+/** Class name of the vobs panel root; scheme variables are defined on it by the consumer's stylesheet. */
 export const DSH_ROOT_CLASS = 'vobs-dsh-root'
 
-/** 由 createVobsSlotHost 产出的 React 组件。 */
+/** React component produced by createVobsSlotHost. */
 export type DshSlotHostComponent = () => unknown
 
 /**
- * 把一个 vobs 渲染函数包成 DSH slot 能接受的 React 组件。
+ * Wraps a vobs render function into a React component that DSH slots accept.
  *
- * 宿主组件本身只做三件事：占一个 DOM 元素、在该元素上开 shadow root、
- * 把 vobs 应用挂进去。所有业务逻辑都在 vobs 里，React 侧永远只有这一个空壳。
+ * The host component itself only does three things: occupy a DOM element, open a shadow
+ * root on it, and mount the vobs app inside. All business logic lives in vobs; the React
+ * side is forever just this empty shell.
  *
- * @param render - vobs 渲染函数（返回 VobsNode），对应 `createVobs({ render })`
- * @param options - 样式、宿主定位与配色解析
- * @returns 可直接交给 `slots.register` 的组件
+ * @param render - vobs render function (returns a VobsNode), as in `createVobs({ render })`
+ * @param options - styles, host positioning and scheme resolution
+ * @returns A component ready to hand to `slots.register`
  */
 export function createVobsSlotHost(render: () => VobsNode, options: DshSurfaceOptions = {}): DshSlotHostComponent {
   const hostStyle = options.hostStyle ?? DEFAULT_OVERLAY_HOST_STYLE
@@ -92,16 +94,17 @@ export function createVobsSlotHost(render: () => VobsNode, options: DshSurfaceOp
         shadow.appendChild(style)
       }
 
-      // 面板根与 <style> 平级：vobs 的 mount 会清空自己的容器，不能连样式一起清掉。
+      // The panel root sits next to <style>: vobs's mount clears its own container, and must not clear the styles with it.
       const root = document.createElement('div')
       root.className = DSH_ROOT_CLASS
       root.dataset.scheme = readScheme()
       /*
-       * 挂载容器必须填满宿主，百分比高度才能继续往下传导。
+       * The mount container must fill the host so percentage heights keep propagating.
        *
-       * 少了这两行，`height: 100%` 的父级是一个 auto 高度的 div，percent 高度会退化成
-       * auto —— 面板内部 `overflow: auto` 的滚动容器永远不触发，长内容只会被外层裁掉。
-       * 现象就是「某一页内容长出来了，但不能滚」。
+       * Without these two lines, the parent of a `height: 100%` element is an auto-height div,
+       * so the percent height degenerates to auto — the panel's internal `overflow: auto`
+       * scroll container never activates, and long content just gets clipped by the outer layer.
+       * The symptom is "one page grows tall content but cannot scroll".
        */
       root.style.width = '100%'
       root.style.height = '100%'

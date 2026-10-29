@@ -1,11 +1,13 @@
 /**
- * dsh-plugin-vobs-console —— Client 半侧入口。
+ * dsh-plugin-vobs-console — Client-side entry.
  *
- * 用 `defineDshPanel` 一次注册两处：主区域的整页面板（keyed `main` slot）
- * 与左侧栏的入口图标（`sidebar.panellist`，id 与 key 一致即可互相关联）。
+ * Uses `defineDshPanel` to register both places at once: the full-page panel in the main area
+ * (keyed `main` slot) and the entry icon in the left sidebar (`sidebar.panellist`; id matching
+ * key links the two).
  *
- * 数据源在 `setup(ctx)` 里决定：探测到 DSH 的 `sessions` / `uiSession` 服务就接真实数据，
- * 否则用演示数据并如实标注 —— 界面永远不会把手头没有的数据伪装成真实运行态。
+ * The data source is decided in `setup(ctx)`: if DSH's `sessions` / `uiSession` services are
+ * detected, connect real data; otherwise use demo data, labeled honestly — the UI never
+ * disguises data it does not have as real run states.
  */
 import { defineDshPanel } from '@vobs/dsh'
 import { state } from '@vobs/vobs'
@@ -14,17 +16,17 @@ import { ConsoleIcon } from './icons'
 import { createConsoleStore, createSwitchableSource, createSyntheticSource, selectConsoleSource } from './data'
 import { CONSOLE_CSS } from './styles'
 
-/** 演示数据源：确定性（固定 seed），同一份输入每次结果一致。 */
+/** Demo data source: deterministic (fixed seed); the same input always yields the same result. */
 const demo = createSyntheticSource({ seed: 20260101 })
 
-/** 可热替换：先以演示数据建好商店，探测到真实服务后整体切过去。 */
+/** Hot-swappable: the store starts on demo data and switches wholesale once real services are detected. */
 const source = createSwitchableSource(demo)
 const store = createConsoleStore(source)
 
 const note = state(demo.note, 'note')
 const live = state(false, 'live')
 
-/** 演示数据的推进间隔（毫秒）。接真实数据后这段不会启动。 */
+/** Advance interval for the demo data (milliseconds). Never started once real data is connected. */
 const DEMO_TICK_MS = 900
 
 export default defineDshPanel(
@@ -33,7 +35,8 @@ export default defineDshPanel(
     label: 'Vobs Console',
     styles: CONSOLE_CSS,
     sidebarEntry: {
-      // 与面板标题一致：侧栏只写 Console 会和 DSH 自带的生态混淆，也让人对不上是哪个面板。
+      // Same as the panel title: "Console" alone in the sidebar would blur into DSH's own ecosystem
+      // and leave people unsure which panel it is.
       label: 'Vobs Console',
       order: 9,
       renderIcon: () => <ConsoleIcon />
@@ -45,7 +48,8 @@ export default defineDshPanel(
       if (selection.source.kind === 'dsh') {
         live.value = true
         source.switchTo(selection.source)
-        // 真实源的订阅必须跟着插件生命周期释放，否则会一直挂在 DSH 的会话目录上。
+        // The real source's subscription must be released with the plugin lifecycle,
+        // otherwise it would keep hanging off DSH's session catalog.
         return () => source.dispose()
       }
 

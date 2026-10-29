@@ -31,7 +31,7 @@ class OwnerImpl {
     this.disposed = parent?.disposed ?? false;
   }
   run(fn) {
-    if (this.disposed) throw new Error("Vobs: 已销毁的 Owner 不能继续运行");
+    if (this.disposed) throw new Error("Vobs: cannot run inside a disposed Owner");
     const previous = currentOwner;
     currentOwner = this;
     try {
@@ -51,13 +51,15 @@ class OwnerImpl {
     this.addCleanup(cleanup);
   }
   /**
-   * 撤销一条已注册的清理。
+   * Remove one registered cleanup.
    *
-   * 用 `splice` 而不是"标记失效"：标记法会让数组继续增长（本包已经因为
-   * `Owner.cleanups` 只增不减吃过一次亏 —— runtime 的事件重绑），
-   * 而这个 API 的语义就是"替换掉旧的"，就该真的从数组里去掉。
+   * `splice` instead of "mark as stale": the marking approach would let the array
+   * keep growing (this package has already been burned once by `Owner.cleanups`
+   * growing without bound — the runtime's event rebinding), and this API's
+   * semantics is "replace the old one", so it should really leave the array.
    *
-   * 复杂度 O(n)，但调用场景是"同一资源被重新绑定"，不是热路径上的每帧操作。
+   * O(n), but the call site is "the same resource gets rebound", not a per-frame
+   * hot-path operation.
    */
   removeCleanup(cleanup) {
     const index2 = this.cleanups.indexOf(cleanup);
@@ -191,7 +193,7 @@ class StateSignal {
       if (!this.warnedAfterDispose) {
         this.warnedAfterDispose = true;
         const name = getSignalDebugName(this);
-        console.warn(`[vobs] 写入已 dispose 的 state${name ? ` "${name}"` : ""}，本次写入被忽略`);
+        console.warn(`[vobs] write to a disposed state${name ? ` "${name}"` : ""}; this write was ignored`);
       }
       return;
     }
@@ -254,12 +256,13 @@ class Scheduler {
     this.lowPriorityEffects.delete(effect2);
   }
   /**
-   * 批处理：抑制调度，退出时同步 flush。
+   * Batch: suppress scheduling, flush synchronously on exit.
    *
-   * 注意**不要**把 flush 放进 `finally` —— 那样 `fn()` 抛错时，flush 自己再抛错
-   * 就会把原始错误顶掉（`finally` 里的 throw 会覆盖 try 里的 throw），
-   * 开发者看到的是一个和自己代码无关的错误。这里改成：原始错误优先，
-   * flush 的错误打出来但不顶替。
+   * Note: do **not** put the flush inside `finally` — then when `fn()` throws, an
+   * error thrown by flush itself would replace the original error (a throw in
+   * `finally` overrides the throw in `try`), and the developer sees an error
+   * unrelated to their own code. Instead: the original error wins; the flush error
+   * is logged but does not replace it.
    */
   batch(fn) {
     this.batchDepth++;
@@ -279,7 +282,7 @@ class Scheduler {
         this.flush();
       } catch (flushError) {
         if (!failed) throw flushError;
-        console.error("[Vobs] 批处理刷新时又抛出一个错误（原始错误优先）:", flushError);
+        console.error("[Vobs] flush inside batch threw an additional error (original error takes priority):", flushError);
       }
     }
     if (failed) throw thrown;
@@ -296,7 +299,7 @@ class Scheduler {
         if (++rounds > 100) {
           this.dirtyEffects.clear();
           this.lowPriorityEffects.clear();
-          throw new Error("Vobs: 响应式更新超过 100 轮，可能存在循环依赖");
+          throw new Error("Vobs: reactive updates exceeded 100 rounds; a circular dependency is likely");
         }
         this.collectRunnable(this.dirtyEffects, this.normalBuffer);
         this.collectRunnable(this.lowPriorityEffects, this.lowBuffer);
@@ -332,7 +335,7 @@ class Scheduler {
     }
     if (hasError) throw firstError;
   }
-  /** 收集未 disposed 的 effect 并清空源集合；run() 期间新调度的 effect 留给下一轮。 */
+  /** Collects non-disposed effects and clears the source set; effects scheduled during run() are left for the next round. */
   collectRunnable(source2, target) {
     for (const effect2 of source2) {
       if (!effect2.disposed) target.push(effect2);
@@ -477,12 +480,12 @@ class MemoSignal {
     return this.cached;
   }
   set value(_) {
-    throw new Error("memo: 派生值不能直接赋值");
+    throw new Error("memo: cannot assign directly to a derived value");
   }
   unsubscribe(subscriber) {
     this.subscribers.delete(subscriber);
   }
-  /** 由 MemoSubscriber 调用：标脏并向下传播失效。 */
+  /** Called by MemoSubscriber: marks dirty and propagates invalidation downstream. */
   invalidate() {
     this.dirty = true;
     for (const subscriber of [...this.subscribers]) subscriber.notify();
@@ -555,7 +558,7 @@ function invokeRuntimeDebug(name, ...args) {
   return;
 }
 const PROPERTY_NAMES = /* @__PURE__ */ new Set([
-  // 表单状态
+  // Form state
   "value",
   "checked",
   "selected",
@@ -567,16 +570,18 @@ const PROPERTY_NAMES = /* @__PURE__ */ new Set([
   "defaultChecked",
   "indeterminate",
   /*
-   * `autoFocus` 用**驼峰**（与同表 readOnly/tabIndex/defaultChecked 一致），且必须走
-   * **property 通道**：`autofocus` 是**布尔属性**（只看存在与否、与值无关），
-   * 所以 `autoFocus={false}` 必须"移除属性"而不是写 `autofocus="false"`
-   * （attribute 通道只能把 false 序列化成字符串，属性照样存在 = 仍然聚焦）。
+   * `autoFocus` uses **camelCase** (consistent with readOnly/tabIndex/defaultChecked in this
+   * table) and must go through the **property channel**: `autofocus` is a **boolean
+   * attribute** (presence only, value ignored), so `autoFocus={false}` must "remove the
+   * attribute" rather than write `autofocus="false"` (the attribute channel can only
+   * serialize false into a string — the attribute remains present = still focused).
    *
-   * ⚠️ 但 `setProperty` 必须把它映射成 **IDL 名 `autofocus`（全小写）** ——
-   * `Reflect.set(el, 'autoFocus', …)` 只会挂一个不反射的 expando，**静默无效**。
-   * 映射表见 ops.ts 的 `PROPERTY_IDL_NAMES`。实测（jsdom，与真实 DOM 同语义）：
-   *   IDL `autofocus` → 写 true 得 has=true/idl=true；写 false 得 has=false/idl=false ✓
-   *   JSX `autoFocus` → 属性与 IDL 都不变（只是 expando）                        ✗
+   * ⚠️ But `setProperty` must map it to the **IDL name `autofocus` (all lowercase)** —
+   * `Reflect.set(el, 'autoFocus', …)` only hangs a non-reflecting expando, **silently
+   * ineffective**. See `PROPERTY_IDL_NAMES` in ops.ts for the mapping table. Measured
+   * (jsdom, same semantics as real DOM):
+   *   IDL `autofocus` → write true gives has=true/idl=true; write false gives has=false/idl=false ✓
+   *   JSX `autoFocus` → attribute and IDL both unchanged (just an expando)                ✗
    */
   "autoFocus",
   "hidden",
@@ -584,11 +589,11 @@ const PROPERTY_NAMES = /* @__PURE__ */ new Set([
   "colSpan",
   "rowSpan",
   "open",
-  // 只能走 property 的（attribute 路径会静默无效）
+  // Property-only (the attribute path is silently ineffective)
   "innerHTML",
   "innerText",
   "textContent",
-  // 媒体
+  // Media
   "muted",
   "volume",
   "currentTime",
@@ -612,15 +617,15 @@ const SVG_KEBAB_ATTRIBUTES = /* @__PURE__ */ new Set([
   // fill
   "fillOpacity",
   "fillRule",
-  // clip（注意 clipPathUnits 是结构属性，不在这里）
+  // clip (note: clipPathUnits is a structural attribute, not here)
   "clipPath",
   "clipRule",
-  // 文本对齐
+  // Text alignment
   "textAnchor",
   "dominantBaseline",
   "alignmentBaseline",
   "baselineShift",
-  // 字体
+  // Fonts
   "fontFamily",
   "fontSize",
   "fontSizeAdjust",
@@ -630,11 +635,11 @@ const SVG_KEBAB_ATTRIBUTES = /* @__PURE__ */ new Set([
   "fontWeight",
   "letterSpacing",
   "wordSpacing",
-  // marker 的表现属性（markerWidth / markerHeight / markerUnits 是结构属性，不在这里）
+  // marker presentation attributes (markerWidth / markerHeight / markerUnits are structural, not here)
   "markerStart",
   "markerMid",
   "markerEnd",
-  // 颜色
+  // Color
   "colorInterpolation",
   "colorInterpolationFilters",
   "colorProfile",
@@ -646,7 +651,7 @@ const SVG_KEBAB_ATTRIBUTES = /* @__PURE__ */ new Set([
   "stopOpacity",
   "glyphOrientationHorizontal",
   "glyphOrientationVertical",
-  // 渲染与合成
+  // Rendering and compositing
   "imageRendering",
   "paintOrder",
   "pointerEvents",
@@ -911,7 +916,7 @@ function setRenderer(renderer) {
 }
 function getRenderer() {
   if (!currentRenderer) {
-    throw new Error("渲染器未初始化");
+    throw new Error("Renderer not initialized");
   }
   return currentRenderer;
 }
@@ -1178,7 +1183,7 @@ function isRenderableNode(value) {
 function associateNodeOwner(node, owner) {
   if (node === null || node === void 0 || typeof node !== "object" && typeof node !== "function") {
     throw new Error(
-      `Vobs: associateNodeOwner 收到非节点值（${String(node)}）。组件必须返回 VobsNode；返回 null/undefined 由 createComponent 转成空注释节点。`
+      `Vobs: associateNodeOwner received a non-node value (${String(node)}). Components must return a VobsNode; null/undefined returns are converted into an empty comment node by createComponent.`
     );
   }
   nodeOwners.set(node, owner);
@@ -1201,7 +1206,7 @@ function createFragment(factory) {
     end,
     mount(nextParent, anchor) {
       if (parent && parent !== nextParent) {
-        throw new Error("Vobs Fragment: 不能跨父节点移动 Fragment");
+        throw new Error("Vobs Fragment: cannot move a Fragment across parent nodes");
       }
       if (initialized) {
         moveRange(nextParent, start, end, anchor);
@@ -1217,7 +1222,7 @@ function createFragment(factory) {
     },
     unmount(nextParent) {
       if (!initialized || parent !== nextParent) {
-        throw new Error("Vobs Fragment: Fragment 不属于指定父节点");
+        throw new Error("Vobs Fragment: the Fragment does not belong to the given parent node");
       }
       const renderer = getRenderer();
       let current = renderer.nextSibling(start);
@@ -1247,7 +1252,7 @@ function moveRange(parent, start, end, anchor) {
     current = renderer.nextSibling(current);
   }
   if (nodes[nodes.length - 1] !== end) {
-    throw new Error("Vobs Fragment: 找不到结束锚点");
+    throw new Error("Vobs Fragment: end anchor not found");
   }
   for (const node of nodes) renderer.insertBefore(parent, node, anchor);
 }
@@ -1493,7 +1498,7 @@ function reconcileKeyed(items, keys, entries, renderItem) {
     const item = items[index2];
     const key = keys[index2];
     if (seen.has(key)) {
-      console.warn(`Vobs: 检测到重复的列表 key: ${String(key)}`);
+      console.warn(`Vobs: duplicate list key detected: ${String(key)}`);
     }
     seen.add(key);
     const entry = previous.get(key);
@@ -1540,7 +1545,7 @@ function createListEntry(item, index2, key, renderItem) {
   let viewOwner;
   let node;
   owner.run(() => {
-    itemSignal = state(item);
+    itemSignal = state(item, "signal");
     viewOwner = createOwner();
     node = viewOwner.run(() => renderItem(toReactiveItem(itemSignal, item), index2));
   });
@@ -1612,7 +1617,7 @@ function createTemplate(html) {
 }
 function cloneTemplate(template) {
   const root = template.content.firstElementChild;
-  if (!root) throw new Error("Vobs: 静态模板缺少根元素，请检查编译产物");
+  if (!root) throw new Error("Vobs: static template is missing a root element; check the compiled output");
   return root.cloneNode(true);
 }
 const ownerProviders = /* @__PURE__ */ new WeakMap();
@@ -1624,7 +1629,7 @@ function provideToOwner(owner, key, value, options = {}) {
     owner.onDispose(() => ownerProviders.delete(owner));
   }
   if (providers.has(key) && !options.override) {
-    throw new Error(`Vobs: 注入项 ${String(key)} 已存在；如需覆盖请传入 override: true`);
+    throw new Error(`Vobs: injection ${String(key)} already exists; pass override: true to replace it`);
   }
   providers.set(key, value);
 }
@@ -1638,7 +1643,7 @@ function injectFromOwner(owner, key) {
   return void 0;
 }
 function createVobs(config) {
-  if (!config.render) throw new Error("createVobs: render 不能为空");
+  if (!config.render) throw new Error("createVobs: render cannot be empty");
   const renderer = config.renderer ?? createDOMRenderer();
   const rootOwner = createOwner();
   let previousRenderer;
@@ -1682,7 +1687,7 @@ function createVobs(config) {
     injectRequired(key, description) {
       const value = injectFromOwner(rootOwner, key);
       if (value === void 0) {
-        throw new Error(`Vobs: 找不到必需注入项${description ? ` ${description}` : ""}`);
+        throw new Error(`Vobs: required injection not found${description ? ` ${description}` : ""}`);
       }
       return value;
     },
@@ -1708,14 +1713,14 @@ function createVobs(config) {
     const already = installedPlugins.get(plugin.name);
     if (already !== void 0) {
       if (already !== plugin) {
-        const before = already.version ? `（版本 ${already.version}）` : "";
-        const now = plugin.version ? `（版本 ${plugin.version}）` : "";
-        console.warn(`[vobs] 插件 "${plugin.name}" 已安装${before}，本次传入的是另一个对象${now}，已跳过。 同名插件只会安装一次 —— 若这是两个不同的插件，请给它们不同的 name。`);
+        const before = already.version ? ` (version ${already.version})` : "";
+        const now = plugin.version ? ` (version ${plugin.version})` : "";
+        console.warn(`[vobs] Plugin "${plugin.name}" was already installed${before}; this call passed a different object${now} and was skipped. A same-name plugin is only installed once — if these are two different plugins, give them different names.`);
       }
       return;
     }
     if (installing.has(plugin.name)) {
-      throw new Error(`Vobs: 插件依赖存在循环：${plugin.name}`);
+      throw new Error(`Vobs: plugin dependency cycle: ${plugin.name}`);
     }
     installing.add(plugin.name);
     try {
@@ -1724,8 +1729,8 @@ function createVobs(config) {
       if (cleanup2 !== void 0 && cleanup2 !== null) {
         if (typeof cleanup2 !== "function") {
           const isThenable = typeof cleanup2.then === "function";
-          const kind = isThenable ? "Promise（install 不能是 async）" : typeof cleanup2;
-          throw new Error(`Vobs: 插件 "${plugin.name}" 的 install 必须同步返回清理函数或不返回，收到 ${kind}`);
+          const kind = isThenable ? "Promise (install cannot be async)" : typeof cleanup2;
+          throw new Error(`Vobs: install of plugin "${plugin.name}" must synchronously return a cleanup function or return nothing; received ${kind}`);
         }
         cleanups.push(cleanup2);
       }
@@ -1761,12 +1766,12 @@ function createVobs(config) {
     return firstError;
   }
   function start(target, hydrating) {
-    if (destroyed) throw new Error("Vobs: 已销毁的应用不能挂载");
+    if (destroyed) throw new Error("Vobs: a destroyed app cannot be mounted");
     if (mounted) return;
     container = typeof target === "string" ? document.querySelector(target) : target;
-    if (!container) throw new Error(`mount: 目标不存在: ${target}`);
+    if (!container) throw new Error(`mount: target not found: ${target}`);
     if (hydrating && !renderer.beginHydration) {
-      throw new Error("Vobs: 当前渲染器不支持 Hydration");
+      throw new Error("Vobs: the current renderer does not support hydration");
     }
     installRenderer();
     try {
@@ -1791,7 +1796,7 @@ function createVobs(config) {
       return destroyed;
     },
     use(plugin) {
-      if (destroyed) throw new Error("Vobs: 已销毁的应用不能安装插件");
+      if (destroyed) throw new Error("Vobs: a destroyed app cannot install plugins");
       installPlugin(plugin);
       return app;
     },
@@ -1802,7 +1807,7 @@ function createVobs(config) {
       start(target, true);
     },
     update() {
-      if (destroyed) throw new Error("Vobs: 已销毁的应用不能更新");
+      if (destroyed) throw new Error("Vobs: a destroyed app cannot update");
       try {
         scheduler.flush();
       } catch (error) {
@@ -1840,7 +1845,7 @@ function resolveDshReact() {
   const react = fromGlobal;
   if (!react) {
     throw new Error(
-      '@vobs/dsh: 拿不到 DSH 平台提供的 React。\n  用 dshBundle() 构建客户端产物（它会自动注入），或在入口模块调用 useDshReact(require("react"))。'
+      '@vobs/dsh: cannot obtain the React provided by the DSH platform.\n  Build the client artifact with dshBundle() (it injects automatically), or call useDshReact(require("react")) in your entry module.'
     );
   }
   return react;
@@ -2012,7 +2017,7 @@ function toToolStats(buckets) {
     const totalMs = bucket.durations.reduce((sum, value) => sum + value, 0);
     return {
       name: bucket.name,
-      // 每次 tool/end 恰好压入一个耗时样本，失败是它的子集，不能重复计入。
+      // Every tool/end pushes exactly one duration sample; failures are a subset and must not be double-counted.
       calls: bucket.durations.length,
       failures: bucket.failures,
       p50: percentile(sorted, 0.5),
@@ -2040,14 +2045,14 @@ function recordTool(buckets, event) {
 }
 function createConsoleStore(source2) {
   const seed = source2.snapshot();
-  const events = state(seed.events.slice());
-  const sessions = state(seed.sessions.slice());
-  const paused = state(false);
-  const droppedWhilePaused = state(0);
-  const revision = state(0);
+  const events = state(seed.events.slice(), "events");
+  const sessions = state(seed.sessions.slice(), "sessions");
+  const paused = state(false, "paused");
+  const droppedWhilePaused = state(0, "droppedWhilePaused");
+  const revision = state(0, "revision");
   const buckets = /* @__PURE__ */ new Map();
   for (const event of [...seed.events].reverse()) recordTool(buckets, event);
-  const tools = state(toToolStats(buckets));
+  const tools = state(toToolStats(buckets), "tools");
   const totals = memo(() => {
     const list = tools.value;
     let calls = 0;
@@ -2124,14 +2129,14 @@ function createConsoleStore(source2) {
   };
 }
 const SYNTHETIC_SESSIONS = [
-  { id: "s-51aaec91", title: "DSH 插件接入方案", state: "run", tokens: 41200, durationMs: 138e3 },
-  { id: "s-2f0d1c33", title: "KitSidebar 菜单钉靠", state: "run", tokens: 27600, durationMs: 64e3 },
-  { id: "s-8b71e204", title: "Combobox 方向对齐", state: "wait", tokens: 18100, durationMs: 96e3 },
+  { id: "s-51aaec91", title: "DSH plugin integration plan", state: "run", tokens: 41200, durationMs: 138e3 },
+  { id: "s-2f0d1c33", title: "KitSidebar menu pinning", state: "run", tokens: 27600, durationMs: 64e3 },
+  { id: "s-8b71e204", title: "Combobox direction alignment", state: "wait", tokens: 18100, durationMs: 96e3 },
   { id: "s-4c9a77de", title: "runtime SVG namespace", state: "run", tokens: 53900, durationMs: 221e3 },
-  { id: "s-77e0b218", title: "compiler 多态插入重构", state: "ok", tokens: 12400, durationMs: 51e3 },
+  { id: "s-77e0b218", title: "compiler polymorphic insert refactor", state: "ok", tokens: 12400, durationMs: 51e3 },
   { id: "s-1d3f5a90", title: "npm release 1.7.5", state: "ok", tokens: 8900, durationMs: 33e3 },
-  { id: "s-9a2c4e61", title: "表格列设置持久化", state: "idle", tokens: 0, durationMs: 0 },
-  { id: "s-6f5b8d02", title: "i18n 回退链", state: "idle", tokens: 0, durationMs: 0 }
+  { id: "s-9a2c4e61", title: "table column settings persistence", state: "idle", tokens: 0, durationMs: 0 },
+  { id: "s-6f5b8d02", title: "i18n fallback chain", state: "idle", tokens: 0, durationMs: 0 }
 ];
 const SYNTHETIC_TOOLS = [
   { name: "read", base: 6, spread: 14, failureRate: 0 },
@@ -2148,15 +2153,15 @@ const SYNTHETIC_TOOLS = [
 ];
 const SYNTHETIC_DETAILS = {
   read: ["packages/dsh/src/host.ts", "packages/dsh/src/plugin.ts", "package.json"],
-  grep: ["/usr|pwsh/ · 9 处匹配 · 2 个文件", "/insertList|bindText/ · 14 处 · 5 个文件"],
+  grep: ["/usr|pwsh/ · 9 matches · 2 files", "/insertList|bindText/ · 14 matches · 5 files"],
   pwsh: ["node scripts/build-dsh-plugins.mjs", "pnpm exec vitest --run packages/dsh", "git status --porcelain"],
   edit: ["packages/dsh-plugin/src/client/index.tsx +18 −4", "packages/dsh/src/vite.ts +41 −7"],
-  glob: ["packages/dsh-console/src/**/*.tsx · 6 个文件"],
+  glob: ["packages/dsh-console/src/**/*.tsx · 6 files"],
   write: ["lib/client.js · 57.9 KiB"],
   web_search: ["pnpm git subdirectory install", "DSH plugin manifest"],
   web_fetch: ["https://pnpm.io/package-sources"],
-  subagent: ["审查 @vobs/dsh 的纯度门禁实现"],
-  todo_write: ["3 项待办 · 1 项进行中"],
+  subagent: ["review @vobs/dsh purity gate implementation"],
+  todo_write: ["3 todos · 1 in progress"],
   present: ["01-console-overview.png"]
 };
 function createRandom(seed) {
@@ -2229,7 +2234,7 @@ function createSyntheticSource(options = {}) {
         sessionId: session.id,
         sessionTitle: session.title,
         kind: "approval/request",
-        detail: "等待用户批准 · pwsh 沙箱外写文件",
+        detail: "awaiting user approval · pwsh writing outside sandbox",
         durationMs: 1e3 + Math.floor(random() * 3e4),
         status: "warn"
       });
@@ -2252,8 +2257,8 @@ function createSyntheticSource(options = {}) {
   };
   return {
     kind: "synthetic",
-    label: "演示数据",
-    note: "未接入 DSH 事件流，以下内容由本地确定性生成器产出，仅用于预览与压测。",
+    label: "Demo data",
+    note: "Not connected to DSH's event stream; the content below is produced by a local deterministic generator, for preview and stress testing only.",
     tick(steps = stepsPerTick) {
       if (disposed) return;
       for (let index2 = 0; index2 < steps; index2 += 1) step();
@@ -2284,7 +2289,7 @@ function toSessionSummary(id, row, status) {
     id,
     title: typeof row.title === "string" && row.title !== "" ? row.title : id,
     state: state2,
-    // 会话级列表快照里没有 token / 耗时；这两项保持 0，界面显示为「—」。
+    // Session-level list snapshots carry no tokens / durations; these stay 0 and render as "—".
     tokens: 0,
     durationMs: 0,
     lastActivity: typeof row.updatedAt === "number" ? row.updatedAt : 0
@@ -2329,17 +2334,17 @@ function createDshSource(ctx, options = {}) {
       sessionTitle: summary.title
     };
     if (before === void 0) {
-      return { ...base, kind: "session/open", detail: "会话进入目录", status: "ok" };
+      return { ...base, kind: "session/open", detail: "session entered the catalog", status: "ok" };
     }
     if (before.state !== summary.state) {
-      if (summary.state === "run") return { ...base, kind: "turn/start", detail: "会话开始运行", status: "run" };
+      if (summary.state === "run") return { ...base, kind: "turn/start", detail: "session started running", status: "run" };
       if (summary.state === "wait") {
-        return { ...base, kind: "approval/request", detail: "等待用户输入或批准", status: "warn" };
+        return { ...base, kind: "approval/request", detail: "awaiting user input or approval", status: "warn" };
       }
-      return { ...base, kind: "turn/end", detail: "会话停止运行", status: "ok" };
+      return { ...base, kind: "turn/end", detail: "session stopped running", status: "ok" };
     }
     if (before.title !== summary.title) {
-      return { ...base, kind: "session/update", detail: `标题更新为「${summary.title}」`, status: "ok" };
+      return { ...base, kind: "session/update", detail: `title updated to "${summary.title}"`, status: "ok" };
     }
     return void 0;
   };
@@ -2363,7 +2368,7 @@ function createDshSource(ctx, options = {}) {
           sessionId: id,
           sessionTitle: before.title,
           kind: "session/close",
-          detail: "会话离开目录",
+          detail: "session left the catalog",
           status: "ok"
         });
       }
@@ -2381,8 +2386,8 @@ function createDshSource(ctx, options = {}) {
   }
   return {
     kind: "dsh",
-    label: "DSH 运行态",
-    note: "数据来自 DSH 的 sessions / uiSession 服务，为**会话级**观测：列表、运行状态与等待审批。token 与工具级事件不在目录快照里，因此显示为「—」。",
+    label: "DSH run states",
+    note: "Data comes from DSH's sessions / uiSession services and is a **session-level** observation: list, run states, and awaiting approval. Tokens and tool-level events are not in the catalog snapshot, so they render as an em dash.",
     snapshot() {
       return { events: [...events], sessions: [...current] };
     },
@@ -2407,13 +2412,13 @@ function selectConsoleSource(ctx, fallback) {
   if (live2 !== void 0) {
     return {
       source: live2,
-      note: `${live2.note}（未打开任何会话，因此不采集逐会话的工具事件）`
+      note: `${live2.note} (no sessions opened, so per-session tool events are not collected)`
     };
   }
   const demo2 = fallback ?? createSyntheticSource();
   return {
     source: demo2,
-    note: `${demo2.note}未探测到 DSH 的 sessions 服务。`
+    note: `${demo2.note}DSH's sessions service was not detected.`
   };
 }
 function createSwitchableSource(initial) {
@@ -2548,30 +2553,30 @@ function TrashIcon() {
     return _el6;
   })();
 }
-const _tpl4 = createTemplate('<span class="vc-badge vc-badge--live">DSH 实时数据</span>');
-const _tpl5 = createTemplate('<span class="vc-badge vc-badge--demo">演示数据</span>');
-const _tpl24 = createTemplate('<div class="vc-kpi__label">运行中会话</div>');
-const _tpl27 = createTemplate('<div class="vc-kpi__label">等待审批</div>');
-const _tpl30 = createTemplate('<div class="vc-kpi__label">会话总数</div>');
-const _tpl33 = createTemplate('<div class="vc-kpi__label">工具调用</div>');
-const _tpl37 = createTemplate('<div class="vc-card__head">最近事件<span class="vc-card__hint">实时 · vobs 只更新变化的行</span></div>');
-const _tpl41 = createTemplate('<div class="vc-card__head">工具 Top 5<span class="vc-card__hint">按调用次数</span></div>');
-const _tpl48 = createTemplate('<div class="vc-empty">当前数据源没有工具级事件。</div>');
-const _tpl50 = createTemplate('<div class="vc-card__head">会话运行态<span class="vc-card__hint">token 与耗时来自当前数据源</span></div>');
-const _tpl69 = createTemplate('<div class="vc-kpi__label">总调用</div>');
-const _tpl72 = createTemplate('<div class="vc-kpi__label">失败 / 取消</div>');
-const _tpl75 = createTemplate('<div class="vc-kpi__label">中位耗时</div>');
-const _tpl78 = createTemplate('<div class="vc-kpi__label">P95 最慢</div>');
-const _tpl82 = createTemplate('<thead><tr><th>工具</th><th class="vc-num">调用</th><th class="vc-num">成功率</th><th class="vc-num">P50</th><th class="vc-num">P95</th><th class="vc-num">总耗时</th><th>趋势</th></tr></thead>');
-const _tpl94 = createTemplate('<div class="vc-card"><div class="vc-card__head">工具分析暂不可用</div><div class="vc-card__body" style="display:grid;gap:8px"><div class="vc-note">当前数据源是<strong>会话级</strong>的：它读的是 DSH 的会话目录（`sessions.list`）与运行状态 （`uiSession.sessionStatus`），里面没有逐条工具调用。</div><div class="vc-note">工具级事件属于会话内部的历史，要采集就得对每个会话 <code>retain()</code> 并跟随它的事件流 —— 而 DSH 自己刻意避免「为了列表去打开冷会话」。这一版不越这条线。</div><div class="vc-note">接演示数据源时这一页是完整的（用于预览表格与趋势线的行为）。</div></div></div>');
-const _tpl97 = createTemplate('<div class="vc-card__head">交付物时间线<span class="vc-card__hint">由写入 / 编辑 / 交付类工具事件推导</span></div>');
+const _tpl4 = createTemplate('<span class="vc-badge vc-badge--live">DSH live data</span>');
+const _tpl5 = createTemplate('<span class="vc-badge vc-badge--demo">Demo data</span>');
+const _tpl24 = createTemplate('<div class="vc-kpi__label">Running sessions</div>');
+const _tpl27 = createTemplate('<div class="vc-kpi__label">Awaiting approval</div>');
+const _tpl30 = createTemplate('<div class="vc-kpi__label">Total sessions</div>');
+const _tpl33 = createTemplate('<div class="vc-kpi__label">Tool calls</div>');
+const _tpl37 = createTemplate('<div class="vc-card__head">Recent events<span class="vc-card__hint">Live · vobs only updates the rows that change</span></div>');
+const _tpl41 = createTemplate('<div class="vc-card__head">Top 5 tools<span class="vc-card__hint">by call count</span></div>');
+const _tpl48 = createTemplate('<div class="vc-empty">No tool-level events in the current data source.</div>');
+const _tpl50 = createTemplate('<div class="vc-card__head">Session run states<span class="vc-card__hint">tokens and durations come from the current data source</span></div>');
+const _tpl69 = createTemplate('<div class="vc-kpi__label">Total calls</div>');
+const _tpl72 = createTemplate('<div class="vc-kpi__label">Failed / cancelled</div>');
+const _tpl75 = createTemplate('<div class="vc-kpi__label">Median duration</div>');
+const _tpl78 = createTemplate('<div class="vc-kpi__label">P95 slowest</div>');
+const _tpl82 = createTemplate('<thead><tr><th>Tool</th><th class="vc-num">Calls</th><th class="vc-num">Success</th><th class="vc-num">P50</th><th class="vc-num">P95</th><th class="vc-num">Total time</th><th>Trend</th></tr></thead>');
+const _tpl94 = createTemplate('<div class="vc-card"><div class="vc-card__head">Tool analysis unavailable</div><div class="vc-card__body" style="display:grid;gap:8px"><div class="vc-note">The current data source is <strong>session-level</strong>: it reads DSH\'s session catalog (`sessions.list`) and run states (`uiSession.sessionStatus`), which contain no per-call tool data.</div><div class="vc-note">Tool-level events are history inside each session; collecting them would mean calling<code>retain()</code> on every session and following its event stream — which DSH itself deliberately avoids ("opening cold sessions just to list them"). This version does not cross that line.</div><div class="vc-note">This page is fully functional when connected to the demo data source (for previewing table and trend-line behavior).</div></div></div>');
+const _tpl97 = createTemplate('<div class="vc-card__head">Deliverable timeline<span class="vc-card__hint">derived from write / edit / present tool events</span></div>');
 const _tpl103 = createTemplate("<br></br>");
-const _tpl106 = createTemplate('<div class="vc-empty" style="padding:14px">还没有产物事件。</div>');
+const _tpl106 = createTemplate('<div class="vc-empty" style="padding:14px">No artifact events yet.</div>');
 const TABS = [
-  { id: "overview", label: "总览" },
-  { id: "stream", label: "事件流" },
-  { id: "tools", label: "工具分析" },
-  { id: "artifacts", label: "产物" }
+  { id: "overview", label: "Overview" },
+  { id: "stream", label: "Event Stream" },
+  { id: "tools", label: "Tool Analysis" },
+  { id: "artifacts", label: "Artifacts" }
 ];
 const STREAM_RENDER_LIMIT = 300;
 const ARTIFACT_TOOLS = ["write", "edit", "present"];
@@ -2640,7 +2645,7 @@ function VobsConsole(props) {
               props.store.pause();
           });
           insertDynamic(_el10, null, () => props.store.paused.value ? createComponent(resolveComponent(PlayIcon, "src/client/console.tsx", "PlayIcon"), {}) : createComponent(resolveComponent(PauseIcon, "src/client/console.tsx", "PauseIcon"), {}));
-          insertDynamicValue(_el10, null, () => props.store.paused.value ? "继续" : "暂停");
+          insertDynamicValue(_el10, null, () => props.store.paused.value ? "Resume" : "Pause");
           return _el10;
         })(), null);
         insertBefore(_el7, (() => {
@@ -2652,7 +2657,7 @@ function VobsConsole(props) {
             props.store.clear();
           });
           insertBefore(_el11, createComponent(resolveComponent(TrashIcon, "src/client/console.tsx", "TrashIcon"), {}), null);
-          insertBefore(_el11, createText("清空"), null);
+          insertBefore(_el11, createText("Clear"), null);
           return _el11;
         })(), null);
         return _el7;
@@ -2752,12 +2757,12 @@ function EventRow(props) {
 }
 function stateLabel(value) {
   if (value === "run")
-    return "运行中";
+    return "Running";
   if (value === "wait")
-    return "等待审批";
+    return "Awaiting approval";
   if (value === "ok")
-    return "已完成";
-  return "空闲";
+    return "Completed";
+  return "Idle";
 }
 function Overview(props) {
   return (() => {
@@ -3018,7 +3023,7 @@ function Stream(props) {
         const _el61 = createElement("input");
         setStaticProps(_el61, {
           "class": "vc-input",
-          "placeholder": "过滤事件（类型 / 会话 / 工具 / 详情）…"
+          "placeholder": "Filter events (kind / session / tool / detail)…"
         });
         bindProperty(_el61, "value", () => filter.value);
         addEventListener(_el61, "input", (event) => {
@@ -3031,7 +3036,7 @@ function Stream(props) {
         setStaticProps(_el62, {
           "class": "vc-note"
         });
-        insertDynamicValue(_el62, null, () => props.store.paused.value ? `已暂停 · 丢弃 ${props.store.droppedWhilePaused.value} 条` : `缓冲 ${props.store.events.value.length} / 5000`);
+        insertDynamicValue(_el62, null, () => props.store.paused.value ? `Paused · dropped ${props.store.droppedWhilePaused.value}` : `Buffer ${props.store.events.value.length} / 5000`);
         return _el62;
       })(), null);
       return _el60;
@@ -3391,7 +3396,7 @@ const CONSOLE_CSS = `
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---- 头部 ---- */
+/* ---- Header ---- */
 .vc-head { padding: 16px 22px 0; display: flex; align-items: flex-start; gap: 12px; }
 .vc-title { font-size: 17px; font-weight: 650; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
 .vc-sub { color: var(--vc-fg-3); font-size: 12px; margin-top: 4px; max-width: 760px; }
@@ -3432,7 +3437,7 @@ const CONSOLE_CSS = `
   background: var(--vc-surface-3); color: var(--vc-fg-3);
 }
 
-/* ---- 主体 ---- */
+/* ---- Body ---- */
 .vc-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 22px 22px; display: grid; gap: 14px; align-content: start; }
 
 .vc-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
@@ -3453,7 +3458,7 @@ const CONSOLE_CSS = `
 .vc-bar__fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #4176e6, #5686fe); }
 .vc-bar__val { text-align: right; font-variant-numeric: tabular-nums; color: var(--vc-fg-2); font-size: 12px; }
 
-/* ---- 事件行 ---- */
+/* ---- Event row ---- */
 .vc-stream { display: grid; gap: 1px; }
 .vc-ev {
   display: grid; grid-template-columns: 66px 140px 148px 1fr auto;
@@ -3469,7 +3474,7 @@ const CONSOLE_CSS = `
 .vc-ev__detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vc-ev__ms { color: var(--vc-fg-3); font-variant-numeric: tabular-nums; }
 
-/* ---- 表格 ---- */
+/* ---- Table ---- */
 .vc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .vc-table th {
   text-align: left; font-weight: 600; color: var(--vc-fg-3); font-size: 11px;
@@ -3484,7 +3489,7 @@ const CONSOLE_CSS = `
 .vc-name { color: var(--vc-fg); font-weight: 500; }
 .vc-spark { display: block; }
 
-/* ---- 输入 / 工具条 ---- */
+/* ---- Input / toolbar ---- */
 .vc-toolbar { display: flex; align-items: center; gap: 8px; }
 .vc-input {
   flex: 1; min-width: 0; height: 30px; padding: 0 10px;
@@ -3526,7 +3531,8 @@ const index = defineDshPanel({
   label: "Vobs Console",
   styles: CONSOLE_CSS,
   sidebarEntry: {
-    // 与面板标题一致：侧栏只写 Console 会和 DSH 自带的生态混淆，也让人对不上是哪个面板。
+    // Same as the panel title: "Console" alone in the sidebar would blur into DSH's own ecosystem
+    // and leave people unsure which panel it is.
     label: "Vobs Console",
     order: 9,
     renderIcon: () => createComponent(resolveComponent(ConsoleIcon, "src/client/index.tsx", "ConsoleIcon"), {})

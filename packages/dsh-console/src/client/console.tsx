@@ -12,32 +12,33 @@ import {
 import { PauseIcon, PlayIcon, TrashIcon } from './icons'
 
 const TABS = [
-  { id: 'overview', label: '总览' },
-  { id: 'stream', label: '事件流' },
-  { id: 'tools', label: '工具分析' },
-  { id: 'artifacts', label: '产物' }
+  { id: 'overview', label: 'Overview' },
+  { id: 'stream', label: 'Event Stream' },
+  { id: 'tools', label: 'Tool Analysis' },
+  { id: 'artifacts', label: 'Artifacts' }
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
 
-/** 事件流最多渲染多少行；再多也只在内存里（环形缓冲 5000 条）。 */
+/** How many rows of the event stream to render at most; beyond that they only live in memory (5000-entry ring buffer). */
 const STREAM_RENDER_LIMIT = 300
 
 const ARTIFACT_TOOLS: readonly string[] = ['write', 'edit', 'present']
 
 export interface VobsConsoleProps {
   store: ConsoleStore
-  /** 数据来源状态说明。 */
+  /** Data-source status note. */
   note: ReadableSignal<string>
-  /** 是否已探测到 DSH 的实时服务。 */
+  /** Whether DSH's live services were detected. */
   live: ReadableSignal<boolean>
 }
 
 /**
- * Console 根组件。
+ * Console root component.
  *
- * 组件体只执行一次；下方所有 `{…}` 都由 vobs 编译器编译成独立的 DOM binding，
- * 因此每秒几百条事件注入时，只有变化的文本节点与新增的行被触碰。
+ * The component body executes once; every `{…}` below is compiled by the vobs compiler into
+ * an independent DOM binding, so when hundreds of events are injected per second only the
+ * changed text nodes and new rows are touched.
  */
 export function VobsConsole(props: VobsConsoleProps) {
   const tab = state<TabId>('overview', 'tab')
@@ -50,9 +51,9 @@ export function VobsConsole(props: VobsConsoleProps) {
           <div class="vc-title">
             Vobs Console
             {props.live.value ? (
-              <span class="vc-badge vc-badge--live">DSH 实时数据</span>
+              <span class="vc-badge vc-badge--live">DSH live data</span>
             ) : (
-              <span class="vc-badge vc-badge--demo">演示数据</span>
+              <span class="vc-badge vc-badge--demo">Demo data</span>
             )}
           </div>
           <div class="vc-sub">{props.note.value}</div>
@@ -79,7 +80,7 @@ export function VobsConsole(props: VobsConsoleProps) {
             }}
           >
             {props.store.paused.value ? <PlayIcon /> : <PauseIcon />}
-            {props.store.paused.value ? '继续' : '暂停'}
+            {props.store.paused.value ? 'Resume' : 'Pause'}
           </button>
           <button
             class="vc-btn"
@@ -88,7 +89,7 @@ export function VobsConsole(props: VobsConsoleProps) {
             }}
           >
             <TrashIcon />
-            清空
+            Clear
           </button>
         </div>
       </div>
@@ -121,9 +122,9 @@ export function VobsConsole(props: VobsConsoleProps) {
   )
 }
 
-/* ---------------------------------------------------------------- 事件行 */
+/* ---------------------------------------------------------------- Event row */
 
-/** 事件行。总览与事件流共用，避免两处渲染逻辑漂移。 */
+/** One event row. Shared by Overview and Event Stream to keep the two renderings from drifting. */
 function EventRow(props: { event: ConsoleEvent }) {
   return (
     <div class="vc-ev">
@@ -138,13 +139,13 @@ function EventRow(props: { event: ConsoleEvent }) {
   )
 }
 
-/* ------------------------------------------------------------------ 总览 */
+/* ------------------------------------------------------------------ Overview */
 
 function stateLabel(value: SessionState): string {
-  if (value === 'run') return '运行中'
-  if (value === 'wait') return '等待审批'
-  if (value === 'ok') return '已完成'
-  return '空闲'
+  if (value === 'run') return 'Running'
+  if (value === 'wait') return 'Awaiting approval'
+  if (value === 'ok') return 'Completed'
+  return 'Idle'
 }
 
 function Overview(props: { store: ConsoleStore }) {
@@ -152,19 +153,19 @@ function Overview(props: { store: ConsoleStore }) {
     <div class="vc-body">
       <div class="vc-kpis">
         <div class="vc-kpi">
-          <div class="vc-kpi__label">运行中会话</div>
+          <div class="vc-kpi__label">Running sessions</div>
           <div class="vc-kpi__value">{props.store.sessions.value.filter(item => item.state === 'run').length}</div>
         </div>
         <div class="vc-kpi">
-          <div class="vc-kpi__label">等待审批</div>
+          <div class="vc-kpi__label">Awaiting approval</div>
           <div class="vc-kpi__value" style="color:#f7ad31">{props.store.sessions.value.filter(item => item.state === 'wait').length}</div>
         </div>
         <div class="vc-kpi">
-          <div class="vc-kpi__label">会话总数</div>
+          <div class="vc-kpi__label">Total sessions</div>
           <div class="vc-kpi__value">{props.store.sessions.value.length}</div>
         </div>
         <div class="vc-kpi">
-          <div class="vc-kpi__label">工具调用</div>
+          <div class="vc-kpi__label">Tool calls</div>
           <div class="vc-kpi__value">{props.store.tools.value.length === 0 ? '—' : props.store.totals.value.calls}</div>
         </div>
       </div>
@@ -172,8 +173,8 @@ function Overview(props: { store: ConsoleStore }) {
       <div class="vc-grid2">
         <div class="vc-card">
           <div class="vc-card__head">
-            最近事件
-            <span class="vc-card__hint">实时 · vobs 只更新变化的行</span>
+            Recent events
+            <span class="vc-card__hint">Live · vobs only updates the rows that change</span>
           </div>
           <div class="vc-card__body" style="padding:6px 8px 8px">
             <div class="vc-stream">
@@ -186,8 +187,8 @@ function Overview(props: { store: ConsoleStore }) {
 
         <div class="vc-card">
           <div class="vc-card__head">
-            工具 Top 5
-            <span class="vc-card__hint">按调用次数</span>
+            Top 5 tools
+            <span class="vc-card__hint">by call count</span>
           </div>
           <div class="vc-card__body">
             {props.store.tools.value.slice(0, 5).map(stat => (
@@ -200,7 +201,7 @@ function Overview(props: { store: ConsoleStore }) {
               </div>
             ))}
             {props.store.tools.value.length === 0 ? (
-              <div class="vc-empty">当前数据源没有工具级事件。</div>
+              <div class="vc-empty">No tool-level events in the current data source.</div>
             ) : null}
           </div>
         </div>
@@ -208,8 +209,8 @@ function Overview(props: { store: ConsoleStore }) {
 
       <div class="vc-card">
         <div class="vc-card__head">
-          会话运行态
-          <span class="vc-card__hint">token 与耗时来自当前数据源</span>
+          Session run states
+          <span class="vc-card__hint">tokens and durations come from the current data source</span>
         </div>
         <div class="vc-card__body" style="padding:8px 14px">
           <div class="vc-sessions">
@@ -229,7 +230,7 @@ function Overview(props: { store: ConsoleStore }) {
   )
 }
 
-/* ---------------------------------------------------------------- 事件流 */
+/* ---------------------------------------------------------------- Event stream */
 
 function matchesFilter(event: ConsoleEvent, filter: string): boolean {
   if (filter === '') return true
@@ -245,7 +246,7 @@ function Stream(props: { store: ConsoleStore }) {
       <div class="vc-toolbar">
         <input
           class="vc-input"
-          placeholder="过滤事件（类型 / 会话 / 工具 / 详情）…"
+          placeholder="Filter events (kind / session / tool / detail)…"
           value={filter.value}
           onInput={event => {
             filter.value = (event.target as HTMLInputElement).value
@@ -253,8 +254,8 @@ function Stream(props: { store: ConsoleStore }) {
         />
         <span class="vc-note">
           {props.store.paused.value
-            ? `已暂停 · 丢弃 ${props.store.droppedWhilePaused.value} 条`
-            : `缓冲 ${props.store.events.value.length} / 5000`}
+            ? `Paused · dropped ${props.store.droppedWhilePaused.value}`
+            : `Buffer ${props.store.events.value.length} / 5000`}
         </span>
       </div>
 
@@ -274,13 +275,14 @@ function Stream(props: { store: ConsoleStore }) {
   )
 }
 
-/* -------------------------------------------------------------- 工具分析 */
+/* -------------------------------------------------------------- Tool analysis */
 
 function Tools(props: { store: ConsoleStore }) {
   /*
-   * 必须是 memo 派生，不能直接 `const hasTools = props.store.tools.value.length > 0`：
-   * 组件体只执行一次，那样会把初次挂载时的布尔值冻住 —— 先切到本页、再等工具事件到达时，
-   * KPI 会一直显示「—」（校验脚本之前没抓到，因为它先灌数据再切 tab）。
+   * This must be a memo-derived value; `const hasTools = props.store.tools.value.length > 0`
+   * directly would freeze the boolean captured at first mount — after switching to this tab
+   * and waiting for tool events to arrive, the KPIs would show "—" forever (the verify script
+   * missed this once, because it filled data before switching tabs).
    */
   const hasTools = memo(() => props.store.tools.value.length > 0)
 
@@ -288,19 +290,19 @@ function Tools(props: { store: ConsoleStore }) {
     <div class="vc-body">
       <div class="vc-kpis">
         <div class="vc-kpi">
-          <div class="vc-kpi__label">总调用</div>
+          <div class="vc-kpi__label">Total calls</div>
           <div class="vc-kpi__value">{hasTools.value ? props.store.totals.value.calls : '—'}</div>
         </div>
         <div class="vc-kpi">
-          <div class="vc-kpi__label">失败 / 取消</div>
+          <div class="vc-kpi__label">Failed / cancelled</div>
           <div class="vc-kpi__value" style="color:#f7ad31">{hasTools.value ? props.store.totals.value.failures : '—'}</div>
         </div>
         <div class="vc-kpi">
-          <div class="vc-kpi__label">中位耗时</div>
+          <div class="vc-kpi__label">Median duration</div>
           <div class="vc-kpi__value">{hasTools.value ? formatDuration(props.store.totals.value.p50) : '—'}</div>
         </div>
         <div class="vc-kpi">
-          <div class="vc-kpi__label">P95 最慢</div>
+          <div class="vc-kpi__label">P95 slowest</div>
           <div class="vc-kpi__value">{hasTools.value ? formatDuration(props.store.totals.value.p95) : '—'}</div>
         </div>
       </div>
@@ -310,13 +312,13 @@ function Tools(props: { store: ConsoleStore }) {
           <table class="vc-table">
             <thead>
               <tr>
-                <th>工具</th>
-                <th class="vc-num">调用</th>
-                <th class="vc-num">成功率</th>
+                <th>Tool</th>
+                <th class="vc-num">Calls</th>
+                <th class="vc-num">Success</th>
                 <th class="vc-num">P50</th>
                 <th class="vc-num">P95</th>
-                <th class="vc-num">总耗时</th>
-                <th>趋势</th>
+                <th class="vc-num">Total time</th>
+                <th>Trend</th>
               </tr>
             </thead>
             <tbody>
@@ -342,17 +344,18 @@ function Tools(props: { store: ConsoleStore }) {
         </div>
       ) : (
         <div class="vc-card">
-          <div class="vc-card__head">工具分析暂不可用</div>
+          <div class="vc-card__head">Tool analysis unavailable</div>
           <div class="vc-card__body" style="display:grid;gap:8px">
             <div class="vc-note">
-              当前数据源是<strong>会话级</strong>的：它读的是 DSH 的会话目录（`sessions.list`）与运行状态
-              （`uiSession.sessionStatus`），里面没有逐条工具调用。
+              The current data source is <strong>session-level</strong>: it reads DSH's session catalog
+              (`sessions.list`) and run states (`uiSession.sessionStatus`), which contain no per-call tool data.
             </div>
             <div class="vc-note">
-              工具级事件属于会话内部的历史，要采集就得对每个会话 <code>retain()</code> 并跟随它的事件流 ——
-              而 DSH 自己刻意避免「为了列表去打开冷会话」。这一版不越这条线。
+              Tool-level events are history inside each session; collecting them would mean calling
+              <code>retain()</code> on every session and following its event stream — which DSH itself
+              deliberately avoids ("opening cold sessions just to list them"). This version does not cross that line.
             </div>
-            <div class="vc-note">接演示数据源时这一页是完整的（用于预览表格与趋势线的行为）。</div>
+            <div class="vc-note">This page is fully functional when connected to the demo data source (for previewing table and trend-line behavior).</div>
           </div>
         </div>
       )}
@@ -360,15 +363,15 @@ function Tools(props: { store: ConsoleStore }) {
   )
 }
 
-/* ---------------------------------------------------------------- 产物 */
+/* ---------------------------------------------------------------- Artifacts */
 
 function Artifacts(props: { store: ConsoleStore }) {
   return (
     <div class="vc-body">
       <div class="vc-card">
         <div class="vc-card__head">
-          交付物时间线
-          <span class="vc-card__hint">由写入 / 编辑 / 交付类工具事件推导</span>
+          Deliverable timeline
+          <span class="vc-card__hint">derived from write / edit / present tool events</span>
         </div>
         <div class="vc-card__body" style="padding:4px 14px">
           {props.store.events.value
@@ -389,14 +392,14 @@ function Artifacts(props: { store: ConsoleStore }) {
             ))}
         </div>
         {props.store.events.value.filter(event => event.tool !== undefined && ARTIFACT_TOOLS.includes(event.tool)).length === 0 ? (
-          <div class="vc-empty" style="padding:14px">还没有产物事件。</div>
+          <div class="vc-empty" style="padding:14px">No artifact events yet.</div>
         ) : null}
       </div>
     </div>
   )
 }
 
-/* ------------------------------------------------------------------ 工具函数 */
+/* ------------------------------------------------------------------ Utilities */
 
 function kindClass(event: ConsoleEvent): string {
   if (event.status === 'err') return 'vc-ev__kind vc-ev__kind--err'

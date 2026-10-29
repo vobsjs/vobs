@@ -20,7 +20,7 @@ describe('Combobox', () => {
     { value: 'cherry', label: '樱桃' }
   ]
 
-  it('输入过滤选项并按点击选中（bind 写回）', async () => {
+  it('filters options by input and selects on click (bind write-back)', async () => {
     const bind = state('apple')
     const root = await mount({ options: FRUITS, bind, emptyText: '没有匹配' })
     const input = root.querySelector('input') as HTMLInputElement
@@ -43,7 +43,7 @@ describe('Combobox', () => {
     expect(root.querySelector('.vui-combobox__panel')).toBeNull()
   })
 
-  it('无匹配时显示 emptyText', async () => {
+  it('shows emptyText when nothing matches', async () => {
     const root = await mount({ options: FRUITS, value: 'apple', emptyText: '没有匹配' })
     const input = root.querySelector('input') as HTMLInputElement
     input.dispatchEvent(new FocusEvent('focus'))
@@ -54,7 +54,7 @@ describe('Combobox', () => {
     expect(root.querySelector('.vui-combobox__empty')?.textContent).toBe('没有匹配')
   })
 
-  it('键盘 ArrowDown + Enter 选择下一项', async () => {
+  it('ArrowDown + Enter selects the next option', async () => {
     const bind = state('apple')
     const root = await mount({ options: FRUITS, bind })
     const input = root.querySelector('input') as HTMLInputElement
@@ -67,7 +67,7 @@ describe('Combobox', () => {
     expect(input.value).toBe('香蕉')
   })
 
-  it('外部点击关闭面板', async () => {
+  it('outside click closes the panel', async () => {
     const root = await mount({ options: FRUITS, value: 'apple' })
     const input = root.querySelector('input') as HTMLInputElement
     input.dispatchEvent(new FocusEvent('focus'))
@@ -78,7 +78,7 @@ describe('Combobox', () => {
     expect(root.querySelector('.vui-combobox__panel')).toBeNull()
   })
 
-  it('disabled 时聚焦不展开', async () => {
+  it('focusing while disabled does not open the panel', async () => {
     const root = await mount({ options: FRUITS, value: 'apple', disabled: true })
     const input = root.querySelector('input') as HTMLInputElement
     input.dispatchEvent(new FocusEvent('focus'))
@@ -86,13 +86,13 @@ describe('Combobox', () => {
     expect(root.querySelector('.vui-combobox__panel')).toBeNull()
   })
 
-  it('align="end" 与 direction="up" 输出对应修饰类', async () => {
+  it('align="end" and direction="up" emit the corresponding modifier classes', async () => {
     const root = await mount({ options: FRUITS, value: 'apple', align: 'end', direction: 'up' })
     expect(root.classList.contains('vui-combobox--align-end')).toBe(true)
     expect(root.classList.contains('vui-combobox--up')).toBe(true)
   })
 
-  it('direction 默认 down：不加向上类，auto 打开时视口充足保持向下', async () => {
+  it('direction defaults to down: no up class, and auto stays down when the viewport has room', async () => {
     const fallback = await mount({ options: FRUITS, value: 'apple' })
     expect(fallback.classList.contains('vui-combobox--up')).toBe(false)
     const auto = await mount({ options: FRUITS, value: 'apple', direction: 'auto' })
@@ -100,7 +100,7 @@ describe('Combobox', () => {
     input.dispatchEvent(new FocusEvent('focus'))
     await tick()
     expect(auto.querySelector('.vui-combobox__panel')).not.toBeNull()
-    // jsdom 视口（innerHeight 768）远大于面板高：auto 不翻转
+    // The jsdom viewport (innerHeight 768) is far taller than the panel: auto does not flip
     expect(auto.classList.contains('vui-combobox--up')).toBe(false)
   })
 })

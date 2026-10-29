@@ -15,7 +15,7 @@ import {
   type DshSlotRegistration
 } from './index.js'
 
-/* ------------------------------------------------------------------ 测试替身 */
+/* ------------------------------------------------------------------ Test doubles */
 
 function createReactStub(): { react: DshReact; effects: Array<() => void | (() => void)> } {
   const effects: Array<() => void | (() => void)> = []
@@ -64,7 +64,7 @@ function createFakeContext(): FakeContext {
   }
 }
 
-/** 把 slot 宿主组件当成 React 来"提交"：赋 ref、跑 effect。 */
+/** "Commit" the slot host component as React would: assign the ref, run the effects. */
 function commitHost(
   component: unknown,
   effects: Array<() => void | (() => void)>
@@ -73,7 +73,7 @@ function commitHost(
   const host = document.createElement('div')
   document.body.appendChild(host)
   const ref = node?.props?.ref
-  if (ref === undefined || ref === null) throw new Error('宿主组件没有传 ref')
+  if (ref === undefined || ref === null) throw new Error('host component did not provide a ref')
   ref.current = host
 
   const cleanups: Array<() => void> = []
@@ -90,27 +90,27 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-/* ---------------------------------------------------------------- React 绑定 */
+/* ---------------------------------------------------------------- React binding */
 
-describe('React 绑定', () => {
-  it('没有任何绑定时抛出可操作的错误', () => {
-    expect(() => resolveDshReact()).toThrow(/拿不到 DSH 平台提供的 React/u)
+describe('React binding', () => {
+  it('throws an actionable error when no binding exists', () => {
+    expect(() => resolveDshReact()).toThrow(/cannot obtain the React provided by the DSH platform/u)
     expect(() => resolveDshReact()).toThrow(/useDshReact/u)
   })
 
-  it('useDshReact 手动注入后可用', () => {
+  it('works after manual injection via useDshReact', () => {
     const stub = createReactStub()
     useDshReact(stub.react)
     expect(resolveDshReact()).toBe(stub.react)
   })
 
-  it('回退到 globalThis 上的构建期注入', () => {
+  it('falls back to the build-time injection on globalThis', () => {
     const stub = createReactStub()
     ;(globalThis as Record<string, unknown>)[DSH_REACT_GLOBAL] = stub.react
     expect(resolveDshReact()).toBe(stub.react)
   })
 
-  it('手动注入优先于全局键', () => {
+  it('manual injection takes precedence over the global key', () => {
     const manual = createReactStub().react
     const fromGlobal = createReactStub().react
     ;(globalThis as Record<string, unknown>)[DSH_REACT_GLOBAL] = fromGlobal
@@ -119,10 +119,10 @@ describe('React 绑定', () => {
   })
 })
 
-/* ------------------------------------------------------------ slot 宿主组件 */
+/* ------------------------------------------------------------ slot host component */
 
 describe('createVobsSlotHost', () => {
-  it('在宿主元素上开 shadow root，把 vobs 渲染进去，并在清理时清空', () => {
+  it('opens a shadow root on the host element, renders vobs into it, and empties it on cleanup', () => {
     const stub = createReactStub()
     useDshReact(stub.react)
 
@@ -146,7 +146,7 @@ describe('createVobsSlotHost', () => {
     expect(element.shadowRoot?.childNodes.length).toBe(0)
   })
 
-  it('样式表与 vobs 根平级，挂载时不会把样式一起清掉', () => {
+  it('stylesheet sits next to the vobs root; mounting does not clear it away', () => {
     const stub = createReactStub()
     useDshReact(stub.react)
     const host = createVobsSlotHost(() => document.createElement('span'), { styles: 'span{color:blue}' })
@@ -158,7 +158,7 @@ describe('createVobsSlotHost', () => {
     expect(children[1]?.nodeName).toBe('DIV')
   })
 
-  it('可以按自身需要解析配色', () => {
+  it('lets you resolve the color scheme yourself', () => {
     const stub = createReactStub()
     useDshReact(stub.react)
     const host = createVobsSlotHost(() => document.createElement('span'), { scheme: () => 'dark' })
@@ -167,15 +167,15 @@ describe('createVobsSlotHost', () => {
   })
 })
 
-/* -------------------------------------------------------------- 插件注册器 */
+/* -------------------------------------------------------------- Plugin registration */
 
 describe('defineDshPlugin', () => {
-  it('默认注入 slots，并与自定义注入合并去重', () => {
+  it('injects slots by default and merges/dedupes custom injections', () => {
     const plugin = defineDshPlugin({ inject: ['slots', 'connection', 'locale'], setup: () => {} })
     expect(plugin.inject).toEqual(['slots', 'connection', 'locale'])
   })
 
-  it('把 setup 的返回值接到 cordis effect 上', () => {
+  it('hooks the setup return value into the cordis effect', () => {
     const disposed: string[] = []
     const plugin = defineDshPlugin({
       setup() {
@@ -190,7 +190,7 @@ describe('defineDshPlugin', () => {
     expect(fake.effects.length).toBe(1)
     expect(disposed.length).toBe(0)
 
-    // cordis 的 effect：回调的返回值就是销毁时要执行的清理函数。
+    // cordis's effect: the callback's return value is the cleanup run on destroy.
     const cleanup = fake.effects[0]?.()
     expect(typeof cleanup).toBe('function')
     expect(disposed.length).toBe(0)
@@ -198,7 +198,7 @@ describe('defineDshPlugin', () => {
     expect(disposed).toEqual(['disposed'])
   })
 
-  it('setup 不返回清理函数时不产生 effect', () => {
+  it('registers no effect when setup returns no cleanup', () => {
     const fake = createFakeContext()
     defineDshPlugin({ setup: () => {} }).apply(fake.ctx)
     expect(fake.effects.length).toBe(0)
@@ -206,7 +206,7 @@ describe('defineDshPlugin', () => {
 })
 
 describe('defineDshOverlay', () => {
-  it('注册进 shell.overlay，带默认 id 与 order', () => {
+  it('registers into shell.overlay with default id and order', () => {
     const fake = createFakeContext()
     defineDshOverlay({}, () => document.createElement('div')).apply(fake.ctx)
 
@@ -219,22 +219,22 @@ describe('defineDshOverlay', () => {
     expect(typeof fake.registered[0]?.component).toBe('function')
   })
 
-  it('尊重显式的 id / order / locale / label，且不把外观选项混进注册对象', () => {
+  it('respects explicit id / order / locale / label and keeps appearance options out of the registration', () => {
     const fake = createFakeContext()
     defineDshOverlay(
-      { id: 'probe', order: 7, locale: 'ns', label: '探针', styles: 'x{}', hostStyle: { top: 0 } },
+      { id: 'probe', order: 7, locale: 'ns', label: 'Probe', styles: 'x{}', hostStyle: { top: 0 } },
       () => document.createElement('div')
     ).apply(fake.ctx)
 
     const options = fake.registered[0]?.options as DshSlotRegistration
-    expect(options).toMatchObject({ name: 'shell.overlay', id: 'probe', order: 7, locale: 'ns', label: '探针' })
+    expect(options).toMatchObject({ name: 'shell.overlay', id: 'probe', order: 7, locale: 'ns', label: 'Probe' })
     expect(options.styles).toBeUndefined()
     expect(options.hostStyle).toBeUndefined()
   })
 })
 
 describe('defineDshPanel', () => {
-  it('注册 main（keyed）并同时注册 sidebar.panellist 入口', () => {
+  it('registers main (keyed) and the sidebar.panellist entry together', () => {
     const fake = createFakeContext()
     defineDshPanel(
       {
@@ -255,20 +255,20 @@ describe('defineDshPanel', () => {
     expect(fake.registered[1]?.options.key).toBeUndefined()
   })
 
-  it('没有 sidebarEntry 时只注册 main', () => {
+  it('registers only main when there is no sidebarEntry', () => {
     const fake = createFakeContext()
     defineDshPanel({ key: 'solo' }, () => document.createElement('section')).apply(fake.ctx)
     expect(fake.injectedSlots).toEqual(['main'])
     expect(fake.registered.length).toBe(1)
   })
 
-  it('返回的插件是可用的 DshClientPlugin', () => {
+  it('returns a usable DshClientPlugin', () => {
     const plugin: DshClientPlugin = defineDshPanel({ key: 'k' }, () => document.createElement('section'))
     expect(plugin.inject).toContain('slots')
     expect(typeof plugin.apply).toBe('function')
   })
 
-  it('setup 在注册之前拿到 ctx', () => {
+  it('setup receives ctx before registration happens', () => {
     const fake = createFakeContext()
     const seen: string[] = []
     defineDshPanel(
@@ -276,7 +276,7 @@ describe('defineDshPanel', () => {
         key: 'k',
         setup(ctx) {
           seen.push(ctx.slots === fake.ctx.slots ? 'same-ctx' : 'other-ctx')
-          // setup 执行时注册还没发生
+          // registration has not happened yet when setup runs
           seen.push(`registered=${fake.registered.length}`)
         }
       },
@@ -287,7 +287,7 @@ describe('defineDshPanel', () => {
     expect(fake.registered.length).toBe(1)
   })
 
-  it('浮层同样支持 setup', () => {
+  it('overlays support setup too', () => {
     const fake = createFakeContext()
     let called = 0
     defineDshOverlay({ setup: () => { called += 1 } }, () => document.createElement('div')).apply(fake.ctx)

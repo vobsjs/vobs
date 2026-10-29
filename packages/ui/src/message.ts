@@ -16,44 +16,46 @@ import {
 import { Icon } from './icon'
 
 /*
- * 组件外可用的命令式 message API（外部踩坑文档 P 条）。
+ * Imperative message API usable outside components (item P of the external pitfalls doc).
  *
- * 原来只有组件形态的 `MessageHost`，而它通过 `inject` 取上下文 ——
- * **只能在组件体内取到**。于是业务方被迫自建 `stores/toast.ts` 全局桥
- * （在 App 挂载时 `bindToast` 一次），这类手搓替代品本身就是后续踩坑温床。
+ * There used to be only the component form `MessageHost`, which obtains the context via
+ * `inject` — **only reachable inside a component body**. Consumers were thus forced to build
+ * their own global bridge in `stores/toast.ts` (calling `bindToast` once when the App mounts);
+ * such hand-rolled substitutes are themselves a breeding ground for future pitfalls.
  *
- * 这里把**当前挂载着的**上下文桥到模块级，于是 `message.success('已保存')`
- * 可以在任何地方调用：store、API 层、事件处理器、模块顶层。
+ * This bridges the **currently mounted** context to module level, so `message.success('Saved')`
+ * can be called from anywhere: stores, the API layer, event handlers, module top level.
  *
- * 为什么用"挂载时绑定、卸载时解绑"而不是让调用方自己传上下文：
- * 上下文有生命周期（`dispose`），绑定-解绑让桥与它同生共死，
- * 不会在上下文销毁后还留着一个指向死对象的引用。
+ * Why "bind on mount, unbind on unmount" instead of letting the caller pass the context:
+ * the context has a lifecycle (`dispose`); bind/unbind lets the bridge live and die with it,
+ * so no reference to a dead object lingers after the context is destroyed.
  */
 let activeMessageContext: NotificationContext | null = null
 
 function requireMessageContext(): NotificationContext {
   if (activeMessageContext === null) {
     throw new Error(
-      'Vobs message: 还没有挂载 MessageHost（或它已卸载）。'
-      + '请在应用里渲染一个 <MessageHost /> 并安装 messagePlugin（@vobs/notification）。'
+      'Vobs message: no MessageHost is mounted (or it has been unmounted). '
+      + 'Render a <MessageHost /> in your app and install messagePlugin (@vobs/notification).'
     )
   }
   return activeMessageContext
 }
 
 /**
- * 组件外可用的命令式消息 API。
+ * Imperative message API usable outside components.
  *
- * 用法（任何位置都可以）：
+ * Usage (from anywhere):
  * ```ts
  * import { message } from '@vobs/ui'
- * message.success('已保存')
- * const id = message.error('保存失败', { duration: 0 })
+ * message.success('Saved')
+ * const id = message.error('Save failed', { duration: 0 })
  * message.dismiss(id)
  * ```
  *
- * 注意：它依赖界面上**已挂载**一个 `MessageHost`（那才是真正渲染消息的地方）。
- * 没挂载就调用会抛出并说明原因 —— 不静默丢弃，因为"消息没出现"最难查。
+ * Note: it requires a `MessageHost` to be **mounted** in the UI (that is what actually renders
+ * the messages). Calling without one throws with an explanation — nothing is silently dropped,
+ * because "the message didn't show up" is the hardest bug to trace.
  */
 export const message = {
   notify(input: Parameters<NotificationContext['notify']>[0]): string {
@@ -77,7 +79,7 @@ export const message = {
   clear(reason?: Parameters<NotificationContext['clear']>[0]): void {
     requireMessageContext().clear(reason)
   },
-  /** 当前是否已绑定上下文（测试与条件调用用）。 */
+  /** Whether a context is currently bound (for tests and conditional calls). */
   get bound(): boolean {
     return activeMessageContext !== null
   }
@@ -91,7 +93,7 @@ export type MessagePosition =
   | 'bottom-left'
   | 'bottom-right'
 
-/** 各类型默认图标名（@vobs/ui 内置注册表自带，开箱即用；单条消息可传任意已注册图标名覆盖） */
+/** Default icon name per type (bundled with the built-in @vobs/ui registry, works out of the box; a single message can override with any registered icon name) */
 export const MESSAGE_TYPE_ICONS: Record<NotificationType, string> = {
   info: 'info',
   success: 'check-circle',
@@ -100,29 +102,30 @@ export const MESSAGE_TYPE_ICONS: Record<NotificationType, string> = {
 }
 
 export interface MessageHostProps {
-  /** 消息上下文；缺省注入 MESSAGE_KEY（messagePlugin 提供） */
+  /** Message context; injected from MESSAGE_KEY when absent (provided by messagePlugin) */
   readonly message?: NotificationContext
-  /** 展示位置（默认顶部居中） */
+  /** Display position (default top center) */
   readonly position?: MessagePosition
   /**
-   * 图标三档：
-   * - false（默认）：纯文字
-   * - true：按消息类型显示默认图标（info/success/warning/error → MESSAGE_TYPE_ICONS）
-   * - 字符串：所有消息统一使用该图标名
-   * 单条消息可用 message.open({ icon }) 覆盖（string 指定 / false 强制隐藏）
+   * Icon, three modes:
+   * - false (default): text only
+   * - true: show the default icon per message type (info/success/warning/error → MESSAGE_TYPE_ICONS)
+   * - string: all messages use this icon name
+   * A single message can override via message.open({ icon }) (string to specify / false to force-hide)
    */
   readonly icon?: boolean | string
-  /** 容器的可读标签（会被读屏播报）。默认 'Messages'，需要本地化时传入。 */
+  /** Readable label of the container (announced by screen readers). Defaults to 'Messages'; pass one when localization is needed. */
   readonly 'aria-label'?: string
-  /** 容器的 role。默认 'region'。 */
+  /** Container role. Defaults to 'region'. */
   readonly role?: string
 }
 
 export function MessageHost(props: MessageHostProps = {}): VobsNode {
   const message = props.message ?? injectMessage()
   /*
-   * 把这个上下文桥到模块级，让 `message.success(...)` 在组件外也能用。
-   * 卸载时解绑（且只在仍指向自己时解绑 —— 避免后挂载的 Host 被先卸载的覆盖掉）。
+   * Bridge this context to module level so `message.success(...)` also works outside components.
+   * Unbind on dispose (and only while it still points at itself — so a later-mounted Host isn't
+   * wiped when an earlier one unmounts).
    */
   activeMessageContext = message
   getCurrentOwner()?.onDispose(() => {
@@ -131,8 +134,10 @@ export function MessageHost(props: MessageHostProps = {}): VobsNode {
   const root = createElement('ol')
   const position = readPosition(props)
   setAttribute(root, 'class', `vui-message-host vui-message-host--${position}`)
-  // 这个组件不走 ./utils 的通用属性通道（它直接读 props），所以覆盖路径就是显式的 props 字段：
-  // 原来这两行写死，作者无路可传 —— 读屏只会念英文 'Messages'，role 也改不了。
+  // This component does not go through the generic prop channel of ./utils (it reads props
+  // directly), so the override path is the explicit props field:
+  // these two lines used to be hard-coded, leaving authors no way to pass anything — screen
+  // readers would only ever announce the English 'Messages', and role couldn't be changed either.
   setAttribute(root, 'aria-label', props['aria-label'] ?? 'Messages')
   setAttribute(root, 'role', props.role ?? 'region')
 
@@ -145,7 +150,7 @@ export function MessageHost(props: MessageHostProps = {}): VobsNode {
 function injectMessage(): NotificationContext {
   const message = inject(MESSAGE_KEY)
   if (!message) {
-    throw new Error('Vobs MessageHost: 找不到上下文，请安装 messagePlugin（@vobs/notification）')
+    throw new Error('Vobs MessageHost: no context found; install messagePlugin (@vobs/notification)')
   }
   return message
 }
@@ -166,11 +171,13 @@ function createMessageItem(
   insertBefore(content, text, null)
 
   /*
-   * 行会被 insertList 按 key 复用：同 key 顶替只写 item 信号、**不重建行**
-   * （runtime/src/dynamic.ts:341-351）。所以这里不能"从条目取一次值就写 DOM" ——
-   * 那样顶替后内容/类型/role/图标/点击闭包会永久停留在旧值。
-   * 条目相关的写入一律放进 effect（bindText / bindAttribute / insertDynamic），
-   * 读 renderItem 拿到的响应式代理。写法对照 table/src/data-table.ts:241-282。
+   * Rows are reused by key via insertList: a same-key replacement only writes the item signal
+   * and does **not rebuild the row** (runtime/src/dynamic.ts:341-351). So we must not "read the
+   * entry once and write the DOM" — after a replacement, the content/type/role/icon/click
+   * closure would stay stuck on the old values forever.
+   * Entry-dependent writes all go into effects (bindText / bindAttribute / insertDynamic),
+   * reading the reactive proxy delivered by renderItem. For reference, see
+   * table/src/data-table.ts:241-282.
    */
   bindText(text, () => notification.content)
   bindAttribute(item, 'class', () => {
@@ -180,7 +187,7 @@ function createMessageItem(
   })
   bindAttribute(item, 'data-notification-id', () => notification.id)
   bindAttribute(item, 'role', () => notification.type === 'error' ? 'alert' : 'status')
-  // 事件里再取当前条目：闭包里捕获的那一份在被顶替后是旧的
+  // Re-read the current entry inside the event: the copy captured in the closure is stale after a replacement
   addEventListener(item, 'click', () => {
     ;(notification.data as MessageData | undefined)?.onClick?.()
   })
@@ -197,7 +204,7 @@ function createMessageItem(
   return item
 }
 
-/** 图标解析优先级：单条 icon（string 指定 / false 隐藏）→ 宿主 icon（true 按类型映射 / 字符串统一）→ 无图标 */
+/** Icon resolution precedence: per-item icon (string to specify / false to hide) → host icon (true maps by type / string applies to all) → no icon */
 function resolveIcon(notification: Notification, props: MessageHostProps): string | null {
   const data = notification.data as MessageData | undefined
   if (data?.icon === false) return null

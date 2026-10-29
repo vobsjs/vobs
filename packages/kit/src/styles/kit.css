@@ -89,9 +89,11 @@
 .vobs-kit-page-actions--end { justify-content: flex-end; }
 .vobs-kit-page-actions--between { justify-content: space-between; }
 
-/* ── Layout primitives：ToolbarBar / TablePanel / StatRow ──
-   page-main 之内中段积木的统一写法（滚动契约：只有 TablePanel 内部滚动，
-   工具栏/指标行随页头常驻）。块间距交给父级布局（KitPage 自带 gap），原语不背 margin。 */
+/* ── Layout primitives: ToolbarBar / TablePanel / StatRow ──
+   The uniform vocabulary for mid-section building blocks inside page-main
+   (scroll contract: only the TablePanel scrolls internally; toolbar/stat rows
+   stay pinned with the page header). Block spacing is delegated to the parent
+   layout (KitPage provides the gap); the primitives carry no margins. */
 .vobs-kit-toolbar-bar {
   display: flex;
   align-items: center;
@@ -135,7 +137,7 @@
   overflow: auto;
 }
 
-/* 包 DataTable：表格撑满面板内部滚动（thead sticky 承接），外壳自身不滚 */
+/* Wrapping a DataTable: the table fills the panel and scrolls internally (thead sticky picks it up); the shell itself does not scroll */
 .vobs-kit-table-panel > .vobs-data-table {
   flex: 1 1 0;
   min-height: 0;
@@ -144,7 +146,7 @@
   overflow: hidden;
 }
 
-/* 裸列表内容：scroll 模式的内部滚动层 */
+/* Bare list content: the internal scrolling layer in scroll mode */
 .vobs-kit-table-panel__scroll {
   flex: 1 1 0;
   min-height: 0;

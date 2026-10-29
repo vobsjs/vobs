@@ -35,14 +35,14 @@ async function mount(props: Record<string, unknown>) {
 
 describe('KitDataTable table semantic attributes', () => {
   it('aria-label also lands on the <table> (previously only the outer section had it)', async () => {
-    const { table, section, cleanup } = await mount({ 'aria-label': '用户列表' })
-    expect(table()?.getAttribute('aria-label')).toBe('用户列表')
-    expect(section()?.getAttribute('aria-label')).toBe('用户列表')   // outer behavior unchanged
+    const { table, section, cleanup } = await mount({ 'aria-label': 'User list' })
+    expect(table()?.getAttribute('aria-label')).toBe('User list')
+    expect(section()?.getAttribute('aria-label')).toBe('User list')   // outer behavior unchanged
     cleanup()
   })
 
   it('role is synced across too', async () => {
-    const { table, cleanup } = await mount({ role: 'grid', 'aria-label': '网格' })
+    const { table, cleanup } = await mount({ role: 'grid', 'aria-label': 'grid' })
     expect(table()?.getAttribute('role')).toBe('grid')
     cleanup()
   })

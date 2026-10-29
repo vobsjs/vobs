@@ -67,12 +67,12 @@ describe('vobs agent-doc', () => {
 
   it('**a hand-written AGENTS.md is not overwritten** — the generated block is appended after it', async () => {
     const dir = makeProject()
-    writeFileSync(join(dir, 'AGENTS.md'), '# 我的项目约定\n- 目录：src/pages\n', 'utf8')
+    writeFileSync(join(dir, 'AGENTS.md'), '# My project conventions\n- directory: src/pages\n', 'utf8')
     await run(dir, { write: true })
 
     const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
-    expect(agents, 'existing project conventions were overwritten').toContain('我的项目约定')
-    expect(agents).toContain('目录：src/pages')
+    expect(agents, 'existing project conventions were overwritten').toContain('My project conventions')
+    expect(agents).toContain('directory: src/pages')
     expect(agents).toContain('vobs:begin')
   })
 
@@ -81,11 +81,11 @@ describe('vobs agent-doc', () => {
     await run(dir, { write: true })
     // The user adds their own content outside the block
     const first = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
-    writeFileSync(join(dir, 'AGENTS.md'), `${first}\n- 我的新增规则\n`, 'utf8')
+    writeFileSync(join(dir, 'AGENTS.md'), `${first}\n- my added rule\n`, 'utf8')
 
     await run(dir, { write: true })
     const second = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
-    expect(second, 'user content outside the block was wiped').toContain('我的新增规则')
+    expect(second, 'user content outside the block was wiped').toContain('my added rule')
     // The contract block still exists exactly once (never appended twice)
     expect(second.match(/vobs:begin/gu)?.length).toBe(1)
   })
@@ -108,7 +108,7 @@ describe('vobs agent-doc', () => {
     await run(dir, { write: true })
     const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
     // Hand-edit inside the block — simulates the project copy lagging behind a framework upgrade
-    writeFileSync(join(dir, 'AGENTS.md'), agents.replace('run-once', 'run-once-手改过'), 'utf8')
+    writeFileSync(join(dir, 'AGENTS.md'), agents.replace('run-once', 'run-once-hand-edited'), 'utf8')
 
     process.exitCode = 0
     await run(dir, { check: true })
@@ -119,7 +119,7 @@ describe('vobs agent-doc', () => {
   it('--check: also flags CLAUDE.md turned into a duplicate instead of a pointer', async () => {
     const dir = makeProject()
     await run(dir, { write: true })
-    writeFileSync(join(dir, 'CLAUDE.md'), '# 我把内容抄了一份\n', 'utf8')
+    writeFileSync(join(dir, 'CLAUDE.md'), '# I copied the content over\n', 'utf8')
 
     process.exitCode = 0
     await run(dir, { check: true })
@@ -160,7 +160,7 @@ describe('checkContractSync (contract sync used by the vobs check main entry)', 
     const dir = makeProject()
     expect(checkContractSync(dir).status).toBe('missing')
 
-    writeFileSync(join(dir, 'AGENTS.md'), '# 手写的项目约定\n', 'utf8')
+    writeFileSync(join(dir, 'AGENTS.md'), '# hand-written project conventions\n', 'utf8')
     expect(checkContractSync(dir).status, 'a hand-written AGENTS.md with no marker block ≠ drift').toBe('no-block')
   })
 
@@ -170,7 +170,7 @@ describe('checkContractSync (contract sync used by the vobs check main entry)', 
     expect(checkContractSync(dir).status).toBe('synced')
 
     const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
-    writeFileSync(join(dir, 'AGENTS.md'), agents.replace('run-once', 'run-once-手改过'), 'utf8')
+    writeFileSync(join(dir, 'AGENTS.md'), agents.replace('run-once', 'run-once-hand-edited'), 'utf8')
     const drifted = checkContractSync(dir)
     expect(drifted.status).toBe('drifted')
     if (drifted.status === 'drifted') {
@@ -183,7 +183,7 @@ describe('checkContractSync (contract sync used by the vobs check main entry)', 
     const dir = makeProject()
     void agentDocCommand({ dir, write: true })
     const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
-    writeFileSync(join(dir, 'AGENTS.md'), `${agents}\n- 用户追加规则\n`, 'utf8')
+    writeFileSync(join(dir, 'AGENTS.md'), `${agents}\n- user appended rule\n`, 'utf8')
     expect(checkContractSync(dir).status).toBe('synced')
   })
 })

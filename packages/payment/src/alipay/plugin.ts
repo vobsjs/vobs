@@ -5,16 +5,16 @@ import type { AlipayClientOptions } from './types'
 export const ALIPAY_KEY = createInjectionKey<AlipayClient>('vobs.payment.alipay')
 
 export interface AlipayPluginOptions {
-  /** 支付宝客户端配置（未传入 client 时必填） */
+  /** Alipay client configuration (required when client is not provided) */
   config?: AlipayClientOptions
-  /** 可选的已有客户端实例（指定后忽略 config） */
+  /** Optional existing client instance (config is ignored when set) */
   client?: AlipayClient
 }
 
 /**
- * 支付宝支付插件
+ * Alipay payment plugin
  *
- * 将 AlipayClient 注入到 vobs 框架中，可通过 useAlipay() 获取。
+ * Injects AlipayClient into the vobs framework; retrieve it via useAlipay().
  *
  * @example
  * ```ts
@@ -38,9 +38,9 @@ export function alipayPlugin(options: AlipayPluginOptions): VobsPlugin {
     version: '0.1.0',
     install(context: VobsContext) {
       if (!options.client && !options.config) {
-        throw new Error('Vobs Payment: alipayPlugin 需要提供 config 或 client 之一')
+        throw new Error('Vobs Payment: alipayPlugin requires either config or client')
       }
-      // 仅销毁插件自建的客户端；外部传入的实例由其所有者负责生命周期。
+      // Only dispose the client created by the plugin itself; externally provided instances are owned by their creator.
       const ownClient = !options.client
       const client = options.client ?? new AlipayClient(options.config!)
       context.provide(ALIPAY_KEY, client)
@@ -50,14 +50,14 @@ export function alipayPlugin(options: AlipayPluginOptions): VobsPlugin {
 }
 
 /**
- * 获取支付宝客户端实例
- * 必须在已安装 alipayPlugin 的组件或上下文中调用
+ * Get the AlipayClient instance
+ * Must be called within a component or context where alipayPlugin is installed
  */
 export function useAlipay(): AlipayClient {
   const client = inject(ALIPAY_KEY)
   if (!client) {
     throw new Error(
-      'Vobs Payment: 找不到 AlipayClient，请安装 alipayPlugin'
+      'Vobs Payment: AlipayClient not found; install alipayPlugin first'
     )
   }
   return client

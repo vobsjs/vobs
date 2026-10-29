@@ -2,7 +2,7 @@ import { createJWTAuth, JWT_AUTH_KEY } from '@vobs/jwt-auth'
 import type { VobsPlugin } from '@vobs/vobs'
 import { auth } from './auth'
 
-/** Token 有效期（秒）：故意设置较短，方便观察过期、刷新和 401 重放。 */
+/** Token TTL (seconds): intentionally short so expiry, refresh, and 401 replay are easy to observe. */
 const TOKEN_TTL_SECONDS = 30
 
 interface JwtPayload {
@@ -42,13 +42,13 @@ function issueToken(sub: string): string {
 }
 
 export const jwtAuth = createJWTAuth({
-  // 与 session auth 共享同一个 session 信号：JWT 登录后路由守卫同样放行。
+  // Shares the same session signal as session auth: after a JWT login the route guard lets requests through as well.
   session: auth.session,
   transport: {
     async login(credentials) {
       await delay(300)
       const username = String(credentials.username ?? '').trim()
-      if (!username) throw new Error('请输入用户名')
+      if (!username) throw new Error('Please enter a username')
       return {
         accessToken: issueToken(username),
         user: {
@@ -61,16 +61,16 @@ export const jwtAuth = createJWTAuth({
     async refresh() {
       await delay(220)
       const session = auth.session.value
-      if (!session) throw new Error('会话不存在，无法刷新 token')
+      if (!session) throw new Error('No session available, cannot refresh token')
       return { accessToken: issueToken(session.user.id.replace(/^jwt:/, '')) }
     }
   }
 })
 
 /**
- * jwtAuthPlugin 会同时提供 AUTH_KEY 和 JWT_AUTH_KEY（作为 session auth 的替代品），
- * 与 authPlugin 共存时会因 AUTH_KEY 重复而抛错。
- * Playground 需要演示两种认证方式并存，因此只提供 JWT_AUTH_KEY。
+ * jwtAuthPlugin would provide both AUTH_KEY and JWT_AUTH_KEY (as a replacement for session auth),
+ * and coexisting with authPlugin would throw due to a duplicate AUTH_KEY.
+ * The playground needs to demo both auth mechanisms side by side, so only JWT_AUTH_KEY is provided.
  */
 export const jwtAuthPluginInstance: VobsPlugin = {
   name: 'playground:jwt-auth',
@@ -80,17 +80,17 @@ export const jwtAuthPluginInstance: VobsPlugin = {
   }
 }
 
-/** 模拟受保护 API：token 缺失或过期时返回 401。 */
+/** Mock protected API: returns 401 when the token is missing or expired. */
 export async function callProtectedApi(token: string | null): Promise<string> {
   await delay(200)
   const payload = decodeToken(token)
   if (!payload || payload.exp * 1000 <= Date.now()) {
-    throw Object.assign(new Error('401 Unauthorized: access token 缺失或已过期'), { status: 401 })
+    throw Object.assign(new Error('401 Unauthorized: access token is missing or expired'), { status: 401 })
   }
-  return `受保护数据 · sub=${payload.sub} · exp 剩余 ${Math.max(0, payload.exp * 1000 - Date.now())}ms`
+  return `Protected data · sub=${payload.sub} · exp remaining ${Math.max(0, payload.exp * 1000 - Date.now())}ms`
 }
 
-/** 演示 401 拦截重放：请求失败且状态码为 401 时，先单飞刷新 token 再重放一次。 */
+/** Demonstrates 401 interception with replay: when a request fails with status 401, refresh the token once (single-flight) and replay the request. */
 export async function fetchProtectedWithReplay(): Promise<string> {
   try {
     return await callProtectedApi(jwtAuth.getAccessToken())

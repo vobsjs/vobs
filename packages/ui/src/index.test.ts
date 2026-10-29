@@ -22,7 +22,7 @@ describe('@vobs/ui', () => {
     setRenderer(createDOMRenderer())
   })
 
-  it('Button 合并外部 class，并响应动态 disabled/loading', () => {
+  it('Button merges external class and responds to dynamic disabled/loading', () => {
     const disabled = state(false)
     const loading = state(false)
     let clicks = 0
@@ -58,7 +58,7 @@ describe('@vobs/ui', () => {
     app.destroy()
   })
 
-  it('Input 使用原生 input，并把受控 value 和事件交给用户 Signal', () => {
+  it('Input uses a native input and hands controlled value and events to a user Signal', () => {
     const value = state('before')
     let inputEvent = 0
     const props = {
@@ -87,7 +87,7 @@ describe('@vobs/ui', () => {
     app.destroy()
   })
 
-  it('组件接受第三方节点作为 icon/children，不创建隐式图标依赖', () => {
+  it('components accept third-party nodes as icon/children without implicit icon dependencies', () => {
     const externalIcon = createElement('svg')
     const externalLabel = createText('External')
     const container = document.createElement('main')
@@ -106,7 +106,7 @@ describe('@vobs/ui', () => {
     app.destroy()
   })
 
-  it('结构组件使用新版 vui- class contract', () => {
+  it('structural components use the new vui- class contract', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => {
@@ -131,7 +131,7 @@ describe('@vobs/ui', () => {
     app.destroy()
   })
 
-  it('Tabs 在非受控模式下更新 active tab，并通知用户', () => {
+  it('Tabs updates the active tab in uncontrolled mode and notifies the consumer', () => {
     const changes: string[] = []
     const container = document.createElement('main')
     const app = createVobs({
@@ -156,7 +156,7 @@ describe('@vobs/ui', () => {
     app.destroy()
   })
 
-  it('Dialog 支持 open、Escape 和 backdrop close reason', () => {
+  it('Dialog supports open, Escape, and the backdrop close reason', () => {
     const reasons: string[] = []
     const open = state(true)
     const container = document.createElement('main')
@@ -183,7 +183,7 @@ describe('@vobs/ui', () => {
     app.destroy()
   })
 
-  it('内置 Icon 是可选便利实现，并输出可命名 SVG', () => {
+  it('the built-in Icon is an optional convenience and renders a nameable SVG', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(Icon, { name: 'search', size: 20, title: 'Search' })
@@ -199,7 +199,7 @@ describe('@vobs/ui', () => {
     app.destroy()
   })
 
-  it('Icon 未传 size 时不写入内联尺寸', () => {
+  it('Icon writes no inline size when size is not passed', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => createComponent(Icon, { name: 'search' })

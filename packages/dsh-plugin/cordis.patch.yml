@@ -1,7 +1,7 @@
-# DSH 组合包补丁层：只追加自己的插件行，不覆盖任何官方条目。
+# DSH combo patch layer: only appends its own plugin rows, never overrides any official entry.
 #
-# 应用顺序在 profile 自己的 cordis.patch.yml 之前，因此用户在
-# 「插件」页里做的开关（最后一条同名 override 的 disabled）始终优先。
+# Applies before the profile's own cordis.patch.yml, so the toggles made by the user on the
+# "Plugins" page (the disabled flag of the last same-name override) always take precedence.
 - insert:
     - id: vobs-panel
       name: dsh-plugin-vobs

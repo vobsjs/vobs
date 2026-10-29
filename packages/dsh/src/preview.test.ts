@@ -17,7 +17,7 @@ function makeContainer(): HTMLElement {
   return node
 }
 
-/** 把插件对象包成 bundle factory（等价于 dshBundle 产出的那一层）。 */
+/** Wraps a plugin object into a bundle factory (the layer dshBundle produces). */
 function factoryOf(plugin: unknown): PreviewFactory {
   return () => plugin
 }
@@ -29,10 +29,10 @@ afterEach(() => {
   resetDshReact()
 })
 
-/* ------------------------------------------------------------ 加载器垫片 */
+/* ------------------------------------------------------------ Loader shim */
 
 describe('installLoaderShim', () => {
-  it('捕获 bundle 注册的 factory', () => {
+  it('captures factories registered by bundles', () => {
     const factories = installLoaderShim()
     const loader = (globalThis as Record<string, unknown>).__ModuleLoader__ as {
       load(entry: { id: string; factory: PreviewFactory }): void
@@ -42,7 +42,7 @@ describe('installLoaderShim', () => {
     expect(factories.get('my-plugin')).toBe(factory)
   })
 
-  it('幂等：重复安装不会丢掉已注册的 factory', () => {
+  it('is idempotent: reinstalling does not lose registered factories', () => {
     const first = installLoaderShim()
     const factory = factoryOf({})
     first.set('a', factory)
@@ -51,7 +51,7 @@ describe('installLoaderShim', () => {
     expect(second.get('a')).toBe(factory)
   })
 
-  it('忽略畸形的注册项', () => {
+  it('ignores malformed registrations', () => {
     const factories = installLoaderShim()
     const loader = (globalThis as Record<string, unknown>).__ModuleLoader__ as {
       load(entry: unknown): void
@@ -61,37 +61,37 @@ describe('installLoaderShim', () => {
     expect(factories.size).toBe(0)
   })
 
-  it('readLoaderRegistry 在没装垫片时返回空表', () => {
+  it('readLoaderRegistry returns an empty registry when the shim is not installed', () => {
     expect(readLoaderRegistry().size).toBe(0)
   })
 })
 
-/* -------------------------------------------------------------- 迷你 React */
+/* -------------------------------------------------------------- Mini React */
 
 describe('previewReact', () => {
-  it('createElement 产出可渲染的 vnode', () => {
+  it('createElement produces a renderable vnode', () => {
     const vnode = previewReact.createElement('div', { id: 'x' }, 'hello')
     expect(vnode.type).toBe('div')
     expect(vnode.children).toEqual(['hello'])
   })
 
-  it('useRef 在渲染上下文之外调用会明确报错', () => {
-    expect(() => previewReact.useRef(null)).toThrow(/渲染期间/u)
-    expect(() => previewReact.useEffect(() => undefined)).toThrow(/渲染期间/u)
+  it('useRef/useEffect throw clearly when called outside rendering', () => {
+    expect(() => previewReact.useRef(null)).toThrow(/during component rendering/u)
+    expect(() => previewReact.useEffect(() => undefined)).toThrow(/during component rendering/u)
   })
 })
 
-/* ---------------------------------------------------------------- 预览外壳 */
+/* ---------------------------------------------------------------- Preview shell */
 
 describe('startPreview', () => {
-  it('没有捕获到 factory 时给出可操作的提示，而不是白屏', () => {
+  it('shows an actionable hint instead of a blank screen when no factory was captured', () => {
     const container = makeContainer()
     const handle = startPreview({ container, packageName: 'nope' })
-    expect(container.textContent).toContain('没有捕获到任何 factory')
+    expect(container.textContent).toContain('No factory captured')
     expect(handle.slots).toEqual([])
   })
 
-  it('浮层插件渲染进 overlay 层', () => {
+  it('renders overlay plugins into the overlay layer', () => {
     installLoaderShim().set(
       'demo-plugin',
       factoryOf(
@@ -108,13 +108,13 @@ describe('startPreview', () => {
     const handle = startPreview({ container, packageName: 'demo-plugin' })
 
     expect(handle.slots).toEqual(['shell.overlay'])
-    // 适配层把 vobs 内容挂在宿主元素的 shadow root 里，light DOM 查不到 —— 断言要穿透。
+    // The adapter mounts vobs content into the host element's shadow root, invisible to light DOM — the assertion must pierce it.
     const host = container.querySelector('.pv__overlay .pv__slot > div')
     expect(host?.shadowRoot?.querySelector('.panel')?.textContent).toBe('hello')
     expect(container.textContent).toContain('slots: shell.overlay')
   })
 
-  it('整页面板渲染进主区域，侧栏入口渲染进左轨道', () => {
+  it('renders full-page panels into the main area and sidebar entries into the left rail', () => {
     installLoaderShim().set(
       'panel-plugin',
       factoryOf(
@@ -151,7 +151,7 @@ describe('startPreview', () => {
     expect(railHost?.shadowRoot?.querySelector('.icon')).not.toBeNull()
   })
 
-  it('插件 apply 抛错时把错误显示出来', () => {
+  it('displays the error when a plugin apply throws', () => {
     installLoaderShim().set(
       'broken',
       factoryOf({
@@ -166,14 +166,14 @@ describe('startPreview', () => {
     expect(container.textContent).toContain('boom')
   })
 
-  it('没有注册任何 slot 时明确提示', () => {
+  it('states clearly when no slot was registered', () => {
     installLoaderShim().set('silent', factoryOf({ inject: [], apply() {} }))
     const container = makeContainer()
     startPreview({ container, packageName: 'silent' })
-    expect(container.textContent).toContain('没有注册任何 slot')
+    expect(container.textContent).toContain('no slot registered')
   })
 
-  it('要求未提供的模块时报错而不是静默失败', () => {
+  it('errors instead of failing silently when an unprovided module is required', () => {
     installLoaderShim().set(
       'needs-lodash',
       ((require: (id: string) => unknown) => {
@@ -183,10 +183,10 @@ describe('startPreview', () => {
     )
     const container = makeContainer()
     startPreview({ container, packageName: 'needs-lodash' })
-    expect(container.textContent).toContain('未提供的模块 lodash')
+    expect(container.textContent).toContain('unprovided module lodash')
   })
 
-  it('只注册一个 factory 且未指定包名时自动选中', () => {
+  it('auto-selects when exactly one factory is registered and no package name is given', () => {
     installLoaderShim().set(
       'only-one',
       factoryOf(
@@ -203,7 +203,7 @@ describe('startPreview', () => {
     expect(container.textContent).toContain('only')
   })
 
-  it('destroy 跑清理函数并清空外壳', () => {
+  it('destroy runs cleanups and empties the shell', () => {
     const disposed: string[] = []
     installLoaderShim().set(
       'clean-me',
@@ -228,7 +228,7 @@ describe('startPreview', () => {
     expect(container.textContent).toBe('')
   })
 
-  it('宿主组件的 shadow root 真的建起来并渲染了 vobs 内容', () => {
+  it('the host component really creates a shadow root and renders vobs content into it', () => {
     installLoaderShim().set(
       'shadow-plugin',
       factoryOf(

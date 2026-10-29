@@ -33,7 +33,7 @@ const baseNotify = {
 }
 
 describe('alipay response unwrapping', () => {
-  it('unwrapResponse 业务失败时抛出 AlipayApiError 并携带 sub_code', () => {
+  it('unwrapResponse throws AlipayApiError with sub_code on business failure', () => {
     try {
       unwrapResponse({
         alipay_trade_query_response: {
@@ -53,14 +53,14 @@ describe('alipay response unwrapping', () => {
     }
   })
 
-  it('unwrapResponse 成功响应返回业务体', () => {
+  it('unwrapResponse returns the business body on success', () => {
     const body = { code: '10000', msg: 'Success', trade_no: 'T-1' }
     expect(unwrapResponse({ alipay_trade_query_response: body }, 'alipay.trade.query')).toBe(body)
   })
 })
 
 describe('alipay query', () => {
-  it('query 成功时映射 snake_case 响应字段', async () => {
+  it('query maps snake_case response fields on success', async () => {
     const client = makeClient()
     ;(client.sdk.exec as ReturnType<typeof vi.fn>).mockResolvedValue({
       alipay_trade_query_response: {
@@ -84,7 +84,7 @@ describe('alipay query', () => {
     expect(result.gmtClose).toBeNull()
   })
 
-  it('query 业务失败时抛出 AlipayApiError，不返回伪成功结果', async () => {
+  it('query throws AlipayApiError on business failure instead of returning a fake success', async () => {
     const client = makeClient()
     ;(client.sdk.exec as ReturnType<typeof vi.fn>).mockResolvedValue({
       alipay_trade_query_response: {
@@ -100,7 +100,7 @@ describe('alipay query', () => {
 })
 
 describe('alipay refund', () => {
-  it('refund 成功时映射 refund_fee 并提供默认值', async () => {
+  it('refund maps refund_fee and provides defaults on success', async () => {
     const client = makeClient()
     ;(client.sdk.exec as ReturnType<typeof vi.fn>).mockResolvedValue({
       alipay_trade_refund_response: {
@@ -119,7 +119,7 @@ describe('alipay refund', () => {
     expect(result.refundDetailItemList).toBeNull()
   })
 
-  it('close 业务失败时抛出 AlipayApiError', async () => {
+  it('close throws AlipayApiError on business failure', async () => {
     const client = makeClient()
     ;(client.sdk.exec as ReturnType<typeof vi.fn>).mockResolvedValue({
       alipay_trade_close_response: {
@@ -137,38 +137,38 @@ describe('alipay refund', () => {
 describe('alipay notify validation', () => {
   const expected = { outTradeNo: 'ORDER-1', totalAmount: '299.00' }
 
-  it('app_id、订单号与金额都一致时通过', () => {
+  it('passes when app_id, order number, and amount all match', () => {
     const handler = createNotifyHandler(makeClient())
     expect(handler.validate(baseNotify as never, expected).valid).toBe(true)
   })
 
-  it('省略 expected 时失败关闭（不再把"只验了 app_id"当成校验通过）', () => {
+  it('fails closed when expected is omitted (no longer treats "only app_id checked" as valid)', () => {
     const handler = createNotifyHandler(makeClient())
-    // 类型上 expected 已改为必填，所以这里显式把整个**调用**降级成 never 来走运行期路径
-    // （要验的正是"JS 调用方漏传时怎么办"——类型挡不住 JS 调用方）
+    // expected is now required at the type level, so demote the whole **call** to never to exercise the runtime path
+    // (what we are testing is "what if a JS caller omits it" — types cannot stop JS callers)
     const omitted = handler.validate as never as (params: unknown, expected?: unknown) => { valid: boolean; errors: string[] }
-    // 修复前这里是 valid: true —— 任何订单号、任何金额都能过关
+    // before the fix this was valid: true — any order number, any amount would pass
     const result = omitted(baseNotify)
     expect(result.valid).toBe(false)
     expect(result.errors.some(error => error.includes('expected.outTradeNo'))).toBe(true)
     expect(result.errors.some(error => error.includes('expected.totalAmount'))).toBe(true)
   })
 
-  it('expected 的金额是空串时失败关闭（此前被 falsy 短路跳过整条比对）', () => {
+  it('fails closed when the expected amount is an empty string (previously skipped by a falsy short-circuit)', () => {
     const handler = createNotifyHandler(makeClient())
     const result = handler.validate(baseNotify as never, { outTradeNo: 'ORDER-1', totalAmount: '' })
     expect(result.valid).toBe(false)
     expect(result.errors.some(error => error.includes('expected.totalAmount'))).toBe(true)
   })
 
-  it('app_id 不匹配时报告错误', () => {
+  it('reports an error when app_id mismatches', () => {
     const handler = createNotifyHandler(makeClient())
     const result = handler.validate({ ...baseNotify, appId: 'other-app' } as never, expected)
     expect(result.valid).toBe(false)
     expect(result.errors[0]).toContain('app_id')
   })
 
-  it('订单号与金额期望值不一致时报告错误', () => {
+  it('reports errors when order number or amount expectations mismatch', () => {
     const handler = createNotifyHandler(makeClient())
     const result = handler.validate(baseNotify as never, { outTradeNo: 'ORDER-2', totalAmount: '300.00' })
     expect(result.valid).toBe(false)
@@ -176,20 +176,20 @@ describe('alipay notify validation', () => {
     expect(result.errors.some(error => error.includes('total_amount'))).toBe(true)
   })
 
-  it('金额按数值比较，"299.0" 与 "299.00" 视为一致', () => {
+  it('compares amounts numerically: "299.0" and "299.00" are treated as equal', () => {
     const handler = createNotifyHandler(makeClient())
     const result = handler.validate({ ...baseNotify, totalAmount: '299.0' } as never, { outTradeNo: 'ORDER-1', totalAmount: '299.00' })
     expect(result.valid).toBe(true)
   })
 
-  it('非终态 trade_status 报告错误', () => {
+  it('reports an error for a non-final trade_status', () => {
     const handler = createNotifyHandler(makeClient())
     const result = handler.validate({ ...baseNotify, tradeStatus: 'WAIT_BUYER_PAY' } as never, expected)
     expect(result.valid).toBe(false)
     expect(result.errors.some(error => error.includes('trade_status'))).toBe(true)
   })
 
-  it('verify 透传 raw 参数，SDK 异常时返回 false', () => {
+  it('verify passes through the raw param and returns false when the SDK throws', () => {
     const client = makeClient()
     ;(client.sdk.checkNotifySign as ReturnType<typeof vi.fn>).mockImplementation((_params: unknown, raw?: boolean) => {
       expect(raw).toBe(true)
@@ -207,7 +207,7 @@ describe('alipay notify validation', () => {
 })
 
 describe('alipay plugin lifecycle', () => {
-  it('安装自建客户端并在卸载时销毁', () => {
+  it('installs its own client and disposes it on uninstall', () => {
     const provide = vi.fn()
     const plugin = alipayPlugin({
       config: { appId: '2021000000000000', privateKey: 'k', alipayPublicKey: 'p' } as AlipayClientOptions
@@ -217,10 +217,10 @@ describe('alipay plugin lifecycle', () => {
     expect(provide).toHaveBeenCalledWith(ALIPAY_KEY, client)
     expect(typeof cleanup).toBe('function')
     cleanup!()
-    expect(() => client.sdk).toThrow('客户端已销毁')
+    expect(() => client.sdk).toThrow('client has been disposed')
   })
 
-  it('外部传入的客户端在卸载时不被销毁', () => {
+  it('does not dispose an externally provided client on uninstall', () => {
     const client = makeClient()
     const provide = vi.fn()
     const plugin = alipayPlugin({ client })
@@ -232,7 +232,7 @@ describe('alipay plugin lifecycle', () => {
 })
 
 describe('alipay wap pay', () => {
-  it('wap.pay 使用 QUICK_WAP_WAY 产品码并透传 quit_url', async () => {
+  it('wap.pay uses the QUICK_WAP_WAY product code and passes through quit_url', async () => {
     const client = makeClient()
     ;(client.sdk.pageExecute as ReturnType<typeof vi.fn>).mockReturnValue('<form name="pay">wap</form>')
 

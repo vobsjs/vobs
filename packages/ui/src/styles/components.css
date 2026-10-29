@@ -3,11 +3,13 @@
    Auto-extracted from preview/component-*.html
    DO NOT EDIT MANUALLY — regenerate via extract-components-css.mjs
    ═══════════════════════════════════════════════════════════════
-   整份文件包进 `@layer base`：与 base.css 同一机理（.artifacts/reports/tailwind.md
-   blocker #2 / HANDOFF §18.109-3）——**未分层的普通声明优先于任何分层声明**，
-   本文件若留在层外，就会压过 `@vobs/tailwind` 入口 `layer(utilities)` 里的实用类。
-   层序由 packages/tailwind/src/styles.css 一次性声明；本文件因此不能有 `@import`
-   （CSS 禁止 @import 出现在 @layer 块内）。结构校验见 layer-order.test.ts。
+   The whole file is wrapped in `@layer base`: same mechanism as base.css
+   (.artifacts/reports/tailwind.md blocker #2 / HANDOFF §18.109-3) — **unlayered normal
+   declarations take precedence over any layered declarations**; if this file stayed
+   outside a layer it would override the utilities in the `@vobs/tailwind` entry's
+   `layer(utilities)`. The layer order is declared once by
+   packages/tailwind/src/styles.css; this file therefore cannot contain `@import`
+   (CSS forbids @import inside an @layer block). Structural checks: layer-order.test.ts.
    ═══════════════════════════════════════════════════════════════ */
 @layer base {
 /* ── Activity Rail ─────────────────────────────────────────── */
@@ -504,13 +506,14 @@
     }
     .vui-select:focus { border-color: var(--border-brand); outline: none; }
 
-    /* ===== Combobox（可搜索下拉）===== */
+    /* ===== Combobox (searchable dropdown) ===== */
     .vui-combobox { position: relative; width: 100%; }
     .vui-combobox.is-disabled { opacity: 0.55; pointer-events: none; }
     .vui-combobox__input {
       width: 100%; height: 28px;
-      /* --spacer-28 不在 token 阶梯（0/4/6/8/10/12/16/20/24/32/40）——引用不存在的变量
-         会让整条 padding 声明失效（CSS 变量计算值失败），曾致 Combobox 输入框内边距全丢 */
+      /* --spacer-28 is not on the token ladder (0/4/6/8/10/12/16/20/24/32/40) — referencing
+         a nonexistent variable invalidates the whole padding declaration (CSS variable
+         computation failure), which once stripped the Combobox input of all its padding */
       padding: 0 var(--spacer-24) 0 var(--spacer-12);
       background: var(--bg-overlay-l1, var(--bg-base-secondary));
       border: 1px solid var(--border-neutral-l1, var(--bg-base-tertiary));
@@ -537,10 +540,11 @@
       border-radius: var(--radius-8);
       box-shadow: var(--shadow-popup, 0 8px 24px rgb(0 0 0 / 18%));
     }
-    /* direction="up"/"auto"（下方空间不足）：面板改为向上展开 */
+    /* direction="up"/"auto" (insufficient space below): the panel expands upward instead */
     .vui-combobox--up .vui-combobox__panel { top: auto; bottom: calc(100% + 4px); }
-    /* align="end"：右缘对齐触发器右缘，宽度随内容向左伸展（默认 left:0+right:0 双锁下
-       过度约束会忽略 right，故必须显式 left:auto 解锁） */
+    /* align="end": right edge aligns with the trigger's right edge, width grows leftward with
+       content (under the default left:0+right:0 double lock, over-constraint ignores right,
+       so left:auto must be set explicitly to unlock) */
     .vui-combobox--align-end .vui-combobox__panel { left: auto; right: 0; width: max-content; min-width: 100%; }
     .vui-combobox__list { max-height: 240px; overflow-y: auto; padding: 4px 0; }
     .vui-combobox__option {
@@ -703,8 +707,10 @@
     .vui-menu__item {
       appearance: none; background: transparent; border: none; font-family: inherit;
       display: flex; align-items: center; gap: var(--spacer-8);
-      /* button 默认 shrink-to-fit：不给宽度时项宽 = 内容宽，hover 底色只盖住图标+文字，
-         且 .vui-menu__shortcut 的 margin-left: auto 没有可分配空间、快捷键贴不到右端 */
+      /* button defaults to shrink-to-fit: without a width, item width = content width, so the
+         hover background would only cover icon+text, and .vui-menu__shortcut's margin-left:
+         auto would have no space to distribute, leaving the shortcut stuck away from the
+         right edge */
       width: 100%;
       padding: var(--spacer-6) var(--spacer-8);
       border-radius: var(--radius-2);
@@ -1248,7 +1254,7 @@
     .vui-settingrow__btn:hover { background: var(--bg-overlay-l3); }
     .vui-settingrow__btn .icon { color: var(--icon-tertiary); }
 
-    /* danger text button (e.g. 清除 / Clear) */
+    /* danger text button (e.g. Clear) */
     .vui-settingrow__btn--danger {
       color: var(--status-error-default);
     }
@@ -1288,7 +1294,7 @@
       border-top: 1px solid var(--border-neutral-l1);
     }
 
-    /* === Section group label (e.g. 基础设置 / 偏好设置 / 数据管理) === */
+    /* === Section group label (e.g. General / Preferences / Data management) === */
     .vui-settingrow__group {
       display: flex;
       flex-direction: column;
@@ -1304,7 +1310,7 @@
       padding-left: var(--spacer-4);
     }
 
-    /* ===== Segmented（分段选择） ===== */
+    /* ===== Segmented (segmented control) ===== */
     .vui-seg {
       display: inline-flex;
       gap: var(--spacer-4);
@@ -1338,7 +1344,7 @@
     .vui-seg__opt[data-tone="warning"].is-active { background: var(--accent-amber); color: #171204; }
     .vui-seg__opt[data-tone="brand"].is-active { background: var(--bg-brand); color: var(--text-onbrand); }
 
-    /* ===== Progress（进度条 / 环形进度） ===== */
+    /* ===== Progress (linear / circular progress) ===== */
     .vui-progress {
       position: relative;
       width: 100%;
@@ -1377,7 +1383,7 @@
       color: var(--text-secondary);
     }
 
-    /* ===== NumberInput（数字步进输入） ===== */
+    /* ===== NumberInput (number stepper input) ===== */
     .vui-numberinput {
       display: inline-flex;
       align-items: center;
@@ -1418,7 +1424,7 @@
       font-size: var(--body-sm-font-size);
     }
 
-    /* ===== FormField（表单字段壳） ===== */
+    /* ===== FormField (form field shell) ===== */
     .vui-field {
       display: flex;
       flex-direction: column;
@@ -1441,7 +1447,7 @@
     .vui-field.is-error .vui-input,
     .vui-field.is-error .vui-textarea { border-color: var(--accent-coral); }
 
-    /* ===== Input 前缀/后缀 ===== */
+    /* ===== Input prefix/suffix ===== */
     .vui-input__affix {
       display: inline-flex;
       align-items: center;
@@ -1452,7 +1458,7 @@
     .vui-input__prefix { padding-right: var(--spacer-4); }
     .vui-input__suffix { padding-left: var(--spacer-4); }
 
-    /* ===== Checkbox 半选（indeterminate） ===== */
+    /* ===== Checkbox indeterminate state ===== */
     .vui-check__box[data-mixed="true"] {
       background: var(--bg-brand);
       border-color: var(--bg-brand);
@@ -1465,7 +1471,7 @@
       background: var(--text-onbrand);
     }
 
-    /* ===== Table 增强态（骨架 / 错误 / 行选中） ===== */
+    /* ===== Table enhanced states (skeleton / error / row selection) ===== */
     .vui-table__skeleton {
       display: block;
       height: 10px;
@@ -1504,7 +1510,7 @@
     }
     .vui-table__retry:hover { background: var(--bg-overlay-l2); }
 
-    /* ===== Charts（环形占比 / 折线） ===== */
+    /* ===== Charts (donut share / line chart) ===== */
     .vui-pie__seg {
       stroke: var(--bg-base-secondary);
       stroke-width: 2;
@@ -1532,7 +1538,7 @@
       font-size: 10px;
     }
 
-    /* ===== Money / Num 文本 ===== */
+    /* ===== Money / Num text ===== */
     .vui-money {
       font-family: var(--font-family-mono);
       font-variant-numeric: tabular-nums;

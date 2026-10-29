@@ -84,8 +84,8 @@ function JwtConsole() {
     }
   }
 
-  // token 变化时派生值必须跟着动 —— 组件体直读是 run-once 快照（C118），
-  // 登录/登出/刷新后 Tag、按钮 disabled 会全部冻结在旧值上
+  // Derived values must track token changes — reading them directly in the component body is a run-once snapshot (C118),
+  // leaving the Tag and button disabled states frozen at their old values after login/logout/refresh
   const info = memo(() => getTokenInfo(jwt.accessToken.value))
   const remaining = memo(() => {
     const current = info.value
@@ -110,7 +110,7 @@ function JwtConsole() {
         <div class="demo-button-row">
           <Button size="sm" variant="secondary" disabled={!info.value} loading={calling.value} onClick={() => { void runCall('raw') }}>{i18n.t('auth.jwtCallRaw')}</Button>
           <Button size="sm" variant="brand" disabled={!info.value} loading={calling.value} onClick={() => { void runCall('replay') }}>{i18n.t('auth.jwtCallReplay')}</Button>
-          <Button size="sm" variant="ghost" disabled={!info.value} onClick={() => { void jwt.refreshToken().catch(() => { /* onAuthFailure 已清理会话 */ }) }}>{i18n.t('auth.jwtRefresh')}</Button>
+          <Button size="sm" variant="ghost" disabled={!info.value} onClick={() => { void jwt.refreshToken().catch(() => { /* onAuthFailure has already cleaned up the session */ }) }}>{i18n.t('auth.jwtRefresh')}</Button>
           <Button size="sm" variant="ghost" disabled={!info.value} onClick={() => { void jwt.logout() }}>{i18n.t('common.signOut')}</Button>
         </div>
         {apiResult.value ? <Alert tone="success" title={i18n.t('auth.jwtCallOk')} description={apiResult.value} icon={<Icon name="check-circle" />} /> : null}

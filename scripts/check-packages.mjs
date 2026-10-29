@@ -37,15 +37,17 @@ for (const name of packages) {
 }
 
 /*
- * package.json 里 pack/publish 三条 `pnpm --filter` 链与可发布清单保持一致。
+ * The three pack/publish `pnpm --filter` chains in package.json must stay in sync
+ * with the publishable list.
  *
- * 这三条链**故意保留**（重写发布命令的风险大于收益：出错就是真发 npm），
- * 但重复必须是「被检查的重复」—— 加包时漏改一处，结果就是某个包没被构建或没被发布，
- * 而且不会有任何提示。这里把它变成显式失败。
+ * These chains are **kept on purpose** (rewriting the publish commands risks more than it
+ * gains: a mistake means a real npm publish), but the duplication must be "checked
+ * duplication" — missing one spot when adding a package silently leaves it unbuilt or
+ * unpublished, with no hint whatsoever. This check turns that into an explicit failure.
  */
 const rootManifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
 const drift = findPackageScriptDrift(rootManifest)
 if (drift.length > 0) {
-  throw new Error(`package.json 的打包/发布脚本与可发布清单不一致：\n  ${drift.join('\n  ')}`)
+  throw new Error(`package.json pack/publish scripts do not match the publishable list:\n  ${drift.join('\n  ')}`)
 }
-console.log(`[check] 打包与发布脚本与 ${PUBLISHED_PACKAGES.length} 个可发布包一致`)
+console.log(`[check] pack/publish scripts match the ${PUBLISHED_PACKAGES.length} publishable packages`)

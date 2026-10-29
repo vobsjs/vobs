@@ -151,11 +151,11 @@ function KeyedListDemo() {
     record(i18n.t('runtime.listAdd'), item.label)
   }
 
-  // 挂载时把 keyed 列表插入宿主节点；DOM 复用可通过 DevTools Elements 观察节点顺序。
+  // Inserts the keyed list into the host node on mount; DOM reuse can be observed via node order in DevTools Elements.
   /*
-   * 回调 ref 会在**卸载时以 null 调用**（React 语义，`runtime/src/ref.ts` 的清理路径就是这么做的），
-   * 所以必须判空 —— 否则 `insertList(null, …)` 会在 dispose 期间抛
-   * `Cannot read properties of null (reading 'insertBefore')`。
+   * A callback ref is **invoked with null on unmount** (React semantics; the cleanup path in `runtime/src/ref.ts`
+   * does exactly that), so it must be null-checked — otherwise `insertList(null, …)` throws
+   * `Cannot read properties of null (reading 'insertBefore')` during dispose.
    */
   function attachList(node: HTMLUListElement | null): void {
     if (!node) return

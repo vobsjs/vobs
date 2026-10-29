@@ -209,7 +209,7 @@
   flex: 0 0 20px;
 }
 
-/* 悬浮角标的定位基准：钉在图标右上角，随图标在展开/收起两态下的位置自动跟随 */
+/* Positioning basis for the floating badge: pinned to the icon's top-right corner, following the icon's position automatically across the expanded/collapsed states */
 .vobs-kit-menu__icon {
   position: relative;
 }
@@ -250,10 +250,13 @@
 }
 
 /*
- * 折叠态隐藏文字。但**移动端抽屉打开时除外**：那时侧栏被强制成全宽（见下方
- * `.vobs-kit-layout--mobile .vobs-kit-layout__sidebar`），若仍套用这条规则，
- * 画出来的就是一个"没有文字的全宽抽屉"（默认 collapsed=true，一点按钮就是这个状态）。
- * 用 :not(...) 排除，而不是在移动块里再写一条 display 覆盖 —— 后者得知道原来的 display 值。
+ * Hide text in the collapsed state. **Except when the mobile drawer is open**: then
+ * the sidebar is forced full width (see `.vobs-kit-layout--mobile
+ * .vobs-kit-layout__sidebar` below); applying this rule there would paint a
+ * "full-width drawer with no text" (default collapsed=true — one button press is
+ * exactly that state). Excluded with :not(...) rather than a second display
+ * override inside the mobile block — the latter would need to know the original
+ * display value.
  */
 .vobs-kit-sidebar.is-collapsed:not(.is-mobile-open) .vobs-kit-menu__label,
 .vobs-kit-sidebar.is-collapsed:not(.is-mobile-open) .vobs-kit-menu__badge,
@@ -266,8 +269,9 @@
   padding-inline: 6px;
 }
 
-/* pin:'bottom' 菜单区：推到侧边栏底部；与 footer 插槽共存时由自身承担推移，
-   footer 紧随其下（渲染顺序固定：普通菜单 → pin 菜单 → footer 插槽） */
+/* pin:'bottom' menu group: pushed to the sidebar's bottom; when coexisting with the
+   footer slot it carries its own push, and the footer sits right below it
+   (render order is fixed: regular menus → pinned menus → footer slot) */
 .vobs-kit-menu--bottom {
   margin-top: auto;
   padding-top: 6px;

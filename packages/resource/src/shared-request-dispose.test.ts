@@ -1,18 +1,22 @@
 // @vitest-environment jsdom
 /*
- * 共享请求：一个 handle 的 `dispose()` 不该打死**别人还在等**的同 key 请求。
+ * Shared requests: one handle's `dispose()` must not kill a same-key request that **others are
+ * still waiting on**.
  *
- * 审计报告说会（"dispose() 会 abort 掉别的 handle 在用的同一 key 请求"）。
- * 当前源码里 `dispose()` 与 `switchKey()` 都带 `subscribers.size === 0` 守卫，
- * 所以这条**很可能已经被后续修改顺带修掉**了 —— 这里实测结论，不靠读码下判断。
+ * The audit report claimed it would ("dispose() aborts the same-key request another handle is
+ * using"). The current source has a `subscribers.size === 0` guard on both `dispose()` and
+ * `switchKey()`, so this was **most likely fixed incidentally by later changes** — the conclusion
+ * here is measured, not inferred from reading code.
  *
- * 为什么这件事值得锁住：`entry.inFlight` 是**共享**的
- * （`execute` 开头 `if (entry.inFlight) return entry.inFlight`），
- * abort 会同时打死所有等在同一 key 上的调用方。一个组件卸载不该让另一个组件的请求失败，
- * 更不该把这次失败当成"数据加载失败"渲染成错误兜底。
+ * Why this is worth locking down: `entry.inFlight` is **shared**
+ * (`execute` starts with `if (entry.inFlight) return entry.inFlight`),
+ * so an abort kills every caller waiting on the same key. One component unmounting must not fail
+ * another component's request — let alone render that failure as an error fallback "data failed
+ * to load".
  *
- * 与既有 `cancel-cache.test.ts` 的关系：那条测的是"**只剩一个**订阅者时 dispose 会取消，
- * 且取消不写 error"。这里补的是"**还有别的订阅者**时不该取消" —— 正是缺口所在。
+ * Relation to the existing `cancel-cache.test.ts`: that one covers "when only **one** subscriber
+ * remains, dispose cancels, and the cancellation writes no error". This file covers "must not
+ * cancel while **other subscribers remain**" — exactly the gap.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { createResourceClient } from './index'
@@ -25,8 +29,8 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject }
 }
 
-describe('共享请求：dispose() 只在最后一个订阅者离开时才取消', () => {
-  it('A 还在飞、B 也在同一 key 上：A.dispose() 不 abort，B 能拿到数据', async () => {
+describe('shared requests: dispose() only cancels once the last subscriber leaves', () => {
+  it('A in flight, B on the same key: A.dispose() does not abort and B still gets data', async () => {
     const client = createResourceClient()
     const gate = deferred<string>()
     const signals: AbortSignal[] = []
@@ -39,13 +43,13 @@ describe('共享请求：dispose() 只在最后一个订阅者离开时才取消
 
     const a = client.resource({ key: ['shared'], staleTime: 60_000, fetcher })
     const b = client.resource({ key: ['shared'], staleTime: 60_000, fetcher })
-    // 两个 handle 指向同一个 entry；构造时各自发起一次（共享 inFlight，只有一次真实调用）
+    // both handles point at the same entry; each fires once on construction (shared inFlight, only one real call)
     await vi.waitFor(() => expect(calls).toBe(1))
 
     a.dispose()
     expect(
       signals[0]?.aborted,
-      'A.dispose() abort 了只有 B 还在等的共享请求'
+      'A.dispose() aborted the shared request only B was still waiting on'
     ).toBe(false)
 
     gate.resolve('payload')
@@ -57,7 +61,7 @@ describe('共享请求：dispose() 只在最后一个订阅者离开时才取消
     client.clear()
   })
 
-  it('最后一个订阅者 dispose 时才 abort（取消语义没有被误伤）', async () => {
+  it('abort happens only when the last subscriber disposes (cancel semantics untouched)', async () => {
     const client = createResourceClient()
     const gate = deferred<string>()
     const signals: AbortSignal[] = []
@@ -70,14 +74,14 @@ describe('共享请求：dispose() 只在最后一个订阅者离开时才取消
     a.dispose()
     expect(signals[0]?.aborted).toBe(false)
     b.dispose()
-    // 订阅者清零 → 现在才该取消
+    // subscribers back to zero → only now should it cancel
     expect(signals[0]?.aborted).toBe(true)
 
     gate.reject(new Error('cancelled'))
     client.clear()
   })
 
-  it('重复 dispose() 幂等，且不会因为第二次调用误 abort', async () => {
+  it('repeated dispose() is idempotent and the second call must not abort', async () => {
     const client = createResourceClient()
     const gate = deferred<string>()
     const signals: AbortSignal[] = []
@@ -97,7 +101,7 @@ describe('共享请求：dispose() 只在最后一个订阅者离开时才取消
     client.clear()
   })
 
-  it('A.dispose() 之后 B 仍能正常 refetch', async () => {
+  it('after A.dispose(), B can still refetch normally', async () => {
     const client = createResourceClient()
     let value = 'first'
     const fetcher = async (): Promise<string> => value

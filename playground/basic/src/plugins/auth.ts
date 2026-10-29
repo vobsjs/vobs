@@ -6,7 +6,7 @@ export const auth = createAuth({
   loginHandler: async credentials => {
     await new Promise<void>(resolve => setTimeout(resolve, 260))
     const username = String(credentials.username ?? '').trim()
-    if (!username) throw new Error('请输入用户名')
+    if (!username) throw new Error('Please enter a username')
     return {
       user: {
         id: username,

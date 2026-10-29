@@ -1,84 +1,86 @@
 /**
- * DSH 浏览器（客户端）侧的公开契约类型。
+ * Public contract types for DSH's browser (client) side.
  *
- * 这些声明是从已安装的 DSH 客户端实现反推出来的**非官方 API**：DSH 目前不发布
- * 客户端插件类型。字段名与语义已对齐 `@deepseek-ai/dsh-client-ui-slots` 的
- * `ctx.slots.register` 与各官方客户端 bundle 的实际用法，但 DSH 升级后可能漂移。
- * 因此本包只保证「声明保守」：所有 DSH 专有字段都可选，未知字段一律透传。
+ * These declarations are an **unofficial API** reverse-engineered from the installed DSH
+ * client implementation: DSH does not currently publish client plugin types. Field names
+ * and semantics are aligned with `@deepseek-ai/dsh-client-ui-slots`'s `ctx.slots.register`
+ * and the actual usage of the official client bundles, but they may drift when DSH upgrades.
+ * This package therefore only promises "conservative declarations": every DSH-specific field
+ * is optional, and unknown fields are always passed through.
  */
 
-/** slot 的四种组合形态，对应官方 ui-slots 的 kind。 */
+/** The four slot composition kinds, matching the official ui-slots' kind. */
 export type DshSlotKind = 'single' | 'list' | 'keyed' | 'chain'
 
-/** 子 slot 声明，注册父 slot 时用来「认领」自己会渲染的区域。 */
+/** Child slot declaration; used when registering a parent slot to claim the area you will render. */
 export interface DshSlotDeclaration {
   kind: DshSlotKind
   scope?: string
   priority?: number
 }
 
-/** 一条 slot 注册项。除 name 外全部可选，未用到的字段不会写进注册对象。 */
+/** A slot registration entry. Everything except name is optional; unused fields are not written into the registration object. */
 export interface DshSlotRegistration {
-  /** 目标 slot 名，必须由某个父级插件声明过，例如 `shell.overlay`。 */
+  /** Target slot name; must have been declared by some parent plugin, e.g. `shell.overlay`. */
   name: string
-  /** list/单例型 slot 的稳定标识；与 `key` 二者按 slot 类型取用。 */
+  /** Stable identifier for list/single-slot kinds; either this or `key` is used depending on the slot type. */
   id?: string
-  /** keyed slot（如 `main`）的主键；`sidebar.panellist` 用同值做 `id` 来互相关联。 */
+  /** Primary key of a keyed slot (such as `main`); `sidebar.panellist` uses the same value as `id` to link them. */
   key?: string
-  /** 排序权重，越小越靠前。 */
+  /** Sort weight; smaller comes first. */
   order?: number
-  /** 文案命名空间，交给 DSH 的 locale 服务解析。 */
+  /** Locale namespace, resolved by DSH's locale service. */
   locale?: string
-  /** 显示文案，或返回文案的函数（DSH 声明了语言切换时会重取）。 */
+  /** Display label, or a function returning it (DSH re-fetches on language switch). */
   label?: string | (() => string)
-  /** 该条目对外声明拥有的子 slot。 */
+  /** Child slots this entry declares it owns. */
   children?: Record<string, DshSlotDeclaration>
-  /** 把运行时可用的数据交给组件；返回值作为组件 props 的一部分。 */
+  /** Hand runtime-available data to the component; the return value becomes part of the component props. */
   inject?: () => Record<string, unknown>
-  /** 未知字段按原样透传给 DSH，便于在适配层还没覆盖时自行传参。 */
+  /** Unknown fields are passed through to DSH as-is, so you can pass extra params before the adapter covers them. */
   [key: string]: unknown
 }
 
-/** 已注册的 slot 条目（只用到 options，其余字段原样保留）。 */
+/** A registered slot entry (only options is used; other fields are kept verbatim). */
 export interface DshSlotEntry {
   options: DshSlotRegistration
   [key: string]: unknown
 }
 
-/** 浏览器侧 cordis 树的 `slots` 服务。 */
+/** The `slots` service on the browser-side cordis tree. */
 export interface DshSlotsService {
-  /** 注入目标 slot：目标就绪后回调才会执行，回调的返回值随本插件生命周期销毁。 */
+  /** Inject into the target slot: the callback runs once the target is ready, and its return value is destroyed with this plugin's lifecycle. */
   inject(name: string, callback: () => unknown): void
-  /** 注册一个条目；第二个参数是 React 组件（vobs 面板由宿主组件包住）。 */
+  /** Register an entry; the second argument is a React component (the vobs panel is wrapped in a host component). */
   register(options: DshSlotRegistration, component: unknown): unknown
-  /** 读取某个 slot 上已注册的条目，例如 `entries('main')`。 */
+  /** Read the entries registered on a slot, e.g. `entries('main')`. */
   entries?(name: string): readonly DshSlotEntry[]
-  /** 向 root 注入 hooks（官方 layout 用它提供 panelInfo）。 */
+  /** Inject hooks into root (the official layout uses it to provide panelInfo). */
   provideRoot?(hooks: unknown): () => void
   [key: string]: unknown
 }
 
 /**
- * 客户端 cordis 上下文。只声明本适配层真正用到的成员；
- * `get` / `reflect` / 自定义服务都是可选的，用到时自行断言。
+ * Client cordis context. Only declares the members this adapter actually uses;
+ * `get` / `reflect` / custom services are optional — assert them yourself where needed.
  */
 export interface DshClientContext {
   readonly slots: DshSlotsService
-  /** cordis 的 effect：回调返回值会在插件销毁时执行。 */
+  /** cordis's effect: the callback's return value runs when the plugin is destroyed. */
   effect?(callback: () => void | (() => void), label?: string): void
-  /** 读取任意已注册服务，例如 `ctx.get('connection')`。 */
+  /** Read any registered service, e.g. `ctx.get('connection')`. */
   get?(name: string): unknown
-  /** 反射注册服务（官方用 `ctx.reflect.provide(name, value)`）。 */
+  /** Reflect-register a service (the official code uses `ctx.reflect.provide(name, value)`). */
   reflect?: { provide?(name: string, value: unknown): () => void }
   [key: string]: unknown
 }
 
 /**
- * 浏览器 cordis 插件。DSH 的客户端模块系统会把 bundle 的默认导出挂到客户端 cordis 树上，
- * 因此这就是 `defineDshPlugin` 的返回值形状。
+ * Browser cordis plugin. DSH's client module system mounts the bundle's default export
+ * onto the client cordis tree, so this is the shape `defineDshPlugin` returns.
  */
 export interface DshClientPlugin {
-  /** 需要先就绪的 cordis 服务名；适配层默认注入 `slots`。 */
+  /** cordis service names that must be ready first; the adapter injects `slots` by default. */
   readonly inject: readonly string[]
   apply(ctx: DshClientContext): void
 }

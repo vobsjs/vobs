@@ -1,5 +1,5 @@
-// 运行时 DOM 基准：列表调和、动态分支、文本绑定
-// 运行：pnpm bench benchmarks/runtime.bench.ts（jsdom 环境）
+// Runtime DOM benchmark: list reconciliation, dynamic branches, text bindings
+// Run: pnpm bench benchmarks/runtime.bench.ts (jsdom environment)
 
 // @vitest-environment jsdom
 import { describe, test } from 'vitest'
@@ -15,9 +15,9 @@ import {
 
 setRenderer(createDOMRenderer())
 
-// vitest 5 的 module runner 把模块导出包装为 getter；热循环内直接调用
-// 模块导入会反复穿透 getter 拖慢基准（benchmarking#module-runner-overhead），
-// 因此热路径先取本地引用。
+// vitest 5's module runner wraps module exports in getters; calling module imports
+// directly inside hot loops repeatedly goes through the getter and skews benchmarks
+// (benchmarking#module-runner-overhead), so hot paths take local references first.
 const _state = state
 const _batch = batch
 const _createText = createText
@@ -31,7 +31,7 @@ function makeRows(count: number, tag = ''): Row[] {
   return Array.from({ length: count }, (_, i) => ({ id: i, name: `row-${tag}${i}`, score: i }))
 }
 
-/** 列表行：div.row > span > 文本节点（名字走 bindText 细粒度更新），贴近编译产物形态。 */
+/** List row: div.row > span > text node (name updated via fine-grained bindText), close to compiled output shape. */
 function renderRow(item: { name: string }): Node {
   const el = document.createElement('div')
   el.className = 'row'
@@ -45,9 +45,9 @@ function renderRow(item: { name: string }): Node {
 
 const MOUNT_OPTIONS = { iterations: 20, time: 20000 } as const
 
-describe('runtime: 列表挂载', () => {
-  test('挂载 1000 行（keyed）', async ({ bench }) => {
-    await bench('挂载 1000 行（keyed）', () => {
+describe('runtime: list mount', () => {
+  test('mount 1000 rows (keyed)', async ({ bench }) => {
+    await bench('mount 1000 rows (keyed)', () => {
       const container = document.createElement('div')
       const source = _state(makeRows(1000))
       _insertList(container, null, () => source.value, renderRow, row => row.id)
@@ -55,8 +55,8 @@ describe('runtime: 列表挂载', () => {
     }).run(MOUNT_OPTIONS)
   })
 
-  test('挂载 1000 行（无 key）', async ({ bench }) => {
-    await bench('挂载 1000 行（无 key）', () => {
+  test('mount 1000 rows (no key)', async ({ bench }) => {
+    await bench('mount 1000 rows (no key)', () => {
       const container = document.createElement('div')
       const source = _state(makeRows(1000))
       _insertList(container, null, () => source.value, renderRow)
@@ -65,7 +65,7 @@ describe('runtime: 列表挂载', () => {
   })
 })
 
-describe('runtime: keyed 列表更新（1000 行）', () => {
+describe('runtime: keyed list updates (1000 rows)', () => {
   const container = document.createElement('div')
   const source = state(makeRows(1000), 'source')
   insertList(container, null, () => source.value, renderRow, row => row.id)
@@ -73,8 +73,8 @@ describe('runtime: keyed 列表更新（1000 行）', () => {
   const reversed = [...source.value].reverse()
   let toggle = false
 
-  test('整体反转', async ({ bench }) => {
-    await bench('整体反转（最坏情况：全部移动）', () => {
+  test('full reverse', async ({ bench }) => {
+    await bench('full reverse (worst case: everything moves)', () => {
       toggle = !toggle
       _batch(() => { source.value = toggle ? reversed : [...reversed].reverse() })
     }).run()
@@ -85,16 +85,16 @@ describe('runtime: keyed 列表更新（1000 行）', () => {
   ;[swapped[0], swapped[swapped.length - 1]] = [swapped[swapped.length - 1], swapped[0]]
   let swapToggle = false
 
-  test('首尾交换两行', async ({ bench }) => {
-    await bench('首尾交换两行（最好情况：仅 2 处移动）', () => {
+  test('swap first/last two rows', async ({ bench }) => {
+    await bench('swap first/last two rows (best case: only 2 moves)', () => {
       swapToggle = !swapToggle
       _batch(() => { source.value = swapToggle ? swapped : [...list] })
     }).run()
   })
 
   let patchRound = 0
-  test('局部替换 100/1000 行', async ({ bench }) => {
-    await bench('局部替换 100/1000 行内容', () => {
+  test('patch 100/1000 rows', async ({ bench }) => {
+    await bench('patch 100/1000 row contents', () => {
       patchRound++
       const next = source.value.map((row, index) =>
         index % 10 === 0 ? { ...row, name: `patch-${patchRound}-${index}` } : row
@@ -104,9 +104,9 @@ describe('runtime: keyed 列表更新（1000 行）', () => {
   })
 })
 
-describe('runtime: 动态与文本绑定', () => {
-  test('动态分支切换 ×1000', async ({ bench }) => {
-    await bench('动态分支切换 ×1000（两个元素间切换）', () => {
+describe('runtime: dynamic and text bindings', () => {
+  test('dynamic branch switch ×1000', async ({ bench }) => {
+    await bench('dynamic branch switch ×1000 (between two elements)', () => {
       const parent = document.createElement('div')
       const condition = _state(true)
       _insertDynamic(parent, null, () =>
@@ -117,8 +117,8 @@ describe('runtime: 动态与文本绑定', () => {
     }).run()
   })
 
-  test('文本更新 ×1000（bindText）', async ({ bench }) => {
-    await bench('文本更新 ×1000（bindText）', () => {
+  test('text update ×1000 (bindText)', async ({ bench }) => {
+    await bench('text update ×1000 (bindText)', () => {
       const node = document.createTextNode('')
       const source = _state('t0')
       _bindText(node, () => source.value)

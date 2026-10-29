@@ -8,13 +8,16 @@ import { EditorTabs, type EditorTabItem } from './index'
 setRenderer(createDOMRenderer())
 
 /*
- * EditorTabs 的无障碍。
+ * EditorTabs accessibility.
  *
- * 原来行上有 `role="tab"`，容器却**没有任何角色** —— 屏幕阅读器找不到这些 tab 所属的 tablist；
- * 且方向键**只改选中、不移动焦点**：焦点停在旧行上，而旧行的 tabindex 因选中变化已变成 -1，
- * DOM 焦点与 aria-selected 分家，键盘用户下一步仍从旧位置出发。
+ * The rows used to carry `role="tab"` while the container had **no role at all** — screen readers
+ * couldn't find the tablist these tabs belong to; and arrow keys **only changed the selection
+ * without moving focus**: focus stayed on the old row, whose tabindex had already become -1 due
+ * to the selection change, splitting DOM focus from aria-selected — the keyboard user's next
+ * step still started from the old position.
  *
- * 聚焦要等更新落地（选中会触发标签行重建），断言前让出微任务。
+ * Focus needs the update to land (selection triggers a rebuild of the tab row), so yield a
+ * microtask before asserting.
  */
 const settle = async (): Promise<void> => { scheduler.flush(); await null; await null }
 
@@ -38,14 +41,14 @@ async function mountEditorTabs(changes: string[] = []) {
   return { host, rows, selectedIndex, press, cleanup: () => { app.destroy(); host.remove() } }
 }
 
-describe('EditorTabs 无障碍', () => {
-  it('容器有 role=tablist（原来行上有 role=tab，却没地方归属）', async () => {
+describe('EditorTabs accessibility', () => {
+  it('container has role=tablist (rows used to carry role=tab with nothing to belong to)', async () => {
     const { host, cleanup } = await mountEditorTabs()
     expect(host.querySelector('[role=tablist]')).toBeTruthy()
     cleanup()
   })
 
-  it('方向键切换选中，并把焦点带到新行', async () => {
+  it('arrow keys change the selection and move focus to the new row', async () => {
     const changes: string[] = []
     const { rows, selectedIndex, press, cleanup } = await mountEditorTabs(changes)
 
@@ -56,12 +59,12 @@ describe('EditorTabs 无障碍', () => {
     expect(selectedIndex()).toBe(1)
     expect(changes).toEqual(['b'])
     expect(rows().map(r => r.getAttribute('tabindex'))).toEqual(['-1', '0', '-1'])
-    expect(document.activeElement).toBe(rows()[1])   // 原来焦点留在旧行上
+    expect(document.activeElement).toBe(rows()[1])   // focus used to stay on the old row
 
     cleanup()
   })
 
-  it('连续按方向键：每次都从新的当前位置继续', async () => {
+  it('repeated arrow presses continue from the new current position each time', async () => {
     const { rows, selectedIndex, press, cleanup } = await mountEditorTabs()
 
     rows()[0].focus()
@@ -77,7 +80,7 @@ describe('EditorTabs 无障碍', () => {
     cleanup()
   })
 
-  it('标签 id 里有引号也不会把键盘处理弄崩（不拼选择器）', async () => {
+  it('quotes in a tab id do not break keyboard handling (no selector concatenation)', async () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
     const tricky: EditorTabItem[] = [

@@ -25,12 +25,12 @@ describe('dom', () => {
   it('creates an element and inserts into it', () => {
     const parent = createElement('div')
     const child = createElement('span')
-    const text = createText('内容')
+    const text = createText('content')
 
     insertBefore(child, text, null)
     insertBefore(parent, child, null)
 
-    expect(parent.innerHTML).toBe('<span>内容</span>')
+    expect(parent.innerHTML).toBe('<span>content</span>')
   })
 
   it('bindText updates reactively', async () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /*
- * Core-library invariant checks (positioning per docs/dev/planned/# Vobs 框架设计总纲.md)
+ * Core-library invariant checks (positioning per docs/dev/planned/framework-design-overview.md)
  *
  * Only checks invariant violations that are **machine-decidable**, not "code smells":
  *   I1 run-once        — a component function must not execute a second time

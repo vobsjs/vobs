@@ -10,16 +10,16 @@ import type {
 } from './types'
 
 /**
- * 退款与交易关闭
+ * Refund and trade close
  *
- * 包含退款、退款查询、交易关闭的完整退款生命周期管理。
+ * Full refund lifecycle management covering refund, refund query, and trade close.
  */
 export function createRefund(client: AlipayClient) {
   return {
     /**
-     * 交易退款 (alipay.trade.refund)
-     * 交易发生后 12 个月内可退款，退款资金原路返回。
-     * @throws {AlipayApiError} 业务失败时抛出
+     * Trade refund (alipay.trade.refund)
+     * Refundable within 12 months of the trade; funds are returned via the original payment channel.
+     * @throws {AlipayApiError} when the business call fails
      */
     async refund(params: AlipayRefundParams): Promise<AlipayRefundResult> {
       const alipayResponse = unwrapResponse(
@@ -41,9 +41,9 @@ export function createRefund(client: AlipayClient) {
     },
 
     /**
-     * 退款查询 (alipay.trade.fastpay.refund.query)
-     * 查询退款状态，确认退款是否成功。
-     * @throws {AlipayApiError} 业务失败时抛出
+     * Refund query (alipay.trade.fastpay.refund.query)
+     * Queries the refund status to confirm whether the refund succeeded.
+     * @throws {AlipayApiError} when the business call fails
      */
     async queryRefund(params: AlipayRefundQueryParams): Promise<AlipayRefundQueryResult> {
       const alipayResponse = unwrapResponse(
@@ -64,9 +64,9 @@ export function createRefund(client: AlipayClient) {
     },
 
     /**
-     * 关闭交易 (alipay.trade.close)
-     * 关闭未支付的订单。
-     * @throws {AlipayApiError} 业务失败时抛出
+     * Close trade (alipay.trade.close)
+     * Closes an unpaid order.
+     * @throws {AlipayApiError} when the business call fails
      */
     async close(params: AlipayCloseParams): Promise<AlipayCloseResult> {
       const alipayResponse = unwrapResponse(

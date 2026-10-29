@@ -1,5 +1,5 @@
-// 服务端入口：vite build --ssr 编译后由 scripts/prerender.mjs import 执行预渲染。
-// 页面组件与路由表来自 site.tsx（与 entry-client 共用，保证水合严格匹配）。
+// Server entry: compiled by vite build --ssr, then imported by scripts/prerender.mjs to run prerendering.
+// Page components and route table come from site.tsx (shared with entry-client, guaranteeing strict hydration matching).
 import { prerenderRoutes } from '@vobs/ssr'
 import { routes, headMap } from './site'
 

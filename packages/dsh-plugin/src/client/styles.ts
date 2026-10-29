@@ -1,12 +1,12 @@
 /**
- * 面板样式。全部注入到 attachShadow 出来的 shadow root 里（由 @vobs/dsh 的宿主完成）：
- * DSH 的全局 CSS 进不来，这里的规则也不会漏出去。
+ * Panel styles. Everything is injected into the shadow root created by attachShadow
+ * (done by @vobs/dsh's host): DSH's global CSS cannot get in, and these rules cannot leak out.
  *
- * 配色读两处信号，都是标准 API，不依赖 DSH 内部实现：
- *   1. `getComputedStyle(document.documentElement).colorScheme` —— DSH 的主题服务
- *      把它写进根元素的 color-scheme；
- *   2. `prefers-color-scheme` —— 兜底。
- * 解析结果由 @vobs/dsh 落在 `.vobs-dsh-root[data-scheme]` 上。
+ * The color scheme is read from two signals, both standard APIs with no dependency on DSH internals:
+ *   1. `getComputedStyle(document.documentElement).colorScheme` — DSH's theme service
+ *      writes it into the root element's color-scheme;
+ *   2. `prefers-color-scheme` — the fallback.
+ * The resolved result lands on `.vobs-dsh-root[data-scheme]` via @vobs/dsh.
  */
 
 export const PANEL_CSS = `

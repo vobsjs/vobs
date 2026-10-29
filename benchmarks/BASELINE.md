@@ -1,44 +1,44 @@
-# Benchmark 基线
+# Benchmark Baseline
 
-- 日期：2026-09-10 起运行于 **vitest 5**（bench DSL 已迁移为 test 上下文 fixture）。
-- 「v4 基线」列为 vitest 4 (tinybench 顶层 `bench`) 时代的数据，仅作历史参照——vitest 5 的 module runner 会为模块导出加 getter，纳秒级热路径（尤其 reactivity 读写）绝对值被系统性拖低，**跨引擎列不可直接对比**；同一次 v5 运行内的相对对比（template 三路径、优化前后）仍然有效。
-- 运行：`pnpm bench`；机器不同数据不可横向比，只做本机相对对比。
+- Date: running on **vitest 5** since 2026-09-10 (the bench DSL has moved to a test-context fixture).
+- The "v4 baseline" column is data from the vitest 4 era (tinybench top-level `bench`), kept for historical reference only — vitest 5's module runner adds getters to module exports, systematically lowering absolute numbers on nanosecond-scale hot paths (especially reactivity reads/writes), so **columns across engines must not be compared directly**; relative comparisons within a single v5 run (the three template paths, before/after optimizations) remain valid.
+- Run with `pnpm bench`; numbers from different machines must not be compared side by side — same-machine relative comparison only.
 
 ## reactivity
 
-| 用例 | v4 基线 hz | v5 当前 hz | 变化 |
+| Case | v4 baseline hz | v5 current hz | Change |
 | --- | ---: | ---: | --- |
-| signal 读取 ×10000（未追踪） | 10,738 | 11,150 | 持平 |
-| memo 读取 ×10000（命中缓存） | 5,611 | 1,544 | getter 开销（口径损失，非回归） |
-| signal 写入 ×1000（无订阅者） | 10,196 | 7,383 | getter 开销（口径损失） |
-| 写入 → 1 个 effect 重跑（batch 同步 flush） | 1,111,432 | 838,766 | getter 开销（口径损失） |
-| batch 写 100 个信号 → 100 个脏 effect 一轮 flush | 12,884 | 9,592 | getter 开销（口径损失） |
-| signal → memo → effect 链式失效并重算（batch） | 686,719 | 544,836 | getter 开销（口径损失） |
+| signal read ×10000 (untracked) | 10,738 | 11,150 | flat |
+| memo read ×10000 (cache hit) | 5,611 | 1,544 | getter overhead (measurement-scope loss, not a regression) |
+| signal write ×1000 (no subscribers) | 10,196 | 7,383 | getter overhead (measurement-scope loss) |
+| write → 1 effect re-run (batch synchronous flush) | 1,111,432 | 838,766 | getter overhead (measurement-scope loss) |
+| batch-write 100 signals → 100 dirty effects, one flush | 12,884 | 9,592 | getter overhead (measurement-scope loss) |
+| signal → memo → effect chained invalidation and recompute (batch) | 686,719 | 544,836 | getter overhead (measurement-scope loss) |
 
 ## runtime
 
-| 用例 | v4 基线 hz | v5 当前 hz | 变化 |
+| Case | v4 baseline hz | v5 current hz | Change |
 | --- | ---: | ---: | --- |
-| 挂载 1000 行（keyed） | 39.91 | 41.23 | 持平 |
-| 挂载 1000 行（无 key） | 40.79 | 44.75 | 持平 |
-| keyed 1000 行：整体反转（最坏情况） | 50.35 | 50.76 | 持平 |
-| keyed 1000 行：首尾交换两行（最好情况） | 29.20 | 2,371.71 | **~75 倍**（LIS，保持） |
-| keyed 1000 行：局部替换 100/1000 行 | 28.90 | 1,760.05 | **~55 倍**（LIS，保持） |
-| 动态分支切换 ×1000（两个元素间切换） | 23,440 | 39,074 | 提升（v5 采样下） |
-| 文本更新 ×1000（bindText） | 152,349 | 217,468 | 提升（v5 采样下） |
+| mount 1000 rows (keyed) | 39.91 | 41.23 | flat |
+| mount 1000 rows (no key) | 40.79 | 44.75 | flat |
+| keyed 1000 rows: full reverse (worst case) | 50.35 | 50.76 | flat |
+| keyed 1000 rows: swap first/last two rows (best case) | 29.20 | 2,371.71 | **~75×** (LIS, retained) |
+| keyed 1000 rows: patch 100/1000 rows | 28.90 | 1,760.05 | **~55×** (LIS, retained) |
+| dynamic branch switch ×1000 (between two elements) | 23,440 | 39,074 | improved (under v5 sampling) |
+| text update ×1000 (bindText) | 152,349 | 217,468 | improved (under v5 sampling) |
 
 ## compiler
 
-| 用例 | v4 基线 hz | v5 当前 hz | 变化 |
+| Case | v4 baseline hz | v5 current hz | Change |
 | --- | ---: | ---: | --- |
-| 小型组件（静态属性 + 事件 + 条件 + keyed 列表 + 组件） | 322.94 | 394.47 | 提升 |
-| 100 行 keyed 列表组件 | 15.14 | 15.67 | 持平 |
+| small component (static props + events + conditional + keyed list + component) | 322.94 | 394.47 | improved |
+| 100-row keyed list component | 15.14 | 15.67 | flat |
 
-## template（静态模板提升，v5 同口径三路径对照）
+## template (static template hoisting, three paths compared under v5)
 
-| 用例 | 旧路径 hz | 提升后 hz | 变化 |
+| Case | old path hz | hoisted hz | Change |
 | --- | ---: | ---: | --- |
-| 单卡片 8 节点（全提升：cloneTemplate ×1） | 21,424 | 28,737 | **1.3 倍** |
-| 单卡片 8 节点（部分提升：动态根 + 3×cloneTemplate） | 21,424 | 20,847 | 持平 |
-| 1000 卡片挂载（全提升） | 13.51 | 21.66 | **1.6 倍** |
-| 1000 卡片挂载（部分提升） | 13.51 | 14.98 | 持平 |
+| single card, 8 nodes (full hoist: cloneTemplate ×1) | 21,424 | 28,737 | **1.3×** |
+| single card, 8 nodes (partial hoist: dynamic root + 3×cloneTemplate) | 21,424 | 20,847 | flat |
+| 1000-card mount (full hoist) | 13.51 | 21.66 | **1.6×** |
+| 1000-card mount (partial hoist) | 13.51 | 14.98 | flat |

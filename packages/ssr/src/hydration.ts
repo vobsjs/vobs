@@ -6,9 +6,12 @@ export interface HydrationRenderer {
 
 export interface HydrationRendererOptions {
   /**
-   * 严格模式。服务端渲染了**非空文本**、而客户端此刻要空文本节点时（只能临时认领、等绑定 effect 覆写），
-   * 默认行为是"照旧认领 + 发一条 `hydrationProvisionalText` 事件"；打开此项则**直接报水合不匹配**
-   * （`kind: 'content'`）—— 用于把"值被悄悄换掉"从可观测升级为可拒绝。
+   * Strict mode. When the server rendered **non-empty text** while the client currently asks
+   * for an empty text node (which can only be provisionally claimed and overwritten later by
+   * the bound effect), the default behavior is "claim anyway + emit a
+   * `hydrationProvisionalText` event"; enabling this option **throws a hydration mismatch**
+   * (`kind: 'content'`) instead — upgrading "the value was silently swapped" from observable
+   * to rejectable.
    */
   readonly strictTextContent?: boolean
 }
@@ -22,8 +25,10 @@ export function createHydrationRenderer(
   let hydrating = false
 
   /**
-   * SSR 序列化在相邻文本节点间插入的边界注释（见 renderer.ts serializeChildren）。
-   * 它只为阻止 HTML 解析器合并文本节点，不参与客户端声明，认领与完整性校验均视为透明。
+   * Boundary comment inserted by SSR serialization between adjacent text nodes (see
+   * serializeChildren in renderer.ts). It only exists to stop the HTML parser from merging
+   * text nodes; it takes no part in client declarations and is treated as transparent by
+   * both claiming and integrity checks.
    */
   function isSeparatorComment(node: ChildNode): boolean {
     return node instanceof Comment && node.data === ' '
@@ -32,11 +37,14 @@ export function createHydrationRenderer(
   function tryClaim<T extends ChildNode>(
     predicate: (node: ChildNode) => node is T
   ): T | null {
-    // 先在当前父认领；失败时沿祖先链回退到水合容器——"先连续创建兄弟、后统一插入"
-    // 的产物模式（数组 map 经 insertDynamicValue/insertList）会在创建游标仍停留在
-    // 上一个元素内部时认领下一个兄弟，回退扫描让这类合法产物按文档序正确认领。
-    // 只扫各层直接孩子：服务端多余节点不会在此被误认领，由
-    // assertAllNodesClaimed 在水合结束时精确报 extra-node。
+    // Claim within the current parent first; on failure, walk up the ancestor chain to the
+    // hydration container — the "create siblings consecutively, then insert them in one go"
+    // output pattern (array maps via insertDynamicValue/insertList) can claim the next
+    // sibling while the creation cursor is still inside the previous element; the fallback
+    // scan lets such legitimate output be claimed correctly in document order.
+    // Only direct children of each level are scanned: extra server-side nodes are never
+    // mistakenly claimed here — assertAllNodesClaimed reports them precisely as extra-node
+    // when hydration completes.
     let parent: Node | null = currentParent
     while (parent) {
       const seen = claimed.get(parent) ?? new Set<ChildNode>()
@@ -62,23 +70,25 @@ export function createHydrationRenderer(
     if (node) return node
 
     /*
-     * 诊断用的 actual。原来只扫 `querySelectorAll('*')`（**只有元素**），于是
-     * `actual?.nodeType === 3` 永远不成立、`kind: 'content'` 是**不可达分支** ——
-     * "期望文本、DOM 里却是别的文本"这种最典型的水合差异只会报 missing-node 且 actual=<none>。
-     * 这里在找不到未认领元素时继续找未认领的**文本节点**，让 content 分支真正可达。
+     * The `actual` used for diagnostics. It originally only scanned `querySelectorAll('*')`
+     * (**elements only**), so `actual?.nodeType === 3` never held and the `kind: 'content'`
+     * branch was **unreachable** — the most typical hydration difference, "expected text but
+     * the DOM holds different text", was only reported as missing-node with actual=<none>.
+     * When no unclaimed element is found, this now keeps looking for unclaimed **text
+     * nodes**, making the content branch genuinely reachable.
      */
     const actual = [...container.querySelectorAll('*')]
       .find(node => !isSeparatorComment(node) && !isClaimed(node))
       ?? firstUnclaimedText()
     throwHydrationMismatch(
-      actual?.nodeType === 3 && expected.startsWith('文本节点') ? 'content' : 'missing-node',
+      actual?.nodeType === 3 && expected.startsWith('Text node') ? 'content' : 'missing-node',
       expected,
       actual ? describeHydrationNode(actual) : '<none>',
       currentParent
     )
   }
 
-  /** 按文档序找第一个未被认领的文本节点（给上面的诊断用）。 */
+  /** Finds the first unclaimed text node in document order (for the diagnostics above). */
   function firstUnclaimedText(): Text | null {
     const walk = (parent: Node): Text | null => {
       for (let index = 0; index < parent.childNodes.length; index++) {
@@ -105,14 +115,18 @@ export function createHydrationRenderer(
   }
 
   /**
-   * 认领服务端已渲染的文本节点来承载 `setProperty(node, 'textContent'|'innerText', value)`。
+   * Claims a server-rendered text node to back
+   * `setProperty(node, 'textContent'|'innerText', value)`.
    *
-   * 只认领满足下面两条的节点，避免"抢错节点"：
-   * 1. 尚未被认领（防止把别的绑定要用的文本节点抢走）；
-   * 2. 服务端文本与客户端值**逐字相同** —— 不同就说明服务端渲染的是别的内容，
-   *    那样应当退回直接赋值、让 `assertAllNodesClaimed` 如实报出差异，而不是掩盖它。
+   * Only nodes meeting both conditions below are claimed, to avoid "grabbing the wrong
+   * node":
+   * 1. Not yet claimed (so text nodes needed by other bindings are not stolen);
+   * 2. The server text is **character-for-character identical** to the client value — any
+   *    difference means the server rendered something else, in which case we fall back to
+   *    a direct assignment and let `assertAllNodesClaimed` report the difference honestly
+   *    rather than mask it.
    *
-   * 返回 true 表示已经用认同的节点处理完，调用方不必再 Reflect.set。
+   * Returns true when an agreed node fully handled it, so the caller skips Reflect.set.
    */
   function claimTextContent(node: Element, value: unknown): boolean {
     if (typeof value !== 'string') return false
@@ -139,7 +153,7 @@ export function createHydrationRenderer(
     }
   }
 
-  /** 把整棵子树记为已认领（innerHTML 换出来的节点无法逐个与服务端产物比对）。 */
+  /** Marks an entire subtree as claimed (nodes swapped in by innerHTML cannot be matched one by one against the server output). */
   function markSubtreeClaimed(parent: Node): void {
     const stack: Node[] = []
     for (let index = 0; index < parent.childNodes.length; index++) stack.push(parent.childNodes[index])
@@ -155,14 +169,18 @@ export function createHydrationRenderer(
 
   const renderer: VobsRenderer<Node, Text, Element, Comment> = {
     createText(content: string): Text {
-      // 水合完成后退化为真实 DOM 创建：后续的动态重渲染（状态切换重建分支等）
-      // 需要创建全新节点，不能再走认领（服务端 DOM 早已全部认领完毕）。
+      // After hydration completes, fall back to real DOM creation: later dynamic
+      // re-renders (branch rebuilds on state switches, etc.) need brand-new nodes and can
+      // no longer go through claiming (the server DOM was fully claimed long ago).
       if (!hydrating) return document.createTextNode(content)
-      // 空动态文本：SSR 输出空注释占位（<!---->，HTML 无法表示空文本节点）。
-      // 1) 服务端渲染值为空 → 占位存在：认领占位注释并原地替换为真实文本节点，
-      //    位置精确，不会误抢后续兄弟文本；
-      // 2) 服务端渲染值非空 → 占位不存在、DOM 中是真实文本：认领任意未认领文本
-      //    （绑定 effect 随后覆写为真实值）。
+      // Empty dynamic text: SSR emits an empty comment placeholder (<!---->; HTML cannot
+      // represent an empty text node).
+      // 1) Server value was empty → the placeholder exists: claim the placeholder comment
+      //    and replace it in place with a real text node — the position is exact and no
+      //    following sibling text gets mistakenly grabbed;
+      // 2) Server value was non-empty → no placeholder exists, the DOM holds real text:
+      //    claim any unclaimed text (the bound effect overwrites it with the real value
+      //    right after).
       if (content === '') {
         const marker = tryClaim(
           (node): node is Comment => node instanceof Comment && node.data === '',
@@ -180,19 +198,22 @@ export function createHydrationRenderer(
       const claimedText = claim(
         (node): node is Text => node instanceof Text
           && (content === '' || node.data === content),
-        content === '' ? '动态文本节点' : `文本节点 "${content}"`
+        content === '' ? 'dynamic text node' : `Text node "${content}"`
       )
       if (content === '' && claimedText.data !== '') {
         /*
-         * 服务端渲染的是**非空**文本，而客户端此刻要的是空文本 —— 只能临时认领、等绑定 effect 覆写。
-         * 这一步过去完全无声：服务端 "Ada" 遇上客户端忘传 state（会渲染 "loading"）时静默变成后者。
-         * 现在：默认发一条可观测事件；`strictTextContent` 打开时直接拒绝（报水合不匹配）。
+         * The server rendered **non-empty** text while the client currently wants empty
+         * text — it can only be provisionally claimed and overwritten by the bound effect.
+         * This used to be completely silent: server "Ada" meeting a client that forgot to
+         * pass state (rendering "loading") quietly became the latter.
+         * Now: an observable event is emitted by default; with `strictTextContent` on it is
+         * rejected outright (a hydration mismatch is thrown).
          */
         if (options.strictTextContent) {
-          throwHydrationMismatch('content', '动态文本节点（服务端非空 → 客户端为空）', JSON.stringify(claimedText.data), currentParent)
+          throwHydrationMismatch('content', 'dynamic text node (server non-empty → client empty)', JSON.stringify(claimedText.data), currentParent)
         }
         invokeRuntimeDebug('hydrationProvisionalText', {
-          expected: '动态文本节点',
+          expected: 'dynamic text node',
           actual: JSON.stringify(claimedText.data)
         })
       }
@@ -212,8 +233,9 @@ export function createHydrationRenderer(
 
     createSvgElement(tag: string): Element {
       if (!hydrating) return document.createElementNS('http://www.w3.org/2000/svg', tag)
-      // 水合：按标签名（大小写不敏感，SVG 的 clipPath 等驼峰标签由 HTML 解析器
-      // 调整为规范大小写，toLowerCase 后一致）认领服务端序列化的 SVG 元素
+      // Hydration: claim the server-serialized SVG element by tag name (case-insensitive;
+      // camelCase SVG tags like clipPath get normalized by the HTML parser to canonical
+      // casing, so toLowerCase matches on both sides)
       const element = claim(
         (node): node is Element => node instanceof Element
           && node.namespaceURI === 'http://www.w3.org/2000/svg'
@@ -228,14 +250,15 @@ export function createHydrationRenderer(
       if (!hydrating) return document.createComment(content)
       return claim(
         (node): node is Comment => node instanceof Comment && node.data === content,
-        `注释 "${content}"`
+        `Comment "${content}"`
       )
     },
 
     insertBefore(parent: Node, child: Node, anchor: Node | null): void {
       if (hydrating) {
-        // 水合期间新创建的节点（空动态文本等）：服务端 DOM 无对应节点，直接真实
-        // 插入到动态槽位锚点前，并计入认领状态。
+        // Nodes newly created during hydration (empty dynamic text, etc.) have no
+        // counterpart in the server DOM: really insert them before the dynamic slot anchor
+        // and record them as claimed.
         if (child.parentNode === null) {
           const inserted = child as ChildNode
           parent.insertBefore(inserted, anchor)
@@ -264,20 +287,26 @@ export function createHydrationRenderer(
 
     setProperty(node: Element, key: string, value: unknown): void {
       /*
-       * textContent / innerText 是**文本通道**：Reflect.set 会把已有子节点整棵换掉，
-       * 换出来的文本节点不可能在服务端认领表里 → assertAllNodesClaimed 抛 extra-node。
-       * 服务端现在把同一段文本当**子节点**序列化（renderer.ts 的 textContent 分支），
-       * 所以这里反过来做：把服务端已渲染的那个文本节点**认领**下来当自己的节点，
-       * 而不是另造一个。`setTextContent` 只改文本内容、不动节点身份，所以认领后仍可更新。
-       * 找不到可选文本节点（服务端渲染的是空文本、或该位置是注释占位）才退回直接赋值。
+       * textContent / innerText are **text channels**: Reflect.set swaps out the entire set
+       * of existing child nodes, and text nodes produced that way can never be in the
+       * server claim table → assertAllNodesClaimed throws extra-node.
+       * The server now serializes the same text as a **child node** (the textContent branch
+       * in renderer.ts), so this side does the reverse: **claim** the text node the server
+       * already rendered as its own node instead of building another one.
+       * `setTextContent` only changes text content, not node identity, so the claimed node
+       * can still be updated afterwards.
+       * Only when no eligible text node exists (the server rendered empty text, or the
+       * position holds a comment placeholder) does it fall back to direct assignment.
        */
       if (hydrating && (key === 'textContent' || key === 'innerText')) {
         if (claimTextContent(node, value)) return
       }
       Reflect.set(node, key, value)
-      // innerHTML 是原始标记逃生口：赋值会**替换**整棵子树，新节点不可能在服务端认领表里。
-      // 服务端原样序列化了同一段标记（renderer.ts serialize），所以这里直接把换出来的
-      // 子树整体标记为已认领 —— 否则 assertAllNodesClaimed 必然抛 extra-node。
+      // innerHTML is the raw-markup escape hatch: assignment **replaces** the whole subtree,
+      // and the new nodes can never be in the server claim table.
+      // The server serialized the same markup verbatim (serialize in renderer.ts), so the
+      // swapped-in subtree is marked claimed as a whole — otherwise assertAllNodesClaimed
+      // would inevitably throw extra-node.
       if (key === 'innerHTML' && hydrating) markSubtreeClaimed(node)
     },
 
@@ -285,7 +314,7 @@ export function createHydrationRenderer(
       node.setAttribute(key, value)
     },
 
-    /** 与 DOM 渲染器同语义：不实现就会退化成 setAttribute(key, '')，在客户端留下空属性。 */
+    /** Same semantics as the DOM renderer: leaving this unimplemented degrades to setAttribute(key, ''), leaving an empty attribute on the client. */
     removeAttribute(node: Element, key: string): void {
       node.removeAttribute(key)
     },
@@ -328,12 +357,13 @@ function throwHydrationMismatch(
 ): never {
   const path = describeHydrationPath(parent)
   const message = kind === 'extra-node'
-    ? 'Vobs hydration: 服务端 DOM 包含客户端未声明的节点'
+    ? 'Vobs hydration: the server DOM contains nodes not declared by the client'
     : kind === 'position'
-      ? 'Vobs hydration: 节点位置与客户端渲染结果不一致'
-      : `Vobs hydration: 未找到匹配的 ${expected}`
+      ? 'Vobs hydration: node position does not match the client render result'
+      : `Vobs hydration: no matching ${expected} found`
   const details = { kind, expected, actual, path, message } as const
-  // message 自包含关键诊断（浏览器控制台看不到 vobsHydration 附件），便于直接定位水合差异。
+  // The message carries the key diagnostics itself (the browser console cannot see the
+  // vobsHydration attachment), making hydration differences easy to locate directly.
   const error = Object.assign(new Error(`${message} [${kind}] expected=${expected} actual=${actual} path=${path}`), {
     name: 'HydrationMismatchError',
     vobsCode: 'VOBS_HYDRATION_MISMATCH',

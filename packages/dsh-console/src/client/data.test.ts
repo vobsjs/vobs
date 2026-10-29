@@ -15,22 +15,22 @@ import {
   type ConsoleSource
 } from './data.js'
 
-/* ------------------------------------------------------------------ 工具函数 */
+/* ------------------------------------------------------------------ Utilities */
 
-describe('格式化', () => {
-  it('formatClock 输出定长时刻，不受 locale 影响', () => {
+describe('formatting', () => {
+  it('formatClock outputs a fixed-width time, locale-independent', () => {
     const time = new Date(2026, 0, 2, 3, 4, 5).getTime()
     expect(formatClock(time)).toBe('03:04:05')
   })
 
-  it('formatDuration 覆盖毫秒/秒/分钟三档', () => {
+  it('formatDuration covers the ms/s/minute tiers', () => {
     expect(formatDuration(240)).toBe('240ms')
     expect(formatDuration(4200)).toBe('4.2s')
     expect(formatDuration(138_000)).toBe('2m18s')
     expect(formatDuration(-1)).toBe('—')
   })
 
-  it('formatTokens 覆盖 k / M 两档', () => {
+  it('formatTokens covers the k / M tiers', () => {
     expect(formatTokens(940)).toBe('940')
     expect(formatTokens(41_200)).toBe('41.2k')
     expect(formatTokens(2_400_000)).toBe('2.40M')
@@ -38,28 +38,28 @@ describe('格式化', () => {
 })
 
 describe('buildSparkline', () => {
-  it('空序列返回空路径', () => {
+  it('returns an empty path for an empty sequence', () => {
     expect(buildSparkline([], 90, 22)).toBe('')
   })
 
-  it('生成以 M 开头的折线，点数与输入一致', () => {
+  it('produces a line starting with M, with as many points as the input', () => {
     const path = buildSparkline([1, 5, 3, 8], 90, 22)
     expect(path.startsWith('M0.0')).toBe(true)
     expect((path.match(/[ML]/gu) ?? []).length).toBe(4)
   })
 
-  it('常量序列不产生除零，画成一条水平线', () => {
+  it('a constant sequence never divides by zero and draws a horizontal line', () => {
     const path = buildSparkline([7, 7, 7], 90, 22)
     const ys = [...path.matchAll(/[ML][\d.]+ ([\d.]+)/gu)].map(match => match[1])
     expect(new Set(ys).size).toBe(1)
   })
 
-  it('单点序列不崩', () => {
+  it('a single-point sequence does not crash', () => {
     expect(buildSparkline([3], 90, 22)).toMatch(/^M0\.0 /u)
   })
 })
 
-/* ------------------------------------------------------------------ 商店折叠 */
+/* ------------------------------------------------------------------ Store folding */
 
 interface Harness {
   source: ConsoleSource
@@ -104,7 +104,7 @@ function createHarness(): Harness {
 }
 
 describe('createConsoleStore', () => {
-  it('新增事件插到最前，并累计工具统计', () => {
+  it('new events are inserted at the front and tool stats accumulate', () => {
     const harness = createHarness()
     const store = createConsoleStore(harness.source)
 
@@ -128,7 +128,7 @@ describe('createConsoleStore', () => {
     expect(store.totals.value.successRate).toBeCloseTo(2 / 3)
   })
 
-  it('工具按调用次数降序排列', () => {
+  it('tools are sorted by call count descending', () => {
     const harness = createHarness()
     const store = createConsoleStore(harness.source)
     harness.emit({ seq: 1, tool: 'a', durationMs: 1 })
@@ -137,7 +137,7 @@ describe('createConsoleStore', () => {
     expect(store.tools.value.map(stat => stat.name)).toEqual(['b', 'a'])
   })
 
-  it('非 tool/end 事件不进工具统计', () => {
+  it('non tool/end events do not enter tool stats', () => {
     const harness = createHarness()
     const store = createConsoleStore(harness.source)
     harness.emit({ seq: 1, kind: 'turn/start', tool: 'read' })
@@ -145,7 +145,7 @@ describe('createConsoleStore', () => {
     expect(store.events.value.length).toBe(1)
   })
 
-  it('环形缓冲封顶，最旧的事件被丢弃', () => {
+  it('the ring buffer caps out and the oldest events are dropped', () => {
     const harness = createHarness()
     const store = createConsoleStore(harness.source)
     for (let index = 1; index <= EVENT_LIMIT + 25; index += 1) {
@@ -156,7 +156,7 @@ describe('createConsoleStore', () => {
     expect(store.events.value.at(-1)?.seq).toBe(26)
   })
 
-  it('暂停期间丢弃入库并计数，继续后清零', () => {
+  it('while paused, drops are counted; the counter resets on resume', () => {
     const harness = createHarness()
     const store = createConsoleStore(harness.source)
     harness.emit({ seq: 1 })
@@ -173,14 +173,14 @@ describe('createConsoleStore', () => {
     expect(store.droppedWhilePaused.value).toBe(0)
   })
 
-  it('会话补丁直接替换列表', () => {
+  it('a sessions patch replaces the list outright', () => {
     const harness = createHarness()
     const store = createConsoleStore(harness.source)
     harness.emitSessions([])
     expect(store.sessions.value.length).toBe(0)
   })
 
-  it('clear 清空事件与工具统计', () => {
+  it('clear empties events and tool stats', () => {
     const harness = createHarness()
     const store = createConsoleStore(harness.source)
     harness.emit({ seq: 1, tool: 'read', durationMs: 5 })
@@ -190,7 +190,7 @@ describe('createConsoleStore', () => {
     expect(store.totals.value.calls).toBe(0)
   })
 
-  it('dispose 同时退订数据源', () => {
+  it('dispose also unsubscribes from the data source', () => {
     const harness = createHarness()
     const store = createConsoleStore(harness.source)
     store.dispose()
@@ -200,10 +200,10 @@ describe('createConsoleStore', () => {
   })
 })
 
-/* ---------------------------------------------------------------- 演示数据源 */
+/* ---------------------------------------------------------------- Demo data source */
 
 describe('createSyntheticSource', () => {
-  it('同 seed 完全可复现', () => {
+  it('same seed is fully reproducible', () => {
     const a = createSyntheticSource({ seed: 42 })
     const b = createSyntheticSource({ seed: 42 })
     a.tick(40)
@@ -212,7 +212,7 @@ describe('createSyntheticSource', () => {
     expect(a.snapshot().events.map(event => event.durationMs)).toEqual(b.snapshot().events.map(event => event.durationMs))
   })
 
-  it('不同 seed 产生不同序列', () => {
+  it('different seeds produce different sequences', () => {
     const a = createSyntheticSource({ seed: 1 })
     const b = createSyntheticSource({ seed: 2 })
     a.tick(20)
@@ -220,7 +220,7 @@ describe('createSyntheticSource', () => {
     expect(a.snapshot().events.map(event => event.detail)).not.toEqual(b.snapshot().events.map(event => event.detail))
   })
 
-  it('tick 产生递增 seq 的事件，且带会话与状态', () => {
+  it('tick produces events with increasing seq, carrying session and status', () => {
     const source = createSyntheticSource({ seed: 7 })
     source.tick(12)
     const events = source.snapshot().events
@@ -234,7 +234,7 @@ describe('createSyntheticSource', () => {
     expect(events[0]?.seq).toBeGreaterThan(events[1]?.seq ?? 0)
   })
 
-  it('订阅者收到增量补丁', () => {
+  it('subscribers receive incremental patches', () => {
     const source = createSyntheticSource({ seed: 3 })
     const seen: ConsoleEvent[] = []
     const unsubscribe = source.subscribe(patch => {
@@ -248,21 +248,21 @@ describe('createSyntheticSource', () => {
     expect(seen.length).toBe(before)
   })
 
-  it('dispose 之后不再产出', () => {
+  it('no production after dispose', () => {
     const source = createSyntheticSource({ seed: 9 })
     source.dispose()
     source.tick(5)
     expect(source.snapshot().events.length).toBe(0)
   })
 
-  it('会话快照包含 seed 里的 8 个会话', () => {
+  it('the session snapshot contains the 8 sessions from the seed', () => {
     const source = createSyntheticSource()
     expect(source.snapshot().sessions.length).toBe(8)
     expect(source.snapshot().sessions.filter(session => session.state === 'run').length).toBe(3)
   })
 })
 
-/* -------------------------------------------------------------------- 探测 */
+/* -------------------------------------------------------------------- Probing */
 
 describe('createDshSource', () => {
   const mustSource = (ctx: Parameters<typeof createDshSource>[0]): ConsoleSource => {
@@ -319,12 +319,12 @@ describe('createDshSource', () => {
     }
   }
 
-  it('没有 sessions 服务时返回 undefined', () => {
+  it('returns undefined when there is no sessions service', () => {
     expect(createDshSource(undefined)).toBeUndefined()
     expect(createDshSource({ slots: { inject: () => {}, register: () => {} }, get: () => undefined })).toBeUndefined()
   })
 
-  it('把列表快照映射成会话模型，并按最近活动排序', () => {
+  it('maps the list snapshot into session models, sorted by most recent activity', () => {
     const harness = services({
       a: { sessionId: 'a', title: '甲', running: false, updatedAt: 100 },
       b: { sessionId: 'b', title: '乙', running: true, updatedAt: 300 },
@@ -336,14 +336,14 @@ describe('createDshSource', () => {
     expect(sessions.map(session => session.id)).toEqual(['b', 'c', 'a'])
     expect(sessions[0]?.state).toBe('run')
     expect(sessions[2]?.state).toBe('idle')
-    // 没有标题时退化成 id，而不是空白
+    // Falls back to the id when there is no title, not to blank
     expect(sessions.find(session => session.id === 'c')?.title).toBe('c')
-    // 列表快照里没有 token / 耗时
+    // List snapshots carry no tokens / durations
     expect(sessions[0]?.tokens).toBe(0)
     source.dispose()
   })
 
-  it('pendingInteraction 映射成「等待审批」，优先于运行中', () => {
+  it('pendingInteraction maps to "awaiting approval", taking precedence over running', () => {
     const harness = services({ a: { sessionId: 'a', title: '甲', running: true, updatedAt: 1 } }, {
       a: { running: true, pendingInteraction: { kind: 'approval' } }
     })
@@ -352,14 +352,14 @@ describe('createDshSource', () => {
     source.dispose()
   })
 
-  it('首次读数只建基线，不刷一屏历史事件', () => {
+  it('the first read only builds the baseline, without flooding a screen of history events', () => {
     const harness = services({ a: { sessionId: 'a', running: true, updatedAt: 1 } })
     const source = mustSource(harness.ctx)
     expect(source.snapshot().events).toEqual([])
     source.dispose()
   })
 
-  it('运行状态变化产生真实事件', () => {
+  it('run-state changes produce real events', () => {
     const harness = services({ a: { sessionId: 'a', title: '甲', running: false, updatedAt: 1 } })
     const source = mustSource(harness.ctx)
     const seen: ConsoleEvent[] = []
@@ -377,7 +377,7 @@ describe('createDshSource', () => {
     source.dispose()
   })
 
-  it('状态流上报等待审批时产生 approval/request', () => {
+  it('the status stream reporting awaiting-approval produces approval/request', () => {
     const harness = services({ a: { sessionId: 'a', title: '甲', running: true, updatedAt: 1 } })
     const source = mustSource(harness.ctx)
     const seen: ConsoleEvent[] = []
@@ -392,7 +392,7 @@ describe('createDshSource', () => {
     source.dispose()
   })
 
-  it('会话进入与离开目录各有事件', () => {
+  it('sessions entering and leaving the catalog each produce an event', () => {
     const harness = services({ a: { sessionId: 'a', title: '甲', running: false, updatedAt: 1 } })
     const source = mustSource(harness.ctx)
     const seen: ConsoleEvent[] = []
@@ -412,7 +412,7 @@ describe('createDshSource', () => {
     source.dispose()
   })
 
-  it('标题变化产生 session/update', () => {
+  it('a title change produces session/update', () => {
     const harness = services({ a: { sessionId: 'a', title: '旧', running: false, updatedAt: 1 } })
     const source = mustSource(harness.ctx)
     const seen: ConsoleEvent[] = []
@@ -427,7 +427,7 @@ describe('createDshSource', () => {
     source.dispose()
   })
 
-  it('dispose 之后退订，不再收到更新', () => {
+  it('after dispose it unsubscribes and receives no more updates', () => {
     const harness = services({ a: { sessionId: 'a', running: false, updatedAt: 1 } })
     const source = mustSource(harness.ctx)
     let patches = 0
@@ -441,14 +441,14 @@ describe('createDshSource', () => {
 })
 
 describe('selectConsoleSource', () => {
-  it('没有服务时退回演示数据并说明原因', () => {
+  it('falls back to demo data when there are no services, and explains why', () => {
     const selection = selectConsoleSource(undefined)
     expect(selection.source.kind).toBe('synthetic')
-    expect(selection.note).toContain('未探测到')
+    expect(selection.note).toContain('was not detected')
     selection.source.dispose()
   })
 
-  it('探测到服务时切到真实源', () => {
+  it('switches to the real source when services are detected', () => {
     const selection = selectConsoleSource({
       slots: { inject: () => {}, register: () => {} },
       get: name =>
@@ -457,11 +457,11 @@ describe('selectConsoleSource', () => {
           : undefined
     })
     expect(selection.source.kind).toBe('dsh')
-    expect(selection.note).toContain('会话级')
+    expect(selection.note).toContain('session-level')
     selection.source.dispose()
   })
 
-  it('复用调用方给的演示源，不重复创建', () => {
+  it('reuses the demo source given by the caller instead of creating a new one', () => {
     const demo = createSyntheticSource({ seed: 1 })
     const selection = selectConsoleSource(undefined, demo)
     expect(selection.source).toBe(demo)
@@ -470,7 +470,7 @@ describe('selectConsoleSource', () => {
 })
 
 describe('createSwitchableSource', () => {
-  it('切换时广播 reset，并可取到新源', () => {
+  it('broadcasts reset on switch and exposes the new source', () => {
     const first = createSyntheticSource({ seed: 1 })
     const second = createSyntheticSource({ seed: 2 })
     const switchable = createSwitchableSource(first)
@@ -485,7 +485,7 @@ describe('createSwitchableSource', () => {
     switchable.dispose()
   })
 
-  it('切换后旧源的推送不再透传', () => {
+  it('pushes from the old source are no longer forwarded after switching', () => {
     const first = createSyntheticSource({ seed: 1 })
     const second = createSyntheticSource({ seed: 2 })
     const switchable = createSwitchableSource(first)

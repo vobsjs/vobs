@@ -1,95 +1,95 @@
-# Vobs for DSH —— UI 方案
+# Vobs for DSH — UI Plan
 
-> **实现现状（2026-02 更新）**
+> **Implementation status (updated 2026-02)**
 >
-> 这份方案描述的三层落点已经落地：
+> The three layers described in this plan have landed:
 >
-> | 方案里的落点 | 实现位置 |
+> | Landing point in the plan | Where it lives |
 > | --- | --- |
-> | ① Vobs Console（`main` keyed slot 整页 + 侧栏入口） | [`packages/dsh-console`](../../dsh-console) —— 四个 tab、62 项产物校验、35 项单测 |
-> | ② 聊天内嵌工具渲染器（`tool.call.toolview`） | **未做**（P3，仍是方案） |
-> | ③ 右侧栏「运行态」tab（`sidebar.right.pane.tab`） | **未做**（方案里把它当作 P0 最小闭环；实际先做了 Console） |
+> | ① Vobs Console (`main` keyed slot full page + sidebar entry) | [`packages/dsh-console`](../../dsh-console) — four tabs, 62 artifact checks, 35 unit tests |
+> | ② In-chat tool renderer (`tool.call.toolview`) | **Not done** (P3, still a plan) |
+> | ③ Right sidebar "Runtime" tab (`sidebar.right.pane.tab`) | **Not done** (the plan treated it as the P0 minimal loop; the Console shipped first instead) |
 >
-> 支撑它们的工具链 [`@vobs/dsh`](../../dsh) 与 [`vobs dsh` 命令组](../../cli) 已完整交付，
-> 参考实现见 [`packages/dsh-plugin`](../../dsh-plugin)。
+> The tooling beneath them — [`@vobs/dsh`](../../dsh) and the [`vobs dsh` command group](../../cli) — is fully delivered;
+> see [`packages/dsh-plugin`](../../dsh-plugin) for the reference implementation.
 >
-> **数据面现状**：Console 已接 DSH 真实的会话目录与运行状态（`sessions.list` + `uiSession.sessionStatus`），
-> 事件流由状态跃迁派生。token、耗时与**工具级事件**不在会话目录里，界面如实显示「—」而不是编数据 ——
-> 采集工具事件需要对每个会话 `retain()` 打开，DSH 自己刻意避免这么做，本实现同样不越这条线。
-> 详见 [Console 的数据来源](../../dsh-console/README.md#数据来源)。
+> **Data-plane status**: the Console is wired to DSH's real session directory and runtime state (`sessions.list` + `uiSession.sessionStatus`);
+> the event stream is derived from state transitions. Tokens, duration, and **tool-level events** are not in the session directory; the UI honestly shows "—" rather than fabricating data —
+> collecting tool events would require `retain()`-opening every session, which DSH itself deliberately avoids; this implementation does not cross that line either.
+> See [Console's data sources](../../dsh-console/README.md#data-sources).
 
-> 目标：用 vobs 给 DeepSeek Harness 做一套**真正有用**的 UI，而不是把 DSH 重画一遍。
-> 状态：**方案，未编码**。预览图见 [`preview/`](preview)。
+> Goal: use vobs to build a UI for DeepSeek Harness that is **genuinely useful**, not a repaint of DSH.
+> Status: **plan, no code**. Preview images: [`preview/`](preview).
 
 ---
 
-## Vobs 开发台（面向「AI 写 vobs 代码」）
+## Vobs DevKit (for "AI writing vobs code")
 
-上面三层解决的是「**看见运行态**」；这一层解决另一个问题：**vobs 太新，模型没有它的训练数据**。
+The three layers above solve "**seeing runtime state**"; this layer solves a different problem: **vobs is too new — the model has no training data for it**.
 
-答案不是等模型学会，而是把框架变成**它能加载的上下文** + **能自我验证的反馈回路**。
-围绕这件事一共九项能力，其中只有一部分需要界面 —— 下面就是它们的落点。
+The answer is not to wait for the model to learn it, but to turn the framework into **context it can load** + **a feedback loop that can self-verify**.
+Nine capabilities revolve around this, only some of which need UI — here is where they land.
 
-| 界面 | 装什么 | 对应能力 |
+| Screen | What it holds | Corresponding capability |
 | --- | --- | --- |
-| Tab 1 · 项目 | `vobs check` 问题清单（每条带正确写法 + `文件:行`）、项目健康、测试结果 | check 可读化 · 脚手架测试 |
-| Tab 2 · API | 左组件树 + 右签名 / 参数 / 示例，一键复制给 AI | `vobs docs` · AI 上下文包 |
-| Tab 3 · 示例 | 12 个可运行示例，每个都有对应的无头测试 | 示例库 |
-| Tab 4 · 护栏 | 把「静默卡死 / 静默丢内容」变成明确告警，附前后对照 | 开发期运行时护栏 |
-| 右侧栏 | 一行状态：check 通过 / 未通过、问题数、护栏告警 | check 状态 |
-| 聊天内嵌 | `vobs check` / `vobs docs` 的输出渲染成可点卡片 | 工具渲染器（原方案 ②） |
+| Tab 1 · Project | The `vobs check` issue list (each with the correct pattern + `file:line`), project health, test results | check visualization · scaffold tests |
+| Tab 2 · API | Component tree on the left + signature / params / examples on the right, one-click copy for AI | `vobs docs` · AI context pack |
+| Tab 3 · Examples | 12 runnable examples, each with a corresponding headless test | Example library |
+| Tab 4 · Guardrails | Turn "silent hangs / silent content loss" into explicit warnings, with before/after comparisons | Dev-time runtime guardrails |
+| Right sidebar | One status line: check pass / fail, issue count, guardrail warnings | check status |
+| In-chat | `vobs check` / `vobs docs` output rendered as clickable cards | Tool renderer (formerly plan item ②) |
 
-**最重要的一条设计取舍**：这是给**审阅 AI 写的代码**的人用的，不是给**自己写代码**的人用的。
-所以每一条问题都必须带「正确写法」和「复制给 AI」，而不是只报错。
+**The single most important design trade-off**: this is for people **reviewing AI-written code**, not for people **writing code themselves**.
+So every issue must carry "the correct pattern" and "copy for AI", not just an error.
 
-### Tab 1 · 项目
-![项目 tab](preview/04-devkit-project.png)
+### Tab 1 · Project
+![Project tab](preview/04-devkit-project.png)
 
 ### Tab 2 · API
 ![API tab](preview/05-devkit-api.png)
 
-### Tab 3 · 示例
-![示例 tab](preview/06-devkit-examples.png)
+### Tab 3 · Examples
+![Examples tab](preview/06-devkit-examples.png)
 
-### Tab 4 · 护栏
-![护栏 tab](preview/07-devkit-guardrails.png)
+### Tab 4 · Guardrails
+![Guardrails tab](preview/07-devkit-guardrails.png)
 
-### 聊天内嵌卡片 + 右侧栏
-![聊天内嵌与右侧栏](preview/08-devkit-chat.png)
+### In-chat cards + right sidebar
+![In-chat and right sidebar](preview/08-devkit-chat.png)
 
 
-![总览](preview/01-console-overview.png)
-![工具分析](preview/02-console-tools.png)
-![工具渲染器](preview/03-chat-toolview.png)
+![Overview](preview/01-console-overview.png)
+![Tool analytics](preview/02-console-tools.png)
+![Tool renderer](preview/03-chat-toolview.png)
 
 ---
 
-## 一、先划边界：插件能做到什么，做不到什么
+## 1. Drawing the boundary first: what a plugin can and cannot do
 
-这套结论来自对已安装 DSH（Desktop 0.1.x / `@deepseek-ai/cordis@4.0.4`）的实际检查，不是推测。
+These conclusions come from actually inspecting an installed DSH (Desktop 0.1.x / `@deepseek-ai/cordis@4.0.4`), not speculation.
 
-### 做不到
+### Cannot do
 
-| 想法 | 为什么不行 |
+| Idea | Why it fails |
 | --- | --- |
-| 替换 DSH 整个界面 / 换一套外壳 | 布局的 `root` slot 被 `@deepseek-ai/dsh-client-ui-layout` 的 `AppFrame` 独占注册（slot 声明即认领）。客户端插件拿不到 root，只能往它声明的子 slot 里加东西。换外壳＝改 DSH 源码，不是插件。 |
-| 给 vobs 面板直接用 DSH 的 React 组件库 | `@deepseek-ai/dsh-client-ui-primitives` 是 React 组件。vobs 渲染的是真实 DOM，两套渲染器不能混用同一棵子树。视觉必须自建（用 DSH 的 design token 保持一致）。 |
-| 复刻官方已有的面板 | `sidebar.right.pane.tab` 上已经有 文件 / 终端 / 浏览器 / 文档预览 / 交付物 / 计划 / 日程 / 子代理。重复做没有价值。 |
+| Replace DSH's entire UI / swap the shell | The layout's `root` slot is exclusively registered by `@deepseek-ai/dsh-client-ui-layout`'s `AppFrame` (declaring a slot is claiming it). Client plugins cannot get root; they can only add into the child slots it declares. Swapping the shell = modifying DSH source, not a plugin. |
+| Use DSH's React component library directly in a vobs panel | `@deepseek-ai/dsh-client-ui-primitives` is React components. vobs renders real DOM; two renderers cannot share one subtree. Visuals must be self-built (using DSH's design tokens for consistency). |
+| Replicate panels the official app already has | `sidebar.right.pane.tab` already has Files / Terminal / Browser / Doc preview / Deliverables / Plan / Schedule / Subagents. Duplicating them has no value. |
 
-### 能做到（已核实的真实扩展点）
+### Can do (verified real extension points)
 
-| Slot | 类型 | 能放什么 | 现在谁在用 |
+| Slot | Type | What goes there | Used today by |
 | --- | --- | --- | --- |
-| `main` | keyed | **整页主区域页面** | conversation、plugin-manager、schedule |
-| `sidebar.panellist` | list | 主区域页面的左侧入口图标 | plugin-manager、schedule |
-| `sidebar.right.pane.tab` + `.title` | list | 右侧栏新增 tab | files、terminal、browser、preview、deliverables、plan、schedule、subagent |
-| `settings.section` | list | 独立设置页 | account、models、plugins、general、agent-preset |
-| `tool.call.toolview` | list | **工具调用的自定义渲染器** | tool、skill、cordis、deliverables |
-| `conversation.chat.node` | list | 聊天流里的自定义节点 | chat、goal、tool、user-questions、workflow-run |
-| `conversation.chat.turnTail` | list | 每个 turn 末尾追加内容 | deliverables、plan、schedule |
-| `shell.overlay` | list | 全局浮层 | 7 个插件在用 |
+| `main` | keyed | **Full-page main-area pages** | conversation, plugin-manager, schedule |
+| `sidebar.panellist` | list | Left-rail entry icons for main-area pages | plugin-manager, schedule |
+| `sidebar.right.pane.tab` + `.title` | list | New right-sidebar tabs | files, terminal, browser, preview, deliverables, plan, schedule, subagent |
+| `settings.section` | list | Standalone settings pages | account, models, plugins, general, agent-preset |
+| `tool.call.toolview` | list | **Custom renderers for tool calls** | tool, skill, cordis, deliverables |
+| `conversation.chat.node` | list | Custom nodes inside the chat stream | chat, goal, tool, user-questions, workflow-run |
+| `conversation.chat.turnTail` | list | Content appended at the end of every turn | deliverables, plan, schedule |
+| `shell.overlay` | list | Global overlays | 7 plugins in use |
 
-**注册一个整页页面的真实写法**（照 `dsh-client-ui-schedule` 的实际代码）：
+**The real way to register a full-page panel** (mirroring `dsh-client-ui-schedule`'s actual code):
 
 ```js
 ctx.slots.inject('main', () => ctx.slots.register(
@@ -102,131 +102,131 @@ ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(
 ))
 ```
 
-### 数据面（已核实）
+### Data plane (verified)
 
-- **客户端 cordis 服务**：`connection`、`remote`（`@deepseek-ai/dsh-api-gateway` 提供）、`sessions`、`locale`、`theme`、`layout`、`resources`、`modules`、`sidebarRightTabs`、`documentPreviews`、`uiRenderer`、`slots`、`conversation`、`uiConversation`、`shortcuts`…
-- **Host 侧 API**：`api-session-controller`、`api-job-controller`、`api-terminal-controller`、`api-workspace-files`、`api-settings-controller`、`api-account-controller` —— 经 typert 由 `remote` 暴露给浏览器。
-- **关键能力**：`remote` 带 `RemoteEvents` 与 `remote-stream`，即 **Host→Client 推送流**。实时总览靠它，不用轮询。
-- **拿不到的数据**：Host 没暴露的聚合量（例如跨会话 token 汇总），在**我们自己的 Host 半侧**加服务算——这部分完全可控。
+- **Client cordis services**: `connection`, `remote` (provided by `@deepseek-ai/dsh-api-gateway`), `sessions`, `locale`, `theme`, `layout`, `resources`, `modules`, `sidebarRightTabs`, `documentPreviews`, `uiRenderer`, `slots`, `conversation`, `uiConversation`, `shortcuts`…
+- **Host-side APIs**: `api-session-controller`, `api-job-controller`, `api-terminal-controller`, `api-workspace-files`, `api-settings-controller`, `api-account-controller` — exposed to the browser via typert through `remote`.
+- **Key capability**: `remote` ships `RemoteEvents` and `remote-stream`, i.e. a **Host→Client push stream**. The real-time overview relies on it, no polling.
+- **Data you cannot get**: aggregates the Host does not expose (e.g. cross-session token totals) — compute them by adding services in **our own Host half** — fully within our control.
 
 ---
 
-## 二、为什么是 vobs，而不是用 React 再写一遍
+## 2. Why vobs, and not rewriting it in React
 
-不是"因为 vobs 是我写的"，而是**目标 UI 的负载特征刚好是 vobs 的强项**：
+Not "because I wrote vobs", but because **the target UI's load profile happens to be vobs's strength**:
 
-| 目标场景 | React 的代价 | vobs 的做法 |
+| Target scenario | React's cost | vobs's approach |
 | --- | --- | --- |
-| 每秒几十~几百条的事件流 | 每次 setState 触发组件树 diff | 每条事件是一个 signal 写入，只有绑定的那个文本节点/新增行被改 |
-| 几千行日志的追加 | 长列表 reconciliation | `insertList` keyed 复用，只插入新增行 |
-| 表格排序/筛选 | 整表重渲染 | keyed 行重排 + 单元格独立 binding |
-| 面板自身 | 组件体每次更新重跑 | **组件体只跑一次**，更新全部在 effect 里 |
+| Event stream of dozens~hundreds per second | Every setState diffs the component tree | Each event is one signal write; only the bound text node / new row changes |
+| Appending thousands of log lines | Long-list reconciliation | `insertList` keyed reuse, inserting only new rows |
+| Table sorting/filtering | Whole-table re-render | Keyed row reordering + independent cell bindings |
+| The panel itself | Component body re-runs on every update | **Component body runs once**; updates all happen in effects |
 
-反过来说也要诚实：vobs 在 DSH 里**没有生态优势**——不能用 DSH 的 React 组件、不能复用官方样式。所以这套 UI 的价值必须靠"DSH 现在没有、且更新频繁"来立住，而不是靠"用 vobs 写的"。
-
----
-
-## 三、旗舰：Vobs Console（主区域整页）
-
-### 定位
-
-DSH 现在是**单会话为中心**的：主区域是对话，右侧是当前会话的文件/终端/预览。**跨会话、跨 turn 的运行态**是散的——谁在跑、跑了多久、烧了多少 token、哪个工具在失败，得一个个会话点开看。
-
-Vobs Console 补的就是这块：一个占满主区域的**多会话实时驾驶舱**。
-
-### 页面结构（图 1、图 2）
-
-顶部 4 张 KPI + 时间范围切换；四个 tab：
-
-1. **总览** — 活跃会话 / 运行中 turn / 等待审批 / 失败；吞吐与延迟面积图；工具 Top5；最近事件；会话运行态（每会话 token/耗时进度）
-2. **事件流** — 所有 session 的 `turn/start`、`turn/end`、`tool/*`、`approval/*` 按时间倒序，可暂停 / 过滤 / 搜索。**这是 vobs 的主场**：环形缓冲 + keyed 行，每秒几百条不掉帧
-3. **工具分析** — `@vobs/table` 表格：工具 / 调用次数 / 成功率 / P50 / P95 / 总耗时 / 趋势 sparkline，可排序筛选；下方失败明细
-4. **产物** — 本工作区交付物时间线，带缩略图与"在右侧栏打开"
-
-### 为什么它值得做
-
-- 多 Agent / 子代理一多，DSH 的侧边栏就不够看了；这块信息密度必须靠一整页
-- 失败与审批是**最需要被看见**的两件事，现在埋在单个会话里
-- 数据全是 Host 已有的（session 事件、tool 调用、token），不需要新埋点
+To be equally honest in the other direction: vobs has **no ecosystem advantage** inside DSH — you cannot use DSH's React components or reuse official styles. So this UI's value must stand on "DSH doesn't have it, and it updates frequently", not on "written in vobs".
 
 ---
 
-## 四、第二落点：聊天的工具调用渲染器（图 3）
+## 3. Flagship: Vobs Console (full-page main area)
 
-注册 `tool.call.toolview`，给最常用的几个工具做**结构化渲染**，替换掉现在的通用文本块：
+### Positioning
 
-| 工具 | 现在 | 做成 |
+DSH today is **single-session-centric**: the main area is the conversation, the right side is the current session's files/terminal/preview. **Cross-session, cross-turn runtime state** is scattered — who is running, for how long, how many tokens burned, which tool is failing; you have to open sessions one by one.
+
+Vobs Console fills that gap: a **multi-session real-time cockpit** filling the main area.
+
+### Page structure (figures 1 and 2)
+
+4 KPI cards on top + time-range switcher; four tabs:
+
+1. **Overview** — active sessions / running turns / pending approvals / failures; throughput and latency area charts; tools Top 5; recent events; per-session runtime state (token/duration progress per session)
+2. **Event stream** — all sessions' `turn/start`, `turn/end`, `tool/*`, `approval/*` in reverse chronological order, pausable / filterable / searchable. **This is vobs's home turf**: ring buffer + keyed rows, hundreds of events per second without dropped frames
+3. **Tool analytics** — `@vobs/table` grid: tool / call count / success rate / P50 / P95 / total duration / trend sparkline, sortable and filterable; failure details below
+4. **Artifacts** — this workspace's deliverables timeline, with thumbnails and "open in right sidebar"
+
+### Why it is worth building
+
+- With many agents / subagents, DSH's sidebar stops scaling; this information density needs a full page
+- Failures and approvals are the **two things most needing to be seen**, currently buried inside individual sessions
+- The data all already exists on the Host (session events, tool calls, tokens) — no new instrumentation needed
+
+---
+
+## 4. Second landing point: the chat tool-call renderer (figure 3)
+
+Register `tool.call.toolview` and give the most common tools **structured rendering**, replacing today's generic text block:
+
+| Tool | Today | Becomes |
 | --- | --- | --- |
-| `pwsh` / `bash` | 纯文本 | 终端卡片：命令、流式 stdout、退出码、耗时、可折叠 |
-| `edit` / `write` | 纯文本 | 真正的 diff 视图（+N −M，行内高亮） |
-| `grep` / `glob` | 纯文本 | 结果树：文件 → 行号 → 命中高亮，可折叠 |
-| `web_search` / `web_fetch` | 纯文本 | 来源卡片：favicon、标题、URL、摘要 |
-| `subagent` / `workflow` | 纯文本 | 嵌套进度树，可展开看子代理轨迹 |
+| `pwsh` / `bash` | Plain text | Terminal card: command, streaming stdout, exit code, duration, collapsible |
+| `edit` / `write` | Plain text | A real diff view (+N −M, inline highlighting) |
+| `grep` / `glob` | Plain text | Result tree: file → line number → hit highlighting, collapsible |
+| `web_search` / `web_fetch` | Plain text | Source cards: favicon, title, URL, snippet |
+| `subagent` / `workflow` | Plain text | Nested progress tree, expandable to see subagent traces |
 
-**这是性价比最高的一块**：改动小、天天看得见，而且流式输出正是 vobs 最擅长的负载。
-
----
-
-## 五、第三、第四落点
-
-**右侧栏「运行态」tab**（`sidebar.right.pane.tab` + `.title`）
-当前 turn 的时间轴（工具调用序列 + 耗时）+ 实时日志尾巴。随手可看，不用切主区域。
-
-**设置页**（`settings.section`）
-面板开关、事件流缓冲上限、降采样阈值、配色跟随/自定义。
+**This is the highest value-per-effort piece**: small to change, seen every day, and streaming output is exactly vobs's strongest load.
 
 ---
 
-## 六、工程要点（决定成败的部分）
+## 5. Third and fourth landing points
 
-1. **事件风暴的内存**：事件流必须环形缓冲（建议默认 5000 条）+ 溢出降采样；暂停时停止入队而不是继续堆积。
-2. **数据一致性**：客户端聚合的统计量（token、耗时）以 Host 为准，客户端只做展示与派生；有歧义就在 Host 半侧算。
-3. **性能预算（可验收）**：
-   - 5000 行事件流滚动保持 60fps
-   - 每秒 200 条事件注入，单帧主线程占用 < 4ms
-   - 表格排序 1000 行 < 16ms
-   - 验收方式：在 `verify-client.mjs` 同款 jsdom/性能脚本里跑，和 React 基线对比 DOM 操作次数
-4. **契约漂移**：slot 名与 remote API 是 DSH 内部契约。把当前用到的 slot / 服务名写进校验脚本做**契约断言**，DSH 升级后一跑就知道哪里断了。
-5. **样式隔离**：每个 vobs 面板挂在自己的 shadow root 里，样式双向隔离；配色读 DSH 的 `--dsw-*` token（`body[data-ds-dark-theme]`），不另造一套设计语言。
-6. **React 宿主**：每个 slot 需要一个极薄的 React 组件占位（`<div ref>` + `useEffect`），vobs 挂到这个元素的 shadow root 里。这是唯一必须碰 React 的地方。
+**Right sidebar "Runtime" tab** (`sidebar.right.pane.tab` + `.title`)
+A timeline of the current turn (tool call sequence + durations) + a live log tail. Glanceable in passing, no need to leave the main area.
+
+**Settings page** (`settings.section`)
+Panel on/off, event stream buffer cap, downsampling threshold, color scheme follow/custom.
 
 ---
 
-## 七、分期
+## 6. Engineering essentials (the parts that decide success or failure)
 
-| 期 | 内容 | 工作量 | 验收 |
+1. **Memory under event storms**: the event stream must use a ring buffer (suggest 5000 default) + overflow downsampling; pausing stops enqueueing rather than piling up.
+2. **Data consistency**: client-aggregated statistics (tokens, duration) defer to the Host; the client only displays and derives; when in doubt, compute in the Host half.
+3. **Performance budget (acceptance-testable)**:
+   - 5000-row event stream scrolls at 60fps
+   - 200 events injected per second, per-frame main-thread cost < 4ms
+   - Table sort of 1000 rows < 16ms
+   - Acceptance method: run in the same jsdom/perf script style as `verify-client.mjs`, comparing DOM operation counts against a React baseline
+4. **Contract drift**: slot names and the remote API are DSH internal contracts. Write the currently used slots / service names into the verify script as **contract assertions**, so a DSH upgrade shows immediately what broke.
+5. **Style isolation**: every vobs panel mounts in its own shadow root, styles isolated both ways; colors read DSH's `--dsw-*` tokens (`body[data-ds-dark-theme]`), no separate design language.
+6. **React host**: every slot needs an extremely thin React component placeholder (`<div ref>` + `useEffect`); vobs mounts into that element's shadow root. This is the only place React must be touched.
+
+---
+
+## 7. Phasing
+
+| Phase | Content | Effort | Acceptance |
 | --- | --- | --- | --- |
-| **P0** | 右侧栏「运行态」tab：接 `connection` 事件流 + 环形缓冲 + 时间轴 | 0.5–1 天 | 真实 DSH 里能看见当前会话的实时工具时间轴 |
-| **P1** | Console 骨架 + **总览** tab（KPI / 图表 / 会话运行态） | 2–3 天 | 主区域出现整页 Console，数据与 DSH 侧边栏一致 |
-| **P2** | **事件流** tab + **工具分析** tab（`@vobs/table`） | 2–3 天 | 5000 行滚动不掉帧；排序筛选正确 |
-| **P3** | `tool.call.toolview`：pwsh / grep / web_search 三个渲染器 | 2–3 天 | 聊天里工具卡片按类型结构化渲染 |
-| **P4** | 设置页 + i18n + 性能压测报告 | 1–2 天 | 性能预算全部达标 |
+| **P0** | Right sidebar "Runtime" tab: wire the `connection` event stream + ring buffer + timeline | 0.5–1 day | The current session's live tool timeline visible in a real DSH |
+| **P1** | Console skeleton + **Overview** tab (KPIs / charts / session runtime state) | 2–3 days | A full-page Console appears in the main area, data consistent with DSH's sidebar |
+| **P2** | **Event stream** tab + **Tool analytics** tab (`@vobs/table`) | 2–3 days | 5000 rows scroll without dropped frames; sorting and filtering correct |
+| **P3** | `tool.call.toolview`: pwsh / grep / web_search renderers | 2–3 days | Tool cards in chat render structurally by type |
+| **P4** | Settings page + i18n + performance stress report | 1–2 days | All performance budgets met |
 
-建议 **P0 先做**：它是最小闭环，能最快验证"事件流 + 真实数据"这条路走得通，也是后面所有东西的地基。
-
----
-
-## 八、风险与不做的事
-
-**风险**
-
-- DSH 升级导致 slot / remote API 变化（用契约断言尽早发现）
-- 视觉一致性是长期负担：自建组件库要跟着 DSH 的设计语言走
-- 事件流在高并发下可能成为主线程瓶颈（先压测再谈功能扩展）
-- 面板与官方 UI 并存时的层级/焦点冲突（shadow root + 只走官方 slot 可以规避大部分）
-
-**不做**
-
-- 不替换官方外壳、不修改 DSH 自身文件
-- 不重复 files / terminal / browser / preview 这些官方已有的面板
-- 不做"好看但没人看"的仪表盘——每个数字都要能对应一个行动
+Suggested **P0 first**: it is the minimal loop, the fastest way to validate that "event stream + real data" works, and the foundation for everything after.
 
 ---
 
-## 九、预览图说明
+## 8. Risks and non-goals
 
-`preview/*.png` 是用 **DSH 真实 design token**（从已安装的 `@deepseek-ai/dsh-client-ui-theme` 提取的 `--dsw-*` 变量、字体栈、圆角）在 1440×900 下渲染的**静态示意图**：
+**Risks**
 
-- 外壳结构（左图标轨 / 会话侧栏 / 主区域 / 右侧栏）对应 layout 实际声明的 slot
-- 面板内容是按本方案手绘的，**不是**真实运行截图
-- 可编辑的 HTML 源在 `.artifacts/dsh-ui/mockups/`（本地脚手架，未入库；其中引用了 DSH 自身的样式表，不随本包分发）
+- DSH upgrades changing slots / remote APIs (catch early with contract assertions)
+- Visual consistency is a long-term burden: the self-built component library must follow DSH's design language
+- The event stream may become a main-thread bottleneck under high concurrency (stress-test before feature growth)
+- Z-order/focus conflicts when panels coexist with official UI (shadow root + only official slots avoids most of it)
+
+**Non-goals**
+
+- Do not replace the official shell, do not modify DSH's own files
+- Do not duplicate official panels that already exist: files / terminal / browser / preview
+- Do not build dashboards that "look nice but nobody reads" — every number must map to an action
+
+---
+
+## 9. About the preview images
+
+`preview/*.png` are **static mockups** rendered at 1440×900 with **real DSH design tokens** (`--dsw-*` variables, font stacks, radii extracted from the installed `@deepseek-ai/dsh-client-ui-theme`):
+
+- The shell structure (left icon rail / session sidebar / main area / right sidebar) corresponds to the slots layout actually declares
+- The panel content is hand-drawn per this plan, **not** real screenshots
+- The editable HTML sources live in `.artifacts/dsh-ui/mockups/` (local scaffolding, not committed; they reference DSH's own stylesheets and are not distributed with this package)

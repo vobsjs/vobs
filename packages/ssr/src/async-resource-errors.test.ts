@@ -4,12 +4,14 @@ import { createResourceClient } from '@vobs/resource'
 import { renderToStringAsync } from './render'
 
 /*
- * `prefetchAll()` 刻意不抛错（一个请求失败不该让整页 500），而 `dehydrate()` 又会剔除失败项 ——
- * 于是服务端会**安安静静地返回一份用残缺数据渲染的 HTML**。这里把"失败要能被服务端看见"钉住：
- * `renderToStringAsync` 的结果在非空时带上 `failedResources`（`ResourceClient.errors()` 的快照）。
+ * `prefetchAll()` deliberately does not throw (one failed request must not 500 the whole
+ * page), and `dehydrate()` strips out failed entries — so the server would **quietly return
+ * HTML rendered from incomplete data**. This pins down "failures must be visible to the
+ * server": when non-empty, the `renderToStringAsync` result carries `failedResources` (a
+ * snapshot of `ResourceClient.errors()`).
  */
-describe('异步 SSR 把失败的资源报出来', () => {
-  it('有失败资源时带上 failedResources（含 key 与 error）', async () => {
+describe('async SSR reports failed resources', () => {
+  it('carries failedResources when resources fail (with key and error)', async () => {
     const resources = createResourceClient()
     const broken = resources.resource({
       key: ['orders'],
@@ -32,7 +34,7 @@ describe('异步 SSR 把失败的资源报出来', () => {
     resources.clear()
   })
 
-  it('没有失败资源时不带该字段（不改变既有结果形状）', async () => {
+  it('omits the field when no resources fail (existing result shape unchanged)', async () => {
     const resources = createResourceClient()
     const healthy = resources.resource({ key: ['health'], fetcher: async () => 'fine' })
     const render = () => {

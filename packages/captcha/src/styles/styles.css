@@ -108,7 +108,7 @@
   justify-content: center;
 }
 
-/* 内置刷新图标（SliderCaptcha 默认 retryIcon）：mask data URI + currentColor 上色 */
+/* Built-in refresh icon (SliderCaptcha's default retryIcon): mask data URI tinted via currentColor */
 .vobs-captcha__retry-icon {
   display: block;
   width: 100%;

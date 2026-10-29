@@ -64,9 +64,9 @@ describe('kit role fallback and label reactivity', () => {
     const { host, cleanup } = await mount(KitFilterBar as never, props)
     expect(host.textContent).toContain('Search')
 
-    label.value = '查询'
+    label.value = 'Query'
     await settle()
-    expect(host.textContent).toContain('查询')
+    expect(host.textContent).toContain('Query')
     expect(host.textContent).not.toContain('Search')
     cleanup()
   })

@@ -4,22 +4,27 @@ import { createElement, insertBefore } from '@vobs/vobs'
 import { hydrate, renderToString, createSSRRenderer } from './index'
 
 /**
- * `setProperty(node, 'textContent' | 'innerText', text)` 是**文本通道**，不是属性通道。
+ * `setProperty(node, 'textContent' | 'innerText', text)` is a **text channel**, not an
+ * attribute channel.
  *
- * `propertyAttribute` 的声明式白名单只覆盖 value/tabIndex/className/布尔属性 —— 文本不在里面，
- * 所以它此前被**静默丢弃**（无警告、无占位符），客户端水合随即以 `extra-node` 失败：
- * 服务端产物 `<option value="a"></option>`，而客户端 `Reflect.set(option,'textContent',…)`
- * 造出一个未认领的文本节点。
+ * `propertyAttribute`'s declarative whitelist only covers value/tabIndex/className/boolean
+ * attributes — text was not among them, so it used to be **silently dropped** (no warning,
+ * no placeholder) and client hydration immediately failed with `extra-node`: the server
+ * output was `<option value="a"></option>` while the client
+ * `Reflect.set(option,'textContent',…)` created an unclaimed text node.
  *
- * 这不是假想用法：`packages/table/src/data-table.ts:472`
- * （`setProperty(option, 'textContent', String(optionValue))`）与
- * `packages/table/src/column-settings.ts:184` 都直接这么调，且不在 effect 里 —— SSR 下必然命中。
+ * This is not a hypothetical usage: `packages/table/src/data-table.ts:472`
+ * (`setProperty(option, 'textContent', String(optionValue))`) and
+ * `packages/table/src/column-settings.ts:184` both call it directly, outside any effect —
+ * SSR would inevitably hit it.
  *
- * 修法是把文本当**子节点**序列化（经 `serializeChildren`），从而继承转义与
- * 「相邻文本插 `<!---->` 分隔符」这两条既有保证；而不是把它当属性拼进标签。
+ * The fix serializes the text as a **child node** (through `serializeChildren`), inheriting
+ * the two existing guarantees — escaping and the `<!---->` separator between adjacent
+ * texts — instead of concatenating it into the tag as an attribute.
  */
-describe('SSR 的 textContent 通道', () => {
-  // 与 packages/table 的真实用法同形：元素在 render 函数内创建，文本走 setProperty
+describe('the textContent channel in SSR', () => {
+  // Same shape as real usage in packages/table: elements created inside the render
+  // function, text via setProperty
   const optionTree = () => {
     const select = createElement('select')
     const option = createElement('option')
@@ -29,12 +34,12 @@ describe('SSR 的 textContent 通道', () => {
     return select
   }
 
-  it('服务端产物保留文本（不再静默丢失）', () => {
+  it('server output preserves the text (no longer silently lost)', () => {
     const html = renderToString(optionTree)
     expect(html).toBe('<select><option value="a">标签文字</option></select>')
   })
 
-  it('文本被转义，与 createText 走同一条通道', () => {
+  it('text is escaped, sharing the same channel as createText', () => {
     const html = renderToString(() => {
       const div = createElement('div')
       setProperty(div, 'textContent', 'a & <b>')
@@ -43,7 +48,7 @@ describe('SSR 的 textContent 通道', () => {
     expect(html).toBe('<div>a &amp; &lt;b&gt;</div>')
   })
 
-  it('空文本不产出子节点', () => {
+  it('empty text produces no child node', () => {
     const html = renderToString(() => {
       const div = createElement('div')
       setProperty(div, 'textContent', '')
@@ -52,7 +57,7 @@ describe('SSR 的 textContent 通道', () => {
     expect(html).toBe('<div></div>')
   })
 
-  it('innerText 与 textContent 等价', () => {
+  it('innerText is equivalent to textContent', () => {
     const html = renderToString(() => {
       const div = createElement('div')
       setProperty(div, 'innerText', '你好')
@@ -61,24 +66,24 @@ describe('SSR 的 textContent 通道', () => {
     expect(html).toBe('<div>你好</div>')
   })
 
-  it('textContent 不会变成 HTML 属性', () => {
+  it('textContent does not become an HTML attribute', () => {
     const html = renderToString(optionTree)
     expect(html).not.toContain('textcontent=')
     expect(html).not.toContain('textContent=')
   })
 
-  it('严格水合不再抛 extra-node（修复前的失败形态）', () => {
+  it('strict hydration no longer throws extra-node (the pre-fix failure shape)', () => {
     const html = renderToString(optionTree)
     document.body.innerHTML = html
-    // 修复前这里会抛 HydrationMismatchError [extra-node]：客户端
-    // Reflect.set(option,'textContent') 造出的文本节点不在服务端产物里。
+    // Before the fix this threw HydrationMismatchError [extra-node]: the text node created
+    // by client Reflect.set(option,'textContent') was absent from the server output.
     const app = hydrate(optionTree, document.body)
     expect(document.body.querySelector('option')?.textContent).toBe('标签文字')
     app.destroy()
     document.body.innerHTML = ''
   })
 
-  it('SSR 渲染器直接调用：文本进 children，不进属性', () => {
+  it('direct SSR renderer call: text goes into children, not attributes', () => {
     const ssr = createSSRRenderer()
     const div = ssr.renderer.createElement('div')
     ssr.renderer.setProperty(div, 'textContent', '纯文本')

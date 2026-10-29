@@ -21,7 +21,7 @@ afterEach(() => {
 })
 
 describe('@vobs/devtools', () => {
-  it('收集 Signal、Memo、Effect 依赖图并追踪更新', async () => {
+  it('collects the Signal/Memo/Effect dependency graph and tracks updates', async () => {
     active = createDevTools({ expose: false })
     const owner = createOwner()
     owner.onError(() => undefined)
@@ -66,7 +66,7 @@ describe('@vobs/devtools', () => {
     expect(active.getEffects()).toHaveLength(0)
   })
 
-  it('建立组件 Owner 树，并在销毁后移除节点', () => {
+  it('builds the component Owner tree and removes nodes after disposal', () => {
     active = createDevTools({ expose: false })
 
     function Counter(): ReturnType<typeof createText> {
@@ -86,7 +86,7 @@ describe('@vobs/devtools', () => {
     expect(active.getComponentTree()).toEqual([])
   })
 
-  it('为组件提供关联的 Signal、Effect、Update 和 DOM 摘要', async () => {
+  it('provides per-component Signal, Effect, Update, and DOM summaries', async () => {
     active = createDevTools({ expose: false })
     let count!: Signal<number>
     const app = createVobs({
@@ -114,7 +114,7 @@ describe('@vobs/devtools', () => {
     expect(active.getComponent(component!.id)).toBeNull()
   })
 
-  it('可暴露到指定宿主对象，并在 dispose 时恢复原值', () => {
+  it('exposes onto the given host object and restores the previous value on dispose', () => {
     const previous = { marker: true }
     const target: DevToolsTarget = { __VOBS_DEVTOOLS__: previous as never }
     active = createDevTools({ target })
@@ -125,10 +125,10 @@ describe('@vobs/devtools', () => {
     active = undefined
   })
 
-  it('默认 expose 跟随环境：非生产照挂，生产构建不挂（显式 expose: true 仍挂）', () => {
+  it('default expose follows the environment: attached outside production, skipped in production (explicit expose: true still attaches)', () => {
     const windowTarget = window as unknown as DevToolsTarget
 
-    // 非生产（vitest 里 NODE_ENV === 'test'）：默认照旧挂到默认宿主 window 上
+    // Non-production (NODE_ENV === 'test' under vitest): still attaches to the default host window by default
     active = createDevTools()
     expect(windowTarget.__VOBS_DEVTOOLS__).toBe(active)
     active.dispose()
@@ -137,7 +137,7 @@ describe('@vobs/devtools', () => {
     const previousNodeEnv = process.env.NODE_ENV
     process.env.NODE_ENV = 'production'
     try {
-      // 生产构建：默认不给任何宿主对象挂全局（默认 window 与显式 target 都一样）
+      // Production build: no global is attached to any host object by default (same for the default window and an explicit target)
       active = createDevTools()
       expect(windowTarget.__VOBS_DEVTOOLS__).toBeUndefined()
 
@@ -145,17 +145,17 @@ describe('@vobs/devtools', () => {
       active = createDevTools({ target: implicitTarget })
       expect(implicitTarget.__VOBS_DEVTOOLS__).toBeUndefined()
 
-      // 逃生舱：显式 expose: true 在生产里照挂
+      // Escape hatch: explicit expose: true still attaches in production
       const optedIn: DevToolsTarget = {}
       active = createDevTools({ target: optedIn, expose: true })
       expect(optedIn.__VOBS_DEVTOOLS__).toBe(active)
 
-      // 显式 expose: false 与生产默认一致
+      // Explicit expose: false matches the production default
       const optedOut: DevToolsTarget = {}
       active = createDevTools({ target: optedOut, expose: false })
       expect(optedOut.__VOBS_DEVTOOLS__).toBeUndefined()
 
-      // 生产里真正装配的入口是插件，它转发同一份 options，默认同样不挂
+      // The real production entry point is the plugin; it forwards the same options and likewise does not attach by default
       const pluginTarget: DevToolsTarget = {}
       const cleanup = devtoolsPlugin({ target: pluginTarget })
         .install?.({ onError: () => () => undefined } as unknown as VobsContext)
@@ -166,7 +166,7 @@ describe('@vobs/devtools', () => {
     }
   })
 
-  it('通过 postMessage 为浏览器面板提供查询和更新事件', () => {
+  it('serves queries and update events to a browser panel over postMessage', () => {
     active = createDevTools({ expose: false })
     const messages: unknown[] = []
     const listeners = new Set<(event: { data?: unknown }) => void>()
@@ -188,7 +188,7 @@ describe('@vobs/devtools', () => {
     disconnect()
   })
 
-  it('保留一次更新的旧值、新值、传播链和 Effect 最近结果', async () => {
+  it('keeps the previous/next values, propagation chain, and recent Effect results for one update', async () => {
     active = createDevTools({ expose: false })
     const owner = createOwner()
     let count!: Signal<number>
@@ -216,7 +216,7 @@ describe('@vobs/devtools', () => {
     })
   })
 
-  it('隔离 Effect 异常并保留错误结果', async () => {
+  it('isolates Effect errors and keeps the error result', async () => {
     active = createDevTools({ expose: false })
     const owner = createOwner()
     owner.onError(() => undefined)
@@ -236,7 +236,7 @@ describe('@vobs/devtools', () => {
     expect(active.getErrors()).toMatchObject([{ phase: 'effect', message: 'effect failed', count: 1 }])
   })
 
-  it('采集 ErrorBoundary 错误并保留 fallback 恢复状态', () => {
+  it('collects ErrorBoundary errors and keeps the fallback recovery state', () => {
     active = createDevTools({ expose: false })
     const app = createVobs({
       render: () => ErrorBoundary({
@@ -259,7 +259,7 @@ describe('@vobs/devtools', () => {
     app.destroy()
   })
 
-  it('错误详情保留组件源码位置，并记录被边界处理的事件错误', () => {
+  it('error details keep component source locations and record event errors handled by the boundary', () => {
     active = createDevTools({ expose: false })
     let button!: HTMLButtonElement
     const app = createVobs({
@@ -289,20 +289,20 @@ describe('@vobs/devtools', () => {
     app.destroy()
   })
 
-  it('为框架核心错误生成稳定代码和修复提示', () => {
+  it('assigns stable codes and fix hints to framework core errors', () => {
     active = createDevTools({ expose: false })
-    active.reportError('application', new Error('Vobs: 响应式更新超过 100 轮，可能存在循环依赖'))
+    active.reportError('application', new Error('Vobs: reactive updates exceeded 100 rounds; a circular dependency is likely')) // fixture matches the reactivity-loop message in reactivity/scheduler.ts
 
     expect(active.getErrors()[0]).toMatchObject({
       origin: 'framework',
       code: 'VOBS_REACTIVITY_LOOP',
-      hint: expect.stringContaining('持续写入')
+      hint: expect.stringContaining('keeps writing')
     })
   })
 
-  it('读取框架错误的标准 code 属性并标记使用错误', () => {
+  it('reads the standard code property of framework errors and flags usage errors', () => {
     active = createDevTools({ expose: false })
-    const failure = Object.assign(new Error('Vobs Widgets: 配置无效'), { code: 'INVALID_WIDGET_OPTIONS' })
+    const failure = Object.assign(new Error('Vobs Widgets: invalid options'), { code: 'INVALID_WIDGET_OPTIONS' })
     active.reportError('application', failure)
 
     expect(active.getErrors()[0]).toMatchObject({
@@ -311,7 +311,7 @@ describe('@vobs/devtools', () => {
     })
   })
 
-  it('通过 devtools 插件接收应用级错误', () => {
+  it('receives application-level errors through the devtools plugin', () => {
     let report!: (error: unknown) => void
     const context = {
       onError(handler: (error: unknown) => void) {
@@ -327,7 +327,7 @@ describe('@vobs/devtools', () => {
     cleanup?.()
   })
 
-  it('显式关闭插件时不创建采集器', () => {
+  it('does not create a collector when the plugin is explicitly disabled', () => {
     const context = {
       onError() { return () => undefined }
     } as unknown as VobsContext
@@ -336,7 +336,7 @@ describe('@vobs/devtools', () => {
     cleanup?.()
   })
 
-  it('采集 @vobs/http 请求并默认脱敏凭据', async () => {
+  it('collects @vobs/http requests and redacts credentials by default', async () => {
     active = createDevTools({ expose: false })
     const client = createHTTPClient({
       headers: { Authorization: 'Bearer secret', 'X-Trace': 'visible' },
@@ -358,7 +358,7 @@ describe('@vobs/devtools', () => {
     expect(active.getNetworkRequests()[0]?.headers).not.toHaveProperty('authorization')
   })
 
-  it('支持暂停采集和清空诊断记录，不改变业务 Signal', async () => {
+  it('supports pausing collection and clearing diagnostics without touching business Signals', async () => {
     active = createDevTools({ expose: false })
     const count = state(0, 'count')
     active.setCollectionPaused(true)
@@ -380,7 +380,7 @@ describe('@vobs/devtools', () => {
     expect(active.getLifecycleEvents()).toHaveLength(0)
   })
 
-  it('在销毁后丢弃已排队的刷新，并拒绝新的订阅', async () => {
+  it('drops queued flushes after disposal and rejects new subscriptions', async () => {
     active = createDevTools({ expose: false })
     const count = state(0, 'dispose-check')
     count.value = 1
@@ -392,7 +392,7 @@ describe('@vobs/devtools', () => {
     expect(getDevTools()).toBeNull()
   })
 
-  it('为更新、请求、错误和生命周期记录统一执行保留上限', async () => {
+  it('enforces a unified retention cap for updates, requests, errors, and lifecycle records', async () => {
     active = createDevTools({ expose: false, maxUpdates: 2 })
     const count = state(0, 'bounded')
     count.value = 1
@@ -420,7 +420,7 @@ describe('@vobs/devtools', () => {
     expect(active.getLifecycleEvents()).toHaveLength(2)
   })
 
-  it('回收销毁 Owner、Signal、Effect 索引和依赖边', () => {
+  it('reclaims disposed Owner/Signal/Effect indexes and dependency edges', () => {
     active = createDevTools({ expose: false })
     for (let index = 0; index < 20; index++) {
       const owner = createOwner()
@@ -442,7 +442,7 @@ describe('@vobs/devtools', () => {
     expect(active.getComponentTree()).toEqual([])
   })
 
-  it('保持并发 HTTP 请求的独立关联和完成状态', async () => {
+  it('keeps concurrent HTTP requests independently correlated with their completion state', async () => {
     active = createDevTools({ expose: false })
     let resolveFirst!: (response: Response) => void
     let resolveSecond!: (response: Response) => void
@@ -470,7 +470,7 @@ describe('@vobs/devtools', () => {
     ])
   })
 
-  it('记录 HTTP 取消和重试的最终状态与尝试次数', async () => {
+  it('records the final state and attempt counts for HTTP cancellations and retries', async () => {
     active = createDevTools({ expose: false })
     const controller = new AbortController()
     const client = createHTTPClient({
@@ -499,7 +499,7 @@ describe('@vobs/devtools', () => {
     }))
   })
 
-  it('将 Effect 发起的 HTTP 请求关联到同一次 Update', async () => {
+  it('correlates Effect-initiated HTTP requests with the same Update', async () => {
     active = createDevTools({ expose: false })
     const client = createHTTPClient({
       adapter: async () => new Response('{}', { status: 200 })
@@ -528,7 +528,7 @@ describe('@vobs/devtools', () => {
     owner.dispose()
   })
 
-  it('关联慢 Loader 的 loading、完成耗时和内部 HTTP 请求', async () => {
+  it("correlates a slow Loader's loading state, completion duration, and inner HTTP request", async () => {
     active = createDevTools({ expose: false })
     const client = createHTTPClient({
       adapter: async () => new Response(JSON.stringify({ ok: true }), {
@@ -575,7 +575,7 @@ describe('@vobs/devtools', () => {
     router.destroy()
   })
 
-  it('忽略没有实际 DOM 变化的 viewport 尺寸更新', async () => {
+  it('ignores viewport size updates without meaningful DOM changes', async () => {
     active = createDevTools({ expose: false })
     const width = state(1200, 'layout.viewport.width')
     const height = state(800, 'layout.viewport.height')
@@ -608,7 +608,7 @@ describe('@vobs/devtools', () => {
     app.destroy()
   })
 
-  it('记录 Runtime DOM 修改并关联到 Update 和 Effect', async () => {
+  it('records Runtime DOM mutations and correlates them with Updates and Effects', async () => {
     active = createDevTools({ expose: false })
     let count!: Signal<string>
     const app = createVobs({
@@ -638,7 +638,7 @@ describe('@vobs/devtools', () => {
     app.destroy()
   })
 
-  it('支持可配置脱敏、性能条目、诊断导出和扩展注册', async () => {
+  it('supports configurable redaction, performance entries, diagnostic export, and extension registration', async () => {
     active = createDevTools({
       expose: false,
       privacy: { redactedHeaders: ['x-private'], redactedFields: ['password'] }
@@ -689,7 +689,7 @@ describe('@vobs/devtools', () => {
     expect(active.getExtensionSnapshot()).toEqual({ inspectors: [], timelines: [], timelineEvents: {}, metrics: {} })
   })
 
-  it('默认禁止修改 Signal，显式开启后支持受控调试编辑', async () => {
+  it('disallows Signal mutation by default and supports controlled debug editing when explicitly enabled', async () => {
     active = createDevTools({ expose: false })
     const count = state(0, 'count')
     const signal = active.getSignals().find(item => item.name === 'count')!
@@ -707,7 +707,7 @@ describe('@vobs/devtools', () => {
     expect(editable.value).toBe(2)
   })
 
-  it('关联 Router 导航和 loader 请求，并保留统一上下文', async () => {
+  it('correlates Router navigations and loader requests while keeping unified context', async () => {
     active = createDevTools({ expose: false })
     const router = createRouter({
       history: createMemoryHistory('/'),
@@ -724,7 +724,7 @@ describe('@vobs/devtools', () => {
     router.destroy()
   })
 
-  it('将 Hydration mismatch 收集为结构化错误', () => {
+  it('collects hydration mismatches as structured errors', () => {
     active = createDevTools({ expose: false })
     document.body.innerHTML = '<h1>server</h1>'
     expect(() => hydrate(() => createElement('p'), document.body)).toThrow('hydration')

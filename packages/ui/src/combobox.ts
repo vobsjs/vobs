@@ -1,6 +1,8 @@
-// 可搜索下拉（Combobox）：输入过滤 + 键盘导航 + 选项列表，供选项较多的场景（系统字体等）。
-// 纯命令式 DOM 实现（与 forms.ts 同风格）：内部状态走 @vobs/reactivity 信号，
-// 组件随 Owner 销毁自动清理全局监听；受控 value / 双向 bind / onChange 三种接法。
+// Searchable dropdown (Combobox): input filtering + keyboard navigation + option list, for
+// scenarios with many options (system fonts, etc.).
+// Purely imperative DOM implementation (same style as forms.ts): internal state uses
+// @vobs/reactivity signals, global listeners are cleaned up automatically when the Owner is
+// destroyed; three wiring styles: controlled value / two-way bind / onChange.
 import { effect, state, untrack, type Signal } from '@vobs/reactivity'
 import {
   createElement,
@@ -18,38 +20,43 @@ import {
 } from './utils'
 import type { VuiCommonProps } from './types'
 
-/** 单个选项：label 缺省时显示 value */
+/** A single option: falls back to showing value when label is absent */
 export interface ComboboxOption {
   readonly value: string
   readonly label?: string
 }
 
 export interface ComboboxProps extends VuiCommonProps {
-  /** 选项列表（编译用法支持 getter 响应式更新） */
+  /** Option list (compiled usage supports getter-based reactive updates) */
   readonly options?: readonly ComboboxOption[]
-  /** 受控当前值（与 bind 二选一；bind 优先） */
+  /** Controlled current value (mutually exclusive with bind; bind wins) */
   readonly value?: string
-  /** 双向绑定信号：选中写回、外部变更同步显示 */
+  /** Two-way binding signal: selection writes back, external changes sync the display */
   readonly bind?: Signal<string>
   readonly placeholder?: string
-  /** 无匹配项时的提示文案 */
+  /** Message shown when nothing matches */
   readonly emptyText?: string
   readonly toggleLabel?: string
   readonly disabled?: boolean
-  /** 选中回调（入参为选项 value） */
+  /** Selection callback (receives the option value) */
   readonly onChange?: (value: string) => void
-  /** 面板展开方向：down 固定向下（默认，兼容旧行为）；up 固定向上；
-   *  auto = 每次打开时测量触发器下方视口剩余空间，不足容纳面板且上方充足则向上展开 */
+  /** Panel open direction: down always opens downward (default, kept for back-compat);
+   *  up always opens upward;
+   *  auto = on each open, measure the viewport space below the trigger and flip up when it
+   *  cannot fit the panel and there is enough room above */
   readonly direction?: 'down' | 'up' | 'auto'
-  /** 面板水平对齐：start = 左对齐且与触发器同宽（默认）；end = 右缘对齐触发器右缘，
-   *  宽度随内容（max-content）向左伸展，长选项不被截断；超宽场景可另行覆盖 max-width */
+  /** Panel horizontal alignment: start = left-aligned and as wide as the trigger (default);
+   *  end = right edge aligned with the trigger's right edge, width follows content
+   *  (max-content) stretching leftward so long options are not truncated; override max-width
+   *  separately for ultra-wide cases */
   readonly align?: 'start' | 'end'
 }
 
 export function Combobox(props: ComboboxProps = {}): VobsNode {
   const root = createElement('div')
-  // auto 方向的测量结果走信号：类名统一由 bindClassList 管理（整体覆盖 className），
-  // 手动 classList.toggle 的类会在其 effect 重跑时被抹掉
+  // The auto-direction measurement result lives in a signal: class names are managed uniformly
+  // by bindClassList (which overwrites className wholesale), so classes toggled manually via
+  // classList.toggle would get wiped when its effect re-runs
   const flipUp = state(false, 'flipUp')
   bindClassList(root, props, () => {
     const direction = readProp<'down' | 'up' | 'auto'>(props, 'direction', 'down')
@@ -74,8 +81,9 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
   setAttribute(toggle, 'class', 'vui-combobox__toggle')
   toggle.type = 'button'
   toggle.setAttribute('tabindex', '-1')
-  // 原来写死字面量 'toggle' —— 连英文语义都不成立（它是个"展开选项"的按钮），也没法翻译。
-  // 按 dialog/drawer 的 closeLabel 惯例给一个可传入的标签；默认值改成真正描述动作的文案。
+  // This used to hard-code the literal 'toggle' — which wasn't even meaningful English (it's a
+  // "show options" button) and couldn't be translated. Following the closeLabel convention from
+  // dialog/drawer, accept a passable label; the default now actually describes the action.
   setAttribute(toggle, 'aria-label', readProp(props, 'toggleLabel', 'Show options'))
   toggle.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>'
 
@@ -88,7 +96,7 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
   insertBefore(root, input, null)
   insertBefore(root, toggle, null)
 
-  /* ---------- 内部状态 ---------- */
+  /* ---------- Internal state ---------- */
   const open = state(false, 'open')
   const query = state('', 'query')
   const active = state(0, 'active')
@@ -106,7 +114,7 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
 
   const openPanel = (): void => {
     if (disabled()) return
-    // 打开时清空过滤词（全量列出），光标在输入框
+    // Clear the filter on open (list everything), cursor in the input
     query.set('')
     active.set(0)
     open.set(true)
@@ -129,7 +137,7 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
       option.value.toLowerCase().includes(keyword) || (option.label ?? '').toLowerCase().includes(keyword))
   }
 
-  /* ---------- 输入框显示：关闭态显示选中项 label，展开态显示过滤词 ---------- */
+  /* ---------- Input display: closed state shows the selected option's label, open state shows the filter ---------- */
   effect(() => {
     if (open.value) {
       input.value = query.value
@@ -143,11 +151,14 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
   })
 
   /*
-   * 面板里的选项节点。高亮只切这些节点的 class，不再重建它们。
+   * Option nodes inside the panel. Highlighting only toggles classes on these nodes; they are
+   * never rebuilt.
    *
-   * 原来整个面板 effect 依赖 `active`（下面两处读了它）—— 于是鼠标在选项上滑过
-   * （mousemove 会改 active）就把全部选项重建一遍：50 项列表上 10 次 mousemove 实测**重建 9 次**。
-   * 现在 active 用 untrack 读（不进依赖），高亮交给下面那个只切 class 的 effect。
+   * Previously the whole panel effect depended on `active` (read in two places below) — so
+   * gliding the mouse across options (mousemove changes active) rebuilt every option: on a
+   * 50-item list, 10 mousemoves were measured to trigger **9 rebuilds**.
+   * Now active is read with untrack (kept out of the dependency graph), and highlighting is
+   * delegated to the class-only effect below.
    */
   const optionNodes: HTMLButtonElement[] = []
   const applyActiveClass = (index: number): void => {
@@ -159,7 +170,7 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
     }
   }
 
-  /* ---------- 面板渲染：open/query/options 变化时重建选项（无选项级 effect，重建即清理） ---------- */
+  /* ---------- Panel rendering: rebuild options when open/query/options change (no per-option effect; rebuild cleans up) ---------- */
   effect(() => {
     if (!open.value) {
       panel.remove()
@@ -168,10 +179,12 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
     if (panel.parentElement !== root) insertBefore(root, panel, null)
     const matches = filtered()
     /*
-     * 读在 untrack 之外：本次对 active 的订阅由下面第 164 行的 `active.value` 一并保持
-     * （它决定哪一项高亮，且必须在 clamp 之后读，所以 clamp 当场生效）。
-     * 写包进 untrack：否则这次写入会把自己重新调度一轮 —— clamp 幂等所以不会循环，
-     * 但那一轮纯属白跑，而且会被护栏报成 VOBS_C210。
+     * Read outside untrack: this run's subscription to active is kept alive by the `active.value`
+     * read at line 164 below (it decides which item is highlighted and must be read after the
+     * clamp, so the clamp takes effect immediately).
+     * The write is wrapped in untrack: otherwise this write would reschedule its own effect run —
+     * the clamp is idempotent so it wouldn't loop,
+     * but that round would be pure waste, and the guardrail would report it as VOBS_C210.
      */
     const activeIndex = untrack(() => active.value)
     const clamped = Math.min(activeIndex, Math.max(0, matches.length - 1))
@@ -200,8 +213,10 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
         optionNodes.push(item)
       })
     }
-    // auto 方向：面板渲染后测量（强制 layout 拿实际面板高），下方空间不足且上方充足则向上展开；
-    // 每次打开重测（窗口位置/滚动可能变化）；非 auto 复位（up/down 由类绑定直出）
+    // auto direction: measure after the panel renders (forced layout to get the real panel
+    // height); flip up when space below is insufficient and there is room above;
+    // re-measure on every open (window position/scroll may change); non-auto resets
+    // (up/down come straight from the class binding)
     applyActiveClass(clamped)
     if (readProp<'down' | 'up' | 'auto'>(props, 'direction', 'down') === 'auto') {
       const rootRect = root.getBoundingClientRect()
@@ -214,11 +229,12 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
   })
 
   /*
-   * 高亮：只切 class，不动 DOM 结构、不测布局。hover 换一项从这里走。
+   * Highlighting: class toggling only — no DOM structural changes, no layout measurement.
+   * Hovering to another option goes through here.
    */
   effect(() => { applyActiveClass(active.value) })
 
-  /* ---------- 键盘导航 ---------- */
+  /* ---------- Keyboard navigation ---------- */
   input.addEventListener('keydown', (event: KeyboardEvent) => {
     if (event.key === 'Escape') {
       open.set(false)
@@ -246,7 +262,7 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
     }
   })
 
-  /* ---------- 交互：聚焦/输入即展开，切换按钮开合，外部点击关闭 ---------- */
+  /* ---------- Interaction: focus/input opens, toggle button switches, outside click closes ---------- */
   input.addEventListener('focus', () => { if (!open.value) openPanel() })
   input.addEventListener('input', (event: Event) => {
     query.set((event.target as HTMLInputElement).value)
@@ -254,7 +270,8 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
     if (!open.value) open.set(true)
   })
   listen(toggle, 'click', { onClick: () => { if (open.value) open.set(false); else openPanel() } }, 'onClick')
-  // 外部点击关闭：effect 内注册（读取 open → 仅展开期监听），effect 重跑/销毁时自动移除
+  // Close on outside click: registered inside an effect (reads open → listens only while open),
+  // removed automatically when the effect re-runs or on destroy
   effect(() => {
     if (!open.value) return
     const closeOnOutside = (event: Event): void => {
@@ -264,7 +281,7 @@ export function Combobox(props: ComboboxProps = {}): VobsNode {
     return () => document.removeEventListener('click', closeOnOutside)
   })
 
-  /* ---------- 公共属性 ---------- */
+  /* ---------- Common properties ---------- */
   effect(() => setOptionalProperty(input, 'disabled', disabled()))
   if (hasProp(props, 'placeholder')) {
     effect(() => {

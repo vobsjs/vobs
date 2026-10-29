@@ -43,7 +43,7 @@ describe('KitDataTable row reuse', () => {
     return { rows, host, bodyRows, cleanup: () => { app.destroy(); host.remove() } }
   }
 
-  it('reuses row nodes when only one row's content changes, instead of rebuilding the whole table', async () => {
+  it("reuses row nodes when only one row's content changes, instead of rebuilding the whole table", async () => {
     const { rows, bodyRows, cleanup } = await mountTable([
       { id: 1, name: 'Ada', role: 'Admin' },
       { id: 2, name: 'Lin', role: 'Viewer' },

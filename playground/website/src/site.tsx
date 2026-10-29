@@ -1,36 +1,37 @@
-// 官网 demo 共享模块：页面组件 + 路由表 + 每页 head 配置。
-// entry-server（构建时预渲染）与 entry-client（水合）共用，保证两侧渲染结果一致（水合严格匹配的前提）。
+// Website demo shared module: page components + route table + per-page head config.
+// Shared by entry-server (build-time prerender) and entry-client (hydration), guaranteeing identical
+// render output on both sides (a prerequisite for strict hydration matching).
 import { state } from '@vobs/vobs'
 import type { VobsNode } from '@vobs/vobs'
 import type { RouteRecord } from '@vobs/router'
 import type { HeadTag } from '@vobs/ssr'
 
-/** 首页：证明 SSR 内容直出（爬虫可见）+ 水合后事件可交互 */
+/** Home page: proves SSR content is served directly (crawler-visible) + events are interactive after hydration */
 export function HomePage(): VobsNode {
   const clicks = state(0, 'clicks')
   return (
     <main class="page">
-      <h1>Vobs 官网 Demo</h1>
-      <p>本页由 SSG 构建时预渲染：爬虫直接看到完整 HTML，浏览器加载后水合接管。</p>
+      <h1>Vobs Website Demo</h1>
+      <p>This page was prerendered by SSG at build time: crawlers see the complete HTML directly, and hydration takes over once the browser loads it.</p>
       <button type="button" onClick={() => clicks.set(clicks.value + 1)}>
-        水合后点我 {clicks.value} 次
+        Clicks after hydration: {clicks.value}
       </button>
-      <p><a href="/features">前往功能页</a>（SSG 页面间用原生链接整页跳转）</p>
+      <p><a href="/features">Go to the Features page</a> (SSG pages navigate via native full-page links)</p>
     </main>
   )
 }
 
-/** 功能页：纯静态内容，验证第二页预渲染直出 */
+/** Features page: purely static content, verifying that a second page prerenders directly */
 export function FeaturesPage(): VobsNode {
   return (
     <main class="page">
-      <h1>功能</h1>
+      <h1>Features</h1>
       <ul>
-        <li>Signals First · 零重渲染</li>
-        <li>SSG 预渲染 · SEO 完整</li>
-        <li>精确水合 · mismatch 即报错</li>
+        <li>Signals First · Zero Re-renders</li>
+        <li>SSG Prerendering · Full SEO</li>
+        <li>Precise Hydration · Mismatch Fails Fast</li>
       </ul>
-      <p><a href="/">返回首页</a></p>
+      <p><a href="/">Back to home</a></p>
     </main>
   )
 }
@@ -40,15 +41,15 @@ export const routes: readonly RouteRecord[] = [
   { path: '/features', component: FeaturesPage }
 ]
 
-/** 每页 SEO 标签（服务端 <head> 注入 + 客户端 createHeadSync 导航同步共用） */
+/** Per-page SEO tags (shared by server <head> injection and client-side createHeadSync navigation sync) */
 export const headMap: Readonly<Record<string, readonly HeadTag[]>> = {
   '/': [
-    { tag: 'title', text: 'Vobs 官网 Demo · 首页' },
-    { tag: 'meta', attrs: { name: 'description', content: 'Vobs 框架 SSG 预渲染演示首页' } },
-    { tag: 'meta', attrs: { property: 'og:title', content: 'Vobs 官网 Demo' } }
+    { tag: 'title', text: 'Vobs Website Demo · Home' },
+    { tag: 'meta', attrs: { name: 'description', content: 'Home page of the Vobs framework SSG prerender demo' } },
+    { tag: 'meta', attrs: { property: 'og:title', content: 'Vobs Website Demo' } }
   ],
   '/features': [
-    { tag: 'title', text: '功能 · Vobs 官网 Demo' },
-    { tag: 'meta', attrs: { name: 'description', content: 'Vobs 框架核心功能一览' } }
+    { tag: 'title', text: 'Features · Vobs Website Demo' },
+    { tag: 'meta', attrs: { name: 'description', content: 'An overview of the core Vobs framework features' } }
   ]
 }

@@ -1,16 +1,20 @@
 /**
- * 端到端基准：真实 DOM 更新循环，jsdom + 真实渲染器。
+ * End-to-end benchmark: real DOM update loop, jsdom + the real renderer.
  *
- * **每轮必须显式 scheduler.flush()**：vobs 的更新是微任务批处理的，同步循环里写信号
- * 只做了「入队 + notify」，真正的 flush 要等循环结束。第一版没注意这点，测出「200 行调和
- * 只要 0.02µs」这种荒谬数字 —— 测的是入队不是更新。方法论完整说明见 bench/README.mjs。
+ * **Every round must call scheduler.flush() explicitly**: vobs updates are batched in
+ * microtasks, so writing a signal inside a synchronous loop only "enqueues + notifies";
+ * the actual flush waits until the loop ends. The first version missed this and produced
+ * an absurd "200-row reconciliation in 0.02µs" — it measured enqueueing, not updating.
+ * See bench/README.mjs for the full methodology.
  *
- * 数字要与 jsdom-control.mjs 对照着看：jsdom 的 DOM 操作比真实浏览器慢一个数量级，
- * 不剥离就会把 jsdom 的慢算到框架头上。
+ * Read the numbers alongside jsdom-control.mjs: jsdom DOM operations are an order of
+ * magnitude slower than a real browser, and without stripping that out jsdom's slowness
+ * gets blamed on the framework.
  *
- * 每个用例重复 7 轮报**最小值**与中位数；被测 step 里不做额外分配；挂载一次只测更新。
+ * Each case runs 7 rounds and reports the **minimum** and median; no extra allocations
+ * inside the measured step; mount once and measure updates only.
  *
- * 用法：node scripts/bench/e2e.mjs
+ * Usage: node scripts/bench/e2e.mjs
  */
 import { JSDOM } from 'jsdom'
 
@@ -35,7 +39,7 @@ function runCase(label, setup, iterations) {
   const samples = []
   for (let round = 0; round < REPEATS; round++) {
     const { app, step } = setup()
-    for (let i = 0; i < Math.max(3, Math.floor(iterations / 10)); i++) { step(i); scheduler.flush() }   // 预热
+    for (let i = 0; i < Math.max(3, Math.floor(iterations / 10)); i++) { step(i); scheduler.flush() }   // warmup
     const start = process.hrtime.bigint()
     for (let i = 0; i < iterations; i++) { step(i); scheduler.flush() }
     samples.push(Number(process.hrtime.bigint() - start) / iterations)
@@ -46,7 +50,7 @@ function runCase(label, setup, iterations) {
   const median = samples[Math.floor(samples.length / 2)]
   const spread = (samples[samples.length - 1] / min)
   console.log(
-    `  ${label.padEnd(44)} 最小 ${(min / 1000).toFixed(2).padStart(8)} µs   中位 ${(median / 1000).toFixed(2).padStart(8)} µs   抖动 ${spread.toFixed(1)}×`
+    `  ${label.padEnd(44)} min ${(min / 1000).toFixed(2).padStart(8)} µs   median ${(median / 1000).toFixed(2).padStart(8)} µs   spread ${spread.toFixed(1)}×`
   )
   return min
 }
@@ -58,12 +62,12 @@ const mount = render => {
   return { app, host }
 }
 
-console.log(`\n=== 端到端更新（每用例 ${REPEATS} 轮取最小/中位）===`)
+console.log(`\n=== End-to-end updates (${REPEATS} rounds per case, min/median) ===`)
 
-// 文本：100 个绑定共享一个信号
+// Text: 100 bindings sharing one signal
 {
   const s = state(0)
-  runCase('文本：100 绑定共享 1 个信号', () => {
+  runCase('Text: 100 bindings sharing 1 signal', () => {
     const { app } = mount(() => {
       const root = createElement('div')
       for (let i = 0; i < 100; i++) {
@@ -79,11 +83,11 @@ console.log(`\n=== 端到端更新（每用例 ${REPEATS} 轮取最小/中位）
   }, 2000)
 }
 
-// 文本：100 个独立信号，只改一个
+// Text: 100 independent signals, updating one
 {
   const signals = Array.from({ length: 100 }, () => state(0))
   let cursor = 0
-  runCase('文本：100 个独立信号，只改 1 个', () => {
+  runCase('Text: 100 independent signals, updating 1', () => {
     const { app } = mount(() => {
       const root = createElement('div')
       for (const s of signals) {
@@ -99,10 +103,10 @@ console.log(`\n=== 端到端更新（每用例 ${REPEATS} 轮取最小/中位）
   }, 2000)
 }
 
-// 属性：100 个 class 绑定
+// Attribute: 100 class bindings
 {
   const cls = state('a')
-  runCase('属性：100 个 class 绑定', () => {
+  runCase('Attribute: 100 class bindings', () => {
     const { app } = mount(() => {
       const root = createElement('div')
       for (let i = 0; i < 100; i++) {
@@ -118,13 +122,13 @@ console.log(`\n=== 端到端更新（每用例 ${REPEATS} 轮取最小/中位）
 
 const ROWS = 200
 
-// 列表：两数组交替（身份变、内容不变）—— 纯调和开销，且 step 零分配
+// List: alternate two arrays (keys change, content unchanged) — pure reconciliation cost, zero-allocation step
 {
   const a = Array.from({ length: ROWS }, (_, i) => ({ id: i, label: `r${i}` }))
   const b = Array.from({ length: ROWS }, (_, i) => ({ id: i, label: `r${i}` }))
   const items = state(a)
   let toggle = false
-  runCase(`列表：${ROWS} 行，身份变内容不变（零分配）`, () => {
+  runCase(`List: ${ROWS} rows, keys change content unchanged (zero allocation)`, () => {
     const { app } = mount(() => {
       const ul = createElement('ul')
       insertList(ul, null, () => items.value,
@@ -142,11 +146,11 @@ const ROWS = 200
   }, 500)
 }
 
-// 列表：同一个数组引用反复赋值（应被 Object.is 拦掉，测信号判等短路）
+// List: assign the same array reference repeatedly (should be short-circuited by Object.is; measures the signal equality shortcut)
 {
   const a = Array.from({ length: ROWS }, (_, i) => ({ id: i, label: `r${i}` }))
   const items = state(a)
-  runCase(`列表：同引用反复赋值（应被判等拦掉）`, () => {
+  runCase(`List: same reference reassigned (should be blocked by the equality check)`, () => {
     const { app } = mount(() => {
       const ul = createElement('ul')
       insertList(ul, null, () => items.value,
@@ -164,13 +168,13 @@ const ROWS = 200
   }, 500)
 }
 
-// 列表：只改一行内容（预建好的数组，step 零分配）
+// List: change one row's content (prebuilt arrays, zero-allocation step)
 {
   const a = Array.from({ length: ROWS }, (_, i) => ({ id: i, label: `r${i}` }))
   const variants = [0, 1].map(v => a.map((item, i) => (i === 100 ? { id: item.id, label: `v${v}` } : item)))
   const items = state(a)
   let toggle = false
-  runCase(`列表：${ROWS} 行只改 1 行内容`, () => {
+  runCase(`List: ${ROWS} rows, changing 1 row's content`, () => {
     const { app } = mount(() => {
       const ul = createElement('ul')
       insertList(ul, null, () => items.value,
@@ -188,13 +192,13 @@ const ROWS = 200
   }, 500)
 }
 
-// 列表：只有一项的列表（隔离固定开销）
+// List: single-item list (isolate the fixed overhead)
 {
   const one = [{ id: 1, label: 'a' }]
   const oneB = [{ id: 1, label: 'a' }]
   const items = state(one)
   let toggle = false
-  runCase('列表：1 行，身份变内容不变（固定开销）', () => {
+  runCase('List: 1 row, keys change content unchanged (fixed overhead)', () => {
     const { app } = mount(() => {
       const ul = createElement('ul')
       insertList(ul, null, () => items.value,
@@ -212,13 +216,13 @@ const ROWS = 200
   }, 2000)
 }
 
-// 列表：空数组交替（隔离"每行"以外的固定成本）
+// List: alternate empty arrays (isolate the fixed cost beyond "per row")
 {
   const emptyA = []
   const emptyB = []
   const items = state(emptyA)
   let toggle = false
-  runCase('列表：0 行，身份变（纯固定开销）', () => {
+  runCase('List: 0 rows, keys change (pure fixed overhead)', () => {
     const { app } = mount(() => {
       const ul = createElement('ul')
       insertList(ul, null, () => items.value,

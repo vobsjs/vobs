@@ -3,17 +3,17 @@ import { unwrapResponse } from './response'
 import type { AlipayQueryParams, AlipayQueryResult, TradeStatus } from './types'
 
 /**
- * 交易查询 (alipay.trade.query)
+ * Trade query (alipay.trade.query)
  *
- * 查询支付宝交易状态，用于确认支付结果。
- * 当异步通知未收到时，应主动调用此接口兜底。
+ * Queries the Alipay trade status to confirm the payment result.
+ * Call this API as a fallback when no async notification is received.
  */
 export function createQuery(client: AlipayClient) {
   return {
     /**
-     * 查询交易状态
-     * @param params 查询参数（outTradeNo 和 tradeNo 至少传一个）
-     * @throws {AlipayApiError} 业务失败（如 ACQ.TRADE_NOT_EXIST）时抛出
+     * Query the trade status
+     * @param params query params (pass at least one of outTradeNo and tradeNo)
+     * @throws {AlipayApiError} when the business call fails (e.g. ACQ.TRADE_NOT_EXIST)
      */
     async query(params: AlipayQueryParams): Promise<AlipayQueryResult> {
       const alipayResponse = unwrapResponse(
@@ -42,8 +42,8 @@ export function createQuery(client: AlipayClient) {
     },
 
     /**
-     * 判断交易是否支付成功
-     * 只有 TRADE_SUCCESS 或 TRADE_FINISHED 才表示支付成功
+     * Check whether a trade was paid successfully
+     * Only TRADE_SUCCESS or TRADE_FINISHED means the payment succeeded
      */
     isSuccessful(status: TradeStatus): boolean {
       return status === 'TRADE_SUCCESS' || status === 'TRADE_FINISHED'

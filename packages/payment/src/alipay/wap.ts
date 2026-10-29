@@ -2,20 +2,21 @@ import type { AlipayClient } from './client'
 import type { AlipayWapPayConfig, AlipayWapPayParams, AlipayWapPayResult } from './types'
 
 /**
- * 手机网站支付 (alipay.trade.wap.pay)
+ * Mobile website payment (alipay.trade.wap.pay)
  *
- * 移动端浏览器内拉起支付宝收银台，生成表单 HTML 由前端提交跳转。
+ * Launches the Alipay cashier inside a mobile browser; generates form HTML for the
+ * frontend to submit and redirect.
  *
- * ⚠️ 必须使用 pageExecute() 方法，禁止使用 exec()。
- * ⚠️ 返回值为 HTML 表单字符串，前端必须渲染 form 并自动提交。
- * ⚠️ 支付结果以异步通知或查询接口为准，不可依赖同步跳转。
+ * ⚠️ Must use pageExecute(); never use exec().
+ * ⚠️ The return value is an HTML form string; the frontend must render the form and auto-submit it.
+ * ⚠️ Treat the payment result as authoritative only via async notification or the query API; never rely on the sync redirect.
  */
 export function createWapPay(client: AlipayClient) {
   return {
     /**
-     * 发起手机网站支付
-     * @param config 支付配置
-     * @returns 支付表单 HTML
+     * Initiate a mobile website payment
+     * @param config payment config
+     * @returns payment form HTML
      */
     async pay(config: AlipayWapPayConfig): Promise<AlipayWapPayResult> {
       const { outTradeNo, totalAmount, subject, body, passbackParams, quitUrl } = config
@@ -43,7 +44,7 @@ export function createWapPay(client: AlipayClient) {
   }
 }
 
-/** 移除 undefined 字段 */
+/** Strip undefined fields */
 function sanitizeParams<T extends Record<string, any>>(params: T): Record<string, any> {
   const result: Record<string, any> = {}
   for (const [key, value] of Object.entries(params)) {

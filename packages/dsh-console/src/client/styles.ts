@@ -1,8 +1,9 @@
 /**
- * Console 样式。整份注入 shadow root，双向隔离。
+ * Console styles. Injected wholesale into the shadow root; isolated both ways.
  *
- * 颜色优先取 DSH 的 design token（会继承进 shadow root）；
- * token 不存在时按 `data-scheme` 回退到内置配色，因此脱离 DSH 也能看。
+ * Colors prefer DSH's design tokens (which inherit into the shadow root);
+ * when a token is missing we fall back by `data-scheme` to the built-in palette,
+ * so the panel still works outside DSH.
  */
 
 export const CONSOLE_CSS = `
@@ -56,7 +57,7 @@ export const CONSOLE_CSS = `
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---- 头部 ---- */
+/* ---- Header ---- */
 .vc-head { padding: 16px 22px 0; display: flex; align-items: flex-start; gap: 12px; }
 .vc-title { font-size: 17px; font-weight: 650; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
 .vc-sub { color: var(--vc-fg-3); font-size: 12px; margin-top: 4px; max-width: 760px; }
@@ -97,7 +98,7 @@ export const CONSOLE_CSS = `
   background: var(--vc-surface-3); color: var(--vc-fg-3);
 }
 
-/* ---- 主体 ---- */
+/* ---- Body ---- */
 .vc-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 22px 22px; display: grid; gap: 14px; align-content: start; }
 
 .vc-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
@@ -118,7 +119,7 @@ export const CONSOLE_CSS = `
 .vc-bar__fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #4176e6, #5686fe); }
 .vc-bar__val { text-align: right; font-variant-numeric: tabular-nums; color: var(--vc-fg-2); font-size: 12px; }
 
-/* ---- 事件行 ---- */
+/* ---- Event row ---- */
 .vc-stream { display: grid; gap: 1px; }
 .vc-ev {
   display: grid; grid-template-columns: 66px 140px 148px 1fr auto;
@@ -134,7 +135,7 @@ export const CONSOLE_CSS = `
 .vc-ev__detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vc-ev__ms { color: var(--vc-fg-3); font-variant-numeric: tabular-nums; }
 
-/* ---- 表格 ---- */
+/* ---- Table ---- */
 .vc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .vc-table th {
   text-align: left; font-weight: 600; color: var(--vc-fg-3); font-size: 11px;
@@ -149,7 +150,7 @@ export const CONSOLE_CSS = `
 .vc-name { color: var(--vc-fg); font-weight: 500; }
 .vc-spark { display: block; }
 
-/* ---- 输入 / 工具条 ---- */
+/* ---- Input / toolbar ---- */
 .vc-toolbar { display: flex; align-items: center; gap: 8px; }
 .vc-input {
   flex: 1; min-width: 0; height: 30px; padding: 0 10px;

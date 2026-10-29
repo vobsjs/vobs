@@ -7,7 +7,7 @@ import { useForm } from './index'
  *
  * `applyAllErrors` only iterated the form's own `names` (the `for (const name of names)` in
  * form.ts), with only `__form` special-cased. So when `schema.validate` returned
- * `{ phone: '手机号必填' }` while the form field is `name`: that error **never joined the
+ * `{ phone: 'Phone number is required' }` while the form field is `name`: that error **never joined the
  * aggregation**, `validateAll()` returned `{}`, `hasErrors` was false, and `submit()` went
  * straight to valid:true and actually submitted — a misspelled field name gave no sign at all.
  *
@@ -25,7 +25,7 @@ describe('forms schema misspelled field name', () => {
      * runtime warning is a loose/untyped schema — e.g. a shared generic validator map, or JS
      * callers. The cast here explicitly means "this is a runtime scenario".
      */
-    const schema = { validate: () => ({ phone: '手机号必填' }) } as unknown as NonNullable<
+    const schema = { validate: () => ({ phone: 'Phone number is required' }) } as unknown as NonNullable<
       Parameters<typeof useForm<{ name: string }>>[1]
     >['schema']
     const form = useForm({ name: 'Alice' }, { schema })
@@ -45,10 +45,10 @@ describe('forms schema misspelled field name', () => {
   it('stays quiet when the field name is correct', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const form = useForm({ name: 'Alice' }, {
-      schema: { validate: () => ({ name: '至少 2 个字符' }) }
+      schema: { validate: () => ({ name: 'At least 2 characters' }) }
     })
 
-    expect(form.validateAll()).toEqual({ name: '至少 2 个字符' })
+    expect(form.validateAll()).toEqual({ name: 'At least 2 characters' })
     expect(warn).not.toHaveBeenCalled()
     warn.mockRestore()
   })

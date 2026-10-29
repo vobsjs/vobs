@@ -1,8 +1,9 @@
 /**
- * 开发台样式。整份注入 shadow root，双向隔离。
+ * Devkit styles. Injected wholesale into the shadow root; isolated both ways.
  *
- * 颜色走 DSH 的 alias 变量（自定义属性会穿透 shadow 边界），因此跟随 DSH 的
- * 明暗主题；每个都带一个深色兜底值，脱离 DSH 时也不会变成透明。
+ * Colors use DSH's alias variables (custom properties pierce the shadow boundary), so the
+ * panel follows DSH's light/dark theme; each has a dark fallback value, so it never turns
+ * transparent outside DSH.
  */
 export const DEVKIT_CSS = `
 :host, .vk-root {
@@ -46,7 +47,7 @@ export const DEVKIT_CSS = `
 }
 .vk-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px 24px; }
 
-/* 规则 / 卡片 */
+/* Rules / cards */
 .vk-card { border: 1px solid var(--vk-border); border-radius: 12px; background: var(--vk-layer1); overflow: hidden; }
 .vk-card + .vk-card { margin-top: 12px; }
 .vk-card__head {
@@ -78,7 +79,7 @@ export const DEVKIT_CSS = `
 .vk-label { font-size: 10.5px; color: var(--vk-dim); margin-bottom: 5px; }
 .vk-why { font-size: 11.5px; color: var(--vk-dim); line-height: 1.7; padding: 0 14px 14px; }
 
-/* 表格 */
+/* Table */
 .vk-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .vk-table th {
   text-align: left; font-weight: 500; font-size: 10px; letter-spacing: .05em;
@@ -87,7 +88,7 @@ export const DEVKIT_CSS = `
 .vk-table td { padding: 9px 12px 9px 0; border-top: 1px solid var(--vk-border); vertical-align: top; }
 .vk-table tr:last-child td { padding-bottom: 0; }
 
-/* API 页 */
+/* API page */
 .vk-api { display: grid; grid-template-columns: 210px 1fr; gap: 0; min-height: 0; }
 .vk-api__nav { border-right: 1px solid var(--vk-border); padding-right: 10px; }
 .vk-api__group { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--vk-dim); padding: 12px 8px 5px; }
@@ -110,13 +111,13 @@ export const DEVKIT_CSS = `
 }
 .vk-chip:hover { color: var(--vk-text); }
 
-/* 示例 */
+/* Patterns */
 .vk-patterns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .vk-pattern { border: 1px solid var(--vk-border); border-radius: 12px; background: var(--vk-layer1); padding: 12px; }
 .vk-pattern__title { font-size: 12.5px; font-weight: 600; }
 .vk-pattern__summary { font-size: 11.5px; color: var(--vk-dim); margin: 5px 0 9px; line-height: 1.6; }
 
-/* 状态 */
+/* Status */
 .vk-cap { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--vk-border); }
 .vk-cap:last-child { border-bottom: 0; }
 .vk-cap__name { font-size: 12.5px; min-width: 168px; }

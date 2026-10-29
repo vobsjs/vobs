@@ -1,8 +1,9 @@
 /**
- * 侧栏入口图标：一个「工具箱」的轮廓，与 Console 的图表图标区分开。
+ * Sidebar entry icon: a "toolbox" outline, distinct from the Console's chart icon.
  *
- * `width`/`height` 必须显式写：图标宿主的默认样式是 `width:100%; height:100%`，
- * 内联 svg 没有固有尺寸时不会被撑开 —— 结果就是「侧栏条目有了、图标却是空的」。
+ * `width`/`height` must be written explicitly: the icon host's default style is
+ * `width:100%; height:100%`, and an inline svg without intrinsic dimensions will not be
+ * stretched open — the result was "the sidebar entry shows up, the icon is empty".
  */
 export function DevKitIcon() {
   return (

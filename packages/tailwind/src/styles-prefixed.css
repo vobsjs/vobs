@@ -1,18 +1,23 @@
 /*
- * 前缀入口：给类名冲突用（第三方库也用 .flex/.hidden 时）。
+ * Prefixed entry: for class-name collisions (when third-party libraries also use
+ * .flex/.hidden).
  *
- * ⚠️ Tailwind v4 的 `prefix(...)` **只在 `@import "tailwindcss"` 上生效**。写在
- * `@import "tailwindcss/utilities.css"` 上会被**静默忽略** —— 用真实编译器实测（`compile()`）：
+ * ⚠️ In Tailwind v4, `prefix(...)` **only works on `@import "tailwindcss"`**. Put on
+ * `@import "tailwindcss/utilities.css"` it is **silently ignored** — measured with the
+ * real compiler (`compile()`):
  *   A. `utilities.css layer(utilities)`        → `.flex` ✓  `.vobs\:flex` ✗
- *   B. `utilities.css prefix(vobs)`            → `.flex` ✓  `.vobs\:flex` ✗   ← 原文就是这个形状
+ *   B. `utilities.css prefix(vobs)`            → `.flex` ✓  `.vobs\:flex` ✗   ← this file's original shape
  *   D. `utilities.css prefix(vobs) layer(...)`  → `.flex` ✓  `.vobs\:flex` ✗
  *   C. `tailwindcss prefix(vobs)`              → `.flex` ✗  `.vobs\:flex` ✓
- * 也就是说这个文件过去与 `styles.css` **行为完全等价**（README 的"utilities under the vobs prefix"
- * 不成立），而使用它的人拿到的仍然是无前缀类名 —— 与"隔离第三方类名冲突"的承诺正好相反。
+ * Meaning this file used to be **behaviorally identical to `styles.css`** (the README's
+ * "utilities under the vobs prefix" claim did not hold), and users of it still got
+ * unprefixed class names — the opposite of the "isolate third-party class-name
+ * conflicts" promise.
  *
- * 取舍（必须知道）：唯一可用的写法会**一并引入 Tailwind Preflight**。
- * - 需要与第三方库的类名隔离 → 用这个入口，接受 Preflight；
- * - 不需要前缀、要 Vobs 自己掌管 reset → 用 `styles.css`（无 Preflight）。
+ * Trade-off (you must know this): the only working spelling **also pulls in Tailwind
+ * Preflight**.
+ * - Need class-name isolation from third-party libraries → use this entry and accept Preflight;
+ * - No prefix needed, Vobs should own the reset → use `styles.css` (no Preflight).
  */
 @import "tailwindcss" prefix(vobs);
 @import "./theme.css";

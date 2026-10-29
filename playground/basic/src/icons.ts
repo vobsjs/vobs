@@ -1,6 +1,6 @@
 import { registerIcon } from '@vobs/ui'
 
-// 应用级自定义图标：VUI_ICON_PATHS 内置注册表中没有 lock/key（登录页认证模式使用）。
+// App-level custom icons: lock/key are not in the VUI_ICON_PATHS built-in registry (used by the login page auth modes).
 registerIcon({ 
     name: 'lock', 
     path: '<rect x="4" y="11" width="16" height="10"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>' 

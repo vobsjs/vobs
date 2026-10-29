@@ -2,7 +2,7 @@ import type { Signal } from '@vobs/vobs'
 
 export type Scenario = 'success' | 'error' | 'slow'
 
-/** 可中断的模拟延迟：AbortSignal 触发时以 AbortError 拒绝。 */
+/** Interruptible mock delay: rejects with AbortError when the AbortSignal fires. */
 export function waitFor(signal: AbortSignal, delay: number, message = 'Request cancelled'): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {

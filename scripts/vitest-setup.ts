@@ -1,11 +1,13 @@
 /*
- * vitest 的全局 setup。
+ * Global vitest setup.
  *
- * 存在的唯一理由是：`@vobs/test-utils` 的 `mount()` 会把测试渲染器装进**进程级**
- * `setRenderer` 单例，而包自己**不能依赖 vitest**（它连 devDependencies 都没有），
- * 所以清理函数必须由调用方接到 vitest 的钩子上。这里接一次，之后任何用例忘记
- * `destroy()` 都不会再污染同文件后续用例（vitest 默认 `globals: false`，
- * 包内读不到 `globalThis.afterEach`，只能在这里接）。
+ * The only reason this exists: `@vobs/test-utils`'s `mount()` installs the test
+ * renderer into a **process-level** `setRenderer` singleton, and the package itself
+ * **must not depend on vitest** (it has no devDependencies), so the cleanup function
+ * has to be hooked onto vitest by the caller. Hooked once here, any test that
+ * forgets `destroy()` no longer pollutes later tests in the same file (vitest
+ * defaults to `globals: false`; `globalThis.afterEach` is not readable inside the
+ * package, so it can only be wired here).
  */
 import { afterEach } from 'vitest'
 import { cleanupMountedApps } from '@vobs/test-utils'

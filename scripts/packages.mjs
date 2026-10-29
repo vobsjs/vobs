@@ -1,17 +1,19 @@
 /**
- * 可发布包的**唯一清单**。
+ * The **single source of truth** for publishable packages.
  *
- * 这份 37 个名字此前硬编码在四处（build-packages / check-packages / verify-packages /
- * check-release），另外还以 `pnpm --filter @vobs/x` 的形式重复了三遍
- * （package.json 的 pack:packages / publish:packages / publish:local）——
- * 加一个包要改七处，漏一处就是「某个包没被构建/没被发布」这种静默事故。
+ * These 37 names used to be hardcoded in four places (build-packages / check-packages /
+ * verify-packages / check-release), and repeated three more times as `pnpm --filter @vobs/x`
+ * chains (package.json's pack:packages / publish:packages / publish:local) — adding a
+ * package meant editing seven spots, and missing one silently left a package unbuilt
+ * or unpublished.
  *
- * 这里收成一份。package.json 里那三条 filter 链**故意保留**（重写发布命令的风险
- * 大于收益：出错就是真发 npm），但 `assertPackageScriptsMatch` 会校验它们与本清单一致 ——
- * 重复变成「被检查的重复」，而不是自由漂移。
+ * Everything now lives here. The three filter chains in package.json are **kept on
+ * purpose** (rewriting the publish commands risks more than it gains: a mistake means a
+ * real npm publish), but `assertPackageScriptsMatch` verifies they match this list —
+ * the duplication becomes "checked duplication" instead of free drift.
  *
- * 排除项：三个 DSH 插件包（`packages/dsh-plugin|dsh-console|dsh-devkit`）。
- * 它们不发布到 npm，靠 Git 标签 + #path: 子目录分发。
+ * Excluded: the three DSH plugin packages (`packages/dsh-plugin|dsh-console|dsh-devkit`).
+ * They are not published to npm; they ship via Git tags + #path: subdirectories.
  */
 export const PUBLISHED_PACKAGES = [
   'reactivity',
@@ -53,7 +55,7 @@ export const PUBLISHED_PACKAGES = [
   'dsh'
 ]
 
-/** 从 package.json 的 script 里抽出 `--filter @vobs/x` 的 x 集合。 */
+/** Extract the set of names from `--filter @vobs/x` occurrences in a package.json script. */
 export function filtersInScript(command) {
   const names = []
   for (const match of command.matchAll(/--filter\s+@vobs\/([a-z0-9-]+)/gu)) names.push(match[1])
@@ -61,8 +63,8 @@ export function filtersInScript(command) {
 }
 
 /**
- * 校验 package.json 的发布/打包脚本与 PUBLISHED_PACKAGES 一致。
- * @returns 不一致的描述列表（空数组 = 一致）
+ * Verify that package.json's publish/pack scripts match PUBLISHED_PACKAGES.
+ * @returns descriptions of any mismatches (empty array = in sync)
  */
 export function findPackageScriptDrift(manifest, scriptNames = ['pack:packages', 'publish:packages', 'publish:local']) {
   const problems = []
@@ -70,15 +72,15 @@ export function findPackageScriptDrift(manifest, scriptNames = ['pack:packages',
   for (const script of scriptNames) {
     const command = manifest.scripts?.[script]
     if (typeof command !== 'string') {
-      problems.push(`package.json 缺少 ${script} 脚本`)
+      problems.push(`package.json is missing the ${script} script`)
       continue
     }
     const actual = new Set(filtersInScript(command))
     for (const name of expected) {
-      if (!actual.has(name)) problems.push(`${script} 少了 @vobs/${name}`)
+      if (!actual.has(name)) problems.push(`${script} is missing @vobs/${name}`)
     }
     for (const name of actual) {
-      if (!expected.has(name)) problems.push(`${script} 多了 @vobs/${name}（不在可发布清单里）`)
+      if (!expected.has(name)) problems.push(`${script} has extra @vobs/${name} (not in the publishable list)`)
     }
   }
   return problems

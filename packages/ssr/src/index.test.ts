@@ -20,7 +20,7 @@ import { insertDynamic, insertList } from '@vobs/dom'
 import { hydrate, renderToString, renderToStringAsync, serializeState, prerenderRoutes, renderPage, applyHead, createHeadSync, serializeHeadTags } from './index'
 
 describe('SSR', () => {
-  it('为每个 SSR 请求生成稳定且隔离的 ID', () => {
+  it('generates stable, isolated IDs per SSR request', () => {
     const render = () => {
       const input = createElement('input')
       setAttribute(input, 'id', createId('field'))
@@ -29,7 +29,7 @@ describe('SSR', () => {
     expect(renderToString(render)).toBe('<input id="field-1">')
     expect(renderToString(render)).toBe('<input id="field-1">')
   })
-  it('输出静态 HTML', () => {
+  it('renders static HTML', () => {
     const html = renderToString(() => {
       const heading = createElement('h1')
       insertBefore(heading, createText('Vobs'), null)
@@ -39,9 +39,10 @@ describe('SSR', () => {
     expect(html).toBe('<h1>Vobs</h1>')
   })
 
-  // SVG 命名空间支持（1.7.4）：createElement 按 SVG 标签集分发（SSR 节点为数据形态，
-  // 序列化原样保留 tag 与属性大小写），客户端水合按 SVG namespace + 标签名认领
-  it('序列化 SVG 子树并保留属性大小写', () => {
+  // SVG namespace support (1.7.4): createElement dispatches on the SVG tag set (SSR nodes
+  // are plain data; serialization keeps tag and attribute casing verbatim), client hydration
+  // claims by SVG namespace + tag name
+  it('serializes SVG subtrees and preserves attribute casing', () => {
     const html = renderToString(() => {
       const svg = createElement('svg')
       setAttribute(svg, 'viewBox', '0 0 50 30')
@@ -56,7 +57,7 @@ describe('SSR', () => {
     expect(html).toBe('<svg viewBox="0 0 50 30"><rect x="0" y="0" width="50" height="30"></rect></svg>')
   })
 
-  it('异步 SSR 可显式返回服务端请求诊断 side-channel', async () => {
+  it('async SSR can explicitly return a server request diagnostics side-channel', async () => {
     const http = createHTTPClient({
       adapter: async config => new Response(JSON.stringify({ url: config.url }), {
         headers: { 'content-type': 'application/json' }
@@ -82,7 +83,7 @@ describe('SSR', () => {
     ]))
   })
 
-  it('转义文本、属性并省略事件', () => {
+  it('escapes text and attributes, omits events', () => {
     const html = renderToString(() => {
       const input = createElement('input')
       setAttribute(input, 'title', 'A "quoted" <value>')
@@ -92,7 +93,7 @@ describe('SSR', () => {
     expect(html).toBe('<input title="A &quot;quoted&quot; &lt;value&gt;">')
   })
 
-  it('将 DOM property 序列化为可 Hydration 的 HTML 属性', () => {
+  it('serializes DOM properties into hydration-ready HTML attributes', () => {
     const html = renderToString(() => {
       const input = createElement('input')
       setProperty(input, 'value', 'Ada & <Lin>')
@@ -105,7 +106,7 @@ describe('SSR', () => {
     expect(html).toBe('<input value="Ada &amp; &lt;Lin&gt;" checked="" tabindex="2">')
   })
 
-  it('输出 state 初始值、条件块和 keyed 列表', () => {
+  it('renders state initial values, conditional blocks and keyed lists', () => {
     const html = renderToString(() => {
       const count = state('<safe>')
       const visible = state(true)
@@ -141,7 +142,7 @@ describe('SSR', () => {
     expect(html).toBe('<div>count: &lt;safe&gt;<span>visible</span><!--vobs:dynamic--><ul><li>Ada</li><li>Lin</li><!--vobs:list--></ul></div>')
   })
 
-  it('Hydration 复用服务端 DOM 并重新绑定 state 和事件', () => {
+  it('hydration reuses server DOM and rebinds state and events', () => {
     const count = state(0)
     const render = () => {
       const button = createElement('button')
@@ -167,7 +168,7 @@ describe('SSR', () => {
     app.destroy()
   })
 
-  it('SSR 与 Hydration 复用 Fragment 的范围锚点', () => {
+  it('SSR and hydration share fragment range anchors', () => {
     const render = () => createFragment((parent, anchor) => {
       insertBefore(parent, createElement('span'), anchor)
       insertBefore(parent, createText('tail'), anchor)
@@ -184,7 +185,7 @@ describe('SSR', () => {
     app.destroy()
   })
 
-  it('Hydration 复用动态锚点并支持后续条件块更新', () => {
+  it('hydration reuses dynamic anchors and supports later conditional updates', () => {
     const visible = state(true)
     const render = () => {
       const root = createElement('div')
@@ -209,7 +210,7 @@ describe('SSR', () => {
     app.destroy()
   })
 
-  it('Hydration 在结构不匹配时保留服务端 DOM 并抛错', () => {
+  it('hydration keeps server DOM and throws on structural mismatch', () => {
     document.body.innerHTML = renderToString(() => createElement('h1'))
     const serverNode = document.body.firstChild
 
@@ -217,7 +218,7 @@ describe('SSR', () => {
     expect(document.body.firstChild).toBe(serverNode)
   })
 
-  it('异步 SSR 等待 Resource，并返回可恢复的缓存快照', async () => {
+  it('async SSR awaits resources and returns a restorable cache snapshot', async () => {
     const client = createResourceClient()
     const fetcher = async () => [{ id: 1, name: 'Ada' }]
     const result = await renderToStringAsync(() => {
@@ -235,7 +236,7 @@ describe('SSR', () => {
     client.clear()
   })
 
-  it('客户端恢复 Resource 后初次创建不重复请求', async () => {
+  it('client skips refetching on first creation after resource hydration', async () => {
     const serverClient = createResourceClient()
     const serverResource = serverClient.resource({
       key: ['users'],
@@ -264,7 +265,7 @@ describe('SSR', () => {
     client.clear()
   })
 
-  it('序列化并在首次 Hydration 前恢复 Resource、i18n 和 Theme 状态', async () => {
+  it('serializes and restores Resource, i18n and Theme state before first hydration', async () => {
     const serverI18n = createI18n({
       defaultLocale: 'en-US',
         messages: { 'en-US': { title: 'English' }, 'zh-CN': { title: '中文' } }
@@ -304,7 +305,7 @@ describe('SSR', () => {
     clientTheme.dispose()
   })
 
-  it('序列化并在首次 Hydration 前恢复 Dict 状态', async () => {
+  it('serializes and restores Dict state before first hydration', async () => {
     const serverDict = createDict({
       data: {
         user_status: [{ value: 'active', label: '活跃' }]
@@ -349,7 +350,7 @@ describe('SSR', () => {
     clientDict.dispose()
   })
 
-  it('SSR 状态序列化会转义脚本边界字符', () => {
+  it('state serialization escapes script boundary characters', () => {
     const serialized = serializeState({
       version: 1,
       i18n: {
@@ -363,13 +364,13 @@ describe('SSR', () => {
     expect(serialized).toContain('\\u003c/script\\u003e')
   })
 
-  it('拒绝结构无效的 i18n SSR 快照', () => {
+  it('rejects structurally invalid i18n SSR snapshots', () => {
     expect(() => hydrate(() => createText(''), document.body, {
       state: JSON.stringify({ version: 1, i18n: { version: 1, locale: 'en-US', messages: { 'en-US': { bad: 1 } } } })
     })).toThrow('i18n')
   })
 
-  it('预渲染逐页产出 HTML、head 与脱水状态，首页 loader 也完整执行', async () => {
+  it('prerendering produces per-page HTML, head and dehydrated state, and fully runs the home loader', async () => {
     const loaders: string[] = []
     const result = await prerenderRoutes({
       routes: ['/', '/pricing'],
@@ -400,7 +401,8 @@ describe('SSR', () => {
 
     expect(result.pages).toHaveLength(2)
     expect(result.pages[0]).toMatchObject({ path: '/', fullPath: '/' })
-    // RouterView 范围锚点注释是水合所需产物，html 内含真实内容即可
+    // RouterView range anchor comments are required hydration artifacts; the html just
+    // needs to contain the real content
     expect(result.pages[0]!.html).toContain('<h1>官网首页</h1>')
     expect(loaders).toEqual(['/'])
     expect(result.pages[0]!.head).toContain('<title>官网首页</title>')
@@ -409,7 +411,7 @@ describe('SSR', () => {
     expect(result.pages[1]!.state).toEqual({ version: 1 })
   })
 
-  it('renderPage 组装完整 HTML 并内联脱水状态', () => {
+  it('renderPage assembles full HTML with inlined dehydrated state', () => {
     const html = renderPage({
       path: '/',
       fullPath: '/',
@@ -426,7 +428,7 @@ describe('SSR', () => {
     expect(html).toContain('<script type="module" src="/assets/entry.js"></script>')
   })
 
-  it('RouterView SSG 产物可完整水合（复现官网 demo 场景）', async () => {
+  it('RouterView SSG output hydrates fully (reproduces the website demo scenario)', async () => {
     const { createRouter, RouterView, createMemoryHistory } = await import('@vobs/router')
     const routes = [
       {
@@ -460,7 +462,7 @@ describe('SSR', () => {
     document.body.innerHTML = ''
   })
 
-  it('空动态文本：SSR 输出占位注释，水合原位替换且不误抢相邻文本', () => {
+  it('empty dynamic text: SSR emits a placeholder comment, hydration replaces it in place without stealing adjacent text', () => {
     const render = () => {
       const div = createElement('div')
       insertBefore(div, createText('前缀'), null)
@@ -470,7 +472,8 @@ describe('SSR', () => {
       insertBefore(div, createText('后缀'), null)
       return div
     }
-    // SSR：空动态文本序列化为 <!----> 占位，前后静态文本由分隔符保边界
+    // SSR: empty dynamic text serializes to a <!----> placeholder; separators preserve
+    // boundaries around the static texts before and after
     expect(renderToString(render)).toBe('<div>前缀<!---->后缀</div>')
 
     document.body.innerHTML = '<div id="app"><div>前缀<!---->后缀</div></div>'
@@ -483,22 +486,24 @@ describe('SSR', () => {
       insertBefore(div, createText('后缀'), null)
       return div
     }, '#app')
-    // 占位注释被原位替换为文本节点，绑定覆写后不影响相邻文本
+    // The placeholder comment is replaced in place by a text node; overwriting via binding
+    // leaves adjacent text untouched
     expect(document.querySelector('#app')?.textContent).toBe('前缀已填充后缀')
     app.destroy()
     document.body.innerHTML = ''
   })
 
-  it('head 标签序列化转义文本与属性', () => {
+  it('head tag serialization escapes text and attributes', () => {
     const head = serializeHeadTags([
       { tag: 'title', text: 'A < B & "C"' },
       { tag: 'meta', attrs: { name: 'description', content: 'x"y<z' } }
     ])
-    // title 是文本节点（< > & 转义、引号合法保留）；meta content 是属性（引号转义）
+    // title is a text node (< > & escaped, quotes kept legally); meta content is an
+    // attribute (quotes escaped)
     expect(head).toBe('<title>A &lt; B &amp; "C"</title><meta name="description" content="x&quot;y&lt;z">')
   })
 
-  it('applyHead 更新 title 并按识别键复用 meta', () => {
+  it('applyHead updates title and reuses meta by identity key', () => {
     document.head.innerHTML = '<meta name="description" content="旧描述">'
     applyHead([
       { tag: 'title', text: '新标题' },
@@ -512,7 +517,7 @@ describe('SSR', () => {
     expect(document.head.querySelector('meta[property="og:title"]')?.getAttribute('content')).toBe('OG 标题')
   })
 
-  it('createHeadSync 在路由切换时同步 head', async () => {
+  it('createHeadSync syncs head on route changes', async () => {
     const router = createRouter({
       history: createMemoryHistory('/'),
       routes: [

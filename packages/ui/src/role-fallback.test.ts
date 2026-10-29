@@ -9,15 +9,17 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * 组件的 `role` 兜底。
+ * `role` fallback for components.
  *
- * `role` 本来就走 `bindCommonAttributes` 的通用通道（utils.ts:219 的 isCommonAttribute 里有它）。
- * 但 Alert 和 Switch 把 `role` 放进了那张表的 skip 列表，然后**无条件硬编码**：
+ * `role` normally goes through the generic channel of `bindCommonAttributes` (it is in
+ * isCommonAttribute at utils.ts:219). But Alert and Switch put `role` into that table's skip
+ * list and then **hard-coded it unconditionally**:
  *
  *     bindCommonAttributes(root, props, ['tone', 'title', 'description', 'icon', 'role'])
- *     setAttribute(root, 'role', 'alert')          // ← 作者传的 role 被静默吞掉
+ *     setAttribute(root, 'role', 'alert')          // ← the author-supplied role was silently swallowed
  *
- * 实测：`<Alert role="status">` 拿到的是 `role="alert"`。现在作者给了就用作者的，没给才兜底。
+ * Verified: `<Alert role="status">` came out as `role="alert"`. Now the author's value wins when
+ * given; the fallback applies only when absent.
  */
 async function mount(component: Parameters<typeof createComponent>[0], props: Record<string, unknown>) {
   const host = document.createElement('main')
@@ -28,38 +30,38 @@ async function mount(component: Parameters<typeof createComponent>[0], props: Re
   return { host, cleanup: () => { app.destroy(); host.remove() } }
 }
 
-describe('role 兜底（不再吞掉作者传入的 role）', () => {
-  it('Alert 尊重作者传入的 role', async () => {
+describe('role fallback (no longer swallows the author-supplied role)', () => {
+  it('Alert respects an author-supplied role', async () => {
     const { host, cleanup } = await mount(Alert, { role: 'status', title: 'hi' })
     expect(host.querySelector('.vui-alert')?.getAttribute('role')).toBe('status')
     cleanup()
   })
 
-  it('Alert 没给 role 时退回 alert', async () => {
+  it('Alert falls back to alert when no role is given', async () => {
     const { host, cleanup } = await mount(Alert, { title: 'hi' })
     expect(host.querySelector('.vui-alert')?.getAttribute('role')).toBe('alert')
     cleanup()
   })
 
-  it('Switch 尊重作者传入的 role', async () => {
+  it('Switch respects an author-supplied role', async () => {
     const { host, cleanup } = await mount(Switch, { role: 'checkbox' })
     expect(host.querySelector('.vui-switch')?.getAttribute('role')).toBe('checkbox')
     cleanup()
   })
 
-  it('Switch 没给 role 时退回 switch', async () => {
+  it('Switch falls back to switch when no role is given', async () => {
     const { host, cleanup } = await mount(Switch, {})
     expect(host.querySelector('.vui-switch')?.getAttribute('role')).toBe('switch')
     cleanup()
   })
 
-  it('StatusBar 尊重作者传入的 role', async () => {
+  it('StatusBar respects an author-supplied role', async () => {
     const { host, cleanup } = await mount(StatusBar, { role: 'toolbar' })
     expect(host.querySelector('.vui-statusbar')?.getAttribute('role')).toBe('toolbar')
     cleanup()
   })
 
-  it('StatusBar 没给 role 时退回 status', async () => {
+  it('StatusBar falls back to status when no role is given', async () => {
     const { host, cleanup } = await mount(StatusBar, {})
     expect(host.querySelector('.vui-statusbar')?.getAttribute('role')).toBe('status')
     cleanup()

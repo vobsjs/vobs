@@ -83,7 +83,7 @@ describe('VOBS_C104 shapes that must be reported (genuinely rendered)', () => {
     const found = c104(`
       export function Panel() {
         const open = state(true)
-        return open.value && <div>内容</div>
+        return open.value && <div>content</div>
       }
     `)
     expect(found).toHaveLength(1)
@@ -93,7 +93,7 @@ describe('VOBS_C104 shapes that must be reported (genuinely rendered)', () => {
   it('`return cond ? <A/> : null`', () => {
     expect(c104(`
       export function Panel() {
-        return open.value ? <div>内容</div> : null
+        return open.value ? <div>content</div> : null
       }
     `)).toHaveLength(1)
   })
@@ -101,7 +101,7 @@ describe('VOBS_C104 shapes that must be reported (genuinely rendered)', () => {
   it('`return cond ? null : <B/>`', () => {
     expect(c104(`
       export function Panel() {
-        return open.value ? null : <div>空态</div>
+        return open.value ? null : <div>empty state</div>
       }
     `)).toHaveLength(1)
   })
@@ -109,7 +109,7 @@ describe('VOBS_C104 shapes that must be reported (genuinely rendered)', () => {
   it('**a warning, not an error** (statics cannot tell "is it a component"; it must not block builds)', () => {
     const found = c104(`
       export function Panel() {
-        return open.value && <div>内容</div>
+        return open.value && <div>content</div>
       }
     `)
     expect(found[0]!.severity).toBe('warning')
@@ -118,7 +118,7 @@ describe('VOBS_C104 shapes that must be reported (genuinely rendered)', () => {
   it('the fix text no longer depends on global utility classes (points to Show / classList)', () => {
     const found = c104(`
       export function Panel() {
-        return open.value && <div>内容</div>
+        return open.value && <div>content</div>
       }
     `)
     const fix = found[0]!.fix ?? ''

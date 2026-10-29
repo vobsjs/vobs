@@ -64,7 +64,7 @@ export function PaymentConfigPage() {
         <Card title={i18n.t('payment.config.integrationTitle')} description={i18n.t('payment.config.integrationDescription')}>
           <pre class="demo-code">{`import { AlipayClient, createPagePay } from '@vobs/payment/alipay'
 
-// 独立使用
+// Standalone usage
 const client = new AlipayClient({
   appId: '202100...',
   privateKey: 'MII...',
@@ -75,14 +75,14 @@ const client = new AlipayClient({
 
 const pagePay = createPagePay(client)
 
-// 发起电脑网站支付
+// Initiate a page payment
 const { formHtml } = await pagePay.pay({
   outTradeNo: 'ORDER' + Date.now(),
   totalAmount: '99.99',
-  subject: '商品名称'
+  subject: 'Product name'
 })
 
-// 渲染 formHtml 到页面并自动提交`}</pre>
+// Render formHtml into the page and auto-submit`}</pre>
           {configSaved.value && (
             <Alert
               tone="success"

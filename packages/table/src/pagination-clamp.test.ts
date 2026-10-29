@@ -43,7 +43,7 @@ async function mountTable(rows: Row[], extra: Record<string, unknown> = {}) {
 describe('KitDataTable out-of-range pages', () => {
   const rows: Row[] = [{ id: 1, name: 'A' }, { id: 2, name: 'B' }, { id: 3, name: 'C' }]
 
-  it('renders the last page's rows when the page number is out of range, instead of a fake empty state', async () => {
+  it("renders the last page's rows when the page number is out of range, instead of a fake empty state", async () => {
     const { host, bodyRows, cleanup } = await mountTable(rows, { pageSize: 2, page: 5 })
 
     // pageSize=2 with 3 rows → 2 pages; the out-of-range page 5 should land on page 2 (1 row left)

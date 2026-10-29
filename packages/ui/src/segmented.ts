@@ -33,7 +33,7 @@ export interface SegmentedItem {
  *   compatible with the existing string facade)
  * - SegmentedItem separates id and label, and selection **writes back the id**
  *   rather than the display label —
- *   `opts={[{id:'login', label:'登录'}]}` gives onChange `'login'`
+ *   `opts={[{id:'login', label:'Login'}]}` gives onChange `'login'`
  */
 export type SegmentedOption = string | SegmentedItem
 

@@ -17,8 +17,8 @@ export function AppLayout(props: AppLayoutProps) {
   const route = useRoute()
   const router = useRouter()
   const i18n = useI18n()
-  // pin:'bottom' 演示：钉在侧边栏底部的收件箱入口，悬浮角标由信号驱动；
-  // 点击不跳转、角标 +1，用于人工验证 badgePill 函数形态的响应式重建
+  // pin:'bottom' demo: an inbox entry pinned to the bottom of the sidebar, its floating badge driven by a signal;
+  // clicking does not navigate and the badge increments by 1 — used to manually verify reactive recreation of the badgePill getter form
   const inboxBadge = state(0, 'inboxBadge')
   const menuItems: readonly KitMenuItem[] = [
     {

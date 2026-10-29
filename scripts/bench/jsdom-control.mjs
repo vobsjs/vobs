@@ -1,6 +1,6 @@
 /**
- * 对照：同样的 DOM 操作，绕过 vobs 直接用 jsdom 做一遍要多久。
- * 用来把「vobs 的开销」和「jsdom 本来就慢」分开。
+ * Control: how long the same DOM operations take in plain jsdom, bypassing vobs.
+ * Used to separate "vobs overhead" from "jsdom is just slow".
  */
 import { JSDOM } from 'jsdom'
 
@@ -17,13 +17,13 @@ const run = (label, fn, iterations) => {
     samples.push(Number(process.hrtime.bigint() - start) / iterations)
   }
   samples.sort((a, b) => a - b)
-  console.log(`  ${label.padEnd(46)} 最小 ${(samples[0] / 1000).toFixed(2).padStart(8)} µs`)
+  console.log(`  ${label.padEnd(46)} min ${(samples[0] / 1000).toFixed(2).padStart(8)} µs`)
   return samples[0]
 }
 
-console.log('\n=== 纯 jsdom 对照 ===')
+console.log('\n=== Plain jsdom control ===')
 
-// 100 个文本节点改写（vobs 的文本更新最终就是这一步）
+// 100 text node rewrites (ultimately what a vobs text update boils down to)
 {
   const texts = []
   for (let i = 0; i < 100; i++) {
@@ -32,24 +32,24 @@ console.log('\n=== 纯 jsdom 对照 ===')
     p.appendChild(t)
     texts.push(t)
   }
-  run('100 个文本节点改写（nodeValue）', i => {
+  run('100 text node rewrites (nodeValue)', i => {
     const v = String(i)
     for (const t of texts) t.nodeValue = v
   }, 2000)
 }
 
-// 100 个 setAttribute
+// 100 setAttribute calls
 {
   const els = []
   for (let i = 0; i < 100; i++) els.push(document.createElement('p'))
-  run('100 个 setAttribute(class)', i => {
+  run('100 setAttribute(class) calls', i => {
     for (const el of els) el.setAttribute('class', `c${i}`)
   }, 2000)
 }
 
-// 200 行：整体重建（新建 200 个 li + 文本）
+// 200 rows: full rebuild (create 200 li + text nodes)
 {
-  run('200 行：新建 200 个 li + 文本并替换', () => {
+  run('200 rows: build 200 li + text and replace', () => {
     const ul = document.createElement('ul')
     for (let i = 0; i < 200; i++) {
       const li = document.createElement('li')
@@ -59,7 +59,7 @@ console.log('\n=== 纯 jsdom 对照 ===')
   }, 300)
 }
 
-// 200 行：只改其中 1 个文本节点
+// 200 rows: change only 1 text node
 {
   const texts = []
   for (let i = 0; i < 200; i++) {
@@ -68,22 +68,22 @@ console.log('\n=== 纯 jsdom 对照 ===')
     li.appendChild(t)
     texts.push(t)
   }
-  run('200 行：只改其中 1 个文本节点', i => { texts[100].nodeValue = `v${i}` }, 300)
+  run('200 rows: change only 1 text node', i => { texts[100].nodeValue = `v${i}` }, 300)
 }
 
-// 200 行：把 200 行全部移到末尾（模拟 LIS 之后的最小移动）
+// 200 rows: move all 200 rows to the end (simulates the minimal moves after LIS)
 {
   const ul = document.createElement('ul')
   for (let i = 0; i < 200; i++) ul.appendChild(document.createElement('li'))
-  run('200 行：把全部节点重排一遍（appendChild）', () => {
+  run('200 rows: reorder every node (appendChild)', () => {
     for (const li of Array.from(ul.childNodes)) ul.appendChild(li)
   }, 300)
 }
 
-// 200 行的 Map 构建 + LIS（纯 JS，不碰 DOM）—— 对照 vobs 的调和开销
+// Map building + lookups for 200 rows (pure JS, no DOM) — the counterpart of vobs reconciliation overhead
 {
   const items = Array.from({ length: 200 }, (_, i) => ({ id: i }))
-  run('200 项：建 Map + 逐项查表（纯 JS）', () => {
+  run('200 items: build Map + per-item lookup (pure JS)', () => {
     const map = new Map()
     for (const item of items) map.set(item.id, item)
     let n = 0

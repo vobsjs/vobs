@@ -1,24 +1,24 @@
 import { memo, state, type ReadableSignal, type Signal } from '@vobs/vobs'
 import type { DshClientContext } from '@vobs/dsh'
 
-/* ------------------------------------------------------------------ 数据模型 */
+/* ------------------------------------------------------------------ Data model */
 
 export type ConsoleEventStatus = 'ok' | 'warn' | 'err' | 'run'
 
-/** 一条运行态事件。字段刻意保持扁平，便于从 DSH 的 session 事件流直接映射。 */
+/** One run-state event. Fields are deliberately flat for direct mapping from DSH's session event stream. */
 export interface ConsoleEvent {
-  /** 全局递增序号，用作 keyed list 的 key。 */
+  /** Globally increasing sequence number; used as the keyed list key. */
   seq: number
-  /** epoch 毫秒。 */
+  /** Epoch milliseconds. */
   time: number
   sessionId: string
   sessionTitle: string
-  /** 事件类型，沿用 DSH 的命名：turn/start、tool/end、approval/request … */
+  /** Event kind, following DSH's naming: turn/start, tool/end, approval/request … */
   kind: string
   detail: string
   durationMs?: number
   status?: ConsoleEventStatus
-  /** 该事件属于哪个工具（tool/start、tool/end 才有）。 */
+  /** Which tool this event belongs to (only for tool/start, tool/end). */
   tool?: string
 }
 
@@ -40,7 +40,7 @@ export interface ToolStat {
   p50: number
   p95: number
   totalMs: number
-  /** 最近若干次调用的耗时序列，用于画迷你趋势线。 */
+  /** Duration samples of the most recent calls, for drawing the mini trend line. */
   trend: readonly number[]
 }
 
@@ -60,14 +60,14 @@ export interface ConsoleSnapshot {
 export type ConsolePatch =
   | { type: 'event'; event: ConsoleEvent }
   | { type: 'sessions'; sessions: readonly SessionSummary[] }
-  /** 数据源被换掉（例如从演示数据切到真实服务）：丢弃已有聚合，按新源重建。 */
+  /** The data source was swapped (e.g. demo data → real services): drop existing aggregates and rebuild from the new source. */
   | { type: 'reset' }
 
 /**
- * 数据源。UI 只认这个接口，因此「换真实数据」不需要动任何视图代码。
+ * Data source. The UI only knows this interface, so "switching to real data" never touches view code.
  *
- * `note` 会被渲染成界面上的接入状态说明 —— 演示数据必须自报家门，
- * 不能让看的人以为这是真实运行态。
+ * `note` is rendered as the on-screen source status note — demo data must identify itself,
+ * never letting the viewer mistake it for real run states.
  */
 export interface ConsoleSource {
   readonly kind: 'synthetic' | 'dsh'
@@ -78,18 +78,18 @@ export interface ConsoleSource {
   dispose(): void
 }
 
-/* -------------------------------------------------------------------- 常量 */
+/* -------------------------------------------------------------------- Constants */
 
-/** 事件环形缓冲上限：超出后丢弃最旧的，避免长时间运行把内存吃光。 */
+/** Ring-buffer cap for events: beyond it the oldest are dropped, so long runs cannot exhaust memory. */
 export const EVENT_LIMIT = 5000
 
-/** 每个工具保留的耗时样本数，用于计算 P50/P95。 */
+/** Duration samples kept per tool, for computing P50/P95. */
 export const TOOL_SAMPLE_LIMIT = 240
 
-/** 趋势线保留的最近调用次数。 */
+/** Number of recent calls kept for the trend line. */
 export const TREND_LENGTH = 24
 
-/* ------------------------------------------------------------------ 格式化 */
+/* ------------------------------------------------------------------ Formatting */
 
 const pad = (value: number): string => (value < 10 ? `0${value}` : String(value))
 
@@ -114,12 +114,13 @@ export function formatTokens(tokens: number): string {
 }
 
 /**
- * 把一串数值折成 SVG 折线路径。返回的是 `<path d>` 的值，纯函数、可单测。
+ * Folds a list of numbers into an SVG polyline path. Returns the `<path d>` value; a pure
+ * function, unit-testable.
  *
- * @param values - 数值序列
- * @param width - 目标宽度
- * @param height - 目标高度
- * @param padding - 上下留白，避免线贴边
+ * @param values - number sequence
+ * @param width - target width
+ * @param height - target height
+ * @param padding - vertical padding so the line does not hug the edges
  */
 export function buildSparkline(values: readonly number[], width: number, height: number, padding = 2): string {
   if (values.length === 0) return ''
@@ -138,7 +139,7 @@ export function buildSparkline(values: readonly number[], width: number, height:
     .join(' ')
 }
 
-/* -------------------------------------------------------------- 工具聚合 */
+/* -------------------------------------------------------------- Tool aggregation */
 
 interface ToolBucket {
   name: string
@@ -160,7 +161,7 @@ function toToolStats(buckets: ReadonlyMap<string, ToolBucket>): ToolStat[] {
       const totalMs = bucket.durations.reduce((sum, value) => sum + value, 0)
       return {
         name: bucket.name,
-        // 每次 tool/end 恰好压入一个耗时样本，失败是它的子集，不能重复计入。
+        // Every tool/end pushes exactly one duration sample; failures are a subset and must not be double-counted.
         calls: bucket.durations.length,
         failures: bucket.failures,
         p50: percentile(sorted, 0.5),
@@ -173,8 +174,8 @@ function toToolStats(buckets: ReadonlyMap<string, ToolBucket>): ToolStat[] {
 }
 
 /**
- * 把一条事件折进工具统计。只有 `tool/end` 才算一次调用：
- * `tool/start` 只是开始，既没有耗时也不构成调用计数。
+ * Folds one event into the tool stats. Only `tool/end` counts as a call:
+ * `tool/start` is just a beginning, with neither a duration nor a call count.
  */
 function recordTool(buckets: Map<string, ToolBucket>, event: ConsoleEvent): boolean {
   if (event.kind !== 'tool/end' || event.tool === undefined) return false
@@ -194,7 +195,7 @@ function recordTool(buckets: Map<string, ToolBucket>, event: ConsoleEvent): bool
   return true
 }
 
-/* -------------------------------------------------------------------- 商店 */
+/* -------------------------------------------------------------------- Store */
 
 export interface ConsoleStore {
   readonly source: ConsoleSource
@@ -202,7 +203,7 @@ export interface ConsoleStore {
   readonly sessions: Signal<readonly SessionSummary[]>
   readonly tools: Signal<readonly ToolStat[]>
   readonly paused: Signal<boolean>
-  /** 暂停期间被丢弃的事件数，恢复时清零。 */
+  /** Number of events dropped while paused; reset to zero on resume. */
   readonly droppedWhilePaused: Signal<number>
   readonly revision: Signal<number>
   readonly totals: ReadableSignal<ToolTotals>
@@ -213,10 +214,11 @@ export interface ConsoleStore {
 }
 
 /**
- * 把数据源的事件折叠成 UI 需要的三份状态：事件缓冲、会话列表、工具聚合。
+ * Folds the data source's events into the three pieces of state the UI needs: the event
+ * buffer, the session list, and the tool aggregates.
  *
- * 工具统计是**增量**维护的：每条 `tool/end` 只更新它所属的那个 bucket，
- * 不会为了算 P95 去重扫全量事件。
+ * Tool stats are maintained **incrementally**: each `tool/end` only updates its own bucket,
+ * never rescanning all events just to compute a P95.
  */
 export function createConsoleStore(source: ConsoleSource): ConsoleStore {
   const seed = source.snapshot()
@@ -311,18 +313,18 @@ export function createConsoleStore(source: ConsoleSource): ConsoleStore {
   }
 }
 
-/* -------------------------------------------------------------- 演示数据源 */
+/* -------------------------------------------------------------- Demo data source */
 
 export interface SyntheticSourceOptions {
   seed?: number
-  /** tick 的默认步数。 */
+  /** Default number of steps per tick. */
   stepsPerTick?: number
-  /** 起始时间，便于测试固定时间轴。 */
+  /** Start time, handy for pinning the timeline in tests. */
   startTime?: number
 }
 
 export interface SyntheticSource extends ConsoleSource {
-  /** 手动推进，便于测试与"暂停后单步"的演示。 */
+  /** Advance manually; handy for tests and the "single step after pause" demo. */
   tick(steps?: number): void
 }
 
@@ -335,14 +337,14 @@ interface SyntheticSessionSeed {
 }
 
 const SYNTHETIC_SESSIONS: readonly SyntheticSessionSeed[] = [
-  { id: 's-51aaec91', title: 'DSH 插件接入方案', state: 'run', tokens: 41_200, durationMs: 138_000 },
-  { id: 's-2f0d1c33', title: 'KitSidebar 菜单钉靠', state: 'run', tokens: 27_600, durationMs: 64_000 },
-  { id: 's-8b71e204', title: 'Combobox 方向对齐', state: 'wait', tokens: 18_100, durationMs: 96_000 },
+  { id: 's-51aaec91', title: 'DSH plugin integration plan', state: 'run', tokens: 41_200, durationMs: 138_000 },
+  { id: 's-2f0d1c33', title: 'KitSidebar menu pinning', state: 'run', tokens: 27_600, durationMs: 64_000 },
+  { id: 's-8b71e204', title: 'Combobox direction alignment', state: 'wait', tokens: 18_100, durationMs: 96_000 },
   { id: 's-4c9a77de', title: 'runtime SVG namespace', state: 'run', tokens: 53_900, durationMs: 221_000 },
-  { id: 's-77e0b218', title: 'compiler 多态插入重构', state: 'ok', tokens: 12_400, durationMs: 51_000 },
+  { id: 's-77e0b218', title: 'compiler polymorphic insert refactor', state: 'ok', tokens: 12_400, durationMs: 51_000 },
   { id: 's-1d3f5a90', title: 'npm release 1.7.5', state: 'ok', tokens: 8_900, durationMs: 33_000 },
-  { id: 's-9a2c4e61', title: '表格列设置持久化', state: 'idle', tokens: 0, durationMs: 0 },
-  { id: 's-6f5b8d02', title: 'i18n 回退链', state: 'idle', tokens: 0, durationMs: 0 }
+  { id: 's-9a2c4e61', title: 'table column settings persistence', state: 'idle', tokens: 0, durationMs: 0 },
+  { id: 's-6f5b8d02', title: 'i18n fallback chain', state: 'idle', tokens: 0, durationMs: 0 }
 ]
 
 const SYNTHETIC_TOOLS: readonly { name: string; base: number; spread: number; failureRate: number }[] = [
@@ -361,19 +363,19 @@ const SYNTHETIC_TOOLS: readonly { name: string; base: number; spread: number; fa
 
 const SYNTHETIC_DETAILS: Record<string, readonly string[]> = {
   read: ['packages/dsh/src/host.ts', 'packages/dsh/src/plugin.ts', 'package.json'],
-  grep: ['/usr|pwsh/ · 9 处匹配 · 2 个文件', '/insertList|bindText/ · 14 处 · 5 个文件'],
+  grep: ['/usr|pwsh/ · 9 matches · 2 files', '/insertList|bindText/ · 14 matches · 5 files'],
   pwsh: ['node scripts/build-dsh-plugins.mjs', 'pnpm exec vitest --run packages/dsh', 'git status --porcelain'],
   edit: ['packages/dsh-plugin/src/client/index.tsx +18 −4', 'packages/dsh/src/vite.ts +41 −7'],
-  glob: ['packages/dsh-console/src/**/*.tsx · 6 个文件'],
+  glob: ['packages/dsh-console/src/**/*.tsx · 6 files'],
   write: ['lib/client.js · 57.9 KiB'],
   web_search: ['pnpm git subdirectory install', 'DSH plugin manifest'],
   web_fetch: ['https://pnpm.io/package-sources'],
-  subagent: ['审查 @vobs/dsh 的纯度门禁实现'],
-  todo_write: ['3 项待办 · 1 项进行中'],
+  subagent: ['review @vobs/dsh purity gate implementation'],
+  todo_write: ['3 todos · 1 in progress'],
   present: ['01-console-overview.png']
 }
 
-/** 确定性 PRNG（mulberry32），保证同一 seed 下测试与预览完全可复现。 */
+/** Deterministic PRNG (mulberry32); guarantees full reproducibility for tests and previews under the same seed. */
 function createRandom(seed: number): () => number {
   let a = seed >>> 0
   return () => {
@@ -385,13 +387,13 @@ function createRandom(seed: number): () => number {
 }
 
 /**
- * 演示数据源：按确定性随机生成一批像样的 DSH 运行事件。
+ * Demo data source: generates a batch of plausible DSH run events with deterministic randomness.
  *
- * 存在的意义有两个：
- *   1. 真实事件流接线完成前，Console 本身可以被开发、被测试、被演示；
- *   2. 它是「事件风暴」的现成压测夹具 —— `tick(200)` 就能一次灌 200 条。
+ * Its two reasons to exist:
+ *   1. Until the real event stream is wired up, the Console itself can be developed, tested, and demonstrated;
+ *   2. It is a ready-made stress fixture for "event storms" — `tick(200)` pours in 200 events at once.
  *
- * 它**不是**真实数据，界面会通过 `note` 明确标注。
+ * It is **not** real data; the UI says so explicitly via `note`.
  */
 export function createSyntheticSource(options: SyntheticSourceOptions = {}): SyntheticSource {
   const random = createRandom(options.seed ?? 20260101)
@@ -400,7 +402,7 @@ export function createSyntheticSource(options: SyntheticSourceOptions = {}): Syn
   let clock = baseTime - 60 * 60 * 1000
   let seq = 0
 
-  // 会话按顺序轻微错开最近活动时间，保证列表顺序稳定可预期。
+  // Sessions get slightly staggered last-activity times in order, keeping the list order stable and predictable.
   const sessions: SessionSummary[] = SYNTHETIC_SESSIONS.map((session, index) => ({
     id: session.id,
     title: session.title,
@@ -461,7 +463,7 @@ export function createSyntheticSource(options: SyntheticSourceOptions = {}): Syn
         sessionId: session.id,
         sessionTitle: session.title,
         kind: 'approval/request',
-        detail: '等待用户批准 · pwsh 沙箱外写文件',
+        detail: 'awaiting user approval · pwsh writing outside sandbox',
         durationMs: 1_000 + Math.floor(random() * 30_000),
         status: 'warn'
       })
@@ -486,8 +488,8 @@ export function createSyntheticSource(options: SyntheticSourceOptions = {}): Syn
 
   return {
     kind: 'synthetic',
-    label: '演示数据',
-    note: '未接入 DSH 事件流，以下内容由本地确定性生成器产出，仅用于预览与压测。',
+    label: 'Demo data',
+    note: "Not connected to DSH's event stream; the content below is produced by a local deterministic generator, for preview and stress testing only.",
     tick(steps = stepsPerTick): void {
       if (disposed) return
       for (let index = 0; index < steps; index += 1) step()
@@ -506,27 +508,28 @@ export function createSyntheticSource(options: SyntheticSourceOptions = {}): Syn
   }
 }
 
-/* ---------------------------------------------------------- DSH 真实数据源 */
+/* ---------------------------------------------------------- DSH real data source */
 
 export interface ConsoleServiceProbe {
-  /** 是否探测到 DSH 的 session-controller 客户端服务。 */
+  /** Whether DSH's session-controller client service was detected. */
   liveServiceFound: boolean
-  /** 面向使用者的状态说明，会渲染在界面上。 */
+  /** User-facing status note, rendered on screen. */
   note: string
 }
 
-/* ------------------------------------------------------------ DSH 真实服务 */
+/* ------------------------------------------------------------ DSH real services */
 
 /**
- * `@deepseek-ai/dsh-api-session-controller` 在客户端提供的服务面。
+ * The service surface `@deepseek-ai/dsh-api-session-controller` provides on the client.
  *
- * 方法名与行字段都是从已安装 DSH 的 `lib/client.js` 里读出来的（`ClientSessions`
- * 通过 `rootCtx.reflect.provide("sessions", this, void 0)` 发布）：
- *   - `list`：快照仓库，`getSnapshot()` → `{ ids, byId, phase, projectionsBySession }`，
- *     行字段含 `sessionId / title / running / blank / updatedAt / parentSessionId / depth`；
- *   - `retainInfo(id)`：`{ getSnapshot, subscribe }`，给出 `retainedBy` 引用计数。
+ * Method names and row fields were read from the installed DSH's `lib/client.js` (`ClientSessions`
+ * publishes itself via `rootCtx.reflect.provide("sessions", this, void 0)`):
+ *   - `list`: snapshot store, `getSnapshot()` → `{ ids, byId, phase, projectionsBySession }`,
+ *     row fields include `sessionId / title / running / blank / updatedAt / parentSessionId / depth`;
+ *   - `retainInfo(id)`: `{ getSnapshot, subscribe }`, giving the `retainedBy` reference count.
  *
- * 全部可选：字段缺失时按缺省处理，绝不因为 DSH 换了内部形状就崩。
+ * Everything is optional: missing fields fall back to defaults, never crashing because DSH
+ * changed its internal shape.
  */
 interface DshSessionSummaryLike {
   sessionId?: unknown
@@ -563,7 +566,7 @@ interface DshUiSessionService {
   sessionStatus?: DshSnapshotStore<Map<string, DshSessionStatusLike>>
 }
 
-/** 从一行列表快照映射成 Console 的会话模型。 */
+/** Maps one row of the list snapshot into the Console's session model. */
 function toSessionSummary(
   id: string,
   row: DshSessionSummaryLike,
@@ -583,7 +586,7 @@ function toSessionSummary(
     id,
     title: typeof row.title === 'string' && row.title !== '' ? row.title : id,
     state,
-    // 会话级列表快照里没有 token / 耗时；这两项保持 0，界面显示为「—」。
+    // Session-level list snapshots carry no tokens / durations; these stay 0 and render as "—".
     tokens: 0,
     durationMs: 0,
     lastActivity: typeof row.updatedAt === 'number' ? row.updatedAt : 0
@@ -607,17 +610,21 @@ function buildSessions(
 }
 
 export interface DshSourceOptions {
-  /** 每个会话保留的事件上限（防止长时间运行把内存吃光）。 */
+  /** Event history cap per session (prevents long runs from exhausting memory). */
   historyLimit?: number
 }
 
 /**
- * 从 DSH 的真实客户端服务构造数据源；服务不在就返回 `undefined`，由调用方回退。
+ * Builds a data source from DSH's real client services; returns `undefined` when the services
+ * are absent, letting the caller fall back.
  *
- * **能拿到什么**：会话目录（标题、更新时间、是否运行、是否等待审批）与它们的实时变更。
- * **拿不到什么**：逐会话的 token / 耗时，以及工具级事件 —— 前者不在列表快照里，
- * 后者要 `retain()` 打开每个会话来跟事件流。DSH 自己刻意避免「为了列表去打开冷会话」，
- * 本适配器同样不越这条线：它只做**目录级**观测，并把这件事如实写在来源说明里。
+ * **What you get**: the session catalog (titles, update times, running, awaiting approval) and
+ * their live changes.
+ * **What you don't**: per-session tokens / durations and tool-level events — the former is not
+ * in the list snapshot, and the latter would require `retain()`-ing every session to follow its
+ * event stream. DSH itself deliberately avoids "opening cold sessions just to list them",
+ * and this adapter does not cross that line either: it only observes at the **catalog** level
+ * and says so honestly in the source note.
  */
 export function createDshSource(
   ctx: DshClientContext | undefined,
@@ -638,7 +645,7 @@ export function createDshSource(
   let seq = 0
   let disposed = false
 
-  /** 上一次观测到的会话状态，用来把「变化」变成事件。 */
+  /** Last observed session states, used to turn "changes" into events. */
   const previous = new Map<string, { state: SessionState; title: string }>()
   let current: readonly SessionSummary[] = []
 
@@ -664,17 +671,17 @@ export function createDshSource(
     }
 
     if (before === undefined) {
-      return { ...base, kind: 'session/open', detail: '会话进入目录', status: 'ok' }
+      return { ...base, kind: 'session/open', detail: 'session entered the catalog', status: 'ok' }
     }
     if (before.state !== summary.state) {
-      if (summary.state === 'run') return { ...base, kind: 'turn/start', detail: '会话开始运行', status: 'run' }
+      if (summary.state === 'run') return { ...base, kind: 'turn/start', detail: 'session started running', status: 'run' }
       if (summary.state === 'wait') {
-        return { ...base, kind: 'approval/request', detail: '等待用户输入或批准', status: 'warn' }
+        return { ...base, kind: 'approval/request', detail: 'awaiting user input or approval', status: 'warn' }
       }
-      return { ...base, kind: 'turn/end', detail: '会话停止运行', status: 'ok' }
+      return { ...base, kind: 'turn/end', detail: 'session stopped running', status: 'ok' }
     }
     if (before.title !== summary.title) {
-      return { ...base, kind: 'session/update', detail: `标题更新为「${summary.title}」`, status: 'ok' }
+      return { ...base, kind: 'session/update', detail: `title updated to "${summary.title}"`, status: 'ok' }
     }
     return undefined
   }
@@ -700,7 +707,7 @@ export function createDshSource(
           sessionId: id,
           sessionTitle: before.title,
           kind: 'session/close',
-          detail: '会话离开目录',
+          detail: 'session left the catalog',
           status: 'ok'
         })
       }
@@ -711,7 +718,7 @@ export function createDshSource(
     for (const listener of listeners) listener({ type: 'sessions', sessions: next })
   }
 
-  // 首次读数：只建基线，不造事件（否则一进页面就刷一屏历史）
+  // First read: build the baseline only, no synthetic events (otherwise the page floods with history on entry)
   refresh(false)
 
   const unsubscribes: Array<() => void> = []
@@ -719,13 +726,13 @@ export function createDshSource(
     unsubscribes.push(list.subscribe(() => refresh(true)))
     if (statusStore !== undefined) unsubscribes.push(statusStore.subscribe(() => refresh(true)))
   } catch {
-    // 订阅失败不致命：至少保留首次快照
+    // Subscription failure is not fatal: at least the first snapshot is kept
   }
 
   return {
     kind: 'dsh',
-    label: 'DSH 运行态',
-    note: '数据来自 DSH 的 sessions / uiSession 服务，为**会话级**观测：列表、运行状态与等待审批。token 与工具级事件不在目录快照里，因此显示为「—」。',
+    label: 'DSH run states',
+    note: "Data comes from DSH's sessions / uiSession services and is a **session-level** observation: list, run states, and awaiting approval. Tokens and tool-level events are not in the catalog snapshot, so they render as an em dash.",
     snapshot(): ConsoleSnapshot {
       return { events: [...events], sessions: [...current] }
     },
@@ -739,7 +746,7 @@ export function createDshSource(
         try {
           unsubscribe()
         } catch {
-          // 忽略
+          // ignored
         }
       }
       listeners.clear()
@@ -747,19 +754,19 @@ export function createDshSource(
   }
 }
 
-/* ------------------------------------------------------------ 数据源选择 */
+/* ------------------------------------------------------------ Source selection */
 
 export interface ConsoleSourceSelection {
   source: ConsoleSource
-  /** 界面上的来源说明。 */
+  /** The on-screen source note. */
   note: string
 }
 
 /**
- * 选择数据源：能用真实服务就用真实的，否则退回演示数据并如实标注。
+ * Pick a data source: use real services when available, otherwise fall back to demo data, labeled honestly.
  *
- * @param ctx - DSH 客户端上下文
- * @param fallback - 复用调用方已经建好的演示源；不给就新建一个
+ * @param ctx - DSH client context
+ * @param fallback - reuse a demo source the caller already built; a new one is created if omitted
  */
 export function selectConsoleSource(
   ctx: DshClientContext | undefined,
@@ -769,19 +776,20 @@ export function selectConsoleSource(
   if (live !== undefined) {
     return {
       source: live,
-      note: `${live.note}（未打开任何会话，因此不采集逐会话的工具事件）`
+      note: `${live.note} (no sessions opened, so per-session tool events are not collected)`
     }
   }
   const demo = fallback ?? createSyntheticSource()
   return {
     source: demo,
-    note: `${demo.note}未探测到 DSH 的 sessions 服务。`
+    note: `${demo.note}DSH's sessions service was not detected.`
   }
 }
 
 /**
- * 可热替换的数据源：Console 先以演示数据建好，一旦 `setup(ctx)` 探测到真实服务，
- * 就整体切过去并广播 `reset`，让商店丢掉演示数据、按真实源重建。
+ * Hot-swappable data source: the Console starts on demo data, and once `setup(ctx)` detects
+ * real services it switches wholesale and broadcasts `reset`, so the store drops the demo data
+ * and rebuilds from the real source.
  */
 export interface SwitchableSource extends ConsoleSource {
   switchTo(next: ConsoleSource): void
@@ -795,7 +803,7 @@ export function createSwitchableSource(initial: ConsoleSource): SwitchableSource
 
   function subscribeInner(source: ConsoleSource): () => void {
     return source.subscribe(patch => {
-      // 只有当前生效的源才能推进状态
+      // Only the currently active source may advance state
       if (source !== active) return
       for (const listener of listeners) listener(patch)
     })

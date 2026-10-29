@@ -52,9 +52,9 @@ describe('resource cancellation vs the shared cache', () => {
 
   it('a genuine failure still writes error (the cancellation carve-out did not touch the normal error path)', async () => {
     const client = createResourceClient()
-    const item = client.resource({ key: ['boom'], fetcher: () => Promise.reject(new Error('网络炸了')) })
+    const item = client.resource({ key: ['boom'], fetcher: () => Promise.reject(new Error('network exploded')) })
     await item.prefetch().catch(() => undefined)
-    expect(item.error.value?.message).toBe('网络炸了')
+    expect(item.error.value?.message).toBe('network exploded')
     item.dispose()
     client.clear()
   })

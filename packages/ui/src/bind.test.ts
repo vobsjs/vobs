@@ -6,14 +6,16 @@ import { scheduler } from '@vobs/reactivity'
 import { Checkbox, Input, Radio, Select, Switch, Textarea } from './index'
 
 /*
- * bind 双向绑定。
+ * bind two-way binding.
  *
- * 这里曾经**完全没有测试** —— 全仓库唯一的 bind 测试落在 Combobox（而它不走表单控件
- * 这条路径）。于是这个 bug 一直藏着：`listen` 每次调用都新建包装函数，而 runtime 的
- * `addEventListener` 每个 (node, event) 只有一个槽，后注册的（用户 handler）把先注册的
- * （bind 写回）顶掉 —— 输入后信号永远不变、而且零报错。
+ * This area once had **no tests at all** — the only bind test in the whole repo lived in Combobox
+ * (which doesn't go through the form-control path). So this bug stayed hidden: `listen` created a
+ * fresh wrapper function on every call, while the runtime's `addEventListener` has only one slot
+ * per (node, event); the later registration (user handler) evicted the earlier one (bind
+ * write-back) — after typing, the signal never changed, and with zero errors.
  *
- * 所以这组测试同时锁两件事：**写回生效** 和 **用户 handler 仍然被调用**。
+ * So this group of tests locks in two things at once: **write-back works** and **the user handler
+ * is still called**.
  */
 const flush = () => { scheduler.flush(); scheduler.flush() }
 
@@ -25,8 +27,8 @@ function mountControl(component: Parameters<typeof createComponent>[0], props: R
   return { host, app }
 }
 
-describe('bind 写回', () => {
-  it('Input：输入写回信号，且用户 onInput 照旧触发', () => {
+describe('bind write-back', () => {
+  it('Input: typing writes back to the signal, and the user onInput still fires', () => {
     const value = state('初始')
     const seen: string[] = []
     const { host, app } = mountControl(Input, {
@@ -43,7 +45,7 @@ describe('bind 写回', () => {
     app.destroy()
   })
 
-  it('Textarea：输入写回信号', () => {
+  it('Textarea: typing writes back to the signal', () => {
     const value = state('初始')
     const { host, app } = mountControl(Textarea, { bind: value })
     const el = host.querySelector('textarea') as HTMLTextAreaElement
@@ -55,7 +57,7 @@ describe('bind 写回', () => {
     app.destroy()
   })
 
-  it('Checkbox：勾选写回布尔信号', () => {
+  it('Checkbox: checking writes a boolean back to the signal', () => {
     const checked = state(false)
     const { host, app } = mountControl(Checkbox, { bind: checked })
     const el = host.querySelector('input[type=checkbox]') as HTMLInputElement
@@ -67,7 +69,7 @@ describe('bind 写回', () => {
     app.destroy()
   })
 
-  it('信号 → DOM：bind 的信号变化会写回控件（反向也要通）', () => {
+  it('Signal → DOM: signal changes via bind write back to the control (reverse direction too)', () => {
     const value = state('a')
     const { host, app } = mountControl(Input, { bind: value })
     const input = host.querySelector('input') as HTMLInputElement
@@ -79,7 +81,7 @@ describe('bind 写回', () => {
     app.destroy()
   })
 
-  it('Switch：切换写回布尔信号', () => {
+  it('Switch: toggling writes a boolean back to the signal', () => {
     const checked = state(false)
     const { host, app } = mountControl(Switch, { bind: checked })
     const el = host.querySelector('input[type=checkbox]') as HTMLInputElement
@@ -90,13 +92,15 @@ describe('bind 写回', () => {
     app.destroy()
   })
 
-  it('Select：change 写回选中值', () => {
+  it('Select: change writes the selected value back', () => {
     const value = state('')
     const { host, app } = mountControl(Select, { bind: value })
     const el = host.querySelector('select') as HTMLSelectElement
-    // 选项本应来自 children 插槽；这里只测事件写回本身，所以直接塞 DOM。
-    // （我上一版探针传了 `options` —— 那是猜的 props 形状，导致 <select> 里没有 option，
-    //   于是测的是"我的假设"而不是被测对象，差点误报成 bug 未修。）
+    // Options would normally come from the children slot; here we only test event write-back
+    // itself, so the DOM is injected directly.
+    // (My previous probe passed `options` — a guessed props shape — which left the <select>
+    //   without any option, so the test asserted "my assumption" instead of the subject under
+    //   test, and nearly misreported the bug as unfixed.)
     el.innerHTML = '<option value="a">A</option><option value="b">B</option>'
     el.value = 'b'
     el.dispatchEvent(new window.Event('change', { bubbles: true }))
@@ -105,7 +109,7 @@ describe('bind 写回', () => {
     app.destroy()
   })
 
-  it('Radio：bind 的契约是 Signal<boolean>，写回布尔而非选项值', () => {
+  it('Radio: the bind contract is Signal<boolean>, writing a boolean back rather than the option value', () => {
     const checked = state(false)
     const { host, app } = mountControl(Radio, { bind: checked, value: 'x' })
     const el = host.querySelector('input[type=radio]') as HTMLInputElement

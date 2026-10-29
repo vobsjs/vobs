@@ -1,132 +1,132 @@
 # dsh-plugin-vobs-console
 
-**Vobs Console** —— 用 [vobs](https://github.com/vobsjs/vobs) 渲染的 DSH 多会话实时驾驶舱。
+**Vobs Console** — a DSH multi-session real-time cockpit rendered with [vobs](https://github.com/vobsjs/vobs).
 
-它注册进 DSH 的 `main`（keyed）slot，在左侧栏多一个 **Console** 入口，点开占满主区域。整页 GUI 由 vobs 在自己的 shadow root 里渲染，外层只有一个几行的 React 宿主 —— 这份宿主由 [`@vobs/dsh`](../dsh) 提供，本包自己没有一行 React。
+It registers into DSH's `main` (keyed) slot, adds a **Console** entry to the left sidebar, and takes over the main area when opened. The full-page GUI is rendered by vobs inside its own shadow root, with only a few-line React host on the outside — that host is provided by [`@vobs/dsh`](../dsh); this package itself contains not a single line of React.
 
-预览图见 [`packages/dsh-plugin/design/preview/`](../dsh-plugin/design/preview)。
+Preview images: [`packages/dsh-plugin/design/preview/`](../dsh-plugin/design/preview).
 
 ---
 
-## 为什么需要它
+## Why it exists
 
-DSH 现在的界面是**单会话为中心**的：主区域是对话，右侧是当前会话的文件 / 终端 / 预览。**跨会话、跨 turn 的运行态**是散的 —— 谁在跑、跑了多久、烧了多少 token、哪个工具在失败，得一个个会话点开看。
+DSH's UI today is **single-session-centric**: the main area is the conversation, the right side is the current session's files / terminal / preview. **Cross-session, cross-turn runtime state** is scattered — who is running, for how long, how many tokens burned, which tool is failing; you have to open sessions one by one to find out.
 
-Console 补的就是这块。
+Console fills exactly that gap.
 
-| Tab | 内容 |
+| Tab | Content |
 | --- | --- |
-| **总览** | 运行中会话 / 等待审批 / 工具调用 / 成功率四个实时指标；最近事件；工具 Top 5；会话运行态（token 与耗时） |
-| **事件流** | 全部运行事件的实时列表，可过滤、可暂停；暂停期间新事件被丢弃并计数，而不是继续堆积 |
-| **工具分析** | 每个工具的调用次数 / 成功率 / P50 / P95 / 总耗时 / 趋势折线。统计是**增量**维护的，不会为算 P95 重扫全量事件 |
-| **产物** | 由写入 / 编辑 / 交付类工具事件推导出的交付物时间线 |
+| **Overview** | Four live metrics: running sessions / pending approvals / tool calls / success rate; recent events; tools Top 5; per-session runtime state (tokens and duration) |
+| **Event stream** | Real-time list of all runtime events, filterable and pausable; events arriving while paused are dropped and counted rather than piling up |
+| **Tool analytics** | Per tool: call count / success rate / P50 / P95 / total duration / trend line. Statistics are maintained **incrementally**; P95 never rescan the full event history |
+| **Artifacts** | A deliverables timeline derived from write / edit / deliver-type tool events |
 
-为什么用 vobs 而不是 React：这些界面的负载是**高频流式更新**（事件流每秒几十到几百条）。vobs 的组件体只执行一次，更新全部落在绑定的 DOM 节点上；`insertList` 做 keyed 复用，只插入新增行。这正是这套 UI 的技术前提，`packages/dsh-console/scripts/verify-console.mjs` 里有对应的可执行断言。
+Why vobs instead of React: the load on these screens is **high-frequency streaming updates** (dozens to hundreds of events per second on the event stream). vobs component bodies execute only once; updates all land on the bound DOM nodes; `insertList` does keyed reuse, inserting only new rows. That is precisely this UI's technical premise, and `packages/dsh-console/scripts/verify-console.mjs` contains the corresponding executable assertions.
 
 ---
 
-## 数据来源
+## Data sources
 
-Console 会**自动选择**数据源，界面上有明确标注：
+Console **selects its data source automatically**, clearly labeled in the UI:
 
-| 情况 | 数据源 | 徽标 |
+| Situation | Source | Badge |
 | --- | --- | --- |
-| 探测到 DSH 的 `sessions` 服务 | 真实会话目录与运行状态 | 绿色「DSH 实时数据」 |
-| 没探测到 | 本地确定性演示生成器 | 橙色「演示数据」 |
+| DSH's `sessions` service detected | Real session directory and runtime state | Green "DSH live data" |
+| Not detected | Local deterministic demo generator | Orange "Demo data" |
 
-### 真实数据（`createDshSource`）
+### Live data (`createDshSource`)
 
-读的是 `@deepseek-ai/dsh-api-session-controller` 在客户端发布的 `sessions` 服务，
-以及 `uiSession.sessionStatus`。这些方法名与行字段是从已安装 DSH 的 `lib/client.js`
-里读出来的，不是猜的：
+It reads the `sessions` service published on the client by `@deepseek-ai/dsh-api-session-controller`,
+plus `uiSession.sessionStatus`. Those method names and row fields were read out of an installed DSH's
+`lib/client.js`, not guessed:
 
-| 来源 | 拿到什么 |
+| Source | What you get |
 | --- | --- |
-| `ctx.get('sessions').list.getSnapshot()` / `.subscribe()` | `{ ids, byId }`，行含 `sessionId / title / running / blank / updatedAt / parentSessionId / depth` |
-| `ctx.get('uiSession').sessionStatus` | 每会话的 `running` / `pendingInteraction` / `removed` |
+| `ctx.get('sessions').list.getSnapshot()` / `.subscribe()` | `{ ids, byId }`, rows containing `sessionId / title / running / blank / updatedAt / parentSessionId / depth` |
+| `ctx.get('uiSession').sessionStatus` | Per-session `running` / `pendingInteraction` / `removed` |
 
-由此得到：会话列表、运行中 / 等待审批的状态、以及**由状态跃迁派生的事件流**
-（`turn/start`、`turn/end`、`approval/request`、`session/open`、`session/close`、`session/update`）。
+From this: the session list, running / pending-approval states, and an **event stream derived from state transitions**
+(`turn/start`, `turn/end`, `approval/request`, `session/open`, `session/close`, `session/update`).
 
-**拿不到什么，以及为什么不硬凑**：
+**What is unavailable, and why we don't fake it**:
 
-- **token 与耗时** —— 不在会话目录快照里，显示为「—」。
-- **工具级事件** —— 属于会话内部历史，要采集就得对每个会话 `retain()` 打开并跟随它的事件流。
-  而 DSH 自己刻意避免「为了列表去打开冷会话」；本适配器同样不越这条线。
+- **Tokens and duration** — not in the session-directory snapshot; displayed as "—".
+- **Tool-level events** — part of a session's internal history; collecting them would require `retain()`-opening every session and following its event stream.
+  DSH itself deliberately avoids "opening cold sessions just to build a list"; this adapter likewise does not cross that line.
 
-因此「工具分析」页在真实数据下会显示一段解释而不是空表格；切到演示数据时那一页是完整的
-（用来预览表格与趋势线的行为）。这是有意的取舍：**宁可少显示，也不把拿不到的数据编出来。**
+So under live data the "Tool analytics" page shows an explanation instead of an empty table; on demo data that page is complete
+(to preview the table and trend line behavior). This is a deliberate trade-off: **better to show less than to fabricate data we cannot get.**
 
-### 演示数据
+### Demo data
 
-`createSyntheticSource` 是确定性的（mulberry32 + 固定 seed），因此同一份输入每次结果一致。
-它有两个用途：真实接线之外的预览载体，以及**事件风暴的现成压测夹具**（`source.tick(200)` 一次灌 200 条）。
+`createSyntheticSource` is deterministic (mulberry32 + fixed seed), so the same input always yields the same result.
+It serves two purposes: a preview vehicle beyond the live wiring, and a **ready-made stress fixture for event storms** (`source.tick(200)` pushes 200 events at once).
 
-`ConsoleSource` 接口是数据面的唯一边界，换数据源不需要动任何视图代码；
-`createSwitchableSource` 让 Console 先以演示数据建好，探测到真实服务后整体切换并广播 `reset`。
+The `ConsoleSource` interface is the only boundary of the data plane; swapping sources requires no view changes.
+`createSwitchableSource` lets the Console boot on demo data first, then switch wholesale and broadcast `reset` once the real service is detected.
 
 ---
 
-## 安装
+## Install
 
-先确保仓库里有构建产物（`lib/client.js` 必须提交，DSH 不做构建），然后：
+First make sure the repo has build artifacts committed (`lib/client.js` must be in Git — DSH does not build), then:
 
 ```text
 github:vobsjs/vobs#<tag>&path:/packages/dsh-console
 ```
 
-或在命令行：
+Or on the command line:
 
 ```bash
 dsh plugin --profile desktop add "github:vobsjs/vobs#<tag>&path:/packages/dsh-console"
 ```
 
-> Windows 下 `dsh.cmd` 是 batch 包装，`&` 会被 `cmd.exe` 吃掉而**静默装错包**，PowerShell 里要用 `dsh --% plugin …`。细节见 [dsh-plugin 的 README](../dsh-plugin/README.md#三安装)。
+> On Windows, `dsh.cmd` is a batch wrapper; `&` gets eaten by `cmd.exe`, **silently installing the wrong package**. In PowerShell use `dsh --% plugin …`. Details in [the dsh-plugin README](../dsh-plugin/README.md#3-installation).
 
-装完完全退出 DSH 再打开；左侧栏出现 **Console** 图标。
+After installing, fully quit DSH and reopen; a **Console** icon appears in the left sidebar.
 
 ---
 
-## 开发
+## Development
 
 ```bash
-pnpm build:packages        # 首次：产出 @vobs/dsh 与 @vobs/vite-plugin 的 dist
-pnpm build:dsh-console     # 产出 packages/dsh-console/lib/{index,client}.js
-pnpm --filter dsh-plugin-vobs-console verify     # 62 项产物校验
+pnpm build:packages        # first time: produce dist for @vobs/dsh and @vobs/vite-plugin
+pnpm build:dsh-console     # produce packages/dsh-console/lib/{index,client}.js
+pnpm --filter dsh-plugin-vobs-console verify     # 62 artifact checks
 ```
 
-`scripts/verify-console.mjs` 不看源码、只看产物，按 DSH 的模块协议真跑一遍：
-注册 factory → 物化取插件 → `apply()` 注册 `main` + `sidebar.panellist` → 挂载 → 断言 KPI / 会话列表 →
-推进演示时钟灌入事件 → 断言 tab 切换、过滤、暂停丢弃计数、工具聚合与趋势线 →
-清理 shadow root 与定时器。
+`scripts/verify-console.mjs` looks at no source, only artifacts, and actually runs them under DSH's module protocol:
+register factory → materialize to get the plugin → `apply()` registers `main` + `sidebar.panellist` → mount → assert KPIs / session list →
+advance the demo clock to push events → assert tab switching, filtering, pause-and-drop counting, tool aggregation, and the trend line →
+clean up the shadow root and timers.
 
-单元测试在 `src/client/data.test.ts`（24 项）：格式化、SVG 折线生成、环形缓冲封顶、
-工具聚合（含「失败是调用的子集，不能重复计入」这条曾经写错过的规则）、暂停语义、演示数据可复现性。
+Unit tests live in `src/client/data.test.ts` (24 cases): formatting, SVG polyline generation, ring-buffer capping,
+tool aggregation (including "failures are a subset of calls and must not be double-counted" — a rule once written wrong), pause semantics, and demo-data reproducibility.
 
-### 目录
+### Layout
 
 ```
 packages/dsh-console/
-├── package.json          # dsh 清单（bundle.patch + client.platform）
-├── cordis.patch.yml      # 只 insert 自己那行
-├── lib/                  # 预构建产物（提交进 Git）
+├── package.json          # dsh manifest (bundle.patch + client.platform)
+├── cordis.patch.yml      # inserts only its own line
+├── lib/                  # prebuilt artifacts (committed to Git)
 ├── src/
-│   ├── host/index.ts     # Host：只负责「被挂载」
+│   ├── host/index.ts     # Host: only responsible for "being mounted"
 │   └── client/
-│       ├── index.tsx     # defineDshPanel：main + sidebar.panellist
-│       ├── console.tsx   # 整页：头部 + 四个 tab
-│       ├── data.ts       # 数据模型、环形缓冲、工具聚合、演示源、服务探测
-│       ├── styles.ts     # 注入 shadow root 的 CSS（读 DSH design token）
-│       └── icons.tsx     # vobs JSX 画的内联 SVG
+│       ├── index.tsx     # defineDshPanel: main + sidebar.panellist
+│       ├── console.tsx   # full page: header + four tabs
+│       ├── data.ts       # data model, ring buffer, tool aggregation, demo source, service probing
+│       ├── styles.ts     # CSS injected into the shadow root (reads DSH design tokens)
+│       └── icons.tsx     # inline SVG drawn with vobs JSX
 └── scripts/verify-console.mjs
 ```
 
 ---
 
-## 已知限制
+## Known limitations
 
-- **数据是演示的**：真实事件流接线需要对照活体 DSH 核对 `SessionControlStream` / `SessionEventStream` 的方法签名，尚未完成。
-- **事件流没有虚拟滚动**：环形缓冲 5000 条，但一次最多渲染 300 行。滚动性能压测还没做。
-- **视觉自建**：vobs 面板里用不了 DSH 的 React 组件库（`@deepseek-ai/dsh-client-ui-primitives`），一致性靠 `--dsw-*` design token 维持。
-- **slot 是非官方契约**：`main` / `sidebar.panellist` 的名字与语义从已安装的 DSH 反推，DSH 升级后可能漂移。
-- **40/900px 假设**：布局按 DSH 主区域的容器尺寸设计，极窄窗口下会退化（未做响应式）。
+- **Data is demo-grade**: wiring the real event stream requires verifying `SessionControlStream` / `SessionEventStream` method signatures against a live DSH; not done yet.
+- **No virtual scrolling on the event stream**: the ring buffer holds 5000 events, but at most 300 rows render at once. Scroll performance has not been stress-tested.
+- **Visuals are DIY**: DSH's React component library (`@deepseek-ai/dsh-client-ui-primitives`) cannot be used inside a vobs panel; consistency is maintained via `--dsw-*` design tokens.
+- **Slots are an unofficial contract**: the names and semantics of `main` / `sidebar.panellist` were reverse-engineered from an installed DSH and may drift when DSH upgrades.
+- **40/900px assumption**: the layout is designed for the DSH main area's container size; extremely narrow windows degrade (not responsive).

@@ -120,7 +120,7 @@ pnpm run check:release
 ```
 
 ```text
-[release] 版本一致：1.7.7（37 个包，根版本同步）
+[release] versions consistent: 1.7.7 (37 packages, root version in sync)
 ```
 
 Run it once more in tag form before creating the tag (this is exactly what `release.yml` runs in CI):
@@ -130,7 +130,7 @@ pnpm run check:release -- v1.7.7
 ```
 
 ```text
-[release] v1.7.7 matches 37 public packages（根版本同步）
+[release] v1.7.7 matches 37 public packages (root version in sync)
 ```
 
 Commit the version changes and push `main`:

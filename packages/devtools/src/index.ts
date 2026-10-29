@@ -1489,9 +1489,10 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
 
   const target = options.target ?? defaultTarget()
   /*
-   * 默认值只表示「跟随环境」：非生产构建里挂，生产构建里不挂。
-   * 这里刻意不看 `options.target` 是不是调用方传进来的 —— 少一个分支就少一种
-   * 「同一份代码在两种宿主上行为不同」的解释成本；需要生产里也挂就写 `expose: true`。
+   * The default only means "follow the environment": attach in non-production builds, skip in
+   * production builds. This deliberately does not check whether `options.target` was passed in
+   * by the caller — one less branch means one less way to end up with "the same code behaving
+   * differently on two hosts"; pass `expose: true` to attach in production too.
    */
   const shouldExpose = options.expose ?? (Boolean(target) && !isProductionBuild())
   const previousGlobal = target?.__VOBS_DEVTOOLS__
@@ -1652,7 +1653,7 @@ export function createDevTools(options: DevToolsOptions = {}): DevToolsAPI {
     setSignalValue(signalId: string, value: unknown): boolean {
       if (!allowMutations || disposed) return false
       const record = signals.get(signalId)
-      // 只有 state 创建的信号可写；memo 派生值拒绝。
+      // Only signals created from state are writable; derived memo values are rejected.
       if (!record || record.disposed || record.kind !== 'state') return false
       try {
         ;(record.signal as Signal<unknown>).value = value
@@ -2004,21 +2005,25 @@ function defaultTarget(): DevToolsTarget | undefined {
 }
 
 /**
- * 判定「这是一次生产构建」，用来决定 `expose` 的默认值。
+ * Decides whether this is a production build, which drives the `expose` default.
  *
- * **只认字面量写法 `process.env.NODE_ENV`**：Vite / webpack / Rollup 在构建期会把这个
- * 表达式替换成字面量 `"production"`，所以浏览器产物里根本不需要存在 `process` 全局；
- * Node / Electron 里则读到真实值。因此这里**不能**写成
- * `typeof process !== 'undefined' && process.env.NODE_ENV === 'production'`：
- * 替换之后它会变成 `typeof process !== 'undefined' && "production" === "production"`，
- * 而浏览器里 `process` 恒为 undefined —— 守卫会静默失效，正是要修的那个 bug 的翻版。
+ * **Only the literal form `process.env.NODE_ENV` is recognized**: Vite / webpack / Rollup replace
+ * this expression with the literal `"production"` at build time, so browser bundles never need a
+ * `process` global to exist; Node / Electron read the real value. Therefore this must **not** be
+ * written as
+ * `typeof process !== 'undefined' && process.env.NODE_ENV === 'production'`:
+ * after replacement it would become `typeof process !== 'undefined' && "production" === "production"`,
+ * and in the browser `process` is always undefined — the guard silently stops working, a recurrence
+ * of the very bug this code exists to fix.
  *
- * 既没有 `process` 又没被替换（裸 `<script type="module">` 直接引产物）时把
- * ReferenceError 吞掉、按「非生产」处理：那种用法拿不到构建期信息，只能保守地
- * 保持旧行为（照挂）。这是本守卫已知的覆盖边界。
+ * When `process` is absent and unreplaced (a bare `<script type="module">` importing the bundle
+ * directly), the ReferenceError is swallowed and treated as "non-production": that usage has no
+ * build-time information available, so we conservatively keep the old behavior (attach). This is
+ * the known coverage boundary of this guard.
  *
- * 同样故意不读 `import.meta.env.PROD`：`scripts/build-packages.mjs` 已注明 esbuild 会把
- * CJS 产物里的 `import.meta` 变成空对象，多一条只在 ESM 里有效的分支只会制造假安全感。
+ * `import.meta.env.PROD` is deliberately not read either: `scripts/build-packages.mjs` already
+ * notes that esbuild turns `import.meta` into an empty object in CJS output; a branch that only
+ * works in ESM would only create false confidence.
  */
 function isProductionBuild(): boolean {
   try {
@@ -2071,7 +2076,7 @@ function invokeRequest(api: DevToolsAPI, request: DevToolsWireRequest): unknown 
     case 'importDiagnostics': api.importDiagnostics(args[0]); return undefined
     case 'getExtensionSnapshot': return api.getExtensionSnapshot()
     case 'inspectExtension': return api.inspectExtension(String(args[0] ?? ''), args[1])
-    default: throw new Error(`Vobs DevTools: 未知请求 ${request.method}`)
+    default: throw new Error(`Vobs DevTools: unknown request ${request.method}`)
   }
 }
 
@@ -2119,13 +2124,16 @@ interface ErrorClassification {
   readonly hint?: string
 }
 
+// Patterns match the exact English runtime error messages thrown by the source packages
+// (reactivity/scheduler.ts, runtime/fragment.ts + ops.ts, vobs/app.ts, ssr/hydration.ts);
+// only the developer-facing hints are localized here.
 const FRAMEWORK_ERROR_RULES: readonly { pattern: RegExp; origin: DevToolsErrorOrigin; code: string; hint: string }[] = [
-  { pattern: /响应式更新超过\s*100\s*轮/, origin: 'framework', code: 'VOBS_REACTIVITY_LOOP', hint: '检查 Effect 是否在执行时持续写入它依赖的 Signal。' },
-  { pattern: /Fragment: (?:不能跨父节点移动|Fragment 不属于指定父节点|找不到结束锚点)/, origin: 'framework', code: 'VOBS_FRAGMENT_INVARIANT', hint: '检查 Fragment 的父节点和插入/删除顺序，通常表示运行时树结构已不一致。' },
-  { pattern: /当前渲染器不支持 Hydration/, origin: 'usage', code: 'VOBS_HYDRATION_UNSUPPORTED', hint: '请使用支持 Hydration 的 Renderer，或改用 app.mount()。' },
-  { pattern: /(?:HydrationMismatchError|Vobs hydration:|服务端 DOM 与客户端渲染结构不一致|节点位置与客户端渲染结果不一致)/, origin: 'framework', code: 'VOBS_HYDRATION_MISMATCH', hint: '检查服务端和客户端是否生成了相同的节点结构与初始状态。' },
-  { pattern: /渲染器未初始化/, origin: 'usage', code: 'VOBS_RENDERER_NOT_INITIALIZED', hint: '请在应用 mount 或 hydrate 后调用 Runtime DOM API。' },
-  { pattern: /节点不属于指定父节点/, origin: 'framework', code: 'VOBS_DOM_PARENT_MISMATCH', hint: '检查节点是否被重复移动、删除，或被错误的 Renderer 实例管理。' }
+  { pattern: /reactive updates exceeded\s*100\s*rounds/, origin: 'framework', code: 'VOBS_REACTIVITY_LOOP', hint: 'The Effect keeps writing to a Signal it depends on while executing.' },
+  { pattern: /Vobs Fragment: (?:cannot move a Fragment across parent nodes|the Fragment does not belong to the given parent node|end anchor not found)/, origin: 'framework', code: 'VOBS_FRAGMENT_INVARIANT', hint: 'Check the Fragment parent node and insert/remove order; this usually means the runtime tree is already inconsistent.' },
+  { pattern: /the current renderer does not support hydration/, origin: 'usage', code: 'VOBS_HYDRATION_UNSUPPORTED', hint: 'Use a Renderer that supports hydration, or switch to app.mount().' },
+  { pattern: /(?:HydrationMismatchError|Vobs hydration:|the server DOM contains nodes not declared by the client|node position does not match the client render result)/, origin: 'framework', code: 'VOBS_HYDRATION_MISMATCH', hint: 'Check that the server and the client produce the same node structure and initial state.' },
+  { pattern: /Renderer not initialized/, origin: 'usage', code: 'VOBS_RENDERER_NOT_INITIALIZED', hint: 'Call Runtime DOM APIs after the app has been mounted or hydrated.' },
+  { pattern: /node does not belong to the given parent/, origin: 'framework', code: 'VOBS_DOM_PARENT_MISMATCH', hint: 'Check whether the node was moved or removed twice, or is managed by the wrong Renderer instance.' }
 ]
 
 function classifyError(phase: DevToolsErrorPhase, error: unknown, context: DevToolsErrorContext): ErrorClassification {
@@ -2138,8 +2146,8 @@ function classifyError(phase: DevToolsErrorPhase, error: unknown, context: DevTo
   if (frameworkRule) return { origin: context.origin ?? frameworkRule.origin, code: explicitCode ?? frameworkRule.code, hint: context.hint ?? frameworkRule.hint }
   if (context.origin) return { origin: context.origin, code: explicitCode, hint: context.hint }
   if ((explicitCode && isUsageErrorCode(explicitCode))
-    || (/^Vobs(?:\s|:)|^VOBS_/.test(message) && /必须|不能为空|找不到|缺少|不存在|无效|不能直接|重复|未配置|已销毁/.test(message))) {
-    return { origin: 'usage', code: explicitCode, hint: context.hint ?? '检查调用参数、Owner 作用域和相关插件是否已安装。' }
+    || (/^Vobs(?:\s|:)|^VOBS_/.test(message) && /must|cannot|not found|missing|does not exist|invalid|not initialized|duplicate|not configured|has been disposed/.test(message))) {
+    return { origin: 'usage', code: explicitCode, hint: context.hint ?? 'Check the call arguments, the Owner scope, and that related plugins are installed.' }
   }
   if (phase === 'global') return { origin: 'unknown', code: explicitCode, hint: context.hint }
   return { origin: 'application', code: explicitCode, hint: context.hint }

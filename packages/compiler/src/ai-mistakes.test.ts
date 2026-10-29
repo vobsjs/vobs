@@ -87,7 +87,7 @@ const CORPUS: readonly Mistake[] = [
   },
   {
     why: 'In React, JSX constants at module top level are common (`const MENU = <Item/>`) because there is no "renderer not initialized" phase.',
-    source: 'export const MENU = <div>顶层</div>',
+    source: 'export const MENU = <div>top level</div>',
     caughtBy: 'VOBS_C105'
   },
   {

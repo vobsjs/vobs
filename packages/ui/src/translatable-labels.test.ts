@@ -10,16 +10,19 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * 可翻译的 aria-label。
+ * Translatable aria-labels.
  *
- * ui 里的英文常量标签分两类：一部分本来就是**兜底**（`if (!hasProp(props, 'aria-label'))`，
- * 作者能覆盖 —— activity-rail / file-tree / pagination 根节点就是这种，没问题）；
- * 另一部分是**无条件写死**，而通用属性通道先跑、它后跑，于是作者传的会被盖掉：
+ * The English constant labels in ui fall into two groups: some are already **fallbacks**
+ * (`if (!hasProp(props, 'aria-label'))`, overridable by the author — the activity-rail /
+ * file-tree / pagination roots are like this, fine); the other group was **unconditionally
+ * hard-coded**, and since the generic attribute channel runs first and the hard-code runs after,
+ * the author's value got overwritten:
  *
- *     bindCommonAttributes(root, props, [...])            // 先把作者的 aria-label 写上
- *     setAttribute(root, 'aria-label', 'Notifications')   // ← 立刻盖掉
+ *     bindCommonAttributes(root, props, [...])            // writes the author's aria-label first
+ *     setAttribute(root, 'aria-label', 'Notifications')   // ← immediately overwrites it
  *
- * combobox 的开关按钮更直接写死成字面量 'toggle' —— 连英文语义都不成立（它是"展开选项"的按钮）。
+ * The combobox toggle button went further and hard-coded the literal 'toggle' — which wasn't even
+ * meaningful English (it's a "show options" button).
  */
 async function mount(
   component: Parameters<typeof createComponent>[0],
@@ -39,8 +42,8 @@ const toastPlugins = (): VobsPlugin[] => {
   return [notificationPlugin({ notification })]
 }
 
-describe('可翻译的 aria-label', () => {
-  it('ToastHost 默认是 Notifications，作者传入时不覆盖', async () => {
+describe('translatable aria-labels', () => {
+  it('ToastHost defaults to Notifications and does not override an author-supplied label', async () => {
     const fallback = await mount(ToastHost, {}, toastPlugins())
     expect(fallback.host.querySelector('[aria-label]')?.getAttribute('aria-label')).toBe('Notifications')
     fallback.cleanup()
@@ -50,13 +53,13 @@ describe('可翻译的 aria-label', () => {
     custom.cleanup()
   })
 
-  it('Combobox 开关按钮默认是描述动作的文案（原来是字面量 toggle）', async () => {
+  it('the Combobox toggle button defaults to text describing the action (was the literal toggle)', async () => {
     const { host, cleanup } = await mount(Combobox, { options: [{ label: 'a', value: 'a' }] })
     expect(host.querySelector('.vui-combobox__toggle')?.getAttribute('aria-label')).toBe('Show options')
     cleanup()
   })
 
-  it('Combobox 开关按钮的标签可以传入（可翻译）', async () => {
+  it('the Combobox toggle button label can be passed in (translatable)', async () => {
     const { host, cleanup } = await mount(Combobox, {
       options: [{ label: 'a', value: 'a' }],
       toggleLabel: '展开选项'
@@ -65,7 +68,7 @@ describe('可翻译的 aria-label', () => {
     cleanup()
   })
 
-  it('Pagination 页码标签默认 Page N，可传入函数本地化', async () => {
+  it('the Pagination page label defaults to Page N and accepts a function to localize', async () => {
     const byText = (host: HTMLElement, text: string): HTMLElement | undefined =>
       [...host.querySelectorAll<HTMLElement>('button')].find(button => button.textContent === text)
 
@@ -78,7 +81,7 @@ describe('可翻译的 aria-label', () => {
     localized.cleanup()
   })
 
-  it('EditorTabs 关闭按钮标签默认带标题，可传入函数本地化', async () => {
+  it('the EditorTabs close button label includes the title by default and accepts a function to localize', async () => {
     const byLabel = (host: HTMLElement, label: string): HTMLElement | undefined =>
       [...host.querySelectorAll<HTMLElement>('button')].find(button => button.getAttribute('aria-label') === label)
 
@@ -94,7 +97,7 @@ describe('可翻译的 aria-label', () => {
     localized.cleanup()
   })
 
-  it('WorkbenchTitlebar 三个窗口按钮的标签可本地化', async () => {
+  it('the three WorkbenchTitlebar window button labels can be localized', async () => {
     const byAriaLabel = (host: HTMLElement, label: string): HTMLElement | undefined =>
       [...host.querySelectorAll<HTMLElement>('[aria-label]')].find(el => el.getAttribute('aria-label') === label)
 
@@ -112,7 +115,7 @@ describe('可翻译的 aria-label', () => {
     localized.cleanup()
   })
 
-  it('MessageHost 的容器标签与 role 可传入（它直接读 props，没有通用属性通道）', async () => {
+  it('the MessageHost container label and role can be passed in (it reads props directly, with no generic attribute channel)', async () => {
     const fallback = await mount(MessageHost, {}, [messagePlugin({ defaultDuration: 0 })])
     const root = fallback.host.querySelector('.vui-message-host')
     expect(root?.getAttribute('aria-label')).toBe('Messages')

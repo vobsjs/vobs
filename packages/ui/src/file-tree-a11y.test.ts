@@ -8,14 +8,16 @@ import { FileTree, type FileTreeItem } from './index'
 setRenderer(createDOMRenderer())
 
 /*
- * FileTree 的键盘可达性。
+ * FileTree keyboard accessibility.
  *
- * 原来每行 `tabIndex = 0`（除禁用行）—— 键盘用户按 Tab 要**依次穿过整棵树的每一行**才能走到
- * 后面的内容；而 `role="tree"`/`treeitem` 的标准模型是**整棵树只有一个 Tab 停靠点**，内部用
- * 方向键移动。而且它**没有任何方向键处理**（原有 keydown 只处理 Enter/Space）。
+ * Every row used to have `tabIndex = 0` (except disabled ones) — a keyboard user had to Tab
+ * **through every row of the entire tree** to reach later content; the standard `role="tree"` /
+ * `treeitem` model is **a single Tab stop for the whole tree** with arrow keys moving inside.
+ * And it had **no arrow-key handling at all** (the original keydown only handled Enter/Space).
  *
- * 这里锁住：单一 Tab 停靠点、方向键移动焦点并选中、跳过禁用项、Home/End。
- * 聚焦/选中会触发行重建，所以断言前让出微任务。
+ * This locks in: a single Tab stop, arrow keys move focus and select, disabled items are
+ * skipped, Home/End.
+ * Focusing/selecting triggers row rebuilds, so yield a microtask before asserting.
  */
 const settle = async (): Promise<void> => { scheduler.flush(); await null; await null }
 
@@ -51,21 +53,21 @@ async function mountTree(options: { expanded?: string[]; onSelect?: (id: string)
   return { host, rowIds, row, tabbable, press, cleanup: () => { app.destroy(); host.remove() } }
 }
 
-describe('FileTree 键盘可达性', () => {
-  it('整棵树只有一个 Tab 停靠点（原来是每一行）', async () => {
+describe('FileTree keyboard accessibility', () => {
+  it('the whole tree has a single Tab stop (used to be one per row)', async () => {
     const { rowIds, tabbable, cleanup } = await mountTree()
     expect(rowIds().length).toBeGreaterThan(1)
     expect(tabbable()).toHaveLength(1)
     cleanup()
   })
 
-  it('方向键移动焦点并选中，焦点跟随', async () => {
+  it('arrow keys move focus and select, with focus following', async () => {
     const selected: string[] = []
     const { row, tabbable, press, cleanup } = await mountTree({ onSelect: id => selected.push(id) })
 
     row('src').focus()
     await settle()
-    expect(tabbable()).toEqual(['src'])          // 焦点落到哪一行，哪一行就是停靠点
+    expect(tabbable()).toEqual(['src'])          // whichever row holds focus becomes the Tab stop
 
     await press('ArrowDown')
     expect(selected).toEqual(['readme'])
@@ -78,17 +80,17 @@ describe('FileTree 键盘可达性', () => {
     cleanup()
   })
 
-  it('跳过禁用行', async () => {
+  it('skips disabled rows', async () => {
     const { row, press, cleanup } = await mountTree()
     row('readme').focus()
     await settle()
     await press('ArrowDown')
-    // lock 是禁用的，不该停在那里（也不该越过树尾）
+    // lock is disabled: focus must not stop there (nor run past the end of the tree)
     expect(document.activeElement).toBe(row('readme'))
     cleanup()
   })
 
-  it('Home / End 直达首尾（可见行）', async () => {
+  it('Home / End jump to the first/last visible row', async () => {
     const { row, press, cleanup } = await mountTree()
     row('readme').focus()
     await settle()
@@ -99,7 +101,7 @@ describe('FileTree 键盘可达性', () => {
     cleanup()
   })
 
-  it('回车/空格仍然激活行（原有行为没被方向键挤掉）', async () => {
+  it('Enter/Space still activate a row (the original behavior was not displaced by arrow keys)', async () => {
     const selected: string[] = []
     const { row, cleanup } = await mountTree({ onSelect: id => selected.push(id) })
     row('readme').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))

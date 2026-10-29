@@ -31,7 +31,7 @@ class OwnerImpl {
     this.disposed = parent?.disposed ?? false;
   }
   run(fn) {
-    if (this.disposed) throw new Error("Vobs: 已销毁的 Owner 不能继续运行");
+    if (this.disposed) throw new Error("Vobs: cannot run inside a disposed Owner");
     const previous = currentOwner;
     currentOwner = this;
     try {
@@ -51,13 +51,15 @@ class OwnerImpl {
     this.addCleanup(cleanup);
   }
   /**
-   * 撤销一条已注册的清理。
+   * Remove one registered cleanup.
    *
-   * 用 `splice` 而不是"标记失效"：标记法会让数组继续增长（本包已经因为
-   * `Owner.cleanups` 只增不减吃过一次亏 —— runtime 的事件重绑），
-   * 而这个 API 的语义就是"替换掉旧的"，就该真的从数组里去掉。
+   * `splice` instead of "mark as stale": the marking approach would let the array
+   * keep growing (this package has already been burned once by `Owner.cleanups`
+   * growing without bound — the runtime's event rebinding), and this API's
+   * semantics is "replace the old one", so it should really leave the array.
    *
-   * 复杂度 O(n)，但调用场景是"同一资源被重新绑定"，不是热路径上的每帧操作。
+   * O(n), but the call site is "the same resource gets rebound", not a per-frame
+   * hot-path operation.
    */
   removeCleanup(cleanup) {
     const index2 = this.cleanups.indexOf(cleanup);
@@ -191,7 +193,7 @@ class StateSignal {
       if (!this.warnedAfterDispose) {
         this.warnedAfterDispose = true;
         const name = getSignalDebugName(this);
-        console.warn(`[vobs] 写入已 dispose 的 state${name ? ` "${name}"` : ""}，本次写入被忽略`);
+        console.warn(`[vobs] write to a disposed state${name ? ` "${name}"` : ""}; this write was ignored`);
       }
       return;
     }
@@ -254,12 +256,13 @@ class Scheduler {
     this.lowPriorityEffects.delete(effect2);
   }
   /**
-   * 批处理：抑制调度，退出时同步 flush。
+   * Batch: suppress scheduling, flush synchronously on exit.
    *
-   * 注意**不要**把 flush 放进 `finally` —— 那样 `fn()` 抛错时，flush 自己再抛错
-   * 就会把原始错误顶掉（`finally` 里的 throw 会覆盖 try 里的 throw），
-   * 开发者看到的是一个和自己代码无关的错误。这里改成：原始错误优先，
-   * flush 的错误打出来但不顶替。
+   * Note: do **not** put the flush inside `finally` — then when `fn()` throws, an
+   * error thrown by flush itself would replace the original error (a throw in
+   * `finally` overrides the throw in `try`), and the developer sees an error
+   * unrelated to their own code. Instead: the original error wins; the flush error
+   * is logged but does not replace it.
    */
   batch(fn) {
     this.batchDepth++;
@@ -279,7 +282,7 @@ class Scheduler {
         this.flush();
       } catch (flushError) {
         if (!failed) throw flushError;
-        console.error("[Vobs] 批处理刷新时又抛出一个错误（原始错误优先）:", flushError);
+        console.error("[Vobs] flush inside batch threw an additional error (original error takes priority):", flushError);
       }
     }
     if (failed) throw thrown;
@@ -296,7 +299,7 @@ class Scheduler {
         if (++rounds > 100) {
           this.dirtyEffects.clear();
           this.lowPriorityEffects.clear();
-          throw new Error("Vobs: 响应式更新超过 100 轮，可能存在循环依赖");
+          throw new Error("Vobs: reactive updates exceeded 100 rounds; a circular dependency is likely");
         }
         this.collectRunnable(this.dirtyEffects, this.normalBuffer);
         this.collectRunnable(this.lowPriorityEffects, this.lowBuffer);
@@ -332,7 +335,7 @@ class Scheduler {
     }
     if (hasError) throw firstError;
   }
-  /** 收集未 disposed 的 effect 并清空源集合；run() 期间新调度的 effect 留给下一轮。 */
+  /** Collects non-disposed effects and clears the source set; effects scheduled during run() are left for the next round. */
   collectRunnable(source, target) {
     for (const effect2 of source) {
       if (!effect2.disposed) target.push(effect2);
@@ -477,12 +480,12 @@ class MemoSignal {
     return this.cached;
   }
   set value(_) {
-    throw new Error("memo: 派生值不能直接赋值");
+    throw new Error("memo: cannot assign directly to a derived value");
   }
   unsubscribe(subscriber) {
     this.subscribers.delete(subscriber);
   }
-  /** 由 MemoSubscriber 调用：标脏并向下传播失效。 */
+  /** Called by MemoSubscriber: marks dirty and propagates invalidation downstream. */
   invalidate() {
     this.dirty = true;
     for (const subscriber of [...this.subscribers]) subscriber.notify();
@@ -555,7 +558,7 @@ function invokeRuntimeDebug(name, ...args) {
   return;
 }
 const PROPERTY_NAMES = /* @__PURE__ */ new Set([
-  // 表单状态
+  // Form state
   "value",
   "checked",
   "selected",
@@ -567,16 +570,18 @@ const PROPERTY_NAMES = /* @__PURE__ */ new Set([
   "defaultChecked",
   "indeterminate",
   /*
-   * `autoFocus` 用**驼峰**（与同表 readOnly/tabIndex/defaultChecked 一致），且必须走
-   * **property 通道**：`autofocus` 是**布尔属性**（只看存在与否、与值无关），
-   * 所以 `autoFocus={false}` 必须"移除属性"而不是写 `autofocus="false"`
-   * （attribute 通道只能把 false 序列化成字符串，属性照样存在 = 仍然聚焦）。
+   * `autoFocus` uses **camelCase** (consistent with readOnly/tabIndex/defaultChecked in this
+   * table) and must go through the **property channel**: `autofocus` is a **boolean
+   * attribute** (presence only, value ignored), so `autoFocus={false}` must "remove the
+   * attribute" rather than write `autofocus="false"` (the attribute channel can only
+   * serialize false into a string — the attribute remains present = still focused).
    *
-   * ⚠️ 但 `setProperty` 必须把它映射成 **IDL 名 `autofocus`（全小写）** ——
-   * `Reflect.set(el, 'autoFocus', …)` 只会挂一个不反射的 expando，**静默无效**。
-   * 映射表见 ops.ts 的 `PROPERTY_IDL_NAMES`。实测（jsdom，与真实 DOM 同语义）：
-   *   IDL `autofocus` → 写 true 得 has=true/idl=true；写 false 得 has=false/idl=false ✓
-   *   JSX `autoFocus` → 属性与 IDL 都不变（只是 expando）                        ✗
+   * ⚠️ But `setProperty` must map it to the **IDL name `autofocus` (all lowercase)** —
+   * `Reflect.set(el, 'autoFocus', …)` only hangs a non-reflecting expando, **silently
+   * ineffective**. See `PROPERTY_IDL_NAMES` in ops.ts for the mapping table. Measured
+   * (jsdom, same semantics as real DOM):
+   *   IDL `autofocus` → write true gives has=true/idl=true; write false gives has=false/idl=false ✓
+   *   JSX `autoFocus` → attribute and IDL both unchanged (just an expando)                ✗
    */
   "autoFocus",
   "hidden",
@@ -584,11 +589,11 @@ const PROPERTY_NAMES = /* @__PURE__ */ new Set([
   "colSpan",
   "rowSpan",
   "open",
-  // 只能走 property 的（attribute 路径会静默无效）
+  // Property-only (the attribute path is silently ineffective)
   "innerHTML",
   "innerText",
   "textContent",
-  // 媒体
+  // Media
   "muted",
   "volume",
   "currentTime",
@@ -612,15 +617,15 @@ const SVG_KEBAB_ATTRIBUTES = /* @__PURE__ */ new Set([
   // fill
   "fillOpacity",
   "fillRule",
-  // clip（注意 clipPathUnits 是结构属性，不在这里）
+  // clip (note: clipPathUnits is a structural attribute, not here)
   "clipPath",
   "clipRule",
-  // 文本对齐
+  // Text alignment
   "textAnchor",
   "dominantBaseline",
   "alignmentBaseline",
   "baselineShift",
-  // 字体
+  // Fonts
   "fontFamily",
   "fontSize",
   "fontSizeAdjust",
@@ -630,11 +635,11 @@ const SVG_KEBAB_ATTRIBUTES = /* @__PURE__ */ new Set([
   "fontWeight",
   "letterSpacing",
   "wordSpacing",
-  // marker 的表现属性（markerWidth / markerHeight / markerUnits 是结构属性，不在这里）
+  // marker presentation attributes (markerWidth / markerHeight / markerUnits are structural, not here)
   "markerStart",
   "markerMid",
   "markerEnd",
-  // 颜色
+  // Color
   "colorInterpolation",
   "colorInterpolationFilters",
   "colorProfile",
@@ -646,7 +651,7 @@ const SVG_KEBAB_ATTRIBUTES = /* @__PURE__ */ new Set([
   "stopOpacity",
   "glyphOrientationHorizontal",
   "glyphOrientationVertical",
-  // 渲染与合成
+  // Rendering and compositing
   "imageRendering",
   "paintOrder",
   "pointerEvents",
@@ -911,7 +916,7 @@ function setRenderer(renderer) {
 }
 function getRenderer() {
   if (!currentRenderer) {
-    throw new Error("渲染器未初始化");
+    throw new Error("Renderer not initialized");
   }
   return currentRenderer;
 }
@@ -1178,7 +1183,7 @@ function isRenderableNode(value) {
 function associateNodeOwner(node, owner) {
   if (node === null || node === void 0 || typeof node !== "object" && typeof node !== "function") {
     throw new Error(
-      `Vobs: associateNodeOwner 收到非节点值（${String(node)}）。组件必须返回 VobsNode；返回 null/undefined 由 createComponent 转成空注释节点。`
+      `Vobs: associateNodeOwner received a non-node value (${String(node)}). Components must return a VobsNode; null/undefined returns are converted into an empty comment node by createComponent.`
     );
   }
   nodeOwners.set(node, owner);
@@ -1201,7 +1206,7 @@ function createFragment(factory) {
     end,
     mount(nextParent, anchor) {
       if (parent && parent !== nextParent) {
-        throw new Error("Vobs Fragment: 不能跨父节点移动 Fragment");
+        throw new Error("Vobs Fragment: cannot move a Fragment across parent nodes");
       }
       if (initialized) {
         moveRange(nextParent, start, end, anchor);
@@ -1217,7 +1222,7 @@ function createFragment(factory) {
     },
     unmount(nextParent) {
       if (!initialized || parent !== nextParent) {
-        throw new Error("Vobs Fragment: Fragment 不属于指定父节点");
+        throw new Error("Vobs Fragment: the Fragment does not belong to the given parent node");
       }
       const renderer = getRenderer();
       let current = renderer.nextSibling(start);
@@ -1247,7 +1252,7 @@ function moveRange(parent, start, end, anchor) {
     current = renderer.nextSibling(current);
   }
   if (nodes[nodes.length - 1] !== end) {
-    throw new Error("Vobs Fragment: 找不到结束锚点");
+    throw new Error("Vobs Fragment: end anchor not found");
   }
   for (const node of nodes) renderer.insertBefore(parent, node, anchor);
 }
@@ -1489,7 +1494,7 @@ function reconcileKeyed(items, keys, entries, renderItem) {
     const item = items[index2];
     const key = keys[index2];
     if (seen.has(key)) {
-      console.warn(`Vobs: 检测到重复的列表 key: ${String(key)}`);
+      console.warn(`Vobs: duplicate list key detected: ${String(key)}`);
     }
     seen.add(key);
     const entry = previous.get(key);
@@ -1536,7 +1541,7 @@ function createListEntry(item, index2, key, renderItem) {
   let viewOwner;
   let node;
   owner.run(() => {
-    itemSignal = state(item);
+    itemSignal = state(item, "signal");
     viewOwner = createOwner();
     node = viewOwner.run(() => renderItem(toReactiveItem(itemSignal, item), index2));
   });
@@ -1608,7 +1613,7 @@ function createTemplate(html) {
 }
 function cloneTemplate(template) {
   const root = template.content.firstElementChild;
-  if (!root) throw new Error("Vobs: 静态模板缺少根元素，请检查编译产物");
+  if (!root) throw new Error("Vobs: static template is missing a root element; check the compiled output");
   return root.cloneNode(true);
 }
 const ownerProviders = /* @__PURE__ */ new WeakMap();
@@ -1620,7 +1625,7 @@ function provideToOwner(owner, key, value, options = {}) {
     owner.onDispose(() => ownerProviders.delete(owner));
   }
   if (providers.has(key) && !options.override) {
-    throw new Error(`Vobs: 注入项 ${String(key)} 已存在；如需覆盖请传入 override: true`);
+    throw new Error(`Vobs: injection ${String(key)} already exists; pass override: true to replace it`);
   }
   providers.set(key, value);
 }
@@ -1634,7 +1639,7 @@ function injectFromOwner(owner, key) {
   return void 0;
 }
 function createVobs(config) {
-  if (!config.render) throw new Error("createVobs: render 不能为空");
+  if (!config.render) throw new Error("createVobs: render cannot be empty");
   const renderer = config.renderer ?? createDOMRenderer();
   const rootOwner = createOwner();
   let previousRenderer;
@@ -1678,7 +1683,7 @@ function createVobs(config) {
     injectRequired(key, description) {
       const value = injectFromOwner(rootOwner, key);
       if (value === void 0) {
-        throw new Error(`Vobs: 找不到必需注入项${description ? ` ${description}` : ""}`);
+        throw new Error(`Vobs: required injection not found${description ? ` ${description}` : ""}`);
       }
       return value;
     },
@@ -1704,14 +1709,14 @@ function createVobs(config) {
     const already = installedPlugins.get(plugin.name);
     if (already !== void 0) {
       if (already !== plugin) {
-        const before = already.version ? `（版本 ${already.version}）` : "";
-        const now = plugin.version ? `（版本 ${plugin.version}）` : "";
-        console.warn(`[vobs] 插件 "${plugin.name}" 已安装${before}，本次传入的是另一个对象${now}，已跳过。 同名插件只会安装一次 —— 若这是两个不同的插件，请给它们不同的 name。`);
+        const before = already.version ? ` (version ${already.version})` : "";
+        const now = plugin.version ? ` (version ${plugin.version})` : "";
+        console.warn(`[vobs] Plugin "${plugin.name}" was already installed${before}; this call passed a different object${now} and was skipped. A same-name plugin is only installed once — if these are two different plugins, give them different names.`);
       }
       return;
     }
     if (installing.has(plugin.name)) {
-      throw new Error(`Vobs: 插件依赖存在循环：${plugin.name}`);
+      throw new Error(`Vobs: plugin dependency cycle: ${plugin.name}`);
     }
     installing.add(plugin.name);
     try {
@@ -1720,8 +1725,8 @@ function createVobs(config) {
       if (cleanup2 !== void 0 && cleanup2 !== null) {
         if (typeof cleanup2 !== "function") {
           const isThenable = typeof cleanup2.then === "function";
-          const kind = isThenable ? "Promise（install 不能是 async）" : typeof cleanup2;
-          throw new Error(`Vobs: 插件 "${plugin.name}" 的 install 必须同步返回清理函数或不返回，收到 ${kind}`);
+          const kind = isThenable ? "Promise (install cannot be async)" : typeof cleanup2;
+          throw new Error(`Vobs: install of plugin "${plugin.name}" must synchronously return a cleanup function or return nothing; received ${kind}`);
         }
         cleanups.push(cleanup2);
       }
@@ -1757,12 +1762,12 @@ function createVobs(config) {
     return firstError;
   }
   function start(target, hydrating) {
-    if (destroyed) throw new Error("Vobs: 已销毁的应用不能挂载");
+    if (destroyed) throw new Error("Vobs: a destroyed app cannot be mounted");
     if (mounted) return;
     container = typeof target === "string" ? document.querySelector(target) : target;
-    if (!container) throw new Error(`mount: 目标不存在: ${target}`);
+    if (!container) throw new Error(`mount: target not found: ${target}`);
     if (hydrating && !renderer.beginHydration) {
-      throw new Error("Vobs: 当前渲染器不支持 Hydration");
+      throw new Error("Vobs: the current renderer does not support hydration");
     }
     installRenderer();
     try {
@@ -1787,7 +1792,7 @@ function createVobs(config) {
       return destroyed;
     },
     use(plugin) {
-      if (destroyed) throw new Error("Vobs: 已销毁的应用不能安装插件");
+      if (destroyed) throw new Error("Vobs: a destroyed app cannot install plugins");
       installPlugin(plugin);
       return app;
     },
@@ -1798,7 +1803,7 @@ function createVobs(config) {
       start(target, true);
     },
     update() {
-      if (destroyed) throw new Error("Vobs: 已销毁的应用不能更新");
+      if (destroyed) throw new Error("Vobs: a destroyed app cannot update");
       try {
         scheduler.flush();
       } catch (error) {
@@ -1836,7 +1841,7 @@ function resolveDshReact() {
   const react = fromGlobal;
   if (!react) {
     throw new Error(
-      '@vobs/dsh: 拿不到 DSH 平台提供的 React。\n  用 dshBundle() 构建客户端产物（它会自动注入），或在入口模块调用 useDshReact(require("react"))。'
+      '@vobs/dsh: cannot obtain the React provided by the DSH platform.\n  Build the client artifact with dshBundle() (it injects automatically), or call useDshReact(require("react")) in your entry module.'
     );
   }
   return react;
@@ -1942,13 +1947,13 @@ function defineDshOverlay(options, render) {
 }
 const _tpl3 = createTemplate('<span class="vobs-panel__brand">vobs</span>');
 const _tpl5 = createTemplate('<span class="vobs-panel__tagline">Signals First · Zero Re-renders</span>');
-const _tpl11 = createTemplate('<div class="vobs-stat__label">组件体执行</div>');
-const _tpl14 = createTemplate('<div class="vobs-stat__label">effect 执行</div>');
+const _tpl11 = createTemplate('<div class="vobs-stat__label">Component body runs</div>');
+const _tpl14 = createTemplate('<div class="vobs-stat__label">effect runs</div>');
 const _tpl17 = createTemplate('<span class="vobs-hint">count</span>');
 const _tpl19 = createTemplate('<span class="vobs-hint">memo ×2</span>');
-const _tpl29 = createTemplate('<span class="vobs-empty">列表为空（insertList 已清空所有行）</span>');
+const _tpl29 = createTemplate('<span class="vobs-empty">List is empty (insertList cleared all rows)</span>');
 const _tpl31 = createTemplate('<span class="vobs-badge__dot"></span>');
-const VOBS_VERSION = `v${"1.8.9"}`;
+const VOBS_VERSION = `v${"1.8.19"}`;
 let bodyExecutions = 0;
 function VobsPanel() {
   bodyExecutions += 1;
@@ -2002,7 +2007,7 @@ function VobsPanel() {
           setStaticProps(_el6, {
             "class": "vobs-btn vobs-btn--icon"
           });
-          bindAttribute(_el6, "title", () => collapsed.value ? "展开" : "收起");
+          bindAttribute(_el6, "title", () => collapsed.value ? "Expand" : "Collapse");
           addEventListener(_el6, "click", () => {
             collapsed.value = !collapsed.value;
           });
@@ -2013,7 +2018,7 @@ function VobsPanel() {
           const _el7 = createElement("button");
           setStaticProps(_el7, {
             "class": "vobs-btn vobs-btn--icon",
-            "title": "收起为角标"
+            "title": "Collapse to badge"
           });
           addEventListener(_el7, "click", () => {
             visible.value = false;
@@ -2123,7 +2128,7 @@ function VobsPanel() {
             const _el24 = createElement("input");
             setStaticProps(_el24, {
               "class": "vobs-input",
-              "placeholder": "给标签列表加一项…"
+              "placeholder": "Add a tag…"
             });
             bindProperty(_el24, "value", () => draft.value);
             addEventListener(_el24, "input", (event) => {
@@ -2141,7 +2146,7 @@ function VobsPanel() {
               "class": "vobs-btn"
             });
             addEventListener(_el25, "click", addTag);
-            insertBefore(_el25, createText("添加"), null);
+            insertBefore(_el25, createText("Add"), null);
             return _el25;
           })(), null);
           return _el23;
@@ -2161,7 +2166,7 @@ function VobsPanel() {
               const _el28 = createElement("button");
               setStaticProps(_el28, {
                 "class": "vobs-chip__remove",
-                "title": "移除"
+                "title": "Remove"
               });
               addEventListener(_el28, "click", () => {
                 removeTag(tag);
@@ -2181,7 +2186,7 @@ function VobsPanel() {
       const _el30 = createElement("button");
       setStaticProps(_el30, {
         "class": "vobs-badge",
-        "title": "打开 vobs 面板"
+        "title": "Open the vobs panel"
       });
       addEventListener(_el30, "click", () => {
         visible.value = true;

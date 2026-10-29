@@ -579,9 +579,9 @@ body {
   font-size: var(--heading-sm-font-size);
 }
 
-/* 修复 Dialog backdrop 的 hidden 属性被 display:flex 覆盖 */
+/* Fix: the Dialog backdrop's hidden attribute was being overridden by display:flex */
 .vui-backdrop[hidden] { display: none !important; }
-/* portal 方式使用的 Dialog 需要 fixed 定位覆盖全屏 */
+/* Dialogs mounted via portal need fixed positioning to cover the full screen */
 .vui-backdrop { position: fixed; inset: 0; }
 
 @media (max-width: 640px) {

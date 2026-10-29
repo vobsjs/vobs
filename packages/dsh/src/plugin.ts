@@ -8,25 +8,26 @@ import {
 } from './host.js'
 import type { DshClientContext, DshClientPlugin, DshSlotRegistration } from './types.js'
 
-/** 适配层默认依赖的客户端服务。 */
+/** Client services the adapter depends on by default. */
 const BASE_INJECT = ['slots'] as const
 
-/** 通用插件定义：想自己写 apply 时的逃生口。 */
+/** Generic plugin definition: the escape hatch for writing your own apply. */
 export interface DshPluginSpec {
-  /** 额外注入的客户端服务名，会和 `slots` 合并去重。 */
+  /** Extra client service names to inject; merged and deduplicated with `slots`. */
   inject?: readonly string[]
-  /** 插件主体；返回的函数在插件销毁时执行。 */
+  /** Plugin body; the returned function runs when the plugin is destroyed. */
   setup(ctx: DshClientContext): void | (() => void)
 }
 
 /**
- * 定义一个 DSH 客户端插件。
+ * Define a DSH client plugin.
  *
- * 与手写 `{ inject, apply }` 的区别：自动注入 `slots`、自动把 setup 返回的清理函数
- * 挂到 cordis 的 effect 上，因此不需要调用方理解 cordis 的生命周期细节。
+ * Compared to hand-writing `{ inject, apply }`: it injects `slots` automatically and hooks
+ * the cleanup function returned by setup into cordis's effect, so callers never need to
+ * understand cordis's lifecycle details.
  *
- * @param spec - 注入列表与 setup 主体
- * @returns 可直接作为 bundle 默认导出的插件对象
+ * @param spec - injection list and setup body
+ * @returns A plugin object usable directly as the bundle's default export
  */
 export function defineDshPlugin(spec: DshPluginSpec): DshClientPlugin {
   const inject = [...new Set<string>([...BASE_INJECT, ...(spec.inject ?? [])])]
@@ -42,12 +43,12 @@ export function defineDshPlugin(spec: DshPluginSpec): DshClientPlugin {
   }
 }
 
-/** 把一次 slot 注册挂到目标 slot 就绪之后。 */
+/** Attach a slot registration to the moment the target slot becomes ready. */
 function registerInSlot(ctx: DshClientContext, options: DshSlotRegistration, component: unknown): void {
   ctx.slots.inject(options.name, () => ctx.slots.register(options, component))
 }
 
-/** 只挑出宿主外观相关的字段，避免把 slot 自己的选项混进样式配置。 */
+/** Pick only the host-appearance fields, keeping slot-specific options out of the style config. */
 function surfaceOf(options: DshSurfaceOptions): DshSurfaceOptions {
   const surface: DshSurfaceOptions = {}
   if (options.styles !== undefined) surface.styles = options.styles
@@ -56,40 +57,40 @@ function surfaceOf(options: DshSurfaceOptions): DshSurfaceOptions {
   return surface
 }
 
-/** 面板与浮层共有的注册期选项。 */
+/** Registration-time options shared by panels and overlays. */
 export interface DshSurfaceRegistrationOptions {
   /**
-   * 注册**之前**用客户端上下文准备状态。
+   * Prepare state with the client context **before** registration.
    *
-   * 视图组件由 DSH 在打开面板时才渲染，而本回调在插件加载时就执行，
-   * 因此可以在里面探测客户端服务、建立数据源、读取连接状态，
-   * 把结果放进信号里供视图绑定。
+   * The view component is only rendered by DSH when the panel opens, while this callback
+   * runs as soon as the plugin loads. Use it to probe client services, build data sources,
+   * read connection state, and store results in signals for the view to bind.
    *
-   * 返回值是销毁时的清理函数（例如停掉定时器、断开订阅），
-   * 由适配层挂到 cordis 的 effect 上。
+   * The return value is a cleanup function invoked on destroy (e.g. stopping timers,
+   * tearing down subscriptions), hooked into cordis's effect by the adapter.
    */
   setup?: (ctx: DshClientContext) => void | (() => void)
 }
 
-/** 浮层（`shell.overlay`）选项。 */
+/** Options for an overlay (`shell.overlay`). */
 export interface DshOverlayOptions extends DshSurfaceOptions, DshSurfaceRegistrationOptions {
-  /** 条目 id，同一个插件注册多个浮层时用来区分。默认 `vobs-overlay`。 */
+  /** Entry id; distinguishes multiple overlays registered by the same plugin. Defaults to `vobs-overlay`. */
   id?: string
-  /** 排序权重，越小越靠前。默认 100。 */
+  /** Sort weight; smaller comes first. Defaults to 100. */
   order?: number
-  /** 文案命名空间。 */
+  /** Locale namespace. */
   locale?: string
-  /** 显示文案。 */
+  /** Display label. */
   label?: string | (() => string)
-  /** 额外注入的客户端服务。 */
+  /** Extra client services to inject. */
   injectServices?: readonly string[]
 }
 
 /**
- * 注册一个全局浮层。DSH 自家的配额提示、插件管理器 toast 都挂在 `shell.overlay` 上。
+ * Register a global overlay. DSH's own quota hints and plugin-manager toasts all hang on `shell.overlay`.
  *
- * @param options - 定位、样式与条目选项
- * @param render - vobs 渲染函数
+ * @param options - positioning, style and entry options
+ * @param render - vobs render function
  */
 export function defineDshOverlay(options: DshOverlayOptions, render: () => VobsNode): DshClientPlugin {
   const host = createVobsSlotHost(render, {
@@ -115,39 +116,40 @@ export function defineDshOverlay(options: DshOverlayOptions, render: () => VobsN
   })
 }
 
-/** 主区域整页面板（`main` + 可选侧栏入口）选项。 */
+/** Options for a full-page panel in the main area (`main` + optional sidebar entry). */
 export interface DshPanelOptions extends DshSurfaceOptions, DshSurfaceRegistrationOptions {
-  /** keyed `main` slot 的主键，必须与侧栏入口 id 一致才能关联。 */
+  /** Primary key of the keyed `main` slot; must match the sidebar entry id for the two to be linked. */
   key: string
-  /** 排序权重。默认 10。 */
+  /** Sort weight. Defaults to 10. */
   order?: number
-  /** 文案命名空间。 */
+  /** Locale namespace. */
   locale?: string
-  /** 面板标题。 */
+  /** Panel title. */
   label?: string | (() => string)
-  /** 同时在 `sidebar.panellist` 注册入口图标。 */
+  /** Also register an entry icon under `sidebar.panellist`. */
   sidebarEntry?: {
-    /** 入口 id，默认与 `key` 相同。 */
+    /** Entry id; defaults to the same value as `key`. */
     id?: string
     order?: number
     label: string | (() => string)
-    /** 用 vobs 画的图标；同样是独立 shadow root。 */
+    /** Icon drawn with vobs; also an independent shadow root. */
     renderIcon: () => VobsNode
-    /** 图标宿主样式，默认铺满。 */
+    /** Icon host style; fills by default. */
     hostStyle?: DshSurfaceOptions['hostStyle']
   }
-  /** 额外注入的客户端服务。 */
+  /** Extra client services to inject. */
   injectServices?: readonly string[]
 }
 
 /**
- * 注册一个占满 DSH 主区域的整页面板，可选在左侧栏加一个入口图标。
+ * Register a full-page panel filling DSH's main area, optionally with a sidebar entry icon.
  *
- * 对应官方 `dsh-client-ui-schedule` 的注册方式：
- *   `main` 是 keyed slot，用 `key` 认领；`sidebar.panellist` 用同值做 `id` 与之关联。
+ * Mirrors the registration style of the official `dsh-client-ui-schedule`:
+ *   `main` is a keyed slot claimed with `key`; `sidebar.panellist` uses the same value
+ *   as `id` so the two are linked.
  *
- * @param options - 主键、条目与样式选项
- * @param render - vobs 渲染函数
+ * @param options - key, entry and style options
+ * @param render - vobs render function
  */
 export function defineDshPanel(options: DshPanelOptions, render: () => VobsNode): DshClientPlugin {
   const host = createVobsSlotHost(render, {

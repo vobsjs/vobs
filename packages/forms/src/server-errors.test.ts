@@ -38,12 +38,12 @@ describe('forms setServerErrors visibility', () => {
 
     expect(host.querySelector('[data-vobs-field-error]')).toBeNull()
 
-    form.setServerErrors({ email: '邮箱已被注册' })
+    form.setServerErrors({ email: 'Email already registered' })
     await settle()
 
     const error = host.querySelector('[data-vobs-field-error]')
     expect(error, 'the error node was not rendered (this was exactly the original bug)').toBeTruthy()
-    expect(host.textContent).toContain('邮箱已被注册')
+    expect(host.textContent).toContain('Email already registered')
     // semantics: a server error implies this field has already been interacted with
     expect(form.field('email').touched.value).toBe(true)
     cleanup()
@@ -54,9 +54,9 @@ describe('forms setServerErrors visibility', () => {
     const { host, cleanup } = mountField(form as never, 'email')
     await settle()
 
-    form.setServerErrors({ email: '邮箱已被注册' })
+    form.setServerErrors({ email: 'Email already registered' })
     await settle()
-    expect(host.textContent).toContain('邮箱已被注册')
+    expect(host.textContent).toContain('Email already registered')
 
     form.field('email').set('other@example.com')
     await settle()

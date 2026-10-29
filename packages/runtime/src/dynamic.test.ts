@@ -506,21 +506,21 @@ describe('polymorphic insertDynamicValue (Solid-style runtime polymorphism)', ()
     const mode = state<'doc' | 'plain'>('doc')
     const renderDoc = (): VobsNode => {
       const section = document.createElement('p')
-      section.textContent = '条款正文'
+      section.textContent = 'clause body'
       return createFragment((fragmentParent, anchor) => {
         fragmentParent.insertBefore(section, anchor)
       })
     }
-    insertDynamicValue(parent, null, () => (mode.value === 'doc' ? renderDoc() : '纯文本'))
-    expect(parent.textContent).toBe('条款正文')
+    insertDynamicValue(parent, null, () => (mode.value === 'doc' ? renderDoc() : 'plain text'))
+    expect(parent.textContent).toBe('clause body')
 
     mode.value = 'plain'
     await flush()
-    expect(parent.textContent).toBe('纯文本')
+    expect(parent.textContent).toBe('plain text')
 
     mode.value = 'doc'
     await flush()
-    expect(parent.textContent).toBe('条款正文')
+    expect(parent.textContent).toBe('clause body')
   })
 
   it('node value changes replace wholesale, old subtree effects cleaned up', async () => {

@@ -66,27 +66,27 @@ export function PaymentResultPage() {
                 title={i18n.t('payment.result.notifyReceived')}
                 description={i18n.t('payment.result.notifyVerified')}
               />
-              <pre class="demo-code">{`// 异步通知处理
+              <pre class="demo-code">{`// Async notification handling
 import { createNotifyHandler } from '@vobs/payment/alipay'
 
 const handler = createNotifyHandler(client)
 
-// 1. 验签
+// 1. Verify signature
 const valid = handler.verify(notifyParams)
 if (!valid) {
   return handler.failResponse()
 }
 
-// 2. 校验业务字段
+// 2. Validate business fields
 const result = handler.validate(notifyParams)
 if (!result.valid) {
   return handler.failResponse()
 }
 
-// 3. 处理业务逻辑（幂等）
+// 3. Handle business logic (idempotent)
 await processOrder(notifyParams.outTradeNo)
 
-// 4. 返回 success
+// 4. Return success
 return handler.successResponse()`}</pre>
             </>
           ) : (

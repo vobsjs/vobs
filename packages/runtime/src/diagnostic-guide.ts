@@ -80,8 +80,8 @@ export const DIAGNOSTIC_GUIDES: readonly DiagnosticGuide[] = [
     wrong: '`const MENU = <KitMenuItem />` (at module top level)',
     rewrites: [
       {
-        wrong: 'export const MENU = <div>顶层</div>',
-        correct: 'export const menu = () => <div>顶层</div>'
+        wrong: 'export const MENU = <div>top level</div>',
+        correct: 'export const menu = () => <div>top level</div>'
       }
     ]
   },

@@ -1,14 +1,14 @@
 /**
- * 微信支付 APIv3 错误归一化。
+ * Normalizes WeChat Pay APIv3 errors.
  *
- * v3 接口没有"业务体 code"约定：HTTP 2xx 即成功，失败以
- * 非 2xx 状态码 + JSON body {code, message} 表达（axios 会抛错）。
- * 本模块把 axios 错误统一转换为 WechatApiError。
+ * The v3 API has no "business body code" convention: HTTP 2xx means success; failures are
+ * expressed as non-2xx status codes plus a JSON body {code, message} (axios throws).
+ * This module converts axios errors into WechatApiError uniformly.
  */
 export class WechatApiError extends Error {
-  /** HTTP 状态码（网络层错误时为 undefined） */
+  /** HTTP status code (undefined for network-level errors) */
   readonly status?: number
-  /** 错误码，如 PARAM_ERROR / RESOURCE_NOT_EXISTS / NETWORK_ERROR */
+  /** Error code, e.g. PARAM_ERROR / RESOURCE_NOT_EXISTS / NETWORK_ERROR */
   readonly code: string
 
   constructor(message: string, status: number | undefined, code: string) {
@@ -19,7 +19,7 @@ export class WechatApiError extends Error {
   }
 }
 
-/** 将任意请求异常归一化为 WechatApiError */
+/** Normalize any request exception into WechatApiError */
 export function toWechatApiError(error: unknown): WechatApiError {
   if (error instanceof WechatApiError) return error
   const axiosError = error as {
@@ -32,19 +32,19 @@ export function toWechatApiError(error: unknown): WechatApiError {
   const bizMessage = axiosError?.response?.data?.message
   if (status !== undefined) {
     return new WechatApiError(
-      `微信支付接口调用失败: ${bizMessage ?? axiosError?.message ?? '未知错误'} (${status}${bizCode ? `, ${bizCode}` : ''})`,
+      `WeChat Pay API call failed: ${bizMessage ?? axiosError?.message ?? 'unknown error'} (${status}${bizCode ? `, ${bizCode}` : ''})`,
       status,
       bizCode ?? String(status)
     )
   }
   return new WechatApiError(
-    `微信支付请求失败: ${axiosError?.message ?? '未知错误'}${axiosError?.code ? ` (${axiosError.code})` : ''}`,
+    `WeChat Pay request failed: ${axiosError?.message ?? 'unknown error'}${axiosError?.code ? ` (${axiosError.code})` : ''}`,
     undefined,
     axiosError?.code ?? 'NETWORK_ERROR'
   )
 }
 
-/** 包装请求 promise：失败时抛出 WechatApiError */
+/** Wrap a request promise: throws WechatApiError on failure */
 export async function unwrapV3<T>(promise: PromiseLike<T>): Promise<T> {
   try {
     return await promise

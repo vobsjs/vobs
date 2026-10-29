@@ -62,7 +62,7 @@ describe('Show: keeps mounted, condition changes never rebuild the subtree', () 
     const view = mountShow(() => open.value)
     const input = view.input()!
     input.focus()
-    input.value = '用户输入的内容'
+    input.value = 'user-entered content'
     expect(document.activeElement).toBe(input)
 
     open.value = false
@@ -71,7 +71,7 @@ describe('Show: keeps mounted, condition changes never rebuild the subtree', () 
     settle()
 
     expect(document.activeElement, 'the condition change lost focus').toBe(input)
-    expect(input.value, 'the condition change reset the user\'s input').toBe('用户输入的内容')
+    expect(input.value, 'the condition change reset the user\'s input').toBe('user-entered content')
     view.cleanup()
   })
 

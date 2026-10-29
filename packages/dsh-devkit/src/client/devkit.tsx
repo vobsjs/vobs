@@ -1,14 +1,14 @@
 /**
- * 开发台面板。五个 tab：
- *   项目 · 读工作区里的 .vobs/check.json（vobs check --write 产出）显示真实问题清单
- *   护栏 · 把静默失效的两类写法讲清楚（内容来自已实现的 @vobs/vobs/dev）
- *   API  · 仓库里真实存在的 API 索引（签名逐个对着源码核过）
- *   示例 · 可直接复制的写法
- *   状态 · 如实列出哪些能力做了、哪些没做
+ * Devkit panel. Five tabs:
+ *   Project  · reads .vobs/check.json from the workspace (produced by vobs check --write), showing the real issue list
+ *   Guardrails · explains the two patterns that fail silently (content from the implemented @vobs/vobs/dev)
+ *   API      · index of APIs that really exist in the repo (every signature checked against source)
+ *   Patterns · copy-ready code patterns
+ *   Status   · honestly lists which capabilities are done and which are not
  *
- * vobs 的两条硬约束在这里也适用，写的时候刻意遵守：
- *   1. 组件体只执行一次 —— 所有可变状态都是外部传入的 signal
- *   2. 列表必须是**直接的**子表达式（`{items.map(...)}`），不写进三元分支
+ * vobs's two hard constraints apply here too, and were deliberately followed while writing:
+ *   1. The component body executes once — all mutable state is a signal passed in from outside
+ *   2. Lists must be **direct** child expressions (`{items.map(...)}`), never inside a ternary branch
  */
 import { memo, type Signal } from '@vobs/vobs'
 import {
@@ -31,24 +31,25 @@ export interface VobsDevKitProps {
 }
 
 const TABS: readonly { readonly key: DevKitTab; readonly label: string }[] = [
-  { key: 'project', label: '项目' },
-  { key: 'guardrails', label: '护栏' },
+  { key: 'project', label: 'Project' },
+  { key: 'guardrails', label: 'Guardrails' },
   { key: 'api', label: 'API' },
-  { key: 'patterns', label: '示例' },
-  { key: 'status', label: '状态' }
+  { key: 'patterns', label: 'Patterns' },
+  { key: 'status', label: 'Status' }
 ]
 
-/** 一条检查结果。 */
+/** One check result. */
 function IssueRow(props: { readonly item: CheckDiagnostic }) {
-  // props 是 getter（每次读取重算），存进 const 即 run-once 快照 —— C118 首例真阳性：
-  // keyed 复用时同 key 行的 props 可能被换成新对象（重新读取报告），快照会渲染旧内容
+  // props is a getter (recomputed on every read); storing it in a const is a run-once snapshot —
+  // the first true positive of C118: when a keyed row is reused, its props may be swapped for a new
+  // object (the report is re-read), and a snapshot would render stale content
   const item = () => props.item
   const isError = () => item().severity === 'error'
   return (
     <div class="vk-card">
       <div class="vk-card__head">
         <span class={isError() ? 'vk-sev vk-sev--err' : 'vk-sev vk-sev--warn'}>
-          {isError() ? '错误' : '警告'}
+          {isError() ? 'Error' : 'Warning'}
         </span>
         <span class="vk-mono" style="font-size:11.5px">{item().code}</span>
         <span class="vk-card__hint vk-mono">{item().file}:{item().line}:{item().column}</span>
@@ -65,10 +66,11 @@ function IssueRow(props: { readonly item: CheckDiagnostic }) {
 }
 
 /**
- * 项目页：读工作区里的检查报告。
+ * Project page: reads the check report from the workspace.
  *
- * 报告由 `vobs check --write` 产出（AI 或人跑）。面板**只读** —— DSH 的 workspace-files
- * Remote 没有写入能力，面板也启动不了进程。文件不存在时说清楚该跑什么，不显示空表。
+ * The report is produced by `vobs check --write` (run by the AI or a human). The panel is
+ * **read-only** — DSH's workspace-files Remote cannot write, and the panel cannot start
+ * processes. When the file is missing, say what to run instead of showing an empty table.
  */
 function Project(props: { readonly project: Signal<ProjectState>; readonly onRefresh: () => void }) {
   const status = memo(() => props.project.value.status)
@@ -90,29 +92,29 @@ function Project(props: { readonly project: Signal<ProjectState>; readonly onRef
     <div>
       <div class="vk-card">
         <div class="vk-card__head">
-          项目检查
-          <span class="vk-card__hint">读工作区里的 {REPORT_PATH}</span>
+          Project checks
+          <span class="vk-card__hint">reads {REPORT_PATH} from the workspace</span>
           <span class="vk-spacer" />
-          <span class="vk-btn" onClick={props.onRefresh}>重新读取</span>
+          <span class="vk-btn" onClick={props.onRefresh}>Refresh</span>
         </div>
         <div class="vk-card__body">
           <div class="vk-desc">{message.value}</div>
 
           {status.value === 'missing' ? (
             <div style="margin-top:10px">
-              <div class="vk-label">让 AI（或你自己）跑一次，报告就会出现在这里：</div>
+              <div class="vk-label">Run this once (your AI or you) and the report will show up here:</div>
               <pre class="vk-code">vobs check --write</pre>
             </div>
           ) : null}
 
           {summary.value === undefined ? null : (
             <div class="vk-chips">
-              {/* 用模板字符串而不是 `{x} 个文件`：vobs 的 JSX 会吃掉表达式前的空格 */}
-              <span class="vk-chip">{`${summary.value.files} 个文件`}</span>
-              <span class="vk-chip">{`${summary.value.errors} 个错误`}</span>
-              <span class="vk-chip">{`${summary.value.warnings} 个警告`}</span>
+              {/* Template strings instead of `{x} files`: vobs JSX eats the whitespace before an expression */}
+              <span class="vk-chip">{`${summary.value.files} files`}</span>
+              <span class="vk-chip">{`${summary.value.errors} errors`}</span>
+              <span class="vk-chip">{`${summary.value.warnings} warnings`}</span>
               {summary.value.skipped > 0
-                ? <span class="vk-chip">{`跳过 ${summary.value.skipped} 个测试文件`}</span>
+                ? <span class="vk-chip">{`${summary.value.skipped} test files skipped`}</span>
                 : null}
             </div>
           )}
@@ -126,7 +128,7 @@ function Project(props: { readonly project: Signal<ProjectState>; readonly onRef
       {status.value === 'ready' && issues.value.length === 0 ? (
         <div class="vk-card">
           <div class="vk-card__body">
-            <div class="vk-empty" style="padding:6px 0">检查通过，没有发现问题。</div>
+            <div class="vk-empty" style="padding:6px 0">All checks passed; no issues found.</div>
           </div>
         </div>
       ) : null}
@@ -142,21 +144,23 @@ function findEntry(name: string): { entry: ApiEntry; origin: string } | undefine
   return undefined
 }
 
-/** 护栏页：两条规则的前后写法对照。 */
+/** Guardrails page: before/after comparison of the two rules. */
 function Guardrails() {
   return (
     <div>
       <div class="vk-card">
         <div class="vk-card__head">
-          开发期护栏
+          Dev-time guardrails
           <span class="vk-card__hint">
-            只报告、不中断 —— 钩子里的异常会被吞掉，这是刻意的保证：调试工具绝不改变应用行为
+            Report only, never interrupt — exceptions thrown inside the hooks are swallowed; that is a
+            deliberate guarantee: a debugging tool must never change app behavior
           </span>
         </div>
         <div class="vk-card__body">
           <div class="vk-desc">
-            用 <span class="vk-mono">vobsPlugin()</span> 的应用在 dev 下会自动装上它，并把违规打到
-            dev server 终端与浏览器控制台。下面这两条是 vobs 里最容易写错、而且**错的时候没有声音**的写法。
+            Apps built with <span class="vk-mono">vobsPlugin()</span> install it automatically in dev and
+            report violations to the dev server terminal and the browser console. The two patterns below
+            are the easiest to get wrong in vobs — and they fail **silently** when wrong.
           </div>
         </div>
       </div>
@@ -170,11 +174,11 @@ function Guardrails() {
           <div class="vk-card__body">
             <div class="vk-pair">
               <div>
-                <div class="vk-label">会出问题的写法</div>
+                <div class="vk-label">The broken pattern</div>
                 <pre class="vk-code vk-code--bad">{rule.before}</pre>
               </div>
               <div>
-                <div class="vk-label">护栏建议</div>
+                <div class="vk-label">Guardrail fix</div>
                 <pre class="vk-code vk-code--good">{rule.after}</pre>
               </div>
             </div>
@@ -187,10 +191,11 @@ function Guardrails() {
 }
 
 /**
- * API 详情。
+ * API detail.
  *
- * 这里刻意用 `memo` 把「当前选中的条目」变成派生值 —— **绝不在组件体里读 signal**：
- * 组件体只执行一次，在体里读到的是当时的值，之后永远不会更新。
+ * `memo` is deliberately used here to turn "the currently selected entry" into a derived value —
+ * **never read a signal in the component body**: the body executes once, and anything read there
+ * is the value at that moment, never updated afterwards.
  */
 function ApiDetail(props: { readonly name: Signal<string> }) {
   const current = memo(() => findEntry(props.name.value))
@@ -209,7 +214,7 @@ function ApiDetail(props: { readonly name: Signal<string> }) {
       <div class="vk-api__origin">{current.value?.origin ?? ''}</div>
       <div class="vk-sig">{current.value?.entry.signature ?? ''}</div>
       <div class="vk-desc">{current.value?.entry.summary ?? ''}</div>
-      <div class="vk-label" style="margin-top:14px">示例</div>
+      <div class="vk-label" style="margin-top:14px">Example</div>
       <pre class="vk-code">{current.value?.entry.example ?? ''}</pre>
       <div class="vk-chips">
         {related.value.map(name => (
@@ -222,7 +227,7 @@ function ApiDetail(props: { readonly name: Signal<string> }) {
   )
 }
 
-/** API 页：左分组树 + 右详情。 */
+/** API page: group tree on the left + detail on the right. */
 function ApiIndex(props: { readonly apiName: Signal<string> }) {
   return (
     <div class="vk-api">
@@ -247,14 +252,14 @@ function ApiIndex(props: { readonly apiName: Signal<string> }) {
   )
 }
 
-/** 示例页：可直接复制的写法。 */
+/** Patterns page: copy-ready code patterns. */
 function Patterns() {
   return (
     <div>
       <div class="vk-card">
         <div class="vk-card__head">
-          写法示例
-          <span class="vk-card__hint">可直接复制 · 刻意是「写法」而不是仓库文件索引，后者会随目录变动失真</span>
+          Code patterns
+          <span class="vk-card__hint">copy-ready · deliberately "patterns" rather than a repo file index, which would drift as the directory changes</span>
         </div>
       </div>
       <div class="vk-patterns" style="margin-top:12px">
@@ -271,9 +276,9 @@ function Patterns() {
 }
 
 const STATUS_LABEL: Record<Capability['status'], string> = {
-  done: '已实现',
-  partial: '部分',
-  todo: '未做'
+  done: 'Done',
+  partial: 'Partial',
+  todo: 'Not yet'
 }
 
 const STATUS_CLASS: Record<Capability['status'], string> = {
@@ -282,14 +287,14 @@ const STATUS_CLASS: Record<Capability['status'], string> = {
   todo: 'vk-sev vk-sev--dim'
 }
 
-/** 状态页：如实列出能力边界。 */
+/** Status page: honestly lists capability boundaries. */
 function Status() {
   return (
     <div>
       <div class="vk-card">
         <div class="vk-card__head">
-          能力状态
-          <span class="vk-card__hint">这一页刻意如实 —— 面板不该假装自己什么都有</span>
+          Capability status
+          <span class="vk-card__hint">this page is deliberately honest — the panel must not pretend to have everything</span>
         </div>
         <div class="vk-card__body">
           {CAPABILITIES.map(capability => (
@@ -303,12 +308,13 @@ function Status() {
       </div>
 
       <div class="vk-card">
-        <div class="vk-card__head">这个面板为什么是静态的</div>
+        <div class="vk-card__head">Why this panel is static</div>
         <div class="vk-card__body">
           <div class="vk-desc">
-            开发台跑在 DSH 里，你的应用跑在它自己的 dev server 里 —— <strong>两者不是同一个页面</strong>。
-            所以面板看不到你应用的运行时（包括运行时护栏的告警）。要显示活数据，需要把 DSH 的 Host 半侧
-            接上（读工作区、跑 vobs check），这一步还没做。
+            The devkit runs inside DSH while your app runs in its own dev server — <strong>they are not
+            the same page</strong>. So the panel cannot see your app's runtime (including runtime-guardrail
+            warnings). Showing live data requires wiring up DSH's Host side (reading the workspace, running
+            vobs check); that step has not been done yet.
           </div>
         </div>
       </div>
@@ -322,12 +328,13 @@ export function VobsDevKit(props: VobsDevKitProps) {
       <div class="vk-head">
         <div>
           <div class="vk-title">
-            Vobs 开发台
-            <span class="vk-tag">vobs 渲染</span>
+            Vobs Devkit
+            <span class="vk-tag">rendered by vobs</span>
           </div>
           <div class="vk-sub">
-            给「用 vobs 写代码的人」和「帮人写 vobs 代码的 AI」用的参考面板：护栏规则、API 索引、写法示例，
-            以及这个工具链目前的能力边界。
+            A reference panel for "people who write vobs code" and "AIs that help write vobs code":
+            guardrail rules, an API index, copy-ready patterns, and the toolchain's current capability
+            boundaries.
           </div>
         </div>
       </div>

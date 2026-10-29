@@ -1,19 +1,20 @@
 /**
- * dsh-plugin-vobs —— Client 半侧入口。
+ * dsh-plugin-vobs — Client-side entry.
  *
- * 这个文件会被 `dshBundle()` 构建成 `lib/client.js`：
+ * This file is built by `dshBundle()` into `lib/client.js`:
  *   window.__ModuleLoader__.load({ id: 'dsh-plugin-vobs', factory: function (require) { … } })
  *
- * 适配层（@vobs/dsh）替我们处理了：React 绑定、shadow root 宿主、slot 注册、
- * 配色跟随、生命周期清理。这里只剩「挂到哪个 slot」和「渲染什么」两件事。
+ * The adapter (@vobs/dsh) handles for us: the React binding, the shadow root host, slot
+ * registration, scheme following, and lifecycle cleanup. All that is left here is "which
+ * slot to mount to" and "what to render".
  */
 import { defineDshOverlay } from '@vobs/dsh'
 import { VobsPanel } from './panel'
 import { PANEL_CSS } from './styles'
 
 /**
- * `shell.overlay` 是 @deepseek-ai/dsh-client-ui-layout 声明的 list slot（scope: root），
- * DSH 自家的配额提示、插件管理器 toast 都挂在这里。
+ * `shell.overlay` is a list slot declared by @deepseek-ai/dsh-client-ui-layout (scope: root);
+ * DSH's own quota hints and plugin-manager toasts all mount here.
  */
 export default defineDshOverlay(
   {

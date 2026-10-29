@@ -18,10 +18,13 @@
 .vobs-data-table__table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 
 /*
- * 满高自适应形态（--hauto，2026-10-28 自 Finora ui.css 收编）：
- * 容器有确定高度时（应用层滚动链提供）空态/少行表格撑满、分页条贴底。
- * ⚠ table 只在状态行（空态/加载/错误）存在时拉伸——无条件拉伸会让
- * tr 均分多余高度（2 行数据摊满整区、行高爆炸）。拉伸的是状态行不是数据行。
+ * Full-height auto-fit mode (--hauto, folded in from Finora's ui.css on 2026-10-28):
+ * when the container has a definite height (provided by the app-level scroll chain),
+ * empty/sparse tables fill it and the pager sticks to the bottom.
+ * ⚠ the table only stretches while a status row (empty/loading/error) exists —
+ * unconditional stretching would let tr rows split the extra height evenly
+ * (2 data rows spread across the whole area, row heights exploding). It is the
+ * status row that stretches, not data rows.
  */
 .vobs-data-table--hauto {
   display: flex;
@@ -62,7 +65,7 @@
 .vobs-data-table [data-align="end"] { text-align: end; font-variant-numeric: tabular-nums; }
 .vobs-data-table tr[data-clickable="true"] { cursor: pointer; }
 .vobs-data-table tr[data-clickable="true"]:hover { background: var(--vobs-table-row-hover, var(--bg-overlay-l2, rgba(0, 0, 0, .04))); }
-/* 行激活态（rowActive）：当前行高亮，弱于 hover 的中性灰、带品牌色左缘指示 */
+/* Row active state (rowActive): highlights the current row — a neutral gray weaker than hover, with a brand-colored left edge indicator */
 .vobs-data-table tbody tr[data-active="true"] { background: var(--vobs-table-row-active, var(--bg-brand-weak, rgba(59, 130, 246, .08))); box-shadow: inset 2px 0 0 var(--vobs-table-row-active-edge, var(--bg-brand, #3b82f6)); }
 .vobs-data-table__sort,
 .vobs-data-table__page-button {
@@ -143,7 +146,7 @@
 }
 .vobs-data-table__jump-submit { min-width: 32px; }
 
-/* 行右键菜单（rowMenu）：fixed 跟随鼠标；容器层零布局影响，菜单内容随 ctx 重建 */
+/* Row context menu (rowMenu): fixed, follows the mouse; zero layout impact at the container level, menu content rebuilt from ctx */
 .vobs-data-table__rowmenu-layer { display: contents; }
 .vobs-data-table--rowmenu tbody tr { cursor: context-menu; }
 .vobs-data-table__rowmenu {

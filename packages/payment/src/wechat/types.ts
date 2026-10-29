@@ -1,4 +1,4 @@
-/** 微信支付 APIv3 交易状态 */
+/** WeChat Pay APIv3 trade state */
 export type WechatTradeState =
   | 'SUCCESS'
   | 'REFUND'
@@ -8,38 +8,38 @@ export type WechatTradeState =
   | 'USERPAYING'
   | 'PAYERROR'
 
-/** 微信支付 APIv3 退款状态 */
+/** WeChat Pay APIv3 refund status */
 export type WechatRefundStatus = 'SUCCESS' | 'CLOSED' | 'PROCESSING' | 'ABNORMAL'
 
 export interface WechatPayParams {
-  /** 商户订单号（6-32 位，商户侧唯一） */
+  /** Merchant order number (6-32 chars, unique on the merchant side) */
   outTradeNo: string
-  /** 商品描述 */
+  /** Goods description */
   description: string
-  /** 订单金额（单位：分） */
+  /** Order amount (in cents) */
   amount: WechatOrderAmount
-  /** 支付者 openid（jsapi / 小程序支付必填） */
+  /** Payer openid (required for jsapi / mini-program pay) */
   openid?: string
-  /** 附加数据，回调时原样返回 */
+  /** Attach data, returned as-is in the callback */
   attach?: string
-  /** 优惠标记 */
+  /** Discount tag */
   goodsTag?: string
-  /** 订单过期时间（RFC 3339，如 2018-06-08T10:34:56+08:00） */
+  /** Order expiry time (RFC 3339, e.g. 2018-06-08T10:34:56+08:00) */
   timeExpire?: string
 }
 
-/** H5 支付参数（额外要求支付者 IP） */
+/** H5 pay params (additionally requires the payer IP) */
 export interface WechatH5PayParams extends WechatPayParams {
-  /** 用户客户端 IP */
+  /** User client IP */
   payerClientIp: string
-  /** 场景信息 */
+  /** Scene info */
   sceneInfo?: {
     payerClientIp?: string
     deviceType?: string
   }
 }
 
-/** JSAPI / 小程序调起支付所需参数（wx.requestPayment / WeixinJSBridge） */
+/** Params for launching payment via JSAPI / mini-program (wx.requestPayment / WeixinJSBridge) */
 export interface WechatJsapiPayResult {
   appId: string
   timeStamp: string
@@ -49,26 +49,26 @@ export interface WechatJsapiPayResult {
   paySign: string
 }
 
-/** APP 调起支付所需参数（与 JSAPI 同构） */
+/** Params for launching payment via the APP SDK (same shape as JSAPI) */
 export interface WechatAppPayResult extends WechatJsapiPayResult {}
 
-/** Native 下单结果：二维码链接 */
+/** Native order result: QR code URL */
 export interface WechatNativePayResult {
   codeUrl: string
 }
 
-/** H5 下单结果：收银台跳转链接 */
+/** H5 order result: cashier redirect URL */
 export interface WechatH5PayResult {
   h5Url: string
 }
 
-/** 交易查询参数（outTradeNo 与 transactionId 二选一） */
+/** Trade query params (pass either outTradeNo or transactionId) */
 export interface WechatQueryParams {
   outTradeNo?: string
   transactionId?: string
 }
 
-/** 交易查询结果（snake_case 已映射为 camelCase） */
+/** Trade query result (snake_case mapped to camelCase) */
 export interface WechatQueryResult {
   appid: string
   mchid: string
@@ -80,52 +80,52 @@ export interface WechatQueryResult {
   bankType?: string
   attach?: string
   successTime?: string
-  /** 订单总金额（分） */
+  /** Order total amount (cents) */
   total: number
-  /** 用户实付金额（分） */
+  /** Payer paid amount (cents) */
   payerTotal?: number
 }
 
-/** 退款金额 */
+/** Refund params */
 export interface WechatRefundParams {
   outTradeNo?: string
   transactionId?: string
-  /** 商户退款单号（商户侧唯一） */
+  /** Merchant refund order number (unique on the merchant side) */
   outRefundNo: string
-  /** 退款金额（单位：分） */
+  /** Refund amount (in cents) */
   amount: WechatRefundAmount
-  /** 退款原因 */
+  /** Refund reason */
   reason?: string
-  /** 退款结果回调地址 */
+  /** Refund result callback URL */
   notifyUrl?: string
-  /** 退款资金来源：AVAILABLE（可用余额）| UNSETTLED（待结算资金），默认 AVAILABLE */
+  /** Refund fund source: AVAILABLE | UNSETTLED, default AVAILABLE */
   fundsAccount?: 'AVAILABLE' | 'UNSETTLED'
 }
 
-/** 退款申请结果 */
+/** Refund request result */
 export interface WechatRefundResult {
   refundId: string
   outRefundNo: string
   outTradeNo: string
   transactionId: string
   status: WechatRefundStatus
-  /** 退款金额（分） */
+  /** Refund amount (cents) */
   refundAmount: number
-  /** 订单总金额（分） */
+  /** Order total amount (cents) */
   total: number
-  /** 退款入账账户金额（分） */
+  /** Amount credited to the user's account (cents) */
   userReceivedAmount?: number
   successTime?: string
   reason?: string
 }
 
-/** 退款查询参数（outRefundNo 与 refundId 二选一） */
+/** Refund query params (pass either outRefundNo or refundId) */
 export interface WechatRefundQueryParams {
   outRefundNo?: string
   refundId?: string
 }
 
-/** 异步通知报文 resource 字段（AES-256-GCM 加密） */
+/** resource field of the async notification payload (AES-256-GCM encrypted) */
 export interface WechatNotifyResource {
   originalType?: string
   algorithm?: string
@@ -134,19 +134,19 @@ export interface WechatNotifyResource {
   nonce: string
 }
 
-/** 异步通知验签所需的 HTTP 头 */
+/** HTTP headers required for async notification signature verification */
 export interface WechatNotifyHeaders {
   /** Wechatpay-Timestamp */
   timestamp: string
   /** Wechatpay-Nonce */
   nonce: string
-  /** Wechatpay-Serial（平台证书序列号 / 微信支付公钥 ID） */
+  /** Wechatpay-Serial (platform cert serial / WeChat Pay public key ID) */
   serial: string
   /** Wechatpay-Signature */
   signature: string
 }
 
-/** 解密后的支付成功/状态变更通知 */
+/** Decrypted payment-success / state-change notification */
 export interface WechatNotifyTransaction {
   mchid: string
   appid: string
@@ -166,7 +166,7 @@ export interface WechatNotifyTransaction {
   }
 }
 
-/** 解密后的退款结果通知 */
+/** Decrypted refund result notification */
 export interface WechatNotifyRefund {
   mchid: string
   outTradeNo: string
@@ -185,39 +185,39 @@ export interface WechatNotifyRefund {
   userAccount?: string
 }
 
-/** 微信支付客户端配置 */
+/** WeChat Pay client configuration */
 export interface WechatClientOptions {
-  /** 商户号 */
+  /** Merchant ID */
   mchid: string
-  /** 商户 API 证书序列号 */
+  /** Merchant API certificate serial number */
   serial: string
-  /** 商户 API 私钥（PEM 字符串） */
+  /** Merchant API private key (PEM string) */
   privateKey: string
-  /** 平台证书 / 微信支付公钥，{序列号(或公钥ID): PEM} 映射；通知验签按 Wechatpay-Serial 查找 */
+  /** Platform certs / WeChat Pay public keys as {serial (or public key ID): PEM}; notification verify looks up by Wechatpay-Serial */
   certs: Record<string, string>
-  /** 应用 ID（公众号 / 小程序 / APP），用于下单与调起签名 */
+  /** App ID (official account / mini-program / APP), used for ordering and launch signing */
   appid: string
-  /** APIv3 密钥（32 字节，回调解密用） */
+  /** APIv3 key (32 bytes, for callback decryption) */
   apiv3Key: string
-  /** 异步通知地址（下单时可被 params.notifyUrl 覆盖） */
+  /** Async notify URL (can be overridden per order via params.notifyUrl) */
   notifyUrl?: string
-  /** 请求超时（毫秒） */
+  /** Request timeout (ms) */
   timeout?: number
 }
 
-/** 订单金额（单位：分） */
+/** Order amount (in cents) */
 export interface WechatOrderAmount {
-  /** 订单总金额（分） */
+  /** Order total amount (cents) */
   total: number
-  /** 币种，默认 CNY */
+  /** Currency, default CNY */
   currency?: string
 }
 
-/** 退款金额（单位：分） */
+/** Refund amount (in cents) */
 export interface WechatRefundAmount {
-  /** 退款金额（分） */
+  /** Refund amount (cents) */
   refund: number
-  /** 原订单金额（分），分账等场景必填 */
+  /** Original order amount (cents); required for profit-sharing scenarios */
   total?: number
   currency?: string
 }

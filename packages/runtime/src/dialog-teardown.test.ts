@@ -58,7 +58,7 @@ describe('Dialog conditional children coexist with sibling content', () => {
     page.appendChild(root)
 
     // Open the dialog: open and children both true
-    request.set({ message: '删除模板？' })
+    request.set({ message: 'Delete template?' })
     await flush()
     expect(body.querySelector('.template-dialog')).not.toBeNull()
     expect(page.querySelector('.templates-grid')).not.toBeNull()

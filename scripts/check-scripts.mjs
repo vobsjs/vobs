@@ -1,32 +1,36 @@
 /*
- * `.mjs` 脚本里不该出现 TypeScript 类型标注。
+ * `.mjs` scripts must not contain TypeScript type annotations.
  *
- * ## 唯一的检查项（刻意只留这一条）
+ * ## The only check (deliberately kept to this single one)
  *
- * 事故：我**连续三次**在生成改动的 `.mjs` 脚本里写了 `const x: string[] = []`
- * —— `.mjs` 是 JS，脚本**直接语法错误、一处改动都没生效**，每次都浪费一个来回
- * （而且还得重新核对"到底改没改"）。
+ * Incident: **three times in a row** I wrote `const x: string[] = []` into generated
+ * `.mjs` script changes — `.mjs` is JS, so the script **failed to parse outright and
+ * none of the edits took effect**, wasting a round trip every time (plus having to
+ * re-verify "did the change land at all").
  *
- * ## 为什么原来叫 check-invariants、还带一条依赖检查
+ * ## Why it used to be called check-invariants, with a dependency check
  *
- * 我最初写了两条：① workspace 依赖声明 ② `.mjs` 注解。
- * 提交前才发现 `scripts/check-imports.mjs` **早就在做①**，而且做得更好：
+ * I originally wrote two checks: (1) workspace dependency declarations, (2) `.mjs`
+ * annotations. Only before committing did I notice `scripts/check-imports.mjs`
+ * **already did (1)**, and better:
  *
- * | | 已有的 `check:imports` | 我写的① |
+ * | | Existing `check:imports` | My (1) |
  * |---|---|---|
- * | 取 import | **TypeScript AST**（真实 import） | 正则文本匹配 |
- * | 注释 / 模板字符串 | **天然免疫** | 要自己剥注释（我中途才补上） |
- * | 打包型包（有 `dsh` 字段） | **整包跳过**（manifest 不能出现 `workspace:`） | 我误报并"修复"了它们 |
+ * | Import extraction | **TypeScript AST** (real imports) | Regex text matching |
+ * | Comments / template strings | **Naturally immune** | Had to strip comments myself (patched mid-way) |
+ * | Bundle-type packages (`dsh` field) | **Skipped entirely** (manifest must not contain `workspace:`) | I false-positived and "fixed" them |
  *
- * **更糟的是我按自己的检查去"修"了：** 给 3 个 dsh 插件包补了 `workspace:*` ——
- * 而 `check-imports` 的文件头明确写着「试过补 `workspace:*`，立刻把那条断言打红了」。
- * 已全部 `git checkout` 回退。
+ * **Worse, I "fixed" things per my own check:** added `workspace:*` to the 3 dsh
+ * plugin packages — while `check-imports`'s header explicitly says "adding
+ * `workspace:*` was tried and immediately turned that assertion red". All reverted
+ * via `git checkout`.
  *
- * 所以①整条删除，只留②（`check-imports` 不管这个）。
+ * So (1) was deleted wholesale; only (2) remains (`check-imports` does not cover it).
  *
- * **这是同一个失败模式第 4 次**：重复实现一个已经存在的能力
- * （前三次：`inferStateDebugName`、`onDestroy` 的命名、`vobs check` 的全仓扫描）。
- * 也说明「先查有没有」应该成为动手前的固定动作。
+ * **This was the 4th occurrence of the same failure mode**: reimplementing an
+ * existing capability (previous three: `inferStateDebugName`, the naming of
+ * `onDestroy`, `vobs check`'s repo-wide scan). Lesson: "search first for whether it
+ * exists" should be a fixed pre-work step.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -35,18 +39,21 @@ const ROOT = process.cwd()
 const failures = []
 
 /**
- * 一行里是否有**明确的** TS 类型标注（窄检测，目标是零误报）。
+ * Whether a line contains an **unambiguous** TS type annotation (narrow detection,
+ * aiming for zero false positives).
  *
- * 第一版还检测"形参注解"和"对象属性"，实测**全是误报**：
+ * The first version also detected "parameter annotations" and "object properties";
+ * in practice **all hits were false positives**:
  *   scripts/build-packages.mjs  entry: entryFor(ts), dts: true, clean: true
- *                                          ↑ ", dts: true," 被当成形参注解
+ *                                          ↑ ", dts: true," was treated as a parameter annotation
  *   scripts/check-release.mjs   { name: x, version: manifest.version, ... }
- *                                          ↑ 对象字面量属性也匹配
- * **那两个脚本是能正常跑的** —— 所以是检查本身错了，而误报会拦门禁。
+ *                                          ↑ object literal properties also matched
+ * **Both scripts run fine** — so the check itself was wrong, and false positives
+ * would block the gate.
  *
- * 收紧后只认：`const NAME: <像类型的> =`
- * 类型须大写开头（或 TS 关键字 string/number/boolean/unknown/any/never/void），
- * 可带 `[]` / `<>`；`true`、`manifest.version` 都不符合。
+ * After tightening, only `const NAME: <type-like> =` counts. The type must start
+ * uppercase (or be a TS keyword string/number/boolean/unknown/any/never/void), may
+ * carry `[]` / `<>`; `true` and `manifest.version` do not match.
  */
 function looksLikeTypeAnnotation(line) {
   const text = line.trim()
@@ -69,10 +76,10 @@ function checkScripts() {
       text.split(/\r?\n/).forEach((line, index) => {
         if (!looksLikeTypeAnnotation(line)) return
         failures.push(
-          `${relative}:${index + 1} 在 .mjs 里写了 TypeScript 类型标注：\n`
+          `${relative}:${index + 1} TypeScript type annotation in a .mjs file:\n`
           + `    ${line.trim().slice(0, 90)}\n`
-          + `    → .mjs 是 JS：脚本会**直接语法错误**，改动一处都不会生效（踩过三次）。\n`
-          + `    → 去掉注解，或把脚本改成 .ts 由 tsx 运行。`
+          + `    → .mjs is JS: the script **fails to parse outright** and none of the edits take effect (hit three times).\n`
+          + `    → Remove the annotation, or turn the script into .ts and run it with tsx.`
         )
       })
     }
@@ -83,9 +90,9 @@ function checkScripts() {
 checkScripts()
 
 if (failures.length > 0) {
-  console.error(`vobs check:scripts —— ${failures.length} 处 .mjs 写法问题\n`)
+  console.error(`vobs check:scripts — ${failures.length} .mjs issue(s)\n`)
   for (const item of failures) console.error(`  ✖ ${item}\n`)
   process.exitCode = 1
 } else {
-  console.log(`vobs check:scripts —— scripts/ 下 ${readdirSync(path.join(ROOT, 'scripts')).length} 项通过 ✓`)
+  console.log(`vobs check:scripts — ${readdirSync(path.join(ROOT, 'scripts')).length} item(s) under scripts/ passed ✓`)
 }

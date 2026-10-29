@@ -1,6 +1,7 @@
-// 编译器基准：编译代表性组件（静态属性、事件绑定、动态分支、keyed 列表、边界组件）
-// 运行：pnpm bench benchmarks/compiler.bench.ts
-// vitest 5：bench 不再是顶层导出，而是 test 上下文的 fixture。
+// Compiler benchmark: compile representative components (static props, event
+// bindings, dynamic branches, keyed lists, boundary components)
+// Run: pnpm bench benchmarks/compiler.bench.ts
+// vitest 5: bench is no longer a top-level export; it is a test-context fixture.
 
 import { describe, test } from 'vitest'
 import { compile } from '@vobs/compiler'
@@ -14,8 +15,8 @@ const SMALL_COMPONENT = [
   '  const users = () => [{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }]',
   '  return (',
   '    <div className="panel" data-testid="panel">',
-  '      <input value={query} placeholder="搜索" onInput={event => { query.value = event.currentTarget.value }} />',
-  '      {users().length === 0 ? <p className="empty">暂无数据</p> : (',
+  '      <input value={query} placeholder="Search" onInput={event => { query.value = event.currentTarget.value }} />',
+  '      {users().length === 0 ? <p className="empty">No data</p> : (',
   '        <ul>',
   '          {users().map(user => (',
   '            <li key={user.id}>',
@@ -62,14 +63,14 @@ function makeListSource(rows: number): string {
 const LIST_100 = makeListSource(100)
 
 describe('compiler', () => {
-  test('小型组件', async ({ bench }) => {
-    await bench('小型组件（静态属性 + 事件 + 条件 + keyed 列表 + 组件）', () => {
+  test('small component', async ({ bench }) => {
+    await bench('small component (static props + events + conditional + keyed list + component)', () => {
       compile(SMALL_COMPONENT, { filename: 'bench-small.tsx' })
     }).run()
   })
 
-  test('100 行列表', async ({ bench }) => {
-    await bench('100 行 keyed 列表组件', () => {
+  test('100-row list', async ({ bench }) => {
+    await bench('100-row keyed list component', () => {
       compile(LIST_100, { filename: 'bench-list-100.tsx' })
     }).run()
   })

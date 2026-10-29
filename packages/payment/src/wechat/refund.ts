@@ -8,17 +8,17 @@ import type {
 } from './types'
 
 /**
- * 微信退款（APIv3）
+ * WeChat refunds (APIv3)
  *
- * 覆盖申请退款与退款状态查询。
- * ⚠️ 退款结果以异步通知（refund.irqevent）或 queryRefund 为准。
+ * Covers refund requests and refund status queries.
+ * ⚠️ Treat the refund result as authoritative only via async notification (refund.irqevent) or queryRefund.
  */
 export function createRefund(client: WechatClient) {
   return {
     /**
-     * 申请退款（POST /v3/refund/domestic/refunds）
-     * @param params 退款参数（outTradeNo 与 transactionId 二选一）
-     * @throws {WechatApiError} 参数错误、余额不足、订单不可退等失败
+     * Request a refund (POST /v3/refund/domestic/refunds)
+     * @param params refund params (pass either outTradeNo or transactionId)
+     * @throws {WechatApiError} on failures such as invalid params, insufficient balance, or non-refundable order
      */
     async refund(params: WechatRefundParams): Promise<WechatRefundResult> {
       const body: Record<string, any> = {
@@ -34,7 +34,7 @@ export function createRefund(client: WechatClient) {
           currency: params.amount.currency ?? 'CNY'
         }
       }
-      // 移除 undefined 字段
+      // Strip undefined fields
       for (const key of Object.keys(body)) {
         if (body[key] === undefined) delete body[key]
       }
@@ -47,13 +47,13 @@ export function createRefund(client: WechatClient) {
     },
 
     /**
-     * 查询退款（GET /v3/refund/domestic/refunds/{out_refund_no | refund_id}）
-     * @throws {WechatApiError} 退款单不存在等失败
+     * Query a refund (GET /v3/refund/domestic/refunds/{out_refund_no | refund_id})
+     * @throws {WechatApiError} on failures such as a nonexistent refund order
      */
     async queryRefund(params: WechatRefundQueryParams): Promise<WechatRefundResult> {
       const id = params.refundId ?? params.outRefundNo
       if (!id) {
-        throw new Error('WechatClient: queryRefund 需要 outRefundNo 或 refundId')
+        throw new Error('WechatClient: queryRefund requires outRefundNo or refundId')
       }
       const { data } = await unwrapV3(
         client.sdk.client.request(`/v3/refund/domestic/refunds/${encodeURIComponent(id)}`, 'GET')
@@ -63,7 +63,7 @@ export function createRefund(client: WechatClient) {
   }
 }
 
-/** snake_case 响应映射 */
+/** snake_case response mapping */
 function mapRefund(data: Record<string, any>): WechatRefundResult {
   return {
     refundId: data.refund_id,

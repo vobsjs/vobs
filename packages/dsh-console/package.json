@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-vobs-console",
   "version": "1.7.8",
-  "description": "Vobs Console：用 vobs 渲染的 DSH 多会话实时驾驶舱",
+  "description": "Vobs Console: a DSH multi-session real-time cockpit rendered with vobs",
   "license": "MIT",
   "type": "module",
   "repository": {

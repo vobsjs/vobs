@@ -46,7 +46,7 @@ describe('KitDataTable index must not freeze when rowKey is used', () => {
     return { rows, host, cellTexts, cleanup: () => { app.destroy(); host.remove() } }
   }
 
-  it('column.render's index follows the current order after a reorder', async () => {
+  it("column.render's index follows the current order after a reorder", async () => {
     const { rows, cellTexts, cleanup } = await mountTable(
       [{ id: 'a', name: 'Ada' }, { id: 'b', name: 'Lin' }],
       { rowKey: (row: Row) => row.id }
@@ -62,7 +62,7 @@ describe('KitDataTable index must not freeze when rowKey is used', () => {
     cleanup()
   })
 
-  it('after filtering out the first row, the remaining row's index becomes 0', async () => {
+  it("after filtering out the first row, the remaining row's index becomes 0", async () => {
     const { rows, cellTexts, cleanup } = await mountTable(
       [{ id: 'a', name: 'Ada' }, { id: 'b', name: 'Lin' }, { id: 'c', name: 'Zoe' }],
       { rowKey: (row: Row) => row.id }

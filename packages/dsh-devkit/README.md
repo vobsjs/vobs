@@ -1,71 +1,76 @@
 # dsh-plugin-vobs-devkit
 
-**Vobs 开发台** —— 注册进 DSH 的 `main`（keyed）整页面板 + 左侧栏入口，给「用 vobs 写代码的人」和「帮人写 vobs 代码的 AI」提供一份参考。
+**Vobs DevKit** — a full-page panel registered into DSH's `main` (keyed) slot with a left-sidebar entry, providing a reference for "people who write vobs code" and "AI that writes vobs code for people".
 
-## 五个 tab
+## The five tabs
 
-| Tab | 内容 | 数据来自 |
+| Tab | Content | Data from |
 | --- | --- | --- |
-| **项目** | 工作区里 `.vobs/check.json` 的问题清单（`文件:行:列` + 出错行 + 修复建议），汇总文件/错误/警告数 | **活数据** · `vobs check --write` |
-| 护栏 | `VOBS_C210` / `VOBS_C211` 两条规则的说明与前后写法对照（来自已实现的 `@vobs/vobs/dev`） | 构建期静态 |
-| API | 仓库里真实存在的 API 索引：签名、说明、示例（逐个对着源码核过） | 构建期静态 |
-| 示例 | 可直接复制的写法示例 | 构建期静态 |
-| 状态 | 如实列出这个工具链哪些能力做了、哪些没做 | 构建期静态 |
+| **Project** | The issue list from the workspace's `.vobs/check.json` (`file:line:col` + the offending line + fix suggestions), summarizing files/errors/warnings | **Live data** · `vobs check --write` |
+| Guardrails | Explanations of the `VOBS_C210` / `VOBS_C211` rules with before/after comparisons (from the implemented `@vobs/vobs/dev`) | Build-time static |
+| API | An index of APIs that really exist in the repo: signatures, descriptions, examples (each verified against the source) | Build-time static |
+| Examples | Copy-paste-ready code examples | Build-time static |
+| Status | Honestly lists which capabilities of this toolchain are done and which are not | Build-time static |
 
-## 「项目」页怎么用
+## Using the "Project" page
 
 ```bash
-vobs check --write     # 在被检查的项目根目录跑，产出 .vobs/check.json
+vobs check --write     # run in the root of the project being checked; produces .vobs/check.json
 ```
 
-面板读这个文件并在文件变化时自动重读（比对 `version`，没变就不重读）。
-**面板只读、不执行命令** —— DSH 的 workspace-files Remote 没有写入能力，面板也启动不了进程，
-所以这份报告由 AI（或你自己）跑出来。
+The panel reads this file and re-reads it automatically on change (comparing `version`; no re-read if unchanged).
+**The panel is read-only and runs no commands** — DSH's workspace-files Remote has no write capability and the panel cannot start processes,
+so this report is produced by an AI (or by you).
 
-读文件走的是 DSH 内置的 `remote.workspaceFiles`（`readBytes` / `stat`），
-**不需要本插件的 Host 半侧** —— 这是这套面板能做成的前提。
+File reads go through DSH's built-in `remote.workspaceFiles` (`readBytes` / `stat`) and
+**do not need this plugin's Host half** — that is the reason this panel could be built at all.
 
-### 已知的取舍
+### Known trade-offs
 
-- **轮询而不是变更流**：DSH 还提供 `changes()`（流式、更强），但它的消费方式（异步迭代器还是回调）
-  我没在活体 DSH 上验证过；`stat()` 的形状是确定的，比 `version` 既便宜又稳。要升级只需替换这一段。
-- **用哪个工作区**：取最近更新的那个非空会话的 `cwd`。面板会把它显示出来，选错了能一眼看见。
-  要手动切换得等做会话选择器。
+- **Polling instead of a change stream**: DSH also offers `changes()` (streamed, more powerful), but I have not verified
+  how it is consumed (async iterator or callback) on a live DSH; `stat()`'s shape is certain, cheaper and steadier than
+  `version`. Upgrading only means replacing this one piece.
+- **Which workspace**: the `cwd` of the most recently updated non-empty session is used. The panel displays it, so a wrong
+  pick is visible at a glance. Manual switching would have to wait for a session picker.
 
-## 写这个面板时踩到的坑
+## Pitfalls hit while building this panel
 
-- 第一版 `ApiIndex` 在组件体里读 `props.apiName.value` —— 组件体只执行一次，所以点击左侧 API
-  条目右侧纹丝不动。改成 `memo` 派生值后才正确。（这正是本面板「护栏」页在讲的坑。）
-- `data instanceof Uint8Array` **跨 realm 会失败**（jsdom / iframe / worker 边界上构造函数不同）。
-  改成按 `byteLength` 判形状。
-- vobs 的 JSX 会**吃掉表达式前的空格**：`{x} 个文件` 渲染成 `12个文件`。用模板字符串显式带上。
+- The first version of `ApiIndex` read `props.apiName.value` inside the component body — component bodies execute only
+  once, so clicking an API entry on the left did not budge the right side. Fixed after switching to a `memo` derived
+  value. (This is exactly the pitfall the panel's "Guardrails" page teaches.)
+- `data instanceof Uint8Array` **fails across realms** (jsdom / iframe / worker boundaries have different constructors).
+  Fixed by checking shape via `byteLength`.
+- vobs JSX **eats whitespace before an expression**: `{x} files` renders as `12files`. Use a template string to keep
+  the space explicitly.
 
-## 为什么其余页面是静态的
+## Why the other pages are static
 
-**开发台跑在 DSH 里，你的应用跑在它自己的 dev server 里 —— 两者不是同一个页面。**
-所以面板看不到你应用的运行时（包括运行时护栏的告警）。
+**The DevKit runs inside DSH; your app runs in its own dev server — they are not the same page.**
+So the panel cannot see your app's runtime (including runtime guardrail warnings).
 
-要显示活数据（工作区信息、`vobs check` 结果）需要把 DSH 的 **Host 半侧**接上：Host 能读工作区、能跑 CLI，再通过 cordis 的服务把结果送给客户端。这一步**还没做**，「状态」页里如实标了。
+Showing live data (workspace info, `vobs check` results) would require wiring DSH's **Host half**: the Host can read
+the workspace and run the CLI, then deliver results to the client through cordis services. That step is **not done yet**;
+the "Status" page says so honestly.
 
-## 安装
+## Install
 
 ```bash
 dsh plugin --profile desktop add "github:vobsjs/vobs#<ref>&path:/packages/dsh-devkit"
 ```
 
-`<ref>` 用包含本包的 tag 或提交 SHA。装完**完全退出 DSH 再打开** —— Host 侧模块不会热加载。
+Use a tag or commit SHA containing this package for `<ref>`. After installing, **fully quit DSH and reopen** — Host-side modules do not hot-reload.
 
-## 开发
+## Development
 
 ```bash
-pnpm build:dsh-devkit                              # 构建 lib/{index,client}.js
-node packages/dsh-devkit/scripts/verify-devkit.mjs # 50 项产物校验（jsdom 里真挂载、真点击）
+pnpm build:dsh-devkit                              # builds lib/{index,client}.js
+node packages/dsh-devkit/scripts/verify-devkit.mjs # 50 artifact checks (really mounts and clicks in jsdom)
 ```
 
-产物 `lib/` 是**签入仓库**的 —— DSH 不会构建你的包。改了源码必须重新构建并提交，否则装进来的还是旧产物（`dsh-plugin` 的校验脚本会用内嵌版本号拦住这种情况）。
+The `lib/` artifacts are **checked into the repo** — DSH will not build your package. After changing source you must rebuild and commit, otherwise what gets installed is the stale artifact (the `dsh-plugin` verify script blocks this via an embedded version number).
 
-## 写这个面板时踩到的坑（面板自己踩的）
+## Pitfalls hit while building this panel (by the panel itself)
 
-第一版 `ApiIndex` 在组件体里读了 `props.apiName.value` —— 组件体只执行一次，所以点击左侧 API 条目右侧纹丝不动。改成 `memo` 派生值后才正确。
+The first version of `ApiIndex` read `props.apiName.value` inside the component body — component bodies execute only once, so clicking an API entry on the left did not budge the right side. Fixed after switching to a `memo` derived value.
 
-这**正是本面板「护栏」页在讲的那个坑**（按 React 心智模型在组件体里读信号）。写 vobs 时记住：**组件体只跑一次，可变读取必须放进动态表达式或 `memo`**。
+This is **exactly the pitfall the panel's "Guardrails" page teaches** (reading a signal in the component body with a React mental model). When writing vobs remember: **the component body runs once; mutable reads must go into dynamic expressions or `memo`**.

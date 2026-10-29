@@ -166,11 +166,11 @@ describe('Field type="number" does not write an empty string as 0', () => {
     app.mount(host)
     settle()
     const input = host.querySelector('input') as HTMLInputElement
-    input.value = '任意文本'
+    input.value = 'any text'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     settle()
     const field = form.field('note' as never) as { value: { value: unknown } }
-    expect(field.value.value).toBe('任意文本')
+    expect(field.value.value).toBe('any text')
     app.destroy(); host.remove()
   })
 

@@ -1,18 +1,22 @@
 // @vitest-environment jsdom
 /*
- * focus trap 必须只把**真的可聚焦**的元素算进去。
+ * The focus trap must only count elements that are **actually focusable**.
  *
- * 原来 `focusable()` 只过滤 `disabled` 与 `aria-hidden="true"`，于是 `hidden`、
- * `display:none`、`visibility:hidden`、`tabindex="-1"`、`inert` 子树里的元素**全部**被算作可聚焦。
+ * `focusable()` used to filter only `disabled` and `aria-hidden="true"`, so elements inside
+ * `hidden`, `display:none`, `visibility:hidden`, `tabindex="-1"`, and `inert` subtrees were
+ * **all** counted as focusable.
  *
- * 后果不只是"焦点落在隐藏元素上"。Tab 循环用的是 `first`/`last` 两个端点：
- * **最后一个可见元素之后还有隐藏元素**时，`last` 会算成隐藏那个 ——
- * 用户在最后一个可见元素上按 Tab，焦点就被送进不可见区域（表现为"焦点消失了"）。
- * 这正是本文件第一条用例锁住的形态。
+ * The consequence wasn't just "focus lands on a hidden element". The Tab cycle uses the
+ * `first`/`last` endpoints: when **hidden elements trail the last visible one**, `last` is
+ * computed as that hidden element — the user pressing Tab on the last visible element sends
+ * focus into the invisible region (manifesting as "focus disappears").
+ * That is exactly the shape the first case in this file locks in.
  *
- * ⚠️ 判断"隐藏"只看内联样式与 `hidden` 属性，不做 `getComputedStyle`
- * （jsdom 不加载外部样式表；且每次 Tab 强制样式计算太贵）。
- * 由 class / 外部样式表造成的隐藏识别不到 —— 那请用 `hidden` 或 `aria-hidden="true"`。
+ * ⚠️ "Hidden" is judged only from inline styles and the `hidden` attribute, without
+ * `getComputedStyle` (jsdom doesn't load external stylesheets; and forcing style computation
+ * on every Tab is too expensive).
+ * Hiding caused by classes / external stylesheets is not detected — use `hidden` or
+ * `aria-hidden="true"` for that.
  */
 import { describe, expect, it } from 'vitest'
 import { createFocusTrap } from './overlay'
@@ -41,8 +45,8 @@ function pressTab(root: HTMLElement, shift = false): void {
   root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: shift, bubbles: true }))
 }
 
-describe('focus trap：不可见元素不得算作可聚焦', () => {
-  it('末尾的 hidden 元素不被当作 last（Tab 不落进不可见区域）', () => {
+describe('focus trap: invisible elements must not count as focusable', () => {
+  it('a hidden element at the end is not treated as last (Tab does not land in the invisible region)', () => {
     const f = fixture()
     const first = button('first')
     const visible = button('visible')
@@ -56,15 +60,15 @@ describe('focus trap：不可见元素不得算作可聚焦', () => {
 
     visible.focus()
     pressTab(f.root)
-    // 修复前：last 算成 hidden → 焦点不动或落到 hidden 上；现在应回到 first
-    expect(document.activeElement, 'Tab 把焦点送进了隐藏元素').toBe(first)
+    // Before the fix: last was computed as hidden → focus either stayed put or landed on hidden; now it should return to first
+    expect(document.activeElement, 'Tab sent focus into a hidden element').toBe(first)
     expect(document.activeElement).not.toBe(hidden)
 
     trap.dispose()
     f.cleanup()
   })
 
-  it('display:none 的元素不参与', () => {
+  it('display:none elements do not participate', () => {
     const f = fixture()
     const first = button('first')
     const gone = button('gone')
@@ -81,7 +85,7 @@ describe('focus trap：不可见元素不得算作可聚焦', () => {
     f.cleanup()
   })
 
-  it('visibility:hidden 的元素不参与', () => {
+  it('visibility:hidden elements do not participate', () => {
     const f = fixture()
     const first = button('first')
     const invisible = button('invisible')
@@ -96,7 +100,7 @@ describe('focus trap：不可见元素不得算作可聚焦', () => {
     f.cleanup()
   })
 
-  it('祖先 display:none 时子元素不参与', () => {
+  it('children do not participate when an ancestor is display:none', () => {
     const f = fixture()
     const first = button('first')
     const wrap = document.createElement('div')
@@ -113,13 +117,13 @@ describe('focus trap：不可见元素不得算作可聚焦', () => {
     f.cleanup()
   })
 
-  it('tabindex="-1" 不参与 Tab 序列（但仍是可编程聚焦）', () => {
+  it('tabindex="-1" is out of the Tab sequence (but still programmatically focusable)', () => {
     const f = fixture()
     const first = button('first')
     const programmatic = button('programmatic')
     programmatic.setAttribute('tabindex', '-1')
     f.root.append(first, programmatic)
-    // 确认它确实可被程序化聚焦（否则这条测试没有意义）
+    // Confirm it is indeed programmatically focusable (otherwise this test is meaningless)
     programmatic.focus()
     expect(document.activeElement).toBe(programmatic)
 
@@ -132,7 +136,7 @@ describe('focus trap：不可见元素不得算作可聚焦', () => {
     f.cleanup()
   })
 
-  it('inert 子树里的元素不参与', () => {
+  it('elements inside an inert subtree do not participate', () => {
     const f = fixture()
     const first = button('first')
     const inertWrap = document.createElement('div')
@@ -149,7 +153,7 @@ describe('focus trap：不可见元素不得算作可聚焦', () => {
     f.cleanup()
   })
 
-  it('aria-hidden="true" 的祖先同样排除（既有语义保留）', () => {
+  it('an aria-hidden="true" ancestor is excluded too (existing semantics preserved)', () => {
     const f = fixture()
     const first = button('first')
     const ariaWrap = document.createElement('div')
@@ -166,7 +170,7 @@ describe('focus trap：不可见元素不得算作可聚焦', () => {
     f.cleanup()
   })
 
-  it('Shift+Tab 从第一个可见元素回绕到**最后一个可见**元素', () => {
+  it('Shift+Tab wraps from the first visible element to the **last visible** element', () => {
     const f = fixture()
     const first = button('first')
     const lastVisible = button('lastVisible')
@@ -178,12 +182,12 @@ describe('focus trap：不可见元素不得算作可聚焦', () => {
     trap.activate()
     expect(document.activeElement).toBe(first)
     pressTab(f.root, true)
-    expect(document.activeElement, 'Shift+Tab 回绕到了隐藏元素').toBe(lastVisible)
+    expect(document.activeElement, 'Shift+Tab wrapped into a hidden element').toBe(lastVisible)
     trap.dispose()
     f.cleanup()
   })
 
-  it('可见元素依旧正常循环（没有把功能一起打死）', () => {
+  it('visible elements still cycle normally (the feature was not broken along the way)', () => {
     const f = fixture()
     const first = button('first')
     const last = button('last')
@@ -194,15 +198,15 @@ describe('focus trap：不可见元素不得算作可聚焦', () => {
     expect(document.activeElement).toBe(first)
     last.focus()
     pressTab(f.root)
-    expect(document.activeElement).toBe(first)     // 正向回绕
+    expect(document.activeElement).toBe(first)     // forward wrap
     first.focus()
     pressTab(f.root, true)
-    expect(document.activeElement).toBe(last)      // 反向回绕
+    expect(document.activeElement).toBe(last)      // backward wrap
     trap.dispose()
     f.cleanup()
   })
 
-  it('全部元素都不可见时，Tab 不把焦点送出 trap', () => {
+  it('when no element is visible, Tab does not send focus out of the trap', () => {
     const f = fixture()
     const hidden = button('hidden')
     hidden.hidden = true
@@ -212,7 +216,7 @@ describe('focus trap：不可见元素不得算作可聚焦', () => {
     const trap = createFocusTrap(f.root)
     trap.activate()
     pressTab(f.root)
-    // 没有可聚焦元素时，代码路径会把焦点交给 root 并 preventDefault
+    // With no focusable element, the code path hands focus to the root and calls preventDefault
     expect(document.activeElement).toBe(f.root)
     expect(document.activeElement).not.toBe(f.outside)
     trap.dispose()

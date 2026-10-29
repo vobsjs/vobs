@@ -5,12 +5,14 @@ import { setRuntimeDebugHooks, type RuntimeProvisionalText } from '@vobs/runtime
 import { hydrate, renderToString } from './index'
 
 /*
- * 水合时 `createText('')` 的兜底分支会认领**任意未认领文本**（服务端渲染了真实文本、
- * 客户端此刻要空文本：只能先认领、等绑定 effect 覆写）。这一步过去完全无声 ——
- * 服务端 "Ada" 遇上客户端忘传 state（会渲染 "loading"）就静默变成后者，既不报错也没线索。
- * 现在给出可观测出口 `hydrationProvisionalText`。
+ * During hydration, the `createText('')` fallback branch claims **any unclaimed text**
+ * (the server rendered real text while the client currently wants empty text: it can only
+ * be claimed first and overwritten by the bound effect later). This used to be completely
+ * silent — server "Ada" meeting a client that forgot to pass state (rendering "loading")
+ * quietly became the latter, with no error and no clue.
+ * There is now an observable outlet: `hydrationProvisionalText`.
  */
-describe('水合临时认领文本有可观测出口', () => {
+describe('provisional text claiming during hydration has an observable outlet', () => {
   function render() {
     const span = createElement('span')
     const text = createText('')
@@ -19,7 +21,7 @@ describe('水合临时认领文本有可观测出口', () => {
     return span
   }
 
-  it('服务端非空文本 + 客户端空初值：触发一次 hydrationProvisionalText', () => {
+  it('server non-empty text + client empty initial value: fires one hydrationProvisionalText', () => {
     const events: RuntimeProvisionalText[] = []
     setRuntimeDebugHooks({ hydrationProvisionalText: event => events.push(event) })
     try {
@@ -27,8 +29,8 @@ describe('水合临时认领文本有可观测出口', () => {
       const app = hydrate(render, document.body)
 
       expect(events).toHaveLength(1)
-      expect(events[0]).toEqual({ expected: '动态文本节点', actual: '"count: 42"' })
-      // 值本身照旧被绑定 effect 覆写（行为没变）
+      expect(events[0]).toEqual({ expected: 'dynamic text node', actual: '"count: 42"' })
+      // The value itself is still overwritten by the bound effect (behavior unchanged)
       expect(document.body.textContent).toBe('count: 42')
       app.destroy()
     } finally {
@@ -37,7 +39,7 @@ describe('水合临时认领文本有可观测出口', () => {
     }
   })
 
-  it('服务端空文本（占位注释）不走临时认领，不产生事件', () => {
+  it('server empty text (placeholder comment) does not go through provisional claiming and emits no event', () => {
     const events: RuntimeProvisionalText[] = []
     const renderEmpty = () => {
       const span = createElement('span')

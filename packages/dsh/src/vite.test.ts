@@ -31,7 +31,7 @@ interface PluginLike {
   generateBundle?: unknown
 }
 
-/** 模拟 rollup 的插件上下文：error 抛错、warn 收集。 */
+/** Simulates rollup's plugin context: error throws, warn collects. */
 function createPluginContext(): { context: Record<string, unknown>; warnings: string[] } {
   const warnings: string[] = []
   return {
@@ -53,7 +53,7 @@ type GenerateBundleHook = (this: unknown, options: { format: string }, bundle: F
 function generate(plugin: PluginLike, options: { format: string }, bundle: FakeBundle): string[] {
   const { context, warnings } = createPluginContext()
   const hook = plugin.generateBundle as GenerateBundleHook | undefined
-  if (hook === undefined) throw new Error('插件没有 generateBundle')
+  if (hook === undefined) throw new Error('plugin has no generateBundle')
   hook.call(context, options, bundle)
   return warnings
 }
@@ -64,44 +64,44 @@ const chunkOf = (code = 'exports.default={apply(){}};'): FakeChunk => ({
   code
 })
 
-/* ------------------------------------------------------------ 外壳包装 */
+/* ------------------------------------------------------------ Shell wrapping */
 
 describe('wrapAsModuleLoaderFactory', () => {
   const wrapped = wrapAsModuleLoaderFactory('"use strict";\nconsole.log(1)\n//# sourceMappingURL=client.cjs.map\n', 'my-plugin')
 
-  it('产出 DSH 客户端模块协议的一次 factory 注册', () => {
+  it('produces one factory registration of the DSH client module protocol', () => {
     expect(wrapped.match(/__ModuleLoader__\.load\(/gu)?.length).toBe(1)
     expect(wrapped).toContain('window.__ModuleLoader__.load({id:"my-plugin",factory:function(require){')
   })
 
-  it('提供 module / exports 垫片，让 CJS 产物原样运行', () => {
+  it('provides a module/exports shim so the CJS artifact runs as-is', () => {
     expect(wrapped).toContain('var module={exports:{}};var exports=module.exports;')
   })
 
-  it('优先返回 default 导出', () => {
+  it('prefers the default export', () => {
     expect(wrapped).toContain('out.__esModule')
     expect(wrapped).toContain('Object.prototype.hasOwnProperty.call(out,"default")')
   })
 
-  it('注入平台 React 引导', () => {
+  it('injects the platform React bootstrap', () => {
     expect(wrapped).toContain('globalThis["__VOBS_DSH_REACT__"]=require("react")')
   })
 
-  it('可以关掉 React 引导', () => {
+  it('can disable the React bootstrap', () => {
     const off = wrapAsModuleLoaderFactory('exports.default={}', 'p', { react: false })
     expect(off).not.toContain('__VOBS_DSH_REACT__')
   })
 
-  it('剥掉前导 use strict 与 sourceMappingURL，且不留下重复的 use strict', () => {
+  it('strips the leading use strict and sourceMappingURL without leaving a duplicate use strict', () => {
     expect((wrapped.match(/"use strict";/gu) ?? []).length).toBe(1)
     expect(wrapped).not.toContain('sourceMappingURL')
   })
 })
 
-/* ------------------------------------------------------------ 构建门禁 */
+/* ------------------------------------------------------------ Build gates */
 
 describe('dshBundle', () => {
-  it('单 chunk 时包装成 client.js', () => {
+  it('wraps a single chunk into client.js', () => {
     const plugin = dshBundle({ id: 'probe-plugin' })
     const bundle: FakeBundle = { 'client.cjs': chunkOf() }
     generate(plugin as PluginLike, { format: 'cjs' }, bundle)
@@ -114,25 +114,25 @@ describe('dshBundle', () => {
     expect(emitted.map).toBeNull()
   })
 
-  it('拒绝多 chunk（产物必须自包含）', () => {
+  it('rejects multiple chunks (the artifact must be self-contained)', () => {
     const plugin = dshBundle({ id: 'p' })
     const bundle: FakeBundle = { 'a.js': chunkOf(), 'b.js': chunkOf() }
-    expect(() => generate(plugin as PluginLike, { format: 'cjs' }, bundle)).toThrow(/自包含/u)
+    expect(() => generate(plugin as PluginLike, { format: 'cjs' }, bundle)).toThrow(/self-contained/u)
   })
 
-  it('拒绝独立 asset', () => {
+  it('rejects standalone assets', () => {
     const plugin = dshBundle({ id: 'p' })
     const bundle: FakeBundle = { 'client.cjs': chunkOf(), 'style.css': { type: 'asset', fileName: 'style.css' } }
-    expect(() => generate(plugin as PluginLike, { format: 'cjs' }, bundle)).toThrow(/独立资源/u)
+    expect(() => generate(plugin as PluginLike, { format: 'cjs' }, bundle)).toThrow(/standalone assets/u)
   })
 
-  it('拒绝非 cjs 输出格式', () => {
+  it('rejects non-cjs output formats', () => {
     const plugin = dshBundle({ id: 'p' })
     const bundle: FakeBundle = { 'client.js': chunkOf() }
     expect(() => generate(plugin as PluginLike, { format: 'es' }, bundle)).toThrow(/CJS/u)
   })
 
-  it('丢弃会失效的 sourcemap 并给出警告', () => {
+  it('drops the invalid sourcemap and warns', () => {
     const plugin = dshBundle({ id: 'p' })
     const bundle: FakeBundle = { 'client.cjs': chunkOf(), 'client.cjs.map': { type: 'asset', fileName: 'client.cjs.map' } }
     const warnings = generate(plugin as PluginLike, { format: 'cjs' }, bundle)
@@ -140,13 +140,13 @@ describe('dshBundle', () => {
     expect(warnings.join('\n')).toMatch(/sourcemap/u)
   })
 
-  it('没有 id 也没有包名时报错', () => {
+  it('errors when there is neither id nor package name', () => {
     const plugin = dshBundle()
     const bundle: FakeBundle = { 'client.cjs': chunkOf() }
-    expect(() => generate(plugin as PluginLike, { format: 'cjs' }, bundle)).toThrow(/模块 id/u)
+    expect(() => generate(plugin as PluginLike, { format: 'cjs' }, bundle)).toThrow(/browser module id/u)
   })
 
-  it('config 钩子把平台模块并入 external 判定，同时保留使用方的 external', () => {
+  it('config hook folds platform modules into the external predicate while keeping the consumer external', () => {
     const plugin = dshBundle() as PluginLike
     const config: Record<string, unknown> = {
       build: { rollupOptions: { external: ['node:fs'] } }
@@ -159,7 +159,7 @@ describe('dshBundle', () => {
     expect(build.rollupOptions.external('some-lib')).toBe(false)
   })
 
-  it('config 钩子在给了 entry 时补上 cjs 单文件 lib 配置', () => {
+  it('config hook fills in cjs single-file lib config when an entry is given', () => {
     const plugin = dshBundle({ entry: 'src/client/index.tsx' }) as PluginLike
     const config: Record<string, unknown> = {}
     plugin.config?.(config)
@@ -169,14 +169,14 @@ describe('dshBundle', () => {
     expect(lib.formats).toEqual(['cjs'])
   })
 
-  it('config 钩子不覆盖使用方已有的 lib 配置', () => {
+  it('config hook does not override an existing lib config', () => {
     const plugin = dshBundle({ entry: 'src/client/index.tsx' }) as PluginLike
     const config: Record<string, unknown> = { build: { lib: { entry: 'other.ts', formats: ['es'] } } }
     plugin.config?.(config)
     expect((config.build as { lib: { entry: string } }).lib.entry).toBe('other.ts')
   })
 
-  it('从 exports["./client"] 反推产物目录，并据此重命名', () => {
+  it('infers the output directory from exports["./client"] and renames accordingly', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vobs-dsh-bundle-'))
     tempDirs.push(dir)
     writeFileSync(
@@ -190,7 +190,7 @@ describe('dshBundle', () => {
     plugin.config?.(config)
     expect((config.build as { outDir: string }).outDir).toBe('lib')
 
-    // vite 的真实顺序：config → configResolved → generateBundle
+    // vite's real order: config → configResolved → generateBundle
     const { context } = createPluginContext()
     ;(plugin.configResolved as (this: unknown, c: { root: string }) => void).call(context, { root: dir })
 
@@ -200,7 +200,7 @@ describe('dshBundle', () => {
     expect(bundle['some-other-name.cjs']).toBeUndefined()
   })
 
-  it('outDir 与清单不一致时给出警告', () => {
+  it('warns when outDir disagrees with the manifest', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vobs-dsh-bundle-'))
     tempDirs.push(dir)
     writeFileSync(
@@ -215,25 +215,25 @@ describe('dshBundle', () => {
     expect(warnings.join('\n')).toContain('outDir')
   })
 
-  /* -------------------------------------------------- 自包含性（chunk 元数据） */
+  /* -------------------------------------------------- Self-containment (chunk metadata) */
 
-  it('残留未打包的裸 import 时构建失败', () => {
+  it('fails the build when unbundled bare imports remain', () => {
     const plugin = dshBundle() as PluginLike
     const bundle: FakeBundle = {
       'client.cjs': { ...chunkOf(), imports: ['@vobs/vobs'] }
     }
-    expect(() => generate(plugin, { format: 'cjs' }, bundle)).toThrow(/不是自包含/u)
+    expect(() => generate(plugin, { format: 'cjs' }, bundle)).toThrow(/not self-contained/u)
   })
 
-  it('动态 import 残留同样失败', () => {
+  it('fails the build when a dynamic import remains too', () => {
     const plugin = dshBundle() as PluginLike
     const bundle: FakeBundle = {
       'client.cjs': { ...chunkOf(), dynamicImports: ['@vobs/dsh'] }
     }
-    expect(() => generate(plugin, { format: 'cjs' }, bundle)).toThrow(/不是自包含/u)
+    expect(() => generate(plugin, { format: 'cjs' }, bundle)).toThrow(/not self-contained/u)
   })
 
-  it('平台模块（react）保持 external 不算残留', () => {
+  it('platform module (react) staying external does not count as a leftover', () => {
     const plugin = dshBundle({ id: 'probe' }) as PluginLike
     const bundle: FakeBundle = {
       'client.cjs': { ...chunkOf(), imports: ['react'] }
@@ -242,11 +242,12 @@ describe('dshBundle', () => {
   })
 
   /*
-   * 这条是回归：门禁一度用正则在产物**文本**上找 `from '@vobs/...'`，于是把
-   * 「作为内容展示的示例代码」也算成未打包依赖 —— 开发台面板展示了 vobs 的 import
-   * 写法，构建直接失败。改成读 chunk 元数据后，同样的文本不会再误报。
+   * Regression: the gate once used a regex over the artifact **text** to find `from '@vobs/...'`,
+   * which counted "sample code displayed as content" as an unbundled dependency — the devkit
+   * panel shows vobs import snippets, so the build failed outright. Reading chunk metadata
+   * instead means the same text no longer false-positives.
    */
-  it('产物文本里出现 @vobs import 示例不误报（只看元数据）', () => {
+  it('does not false-positive on @vobs import samples in artifact text (metadata only)', () => {
     const plugin = dshBundle({ id: 'probe' }) as PluginLike
     const code = 'exports.default={apply(){}};const doc="import { state } from \'@vobs/vobs\'";'
     const bundle: FakeBundle = { 'client.cjs': { ...chunkOf(code), imports: [] } }

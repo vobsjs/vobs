@@ -1,32 +1,32 @@
 # @vobs/dsh
 
-用 **vobs** 开发 **DeepSeek Harness（DSH）** 客户端插件的适配层。
+The adapter layer for building **DeepSeek Harness (DSH)** client plugins with **vobs**.
 
-它替插件作者处理掉 DSH 客户端插件里最容易踩坑、又跟业务毫无关系的三件事：
+It handles for plugin authors the three most pitfall-prone parts of a DSH client plugin that have nothing to do with business logic:
 
-| 你要操心的事 | 以前 | 现在 |
+| What you'd worry about | Before | Now |
 | --- | --- | --- |
-| 产物形态 | 自己把 CJS 包成 `window.__ModuleLoader__.load({id, factory})`，补 `module`/`exports` 垫片 | `dshBundle()` 自动完成 |
-| 产物纯度 | 拆了 chunk、用了动态 `import()`，装进 DSH 才发现坏 | 构建期直接失败并说明原因 |
-| React 宿主 | 每个 slot 手写 `<div ref>` + `useEffect` + shadow root + 清理 | `createVobsSlotHost` 一行 |
-| slot 注册 | 手写 `ctx.slots.inject(...)` + `register(...)`，字段靠猜 | `defineDshOverlay` / `defineDshPanel` |
-| 配色 | 自己判断 DSH 是深色还是浅色 | 宿主自动写 `data-scheme` |
-| 类型 | `ctx: any` | 带完整类型的 `DshClientContext` |
-| 本地开发 | 只能装进真实 DSH 才看得见 | `vobs dsh dev` + `@vobs/dsh/preview` |
+| Artifact shape | Wrap the CJS bundle yourself into `window.__ModuleLoader__.load({id, factory})`, add `module`/`exports` shims | `dshBundle()` does it automatically |
+| Artifact purity | Split chunks, dynamic `import()` — only discovered broken once installed in DSH | Fails at build time with an explanation |
+| React host | Hand-write `<div ref>` + `useEffect` + shadow root + cleanup for every slot | One line with `createVobsSlotHost` |
+| slot registration | Hand-write `ctx.slots.inject(...)` + `register(...)`, guessing at fields | `defineDshOverlay` / `defineDshPanel` |
+| Color scheme | Detect dark vs light DSH yourself | The host writes `data-scheme` automatically |
+| Types | `ctx: any` | Fully typed `DshClientContext` |
+| Local development | Only visible once installed in a real DSH | `vobs dsh dev` + `@vobs/dsh/preview` |
 
-![开发预览](design/dev-preview.png)
+![Dev preview](design/dev-preview.png)
 
-*上图是一个外部插件项目跑 `vobs dsh dev` 的真实截图（1280×720，无头浏览器）。左轨道是 `sidebar.panellist` 入口，主区域是 `main` slot 里的整页面板。整个过程没有装进 DSH。*
+*The screenshot above is a real capture of an external plugin project running `vobs dsh dev` (1280×720, headless browser). The left rail is the `sidebar.panellist` entry; the main area is the full-page panel in the `main` slot. Nothing was ever installed into DSH.*
 
 ---
 
-## 30 秒上手
+## Up and running in 30 seconds
 
 ```bash
 pnpm add -D @vobs/dsh @vobs/vobs @vobs/vite-plugin vite
 ```
 
-**package.json** —— `dsh` 清单是 DSH 认出插件的唯一凭据：
+**package.json** — the `dsh` manifest is the only credential by which DSH recognizes a plugin:
 
 ```json
 {
@@ -46,7 +46,7 @@ pnpm add -D @vobs/dsh @vobs/vobs @vobs/vite-plugin vite
 }
 ```
 
-**cordis.patch.yml** —— 把自己的行插进 profile 的 cordis 树：
+**cordis.patch.yml** — inserts your own line into the profile's cordis tree:
 
 ```yaml
 - insert:
@@ -54,7 +54,7 @@ pnpm add -D @vobs/dsh @vobs/vobs @vobs/vite-plugin vite
       name: my-dsh-plugin
 ```
 
-**vite.config.ts** —— `dshBundle()` 负责产物形态：
+**vite.config.ts** — `dshBundle()` takes care of the artifact shape:
 
 ```ts
 import { defineConfig } from 'vite'
@@ -69,7 +69,7 @@ export default defineConfig({
 })
 ```
 
-**src/client/index.tsx** —— 业务只剩「挂到哪」和「渲染什么」：
+**src/client/index.tsx** — business code is reduced to "where to mount" and "what to render":
 
 ```tsx
 import { defineDshOverlay } from '@vobs/dsh'
@@ -81,26 +81,26 @@ export default defineDshOverlay(
 )
 ```
 
-`pnpm vite build` 之后，`lib/client.js` 就是 DSH 能直接加载的 bundle。
+After `pnpm vite build`, `lib/client.js` is the bundle DSH can load directly.
 
 ---
 
-## 三个注册器
+## The three registrars
 
-### `defineDshOverlay(options, render)` —— 全局浮层
+### `defineDshOverlay(options, render)` — global overlay
 
-挂在 `shell.overlay`（DSH 自家的配额提示、插件管理器 toast 也在这里）。默认固定在窗口右下角。
+Mounts into `shell.overlay` (DSH's own quota notice and the plugin-manager toast live here too). Fixed to the bottom-right corner of the window by default.
 
 ```tsx
 export default defineDshOverlay(
-  { id: 'my-panel', order: 120, styles: css, label: '我的面板' },
+  { id: 'my-panel', order: 120, styles: css, label: 'My panel' },
   () => <Panel />
 )
 ```
 
-### `defineDshPanel(options, render)` —— 主区域整页
+### `defineDshPanel(options, render)` — full-page main area
 
-对应官方 `ui-schedule` 的注册方式：`main` 是 **keyed** slot，用 `key` 认领；`sidebar.panellist` 用同值做 `id` 关联，从而在左侧栏出现入口。
+Mirrors how the official `ui-schedule` registers: `main` is a **keyed** slot claimed by `key`; `sidebar.panellist` uses the same value as its `id` to link up, which makes the entry appear in the left sidebar.
 
 ```tsx
 export default defineDshPanel(
@@ -116,9 +116,9 @@ export default defineDshPanel(
 )
 ```
 
-### `defineDshPlugin(spec)` —— 逃生口
+### `defineDshPlugin(spec)` — the escape hatch
 
-需要自己写 `apply`、注册到适配层还没封装的 slot 时用：
+Use when you need to write `apply` yourself or register into a slot the adapter has not wrapped yet:
 
 ```tsx
 import { defineDshPlugin } from '@vobs/dsh'
@@ -127,13 +127,13 @@ export default defineDshPlugin({
   inject: ['connection', 'remote'],
   setup(ctx) {
     const connection = ctx.get('connection')
-    // …自己的接线…
-    return () => { /* 销毁时执行 */ }
+    // …your own wiring…
+    return () => { /* runs on teardown */ }
   }
 })
 ```
 
-未覆盖的 slot 直接用底层 API 也一样安全：
+Slots not covered by the adapter are just as safe to use through the low-level API:
 
 ```tsx
 ctx.slots.inject('sidebar.right.pane.tab', () =>
@@ -143,132 +143,136 @@ ctx.slots.inject('sidebar.right.pane.tab', () =>
 
 ---
 
-## `dshBundle()` 做了什么
+## What `dshBundle()` does
 
-1. **包装产物** —— 把 rollup 的 CJS 输出包成一次 `window.__ModuleLoader__.load({ id, factory })` 注册，
-   并注入 `module` / `exports` 垫片，让 CJS 产物原样运行；返回值优先取 `default` 导出。
-2. **三条件白门禁**（违反即构建失败，且说明怎么改）：
-   - 必须**只有一个 chunk** —— DSH 只支持自包含 chunk；
-   - 不能有**独立 asset** —— CSS 要内联为字符串（例如注入 shadow root）；
-   - 输出格式必须是 **cjs**。
-3. **平台模块外置** —— `react` 强制 external（它是 DSH 平台模块表里的内置模块，
-   打进产物会拿到第二份实例），并在 factory 首行注入 `globalThis.__VOBS_DSH_REACT__ = require('react')`。
+1. **Wraps the artifact** — takes rollup's CJS output and wraps it into a single
+   `window.__ModuleLoader__.load({ id, factory })` registration,
+   injecting `module` / `exports` shims so the CJS artifact runs as-is; the return
+   value prefers the `default` export.
+2. **Three-condition white gate** (violations fail the build, with instructions on how to fix):
+   - there must be **exactly one chunk** — DSH only supports self-contained chunks;
+   - there must be **no standalone assets** — CSS must be inlined as strings (e.g. injected into a shadow root);
+   - the output format must be **cjs**.
+3. **Platform module externalization** — `react` is forced external (it is a built-in entry in DSH's platform module table;
+   bundling it would produce a second copy), and `globalThis.__VOBS_DSH_REACT__ = require('react')` is injected as the
+   first line of the factory.
 
-选项：
+Options:
 
-| 选项 | 默认 | 说明 |
+| Option | Default | Description |
 | --- | --- | --- |
-| `id` | package.json 的 `name` | 浏览器模块身份 |
-| `entry` | —— | 给了就顺手补 `build.lib`（cjs / 单文件） |
-| `platformModules` | `['react']` | 额外需要外置的平台模块 |
-| `fileName` | `client.js` | 产物文件名 |
-| `react` | `true` | 设 `false` 关掉 React 引导注入（自己调 `useDshReact` 时） |
+| `id` | package.json's `name` | Browser module identity |
+| `entry` | — | When given, also fills in `build.lib` (cjs / single file) |
+| `platformModules` | `['react']` | Additional platform modules to externalize |
+| `fileName` | `client.js` | Output file name |
+| `react` | `true` | Set `false` to disable React bootstrap injection (when you call `useDshReact` yourself) |
 
-构建时还会检查 package.json 有没有 `dsh.client`，缺了会给出警告而不是等你装进 DSH 才发现。
-
----
-
-## React 绑定
-
-DSH 的 slot 只接受 React 组件；vobs 渲染的是真实 DOM。适配层的办法是：
-**用一个极薄的 React 组件占一个元素，在该元素上开 shadow root，把 vobs 应用挂进去。**
-React 侧永远只有这一个空壳，业务全在 vobs 里。
-
-React 通过 `resolveDshReact()` 取用，两条路径：
-
-1. `dshBundle()` 构建时自动注入（默认，无需写任何代码）；
-2. 自建构建流程时手动 `useDshReact(require('react'))`。
-
-两条都拿不到会抛出带修法的错误。
+At build time it also checks whether package.json has a `dsh.client` field; if missing, you get a warning instead of discovering it only after installing into DSH.
 
 ---
 
-## DSH 契约速查
+## React bindings
 
-这些都是**从已安装的 DSH 反推出来的非官方契约**，DSH 升级后可能漂移。适配层因此只保证「声明保守」：
-DSH 专有字段全部可选、未知字段原样透传。
+DSH slots only accept React components; vobs renders real DOM. The adapter's approach:
+**use an extremely thin React component to occupy one element, open a shadow root on that
+element, and mount the vobs application into it.**
+On the React side there is forever only this one empty shell; all business code lives in vobs.
 
-| 位置 | 要求 |
+React is obtained through `resolveDshReact()`, two paths:
+
+1. Injected automatically by `dshBundle()` at build time (the default, no code needed);
+2. Manually `useDshReact(require('react'))` when using your own build pipeline.
+
+If neither is available, an error with a fix suggestion is thrown.
+
+---
+
+## DSH contract quick reference
+
+All of these are **unofficial contracts reverse-engineered from an installed DSH** and may drift when DSH upgrades. The adapter therefore only commits to "conservative declarations":
+all DSH-specific fields are optional, and unknown fields pass through untouched.
+
+| Location | Requirement |
 | --- | --- |
-| `package.json` → `dsh.bundle.patch` | patch 文件路径（相对包根） |
-| `package.json` → `dsh.client.platform` | Web 客户端为 `'web'` |
-| `package.json` → `dsh.client.inject/external/immediately` | 可选。`inject` 列需要先加载的客户端包；`external` 列平台表之外的模块请求 |
-| `exports['.']` | Host 侧 cordis 插件模块（ESM，导出 `name` / `inject` / `apply`） |
-| `exports['./client']` | 预构建的浏览器 bundle |
-| 安装期脚本 | **不要**有 `prepare` / `postinstall`；产物必须已提交 |
-| 依赖 | 尽量为零，且不要出现 `workspace:` 协议（Git 子目录直装时解析不了） |
+| `package.json` → `dsh.bundle.patch` | Patch file path (relative to package root) |
+| `package.json` → `dsh.client.platform` | `'web'` for the web client |
+| `package.json` → `dsh.client.inject/external/immediately` | Optional. `inject` lists client packages to load first; `external` lists module requests outside the platform table |
+| `exports['.']` | Host-side cordis plugin module (ESM, exports `name` / `inject` / `apply`) |
+| `exports['./client']` | Prebuilt browser bundle |
+| Install-time scripts | **No** `prepare` / `postinstall`; artifacts must be committed |
+| Dependencies | Zero if possible, and no `workspace:` protocol (unresolvable in a Git subdirectory install) |
 
-常用 slot：
+Common slots:
 
-| slot | 形态 | 放什么 |
+| slot | Shape | What goes there |
 | --- | --- | --- |
-| `main` | keyed | 主区域整页 |
-| `sidebar.panellist` | list | 主区域页面的左侧入口 |
-| `shell.overlay` | list | 全局浮层 |
-| `sidebar.right.pane.tab` + `.title` | list | 右侧栏 tab |
-| `settings.section` | list | 独立设置页 |
-| `tool.call.toolview` | list | 工具调用的自定义渲染器 |
-| `conversation.chat.node` / `.turnTail` | list | 聊天流内嵌节点 |
+| `main` | keyed | Full pages in the main area |
+| `sidebar.panellist` | list | Left-rail entries for main-area pages |
+| `shell.overlay` | list | Global overlays |
+| `sidebar.right.pane.tab` + `.title` | list | Right sidebar tabs |
+| `settings.section` | list | Standalone settings pages |
+| `tool.call.toolview` | list | Custom renderers for tool calls |
+| `conversation.chat.node` / `.turnTail` | list | Nodes embedded in the chat stream |
 
-`single` 类型的 slot（`root` / `sidebar` / `rightbar` / `shell.leading`）已被官方占用，插件拿不到。
+`single` slots (`root` / `sidebar` / `rightbar` / `shell.leading`) are already claimed by the official app; plugins cannot get them.
 
 ---
 
-## 本地预览：`vobs dsh dev`
+## Local preview: `vobs dsh dev`
 
-不用装进 DSH 就能看到面板。`vobs dsh dev` 会构建产物、起一个本地服务，并在浏览器里造一个仿 DSH 的外壳
-（左轨道 / 侧栏 / 主区域 / 右栏 / 浮层），把插件注册的每个 slot 条目渲染到对应位置；改代码会自动重建并刷新。
+See your panel without installing it into DSH. `vobs dsh dev` builds the artifact, starts a local server, and creates a DSH-like shell in the browser
+(left rail / sidebar / main area / right bar / overlay), rendering every slot entry your plugin registers into its place; code changes rebuild and refresh automatically.
 
 ```bash
-vobs dsh init my-plugin     # 脚手架
+vobs dsh init my-plugin     # scaffold
 cd my-plugin && pnpm install
 pnpm dev                    # → http://127.0.0.1:5199/
 ```
 
-底层是 `@vobs/dsh/preview`（也可以直接拿来用）：
+Under the hood is `@vobs/dsh/preview` (usable directly too):
 
 ```ts
 import { startPreview, installLoaderShim } from '@vobs/dsh/preview'
 
-installLoaderShim()                 // 装 window.__ModuleLoader__ 垫片
-await loadYourBundleSomehow()       // 让产物执行一次，把 factory 注册进来
+installLoaderShim()                 // install the window.__ModuleLoader__ shim
+await loadYourBundleSomehow()       // run the artifact once so it registers its factory
 startPreview({
   container: document.getElementById('root')!,
   packageName: 'my-plugin',
-  services: { sessions: fakeSessions }   // 可选：喂给 ctx.get()
+  services: { sessions: fakeSessions }   // optional: fed to ctx.get()
 })
 ```
 
-它不模拟 DSH：不连后端、不实现 cordis、不还原官方组件样式，只回答「我的面板挂上去长什么样、会不会报错」。
-为此它自带一份**极小的 React 实现**（只实现 `createElement` / `useRef` / `useEffect`），
-因为适配层的宿主组件永远只用这三个 API。
+It does not simulate DSH: no backend connection, no cordis, no replication of official component styles. It only answers "what does my panel look like when mounted, and does it throw".
+For that it ships a **minimal React implementation** (only `createElement` / `useRef` / `useEffect`),
+because the adapter's host component only ever uses those three APIs.
 
-页面加 `?static=1` 会关掉热刷新长连接，便于无头截图与 CI 断言。
+Adding `?static=1` to the page disables the hot-reload connection, convenient for headless screenshots and CI assertions.
 
-## 命令行工具链
+## CLI toolchain
 
-| 命令 | 作用 |
+| Command | Purpose |
 | --- | --- |
-| `vobs dsh init [name]` | 脚手架出一个**独立**插件项目（不是 monorepo 子包），模板里已含清单、patch、vite 配置与 `.gitignore`（刻意不忽略 `lib/`） |
-| `vobs dsh dev` | 上面的浏览器预览，监听重建 |
-| `vobs dsh build` | 同时构建 **Client 与 Host 两半** —— 项目的 vite.config 只负责 Client |
-| `vobs dsh check` | 装前一致性校验：清单字段、patch insert、安装期钩子、`workspace:` 协议、产物形态与纯度、`require` 是否只剩平台模块 |
-| `vobs dsh install` | 组装安装 spec 并调用 `dsh plugin add`，顺手处理 pnpm 版本与 Windows 引号问题 |
+| `vobs dsh init [name]` | Scaffolds a **standalone** plugin project (not a monorepo subpackage); the template already contains the manifest, patch, vite config, and `.gitignore` (deliberately not ignoring `lib/`) |
+| `vobs dsh dev` | The browser preview above, watching for rebuilds |
+| `vobs dsh build` | Builds **both Client and Host halves** — the project's vite.config only handles the Client |
+| `vobs dsh check` | Pre-install consistency check: manifest fields, patch inserts, install-time hooks, `workspace:` protocol, artifact shape and purity, whether `require` is down to platform modules only |
+| `vobs dsh install` | Assembles the install spec and calls `dsh plugin add`, handling pnpm version and Windows quoting issues along the way |
 
-## 本地校验
+## Local verification
 
-`@vobs/dsh` 不自带校验器；推荐的写法是像 `packages/dsh-plugin/scripts/verify-client.mjs` 那样，
-用 jsdom 按 DSH 的模块协议真跑一遍产物：注册 factory → 物化取插件 → `apply()` → 挂载 → 断言 → 清理。
+`@vobs/dsh` ships no verifier; the recommended approach is what `packages/dsh-plugin/scripts/verify-client.mjs` does:
+use jsdom to actually run the artifact against DSH's module protocol: register factory → materialize to get the plugin → `apply()` → mount → assert → clean up.
 
-那是这份接线目前唯一的自动化验收手段 —— DSH 没有提供插件沙箱。
+That is currently the only automated acceptance test for this wiring — DSH provides no plugin sandbox.
 
 ---
 
-## 已知限制
+## Known limitations
 
-- **非官方 API**：slot 名、`ctx` 服务、`dsh.client` 字段都是从已安装 DSH 反推的，没有官方类型也没有兼容承诺。
-- **未覆盖全部 slot**：目前封装了 `shell.overlay` 与 `main` + `sidebar.panellist`；
-  其余走 `defineDshPlugin` + 底层 `slots.register`。
-- **视觉要自建**：vobs 面板里用不了 DSH 的 React 组件库（`@deepseek-ai/dsh-client-ui-primitives`）。
-  一致性靠 DSH 的 `--dsw-*` design token 维持。
-- **`react` 常驻 external**：即使插件完全不碰 React，构建产物也会带一行 `require('react')`（平台模块，零成本）。
+- **Unofficial APIs**: slot names, `ctx` services, and the `dsh.client` fields were all reverse-engineered from an installed DSH — no official types, no compatibility promises.
+- **Not all slots covered**: currently `shell.overlay` and `main` + `sidebar.panellist` are wrapped;
+  the rest go through `defineDshPlugin` + low-level `slots.register`.
+- **Visuals are DIY**: DSH's React component library (`@deepseek-ai/dsh-client-ui-primitives`) cannot be used inside a vobs panel.
+  Consistency is maintained through DSH's `--dsw-*` design tokens.
+- **`react` stays external**: even if a plugin never touches React, the artifact carries one line of `require('react')` (platform module, zero cost).

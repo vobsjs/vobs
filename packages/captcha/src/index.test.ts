@@ -46,8 +46,8 @@ describe('@vobs/captcha', () => {
 
   it('expired status and the retry action are controlled externally', () => {
     const retry = vi.fn()
-    const host = mountCaptcha({ status: 'expired', onRetry: retry, expiredLabel: '已过期' })
-    expect(host.textContent).toContain('已过期')
+    const host = mountCaptcha({ status: 'expired', onRetry: retry, expiredLabel: 'Expired' })
+    expect(host.textContent).toContain('Expired')
     const button = host.querySelector('button')!
     expect(button.textContent).toBe('Retry')
     button.click()
@@ -115,9 +115,9 @@ describe('@vobs/captcha', () => {
     expect(host.textContent).toContain('Solve this')
 
     status.value = 'error'
-    error.value = new Error('验证失败')
+    error.value = new Error('verification failed')
     await Promise.resolve()
-    expect(host.textContent).toContain('验证失败')
+    expect(host.textContent).toContain('verification failed')
   })
 
   it('supports getter props reading Signals and switches action buttons after status updates', async () => {
@@ -313,11 +313,11 @@ describe('@vobs/captcha', () => {
     await Promise.resolve()
 
     status.value = 'error'
-    error.value = '滑块位置不正确，请重试。'
+    error.value = 'Slider position is incorrect, please retry.'
     await Promise.resolve()
 
     expect(host.querySelector('.vobs-slider-captcha__piece')?.getAttribute('style')).toContain('left: 110px')
-    expect(host.querySelector('.vobs-slider-captcha__error')?.textContent).toContain('滑块位置不正确')
+    expect(host.querySelector('.vobs-slider-captcha__error')?.textContent).toContain('Slider position is incorrect')
     expect(host.querySelector('.vobs-captcha__message-host')?.textContent).toBe('')
   })
 
@@ -342,9 +342,9 @@ describe('@vobs/captcha', () => {
         status,
         onSubmit: vi.fn(),
         onRetry: vi.fn(),
-        retryLabel: '刷新',
-        refreshingLabel: '刷新中',
-        loadingLabel: '正在刷新验证码…'
+        retryLabel: 'Refresh',
+        refreshingLabel: 'Refreshing',
+        loadingLabel: 'Refreshing captcha…'
       })
     }).mount(host)
 
@@ -354,8 +354,8 @@ describe('@vobs/captcha', () => {
     expect(host.querySelector('.vobs-slider-captcha__visual')).not.toBeNull()
     expect((host.querySelector('[role="slider"]') as HTMLButtonElement).disabled).toBe(true)
     expect((host.querySelector('.vobs-captcha__action') as HTMLButtonElement).disabled).toBe(true)
-    expect(host.querySelector('.vobs-captcha__action')?.textContent).toBe('刷新中')
-    expect(host.querySelector('.vobs-slider-captcha__notice')?.textContent).toContain('正在刷新验证码')
+    expect(host.querySelector('.vobs-captcha__action')?.textContent).toBe('Refreshing')
+    expect(host.querySelector('.vobs-slider-captcha__notice')?.textContent).toContain('Refreshing captcha')
   })
 
   it('hides the component after a configurable delay once verified', async () => {

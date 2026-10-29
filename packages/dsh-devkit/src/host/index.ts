@@ -1,18 +1,20 @@
 /**
- * dsh-plugin-vobs-devkit —— Host 半侧。
+ * dsh-plugin-vobs-devkit — Host side.
  *
- * 与另外两个插件一样，Host 侧的唯一职责是「被挂载」：DSH 的客户端模块扫描已启用的
- * Loader 条目，读取本包的 `dsh.client` 声明，把 `exports['./client']` 作为浏览器
- * bundle 提供给页面。开发台的全部逻辑都在浏览器半侧。
+ * Like the other two plugins, the Host side's only responsibility is "being mounted": DSH's
+ * client modules scan enabled Loader entries, read this package's `dsh.client` declaration,
+ * and serve `exports['./client']` to the page as a browser bundle. All devkit logic lives on
+ * the browser side.
  *
- * 注意一个架构事实：**浏览器半侧看不到你应用的运行时**（开发台跑在 DSH 里，
- * 应用跑在它自己的 dev server 里）。所以这一版的内容是构建期打进来的静态参考，
- * 只有工作区级别的数据接入后才会出现活数据。
+ * Note an architectural fact: **the browser side cannot see your app's runtime** (the devkit
+ * runs inside DSH while the app runs in its own dev server). So this version's content is a
+ * static reference baked in at build time; live data appears only once workspace-level data
+ * access is wired up.
  */
 export const name = 'vobs-devkit'
 
 export const inject: readonly string[] = []
 
 export function apply(_ctx: unknown): void {
-  // 有意留空。
+  // Intentionally empty.
 }

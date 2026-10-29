@@ -1,4 +1,4 @@
-/** 图标一律用 vobs JSX 画成内联 SVG —— 不依赖任何 DSH 的 React 组件库。 */
+/** Icons are always drawn as inline SVG with vobs JSX — no dependency on any DSH React component library. */
 
 export function ConsoleIcon() {
   return (

@@ -1,16 +1,21 @@
 /**
- * 「项目」页的数据源：读工作区里的 `.vobs/check.json`（`vobs check --write` 产出）。
+ * Data source for the "Project" page: reads `.vobs/check.json` from the workspace
+ * (produced by `vobs check --write`).
  *
- * 走的是 DSH 内置的 workspace-files Remote（`remote.workspaceFiles`）—— 客户端就能读
- * 工作区文件，**不需要插件的 Host 半侧**。这也是为什么这一版能做成。
+ * It goes through DSH's built-in workspace-files Remote (`remote.workspaceFiles`) — the
+ * client itself can read workspace files, **the plugin's Host side is not needed**. That is
+ * why this version was feasible at all.
  *
- * 几个刻意的选择：
- * - **谁写报告**：由 AI（或人）跑 `vobs check --write`。面板只读、不执行命令 ——
- *   DSH 的这套 Remote 是只读的，面板也无法启动进程。
- * - **轮询而不是变更流**：`changes()` 是流式的、更强，但消费方式（异步迭代器还是回调）
- *   我没在活体 DSH 上验证过。`stat()` 的形状是确定的，用它比对 `version` 既便宜又稳。
- *   要升级成 push 只需要换掉这一段。
- * - **如实**：文件不存在就说「还没跑过检查」并给出该跑什么命令，而不是显示一张空表。
+ * Several deliberate choices:
+ * - **Who writes the report**: the AI (or a human) runs `vobs check --write`. The panel is
+ *   read-only and executes no commands — DSH's Remote set is read-only, and the panel cannot
+ *   start processes either.
+ * - **Polling rather than a change stream**: `changes()` is streaming and more capable, but
+ *   I never verified its consumption style (async iterator vs callback) against a live DSH.
+ *   `stat()`'s shape is certain; comparing `version` with it is both cheap and stable.
+ *   Upgrading to push only means swapping this piece out.
+ * - **Honesty**: when the file does not exist, say "the check has not been run yet" and give
+ *   the command to run, instead of showing an empty table.
  */
 import { state, type Signal } from '@vobs/vobs'
 import type { DshClientContext } from '@vobs/dsh'
@@ -37,24 +42,24 @@ export type ProjectStatus = 'unavailable' | 'loading' | 'missing' | 'ready' | 'e
 
 export interface ProjectState {
   readonly status: ProjectStatus
-  /** 这份报告属于哪个会话（它的工作区根）。 */
+  /** Which session this report belongs to (its workspace root). */
   readonly sessionId?: string
   readonly workspace?: string
   readonly message: string
   readonly report?: CheckReport
 }
 
-/** 报告相对工作区根的路径，与 `vobs check --write` 的默认落点一致。 */
+/** Path of the report relative to the workspace root; matches `vobs check --write`'s default location. */
 export const REPORT_PATH = '.vobs/check.json'
 
 export interface ProjectSource {
   readonly state: Signal<ProjectState>
-  /** 立刻重读一次（面板可以给个手动刷新按钮）。 */
+  /** Re-read immediately (the panel can offer a manual refresh button). */
   refresh(): void
   dispose(): void
 }
 
-/* ------------------------------------------------- DSH 服务的防御式读取 */
+/* ------------------------------------------------- Defensive reads of DSH services */
 
 interface SessionRow {
   readonly sessionId?: string
@@ -69,7 +74,7 @@ interface SnapshotStore<T> {
   subscribe?(listener: () => void): () => void
 }
 
-/** 当前工作区用哪个会话：取最近更新的那个非空会话。 */
+/** Which session to use as the current workspace: the most recently updated non-blank one. */
 function pickSession(ctx: DshClientContext | undefined): SessionRow | undefined {
   const list = (ctx?.get?.('sessions') as { list?: SnapshotStore<{ byId?: Record<string, SessionRow> }> } | undefined)?.list
   if (list === undefined || typeof list.getSnapshot !== 'function') return undefined
@@ -107,10 +112,11 @@ function workspaceFilesOf(ctx: DshClientContext | undefined): WorkspaceFilesApi 
 }
 
 /**
- * 判断是否拿到了字节序列。
+ * Decide whether a byte sequence was obtained.
  *
- * **不要用 `instanceof Uint8Array`** —— 跨 realm（jsdom、iframe、worker 边界）时构造
- * 函数不同，`instanceof` 会假。按形状判断（`byteLength` 是数值）在任何 realm 都成立。
+ * **Do not use `instanceof Uint8Array`** — across realms (jsdom, iframes, worker boundaries)
+ * the constructors differ and `instanceof` lies. Shape-checking (`byteLength` is a number)
+ * holds in every realm.
  */
 function asBytes(value: unknown): ArrayBufferView | undefined {
   if (value === null || typeof value !== 'object') return undefined
@@ -121,13 +127,13 @@ function asBytes(value: unknown): ArrayBufferView | undefined {
     : undefined
 }
 
-/** 读到文件全文。先试「整份 readBytes」，不行再按行分页 —— 两种形状在文档里都有。 */
+/** Read the whole file. Try "one-shot readBytes" first, then page by line — both shapes appear in the docs. */
 async function readWholeFile(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<string> {
   if (typeof api.readBytes === 'function') {
     const bytes = asBytes(await api.readBytes(sessionId, path, {}))
     if (bytes !== undefined) return new TextDecoder().decode(bytes)
   }
-  if (typeof api.read !== 'function') throw new Error('workspaceFiles 没有可用的读取方法')
+  if (typeof api.read !== 'function') throw new Error('workspaceFiles has no usable read method')
 
   let text = ''
   let offset = 1
@@ -143,16 +149,16 @@ async function readWholeFile(api: WorkspaceFilesApi, sessionId: string, path: st
   return text
 }
 
-/* ---------------------------------------------------------------- 数据源 */
+/* ---------------------------------------------------------------- Data source */
 
 export interface ProjectSourceOptions {
-  /** 轮询间隔（毫秒）。默认 2500。设 0 关掉轮询（测试用）。 */
+  /** Polling interval (milliseconds). Defaults to 2500. Set 0 to disable polling (for tests). */
   readonly pollMs?: number
   /**
-   * 写进这个信号而不是新建一个。
+   * Write into this signal instead of creating a new one.
    *
-   * 面板的 render 在 setup 之前就装配好了（和 Console 一样），所以状态信号必须是模块级
-   * 存在的；`setup(ctx)` 里再把它交给数据源去驱动。
+   * The panel's render is assembled before setup runs (same as the Console), so the state
+   * signal must exist at module level; `setup(ctx)` then hands it to the data source to drive.
    */
   readonly sink?: Signal<ProjectState>
 }
@@ -162,8 +168,8 @@ export function createProjectSource(
   options: ProjectSourceOptions = {}
 ): ProjectSource {
   const pollMs = options.pollMs ?? 2500
-  const projectState = options.sink ?? state<ProjectState>({ status: 'loading', message: '正在读取检查报告…' }, 'signal')
-  projectState.value = { status: 'loading', message: '正在读取检查报告…' }
+  const projectState = options.sink ?? state<ProjectState>({ status: 'loading', message: 'Reading the check report…' }, 'signal')
+  projectState.value = { status: 'loading', message: 'Reading the check report…' }
 
   const session = pickSession(ctx)
   const api = workspaceFilesOf(ctx)
@@ -172,8 +178,8 @@ export function createProjectSource(
     projectState.value = {
       status: 'unavailable',
       message: session === undefined
-        ? '读不到会话列表（sessions 服务不可用），因此不知道工作区在哪。'
-        : '读不到 workspace-files 服务（remote.workspaceFiles 不可用），因此读不了工作区文件。'
+        ? 'Cannot read the session list (sessions service unavailable), so the workspace is unknown.'
+        : 'Cannot read the workspace-files service (remote.workspaceFiles unavailable), so workspace files cannot be read.'
     }
     return { state: projectState, refresh: () => {}, dispose: () => {} }
   }
@@ -199,19 +205,19 @@ export function createProjectSource(
         status: 'ready',
         sessionId,
         workspace,
-        message: `报告来自 ${workspace ?? '工作区'}`,
+        message: `Report from ${workspace ?? 'the workspace'}`,
         report
       }
     } catch (error) {
       if (disposed) return
       const message = error instanceof Error ? error.message : String(error)
-      // 文件不存在是最常见的「正常」情况：还没跑过检查。不当作错误。
+      // A missing file is the most common "normal" case: the check has not been run yet. Not an error.
       if (/not.?found|ENOENT|lookup-not-found/iu.test(message)) {
         projectState.value = {
           status: 'missing',
           sessionId,
           workspace,
-          message: `还没有 ${REPORT_PATH}`
+          message: `${REPORT_PATH} does not exist yet`
         }
       } else {
         fail(message)
@@ -221,7 +227,7 @@ export function createProjectSource(
     }
   }
 
-  /** 轻量探测：只有 version 变了才重读文件。 */
+  /** Lightweight probe: re-read the file only when the version changed. */
   const tick = async (): Promise<void> => {
     if (disposed) return
     try {
@@ -229,7 +235,7 @@ export function createProjectSource(
         const info = await api.stat(sessionId, REPORT_PATH)
         const version = info?.version
         if (version === undefined || version === lastVersion) {
-          // 探测不到版本号，或没变化 —— 仍然保证首次能读到内容
+          // Version undetectable or unchanged — still make sure the first read gets content
           if (projectState.value.status === 'loading') await load()
           return
         }
@@ -237,7 +243,7 @@ export function createProjectSource(
       }
       await load()
     } catch {
-      // stat 失败通常就是文件不存在 —— 交给 load 去区分「没跑过」和「真出错」
+      // A stat failure usually means the file does not exist — let load distinguish "not run yet" from a real error
       if (projectState.value.status === 'loading') await load()
     }
   }

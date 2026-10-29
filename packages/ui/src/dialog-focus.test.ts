@@ -9,17 +9,18 @@ setRenderer(createDOMRenderer())
 const flush = () => { scheduler.flush(); scheduler.flush() }
 
 /*
- * Dialog / Drawer 的焦点管理。
+ * Focus management for Dialog / Drawer.
  *
- * 原来两者都声明 `aria-modal="true"` 却**完全没有焦点管理** —— focus trap 就在
- * overlay.ts 里实现好、测过、也导出，只是没有任何组件用它（全仓只有它自己的测试调用）。
- * 后果是实打实的：
- *   - 焦点留在弹窗外的触发按钮上 → Escape 的 keydown 永远到不了组件 root 上的监听
- *     →「按 Esc 关不掉」
- *   - Tab 会跑到弹窗背后的内容里
- *   - 关闭后焦点不回到打开它的元素上
+ * Both used to declare `aria-modal="true"` while having **no focus management at all** — the
+ * focus trap was implemented, tested, and exported in overlay.ts, but no component used it
+ * (across the repo only its own tests called it). The consequences were real:
+ *   - Focus stayed on the trigger button outside the overlay → the Escape keydown never reached
+ *     the listener on the component root → "pressing Esc doesn't close it"
+ *   - Tab moved into the content behind the overlay
+ *   - Focus did not return to the opening element after close
  *
- * 这里锁住四件事：焦点移入、Escape 可用、关闭还原、**非模态不陷阱**。
+ * This locks in four things: focus moves in, Escape works, focus restores on close, and
+ * **non-modal does not trap**.
  */
 function mountOverlay(component: Parameters<typeof createComponent>[0], props: Record<string, unknown>) {
   const trigger = document.createElement('button')
@@ -36,8 +37,8 @@ function mountOverlay(component: Parameters<typeof createComponent>[0], props: R
   return { host, trigger, cleanup }
 }
 
-describe('Dialog/Drawer 焦点管理', () => {
-  it('打开时把焦点移入弹窗，并把 Escape 送达（原来焦点在外 → Esc 无效）', () => {
+describe('Dialog/Drawer focus management', () => {
+  it('moves focus into the overlay on open and delivers Escape (previously focus stayed outside → Esc was ineffective)', () => {
     const open = state(false)
     const closes: string[] = []
     const props = { get open() { return open.value }, onClose: (reason: string) => closes.push(reason) }
@@ -54,7 +55,7 @@ describe('Dialog/Drawer 焦点管理', () => {
     cleanup()
   })
 
-  it('关闭后焦点还原到打开它的元素', () => {
+  it('restores focus to the opening element after close', () => {
     const open = state(false)
     const { trigger, cleanup } = mountOverlay(Dialog, { get open() { return open.value } })
 
@@ -67,7 +68,7 @@ describe('Dialog/Drawer 焦点管理', () => {
     cleanup()
   })
 
-  it('非模态对话框不抢焦点（与 aria-modal 的判断一致）', () => {
+  it('non-modal dialog does not steal focus (consistent with the aria-modal check)', () => {
     const open = state(false)
     const { trigger, cleanup } = mountOverlay(Dialog, { get open() { return open.value }, modal: false })
 
@@ -78,7 +79,7 @@ describe('Dialog/Drawer 焦点管理', () => {
     cleanup()
   })
 
-  it('Drawer 同样有焦点管理（不只是 Dialog）', () => {
+  it('Drawer has the same focus management (not just Dialog)', () => {
     const open = state(false)
     const { host, trigger, cleanup } = mountOverlay(Drawer, { get open() { return open.value } })
 

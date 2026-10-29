@@ -5,10 +5,11 @@ import { effect, state } from '@vobs/vobs'
 import { renderToStringAsync } from './render'
 
 /*
- * `renderToStringAsync` 原来在 `await prefetchAll()` 之后只 `app.update()` **一次**。
- * 数据到达只是第一跳：绑定 effect 里可能还有链式 promise（或本次写入又触发新的 effect），
- * 要再经过若干轮微任务才就绪 —— 单次 update 会让这些内容**静默缺失**，HTML 里留着旧值，
- * 既不报错也没有任何线索。这里把"冲刷到稳定"钉住。
+ * `renderToStringAsync` used to run `app.update()` only **once** after `await prefetchAll()`.
+ * Data arriving is just the first hop: the bound effect may still hold chained promises (or
+ * the write itself triggers new effects) that need several more rounds of microtasks before
+ * they settle — a single update makes that content **silently missing**, leaving stale
+ * values in the HTML with no error and no clue. This pins down "flush until stable".
  */
 function createHarness() {
   const resources = createResourceClient()
@@ -18,9 +19,11 @@ function createHarness() {
   })
   const label = state('loading')
   /*
-   * 数据到达后再排**一个宏任务**（模拟 effect 里的定时器/二次异步请求）。
-   * 用微任务不够：`await prefetchAll()` 本身会让出微任务队列，链式 promise 往往在第一次
-   * update 之前就完成了，那样"单次 update"也能渲染出来 —— 测试就不咬（我第一版就是这么写的）。
+   * After data arrives, schedule **one macrotask** (simulating a timer / second async
+   * request inside the effect). Microtasks are not enough: `await prefetchAll()` itself
+   * yields the microtask queue, so chained promises often finish before the first update —
+   * in that case even "a single update" renders fine and the test would not bite (my first
+   * draft did exactly that).
    */
   effect(() => {
     if (profile.data.value === null) return
@@ -37,15 +40,15 @@ function createHarness() {
   return { resources, render }
 }
 
-describe('renderToStringAsync 冲刷到稳定', () => {
-  it('数据到达后再排一跳的异步写入也会进入最终 HTML', async () => {
+describe('renderToStringAsync flushes until stable', () => {
+  it('async writes scheduled one hop after data arrives still make it into the final HTML', async () => {
     const { resources, render } = createHarness()
     const result = await renderToStringAsync(render, { resourceClient: resources })
     expect(result.html).toContain('done:Ada')
     resources.clear()
   })
 
-  it('没有异步尾巴时也能收敛（不依赖定时器）', async () => {
+  it('converges even without async tails (no timers involved)', async () => {
     const resources = createResourceClient()
     const profile = resources.resource({ key: ['async-ssr-plain'], fetcher: async () => 'Ada' })
     const render = () => {

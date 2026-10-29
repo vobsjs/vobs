@@ -9,7 +9,7 @@ describe('@vobs/ui MessageHost', () => {
     setRenderer(createDOMRenderer())
   })
 
-  it('默认纯文字，渲染顶部居中胶囊并支持类型样式', () => {
+  it('text only by default, renders a top-center pill with type styling', () => {
     const message = createNotification({ defaultDuration: 0 })
     const container = document.createElement('main')
     const app = createVobs({
@@ -30,7 +30,7 @@ describe('@vobs/ui MessageHost', () => {
     message.dispose()
   })
 
-  it('宿主开启图标后按类型映射默认图标；error 使用 alert 角色', () => {
+  it('with host icons on, default icons map by type; error uses the alert role', () => {
     const message = createNotification({ defaultDuration: 0 })
     const container = document.createElement('main')
     const app = createVobs({
@@ -48,7 +48,7 @@ describe('@vobs/ui MessageHost', () => {
     message.dispose()
   })
 
-  it('单条消息可指定图标或强制隐藏；onClick 绑定到整条消息', () => {
+  it('a single message can specify an icon or force-hide it; onClick binds to the whole message', () => {
     const unregister = registerIcon({ name: 'lucide:loader', path: '<circle cx="12" cy="12" r="9"/>' })
     let api: MessageApi | null = null
     const onClick = vi.fn()
@@ -76,12 +76,14 @@ describe('@vobs/ui MessageHost', () => {
   })
 
   /*
-   * 行会被 insertList 按 key 复用：同 key 顶替只写 item 信号、**不重建行**
-   * （runtime/src/dynamic.ts:341-351）。所以行内任何"从条目取一次值再写 DOM"的代码
-   * 在顶替后都会永久停留在旧值 —— 下面这条必须能咬住。
-   * 上面那条用例把两次 notify 放进同一批次，恰好让行只建一次，掩盖了这个问题。
+   * Rows are reused by key via insertList: a same-key replacement only writes the item signal
+   * and does **not rebuild the row** (runtime/src/dynamic.ts:341-351). So any row code that
+   * "reads the entry once and writes the DOM" stays stuck on the old values forever after a
+   * replacement — the case below must bite on that.
+   * The case above put the two notifies in the same batch, which happened to build the row only
+   * once and masked the problem.
    */
-  it('同 key 顶替后，已渲染的行必须跟着更新（内容/类型/role/图标/点击闭包）', () => {
+  it('after a same-key replacement, the already-rendered row must follow (content/type/role/icon/click closure)', () => {
     const message = createNotification({ defaultDuration: 0 })
     const container = document.createElement('main')
     const firstClick = vi.fn()
@@ -116,7 +118,7 @@ describe('@vobs/ui MessageHost', () => {
     message.dispose()
   })
 
-  it('经 messagePlugin 注入上下文；同 key 顶替旧消息', () => {
+  it('context is injected via messagePlugin; a same-key notify replaces the old message', () => {
     let captured: NotificationContext | null = null
     const container = document.createElement('main')
     const app = createVobs({

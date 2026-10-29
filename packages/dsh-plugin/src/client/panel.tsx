@@ -1,21 +1,22 @@
 import { effect, memo, state, untrack } from '@vobs/vobs'
 
 /**
- * 构建期由 scripts/build-dsh-plugin.mjs 的 define 注入（取自 packages/vobs/package.json）。
+ * Injected at build time by scripts/build-dsh-plugin.mjs's define (taken from packages/vobs/package.json).
  */
 declare const __VOBS_VERSION__: string
 
 const VOBS_VERSION = `v${__VOBS_VERSION__}`
 
 /**
- * 组件体执行次数。vobs 组件是 run-once 的：面板挂载后再怎么点，
- * 这个数字都停在 1 —— 变化的部分全部由信号驱动的 DOM binding 承担。
+ * Number of times the component body has executed. vobs components are run-once: no matter
+ * how much you click after the panel mounts, this number stays at 1 — every changing part
+ * is carried by signal-driven DOM bindings.
  */
 let bodyExecutions = 0
 
 /**
- * 面板主体。整个函数只执行一次；下面所有 `{...}` 都会被编译器编译成
- * 独立的 DOM binding effect，互不影响。
+ * Panel body. The whole function executes once; every `{...}` below is compiled by the
+ * compiler into an independent DOM binding effect, none interfering with the others.
  */
 export function VobsPanel() {
   bodyExecutions += 1
@@ -27,11 +28,12 @@ export function VobsPanel() {
   const doubled = memo(() => count.value * 2)
   const effectRuns = state(0, 'effectRuns')
 
-  // effect 只订阅 count：它重跑的次数就是真实的更新次数。
-  // 对比 bodyExecutions 恒为 1，就是「Zero Re-renders」的字面证据。
+  // The effect subscribes to count only: its re-run count is the real update count.
+  // Compared against bodyExecutions staying at 1, that is the literal proof of "Zero Re-renders".
   //
-  // 计数必须走 untrack：`effectRuns.value += 1` 会先读一次信号，
-  // 那次读同样会建立订阅，于是写 → 失效 → 重跑 → 再写，自激成死循环。
+  // The counting must go through untrack: `effectRuns.value += 1` reads the signal once first,
+  // and that read also creates a subscription, so write → invalidate → re-run → write again
+  // self-excites into an infinite loop.
   effect(() => {
     count.value
     untrack(() => {
@@ -63,7 +65,7 @@ export function VobsPanel() {
             <span class="vobs-panel__tagline">Signals First · Zero Re-renders</span>
             <button
               class="vobs-btn vobs-btn--icon"
-              title={collapsed.value ? '展开' : '收起'}
+              title={collapsed.value ? 'Expand' : 'Collapse'}
               onClick={() => {
                 collapsed.value = !collapsed.value
               }}
@@ -72,7 +74,7 @@ export function VobsPanel() {
             </button>
             <button
               class="vobs-btn vobs-btn--icon"
-              title="收起为角标"
+              title="Collapse to badge"
               onClick={() => {
                 visible.value = false
               }}
@@ -85,11 +87,11 @@ export function VobsPanel() {
             <div class="vobs-panel__body">
               <div class="vobs-stats">
                 <div class="vobs-stat">
-                  <div class="vobs-stat__label">组件体执行</div>
+                  <div class="vobs-stat__label">Component body runs</div>
                   <div class="vobs-stat__value">{bodyExecutions}</div>
                 </div>
                 <div class="vobs-stat">
-                  <div class="vobs-stat__label">effect 执行</div>
+                  <div class="vobs-stat__label">effect runs</div>
                   <div class="vobs-stat__value vobs-stat__value--accent">{effectRuns.value}</div>
                 </div>
               </div>
@@ -120,7 +122,7 @@ export function VobsPanel() {
               <div class="vobs-row">
                 <input
                   class="vobs-input"
-                  placeholder="给标签列表加一项…"
+                  placeholder="Add a tag…"
                   value={draft.value}
                   onInput={event => {
                     draft.value = (event.target as HTMLInputElement).value
@@ -130,7 +132,7 @@ export function VobsPanel() {
                   }}
                 />
                 <button class="vobs-btn" onClick={addTag}>
-                  添加
+                  Add
                 </button>
               </div>
 
@@ -140,7 +142,7 @@ export function VobsPanel() {
                     {tag}
                     <button
                       class="vobs-chip__remove"
-                      title="移除"
+                      title="Remove"
                       onClick={() => {
                         removeTag(tag)
                       }}
@@ -152,7 +154,7 @@ export function VobsPanel() {
               </div>
 
               {tags.value.length === 0 ? (
-                <span class="vobs-empty">列表为空（insertList 已清空所有行）</span>
+                <span class="vobs-empty">List is empty (insertList cleared all rows)</span>
               ) : null}
             </div>
           )}
@@ -160,7 +162,7 @@ export function VobsPanel() {
       ) : (
         <button
           class="vobs-badge"
-          title="打开 vobs 面板"
+          title="Open the vobs panel"
           onClick={() => {
             visible.value = true
           }}

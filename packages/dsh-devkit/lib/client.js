@@ -31,7 +31,7 @@ class OwnerImpl {
     this.disposed = parent?.disposed ?? false;
   }
   run(fn) {
-    if (this.disposed) throw new Error("Vobs: 已销毁的 Owner 不能继续运行");
+    if (this.disposed) throw new Error("Vobs: cannot run inside a disposed Owner");
     const previous = currentOwner;
     currentOwner = this;
     try {
@@ -51,13 +51,15 @@ class OwnerImpl {
     this.addCleanup(cleanup);
   }
   /**
-   * 撤销一条已注册的清理。
+   * Remove one registered cleanup.
    *
-   * 用 `splice` 而不是"标记失效"：标记法会让数组继续增长（本包已经因为
-   * `Owner.cleanups` 只增不减吃过一次亏 —— runtime 的事件重绑），
-   * 而这个 API 的语义就是"替换掉旧的"，就该真的从数组里去掉。
+   * `splice` instead of "mark as stale": the marking approach would let the array
+   * keep growing (this package has already been burned once by `Owner.cleanups`
+   * growing without bound — the runtime's event rebinding), and this API's
+   * semantics is "replace the old one", so it should really leave the array.
    *
-   * 复杂度 O(n)，但调用场景是"同一资源被重新绑定"，不是热路径上的每帧操作。
+   * O(n), but the call site is "the same resource gets rebound", not a per-frame
+   * hot-path operation.
    */
   removeCleanup(cleanup) {
     const index2 = this.cleanups.indexOf(cleanup);
@@ -191,7 +193,7 @@ class StateSignal {
       if (!this.warnedAfterDispose) {
         this.warnedAfterDispose = true;
         const name = getSignalDebugName(this);
-        console.warn(`[vobs] 写入已 dispose 的 state${name ? ` "${name}"` : ""}，本次写入被忽略`);
+        console.warn(`[vobs] write to a disposed state${name ? ` "${name}"` : ""}; this write was ignored`);
       }
       return;
     }
@@ -254,12 +256,13 @@ class Scheduler {
     this.lowPriorityEffects.delete(effect2);
   }
   /**
-   * 批处理：抑制调度，退出时同步 flush。
+   * Batch: suppress scheduling, flush synchronously on exit.
    *
-   * 注意**不要**把 flush 放进 `finally` —— 那样 `fn()` 抛错时，flush 自己再抛错
-   * 就会把原始错误顶掉（`finally` 里的 throw 会覆盖 try 里的 throw），
-   * 开发者看到的是一个和自己代码无关的错误。这里改成：原始错误优先，
-   * flush 的错误打出来但不顶替。
+   * Note: do **not** put the flush inside `finally` — then when `fn()` throws, an
+   * error thrown by flush itself would replace the original error (a throw in
+   * `finally` overrides the throw in `try`), and the developer sees an error
+   * unrelated to their own code. Instead: the original error wins; the flush error
+   * is logged but does not replace it.
    */
   batch(fn) {
     this.batchDepth++;
@@ -279,7 +282,7 @@ class Scheduler {
         this.flush();
       } catch (flushError) {
         if (!failed) throw flushError;
-        console.error("[Vobs] 批处理刷新时又抛出一个错误（原始错误优先）:", flushError);
+        console.error("[Vobs] flush inside batch threw an additional error (original error takes priority):", flushError);
       }
     }
     if (failed) throw thrown;
@@ -296,7 +299,7 @@ class Scheduler {
         if (++rounds > 100) {
           this.dirtyEffects.clear();
           this.lowPriorityEffects.clear();
-          throw new Error("Vobs: 响应式更新超过 100 轮，可能存在循环依赖");
+          throw new Error("Vobs: reactive updates exceeded 100 rounds; a circular dependency is likely");
         }
         this.collectRunnable(this.dirtyEffects, this.normalBuffer);
         this.collectRunnable(this.lowPriorityEffects, this.lowBuffer);
@@ -332,7 +335,7 @@ class Scheduler {
     }
     if (hasError) throw firstError;
   }
-  /** 收集未 disposed 的 effect 并清空源集合；run() 期间新调度的 effect 留给下一轮。 */
+  /** Collects non-disposed effects and clears the source set; effects scheduled during run() are left for the next round. */
   collectRunnable(source, target) {
     for (const effect2 of source) {
       if (!effect2.disposed) target.push(effect2);
@@ -477,12 +480,12 @@ class MemoSignal {
     return this.cached;
   }
   set value(_) {
-    throw new Error("memo: 派生值不能直接赋值");
+    throw new Error("memo: cannot assign directly to a derived value");
   }
   unsubscribe(subscriber) {
     this.subscribers.delete(subscriber);
   }
-  /** 由 MemoSubscriber 调用：标脏并向下传播失效。 */
+  /** Called by MemoSubscriber: marks dirty and propagates invalidation downstream. */
   invalidate() {
     this.dirty = true;
     for (const subscriber of [...this.subscribers]) subscriber.notify();
@@ -555,7 +558,7 @@ function invokeRuntimeDebug(name, ...args) {
   return;
 }
 const PROPERTY_NAMES = /* @__PURE__ */ new Set([
-  // 表单状态
+  // Form state
   "value",
   "checked",
   "selected",
@@ -567,16 +570,18 @@ const PROPERTY_NAMES = /* @__PURE__ */ new Set([
   "defaultChecked",
   "indeterminate",
   /*
-   * `autoFocus` 用**驼峰**（与同表 readOnly/tabIndex/defaultChecked 一致），且必须走
-   * **property 通道**：`autofocus` 是**布尔属性**（只看存在与否、与值无关），
-   * 所以 `autoFocus={false}` 必须"移除属性"而不是写 `autofocus="false"`
-   * （attribute 通道只能把 false 序列化成字符串，属性照样存在 = 仍然聚焦）。
+   * `autoFocus` uses **camelCase** (consistent with readOnly/tabIndex/defaultChecked in this
+   * table) and must go through the **property channel**: `autofocus` is a **boolean
+   * attribute** (presence only, value ignored), so `autoFocus={false}` must "remove the
+   * attribute" rather than write `autofocus="false"` (the attribute channel can only
+   * serialize false into a string — the attribute remains present = still focused).
    *
-   * ⚠️ 但 `setProperty` 必须把它映射成 **IDL 名 `autofocus`（全小写）** ——
-   * `Reflect.set(el, 'autoFocus', …)` 只会挂一个不反射的 expando，**静默无效**。
-   * 映射表见 ops.ts 的 `PROPERTY_IDL_NAMES`。实测（jsdom，与真实 DOM 同语义）：
-   *   IDL `autofocus` → 写 true 得 has=true/idl=true；写 false 得 has=false/idl=false ✓
-   *   JSX `autoFocus` → 属性与 IDL 都不变（只是 expando）                        ✗
+   * ⚠️ But `setProperty` must map it to the **IDL name `autofocus` (all lowercase)** —
+   * `Reflect.set(el, 'autoFocus', …)` only hangs a non-reflecting expando, **silently
+   * ineffective**. See `PROPERTY_IDL_NAMES` in ops.ts for the mapping table. Measured
+   * (jsdom, same semantics as real DOM):
+   *   IDL `autofocus` → write true gives has=true/idl=true; write false gives has=false/idl=false ✓
+   *   JSX `autoFocus` → attribute and IDL both unchanged (just an expando)                ✗
    */
   "autoFocus",
   "hidden",
@@ -584,11 +589,11 @@ const PROPERTY_NAMES = /* @__PURE__ */ new Set([
   "colSpan",
   "rowSpan",
   "open",
-  // 只能走 property 的（attribute 路径会静默无效）
+  // Property-only (the attribute path is silently ineffective)
   "innerHTML",
   "innerText",
   "textContent",
-  // 媒体
+  // Media
   "muted",
   "volume",
   "currentTime",
@@ -612,15 +617,15 @@ const SVG_KEBAB_ATTRIBUTES = /* @__PURE__ */ new Set([
   // fill
   "fillOpacity",
   "fillRule",
-  // clip（注意 clipPathUnits 是结构属性，不在这里）
+  // clip (note: clipPathUnits is a structural attribute, not here)
   "clipPath",
   "clipRule",
-  // 文本对齐
+  // Text alignment
   "textAnchor",
   "dominantBaseline",
   "alignmentBaseline",
   "baselineShift",
-  // 字体
+  // Fonts
   "fontFamily",
   "fontSize",
   "fontSizeAdjust",
@@ -630,11 +635,11 @@ const SVG_KEBAB_ATTRIBUTES = /* @__PURE__ */ new Set([
   "fontWeight",
   "letterSpacing",
   "wordSpacing",
-  // marker 的表现属性（markerWidth / markerHeight / markerUnits 是结构属性，不在这里）
+  // marker presentation attributes (markerWidth / markerHeight / markerUnits are structural, not here)
   "markerStart",
   "markerMid",
   "markerEnd",
-  // 颜色
+  // Color
   "colorInterpolation",
   "colorInterpolationFilters",
   "colorProfile",
@@ -646,7 +651,7 @@ const SVG_KEBAB_ATTRIBUTES = /* @__PURE__ */ new Set([
   "stopOpacity",
   "glyphOrientationHorizontal",
   "glyphOrientationVertical",
-  // 渲染与合成
+  // Rendering and compositing
   "imageRendering",
   "paintOrder",
   "pointerEvents",
@@ -911,7 +916,7 @@ function setRenderer(renderer) {
 }
 function getRenderer() {
   if (!currentRenderer) {
-    throw new Error("渲染器未初始化");
+    throw new Error("Renderer not initialized");
   }
   return currentRenderer;
 }
@@ -1175,7 +1180,7 @@ function isRenderableNode(value) {
 function associateNodeOwner(node, owner) {
   if (node === null || node === void 0 || typeof node !== "object" && typeof node !== "function") {
     throw new Error(
-      `Vobs: associateNodeOwner 收到非节点值（${String(node)}）。组件必须返回 VobsNode；返回 null/undefined 由 createComponent 转成空注释节点。`
+      `Vobs: associateNodeOwner received a non-node value (${String(node)}). Components must return a VobsNode; null/undefined returns are converted into an empty comment node by createComponent.`
     );
   }
   nodeOwners.set(node, owner);
@@ -1198,7 +1203,7 @@ function createFragment(factory) {
     end,
     mount(nextParent, anchor) {
       if (parent && parent !== nextParent) {
-        throw new Error("Vobs Fragment: 不能跨父节点移动 Fragment");
+        throw new Error("Vobs Fragment: cannot move a Fragment across parent nodes");
       }
       if (initialized) {
         moveRange(nextParent, start, end, anchor);
@@ -1214,7 +1219,7 @@ function createFragment(factory) {
     },
     unmount(nextParent) {
       if (!initialized || parent !== nextParent) {
-        throw new Error("Vobs Fragment: Fragment 不属于指定父节点");
+        throw new Error("Vobs Fragment: the Fragment does not belong to the given parent node");
       }
       const renderer = getRenderer();
       let current = renderer.nextSibling(start);
@@ -1244,7 +1249,7 @@ function moveRange(parent, start, end, anchor) {
     current = renderer.nextSibling(current);
   }
   if (nodes[nodes.length - 1] !== end) {
-    throw new Error("Vobs Fragment: 找不到结束锚点");
+    throw new Error("Vobs Fragment: end anchor not found");
   }
   for (const node of nodes) renderer.insertBefore(parent, node, anchor);
 }
@@ -1476,7 +1481,7 @@ function reconcileKeyed(items, keys, entries, renderItem) {
     const item = items[index2];
     const key = keys[index2];
     if (seen.has(key)) {
-      console.warn(`Vobs: 检测到重复的列表 key: ${String(key)}`);
+      console.warn(`Vobs: duplicate list key detected: ${String(key)}`);
     }
     seen.add(key);
     const entry = previous.get(key);
@@ -1523,7 +1528,7 @@ function createListEntry(item, index2, key, renderItem) {
   let viewOwner;
   let node;
   owner.run(() => {
-    itemSignal = state(item);
+    itemSignal = state(item, "signal");
     viewOwner = createOwner();
     node = viewOwner.run(() => renderItem(toReactiveItem(itemSignal, item), index2));
   });
@@ -1595,7 +1600,7 @@ function createTemplate(html) {
 }
 function cloneTemplate(template) {
   const root = template.content.firstElementChild;
-  if (!root) throw new Error("Vobs: 静态模板缺少根元素，请检查编译产物");
+  if (!root) throw new Error("Vobs: static template is missing a root element; check the compiled output");
   return root.cloneNode(true);
 }
 const ownerProviders = /* @__PURE__ */ new WeakMap();
@@ -1607,7 +1612,7 @@ function provideToOwner(owner, key, value, options = {}) {
     owner.onDispose(() => ownerProviders.delete(owner));
   }
   if (providers.has(key) && !options.override) {
-    throw new Error(`Vobs: 注入项 ${String(key)} 已存在；如需覆盖请传入 override: true`);
+    throw new Error(`Vobs: injection ${String(key)} already exists; pass override: true to replace it`);
   }
   providers.set(key, value);
 }
@@ -1621,7 +1626,7 @@ function injectFromOwner(owner, key) {
   return void 0;
 }
 function createVobs(config) {
-  if (!config.render) throw new Error("createVobs: render 不能为空");
+  if (!config.render) throw new Error("createVobs: render cannot be empty");
   const renderer = config.renderer ?? createDOMRenderer();
   const rootOwner = createOwner();
   let previousRenderer;
@@ -1665,7 +1670,7 @@ function createVobs(config) {
     injectRequired(key, description) {
       const value = injectFromOwner(rootOwner, key);
       if (value === void 0) {
-        throw new Error(`Vobs: 找不到必需注入项${description ? ` ${description}` : ""}`);
+        throw new Error(`Vobs: required injection not found${description ? ` ${description}` : ""}`);
       }
       return value;
     },
@@ -1691,14 +1696,14 @@ function createVobs(config) {
     const already = installedPlugins.get(plugin.name);
     if (already !== void 0) {
       if (already !== plugin) {
-        const before = already.version ? `（版本 ${already.version}）` : "";
-        const now = plugin.version ? `（版本 ${plugin.version}）` : "";
-        console.warn(`[vobs] 插件 "${plugin.name}" 已安装${before}，本次传入的是另一个对象${now}，已跳过。 同名插件只会安装一次 —— 若这是两个不同的插件，请给它们不同的 name。`);
+        const before = already.version ? ` (version ${already.version})` : "";
+        const now = plugin.version ? ` (version ${plugin.version})` : "";
+        console.warn(`[vobs] Plugin "${plugin.name}" was already installed${before}; this call passed a different object${now} and was skipped. A same-name plugin is only installed once — if these are two different plugins, give them different names.`);
       }
       return;
     }
     if (installing.has(plugin.name)) {
-      throw new Error(`Vobs: 插件依赖存在循环：${plugin.name}`);
+      throw new Error(`Vobs: plugin dependency cycle: ${plugin.name}`);
     }
     installing.add(plugin.name);
     try {
@@ -1707,8 +1712,8 @@ function createVobs(config) {
       if (cleanup2 !== void 0 && cleanup2 !== null) {
         if (typeof cleanup2 !== "function") {
           const isThenable = typeof cleanup2.then === "function";
-          const kind = isThenable ? "Promise（install 不能是 async）" : typeof cleanup2;
-          throw new Error(`Vobs: 插件 "${plugin.name}" 的 install 必须同步返回清理函数或不返回，收到 ${kind}`);
+          const kind = isThenable ? "Promise (install cannot be async)" : typeof cleanup2;
+          throw new Error(`Vobs: install of plugin "${plugin.name}" must synchronously return a cleanup function or return nothing; received ${kind}`);
         }
         cleanups.push(cleanup2);
       }
@@ -1744,12 +1749,12 @@ function createVobs(config) {
     return firstError;
   }
   function start(target, hydrating) {
-    if (destroyed) throw new Error("Vobs: 已销毁的应用不能挂载");
+    if (destroyed) throw new Error("Vobs: a destroyed app cannot be mounted");
     if (mounted) return;
     container = typeof target === "string" ? document.querySelector(target) : target;
-    if (!container) throw new Error(`mount: 目标不存在: ${target}`);
+    if (!container) throw new Error(`mount: target not found: ${target}`);
     if (hydrating && !renderer.beginHydration) {
-      throw new Error("Vobs: 当前渲染器不支持 Hydration");
+      throw new Error("Vobs: the current renderer does not support hydration");
     }
     installRenderer();
     try {
@@ -1774,7 +1779,7 @@ function createVobs(config) {
       return destroyed;
     },
     use(plugin) {
-      if (destroyed) throw new Error("Vobs: 已销毁的应用不能安装插件");
+      if (destroyed) throw new Error("Vobs: a destroyed app cannot install plugins");
       installPlugin(plugin);
       return app;
     },
@@ -1785,7 +1790,7 @@ function createVobs(config) {
       start(target, true);
     },
     update() {
-      if (destroyed) throw new Error("Vobs: 已销毁的应用不能更新");
+      if (destroyed) throw new Error("Vobs: a destroyed app cannot update");
       try {
         scheduler.flush();
       } catch (error) {
@@ -1823,7 +1828,7 @@ function resolveDshReact() {
   const react = fromGlobal;
   if (!react) {
     throw new Error(
-      '@vobs/dsh: 拿不到 DSH 平台提供的 React。\n  用 dshBundle() 构建客户端产物（它会自动注入），或在入口模块调用 useDshReact(require("react"))。'
+      '@vobs/dsh: cannot obtain the React provided by the DSH platform.\n  Build the client artifact with dshBundle() (it injects automatically), or call useDshReact(require("react")) in your entry module.'
     );
   }
   return react;
@@ -1952,31 +1957,31 @@ function defineDshPanel(options, render) {
 }
 const API_GROUPS = [
   {
-    group: "响应式",
+    group: "Reactivity",
     origin: "@vobs/reactivity",
     entries: [
       {
         name: "state",
         signature: "state<T>(initialValue: T, debugName?: string): Signal<T>",
-        summary: "创建一个可写信号。组件体只执行一次，所以读取要放在动态表达式或 effect 里，别按 React 的心智模型理解。",
+        summary: "Creates a writable signal. The component body executes once, so reads must live in dynamic expressions or effects — do not reason about it like React.",
         example: `const count = state(0, 'count')
 
-// 读：放进 JSX 的动态表达式里
+// Read: put it in a JSX dynamic expression
 return <div>{count.value}</div>`
       },
       {
         name: "effect",
         signature: "effect(callback: EffectCallback): Effect",
-        summary: "副作用。它只追踪自己在回调里读到的信号；写自己读过的信号会自订阅，必须用 untrack 包住。",
+        summary: "Side effect. It only tracks the signals it reads inside its callback; writing a signal it reads would self-subscribe — wrap it in untrack.",
         example: `effect(() => {
-  console.log(count.value)          // 建立订阅
-  untrack(() => { mirrored.value = count.value })  // 写，但不建立订阅
+  console.log(count.value)          // creates a subscription
+  untrack(() => { mirrored.value = count.value })  // a write, but no subscription
 })`
       },
       {
         name: "untrack",
         signature: "untrack<T>(fn: () => T): T",
-        summary: "在 effect 内部执行 fn 且不建立订阅。写自己读过的信号时用它，否则会自订阅 —— 护栏会报 VOBS_C210。",
+        summary: "Runs fn inside an effect without creating a subscription. Use it when writing a signal the effect reads, otherwise it self-subscribes — the guardrail reports VOBS_C210.",
         example: `effect(() => {
   untrack(() => { count.value++ })
 })`
@@ -1984,13 +1989,13 @@ return <div>{count.value}</div>`
       {
         name: "memo",
         signature: "memo<T>(compute: () => T): Memo<T>",
-        summary: "派生值。要「由 A 算出 B」就用它，不要写「读 A 写 B」的 effect —— 那是最典型的循环来源。",
+        summary: 'Derived value. When you need "B computed from A", use this — never an effect that "reads A and writes B", the most typical source of loops.',
         example: `const doubled = memo(() => count.value * 2)`
       },
       {
         name: "batch",
         signature: "batch<T>(fn: () => T): T",
-        summary: "把 fn 里的多次写入合并成一次刷新。",
+        summary: "Coalesces multiple writes inside fn into a single flush.",
         example: `batch(() => {
   a.value = 1
   b.value = 2
@@ -1999,28 +2004,28 @@ return <div>{count.value}</div>`
       {
         name: "createOwner",
         signature: "createOwner(): Owner",
-        summary: "建立作用域：它下面的 effect/memo 会随 dispose 一起释放。onDispose 注册清理，runWithOwner 在指定作用域里跑一段。",
+        summary: "Creates a scope: effects/memos under it are released together on dispose. onDispose registers cleanup; runWithOwner runs a piece of code inside a given scope.",
         example: `const owner = createOwner()
 runWithOwner(owner, () => {
-  effect(() => { /* 随 owner 释放 */ })
+  effect(() => { /* released with the owner */ })
 })`
       },
       {
         name: "createId",
         signature: "createId(prefix = 'vobs'): string",
-        summary: "生成稳定 id（用于 label/for、aria 关联等）。",
+        summary: "Generates stable ids (for label/for, aria associations, etc.).",
         example: `const id = createId('field')`
       }
     ]
   },
   {
-    group: "DSH 插件",
+    group: "DSH plugins",
     origin: "@vobs/dsh",
     entries: [
       {
         name: "defineDshPanel",
         signature: "defineDshPanel(options: DshPanelOptions, render: () => VobsNode): DshClientPlugin",
-        summary: "一次注册两处：main（keyed）整页面板 + 左侧栏入口。开发台与 Console 都是用它写的。",
+        summary: "Registers both places at once: a main (keyed) full-page panel + a sidebar entry. Both the devkit and the Console are written with it.",
         example: `export default defineDshPanel({
   key: 'my-panel',
   label: 'My Panel',
@@ -2030,13 +2035,13 @@ runWithOwner(owner, () => {
       {
         name: "defineDshOverlay",
         signature: "defineDshOverlay(options: DshOverlayOptions, render: () => VobsNode): DshClientPlugin",
-        summary: "注册一个浮层面板（shell.overlay），不占主区域。",
+        summary: "Registers an overlay panel (shell.overlay) that does not occupy the main area.",
         example: `export default defineDshOverlay({ id: 'my-overlay', order: 120 }, () => <Panel />)`
       },
       {
         name: "defineDshPlugin",
         signature: "defineDshPlugin(spec: DshPluginSpec): DshClientPlugin",
-        summary: "底层入口：自己决定注入哪些 slot、怎么挂载。前两个是它的语法糖。",
+        summary: "The low-level entry: you decide which slots to inject and how to mount. The previous two are sugar over it.",
         example: `export default defineDshPlugin({
   name: 'my-plugin',
   apply(ctx) { /* ctx.slots.inject(...) */ }
@@ -2045,43 +2050,43 @@ runWithOwner(owner, () => {
       {
         name: "createVobsSlotHost",
         signature: "createVobsSlotHost(render: () => VobsNode, options?: DshSurfaceOptions): DshSlotHostComponent",
-        summary: "把 vobs 渲染函数包成 DSH 需要的宿主组件：React 占位 + shadow root + 配色跟随 + 生命周期清理。",
+        summary: "Wraps a vobs render function into the host component DSH needs: React placeholder + shadow root + scheme following + lifecycle cleanup.",
         example: `const Host = createVobsSlotHost(() => <Panel />, { styles: CSS })`
       }
     ]
   },
   {
-    group: "编译器",
+    group: "Compiler",
     origin: "@vobs/compiler",
     entries: [
       {
         name: "compile",
         signature: "compile(code: string, options?: CompileOptions): string",
-        summary: "把 TSX 编译成细粒度 DOM 绑定。诊断带稳定错误码（VOBS_C1xx/C2xx）与 codeFrame。",
+        summary: "Compiles TSX into fine-grained DOM bindings. Diagnostics carry stable error codes (VOBS_C1xx/C2xx) and a codeFrame.",
         example: `const output = compile('<div>{count.value}</div>', { filename: 'a.tsx' })`
       },
       {
         name: "compileWithSourceMap",
         signature: "compileWithSourceMap(code, options?): CompileResult",
-        summary: "同上，额外返回 sourcemap 与 diagnostics（Vite 插件走的是这条）。",
+        summary: "Same as above, but also returns a sourcemap and diagnostics (the Vite plugin uses this one).",
         example: `const { code, map, diagnostics } = compileWithSourceMap(src, { filename })`
       },
       {
         name: "createCompiler",
         signature: "createCompiler(options?: CompilerOptions): VobsCompiler",
-        summary: "复用同一个编译器实例（多次编译时避免重复初始化）。",
+        summary: "Reuses one compiler instance (avoids re-initializing on repeated compilations).",
         example: `const compiler = createCompiler({ plugins: [] })`
       }
     ]
   },
   {
-    group: "开发期护栏",
+    group: "Dev guardrails",
     origin: "@vobs/vobs/dev",
     entries: [
       {
         name: "installDevGuardrails",
         signature: "installDevGuardrails(options?: DevGuardrailOptions): () => void",
-        summary: "装上护栏，返回卸载函数。用 vobsPlugin() 的应用在 dev 下会自动装，一般不需要手动调用。",
+        summary: "Installs the guardrails and returns an uninstall function. Apps built with vobsPlugin() install it automatically in dev; manual calls are rarely needed.",
         example: `import { installDevGuardrails } from '@vobs/vobs/dev'
 
 const stop = installDevGuardrails({
@@ -2094,8 +2099,8 @@ stop()`
 ];
 const PATTERNS = [
   {
-    title: "计数器",
-    summary: "state + 动态表达式。组件体只跑一次，读取放在 JSX 里。",
+    title: "Counter",
+    summary: "state + dynamic expression. The component body runs once; reads live in the JSX.",
     code: `import { state } from '@vobs/vobs'
 
 const count = state(0, 'count')
@@ -2109,8 +2114,8 @@ export function Counter() {
 }`
   },
   {
-    title: "keyed 列表",
-    summary: "列表要写成**直接的**子表达式；写进三元分支会失去 keyed 复用。",
+    title: "keyed lists",
+    summary: "Lists must be written as **direct** child expressions; putting them inside a ternary branch loses keyed reuse.",
     code: `export function List(props: { items: Signal<string[]> }) {
   return (
     <ul>
@@ -2122,25 +2127,25 @@ export function Counter() {
 }`
   },
   {
-    title: "派生值（正确做法）",
-    summary: "由 A 算出 B 用 memo，不要写「读 A 写 B」的 effect。",
+    title: "Derived values (the correct way)",
+    summary: 'Use memo for "B computed from A"; never write an effect that "reads A and writes B".',
     code: `const count = state(0)
 const doubled = memo(() => count.value * 2)
 
-// ❌ 不要这样：effect 读 count 又写 doubled，两个信号互相驱动
+// ❌ Never do this: the effect reads count and writes doubled, the two signals drive each other
 // effect(() => { doubled.value = count.value * 2 })`
   },
   {
-    title: "effect 写自己读的信号",
-    summary: "必须用 untrack 包住写入，否则会自订阅（护栏报 VOBS_C210）。",
+    title: "An effect writing the signal it reads",
+    summary: "The write must be wrapped in untrack, otherwise it self-subscribes (the guardrail reports VOBS_C210).",
     code: `effect(() => {
   const current = count.value
   untrack(() => { count.value = current + 1 })
 })`
   },
   {
-    title: "作用域与清理",
-    summary: "createOwner 建作用域，onDispose 注册清理，owner 释放时一起收掉。",
+    title: "Scopes and cleanup",
+    summary: "createOwner builds a scope, onDispose registers cleanup, and disposing the owner tears it all down.",
     code: `const owner = createOwner()
 
 runWithOwner(owner, () => {
@@ -2148,11 +2153,11 @@ runWithOwner(owner, () => {
   onDispose(() => clearInterval(timer))
 })
 
-owner.dispose()   // timer 被清掉`
+owner.dispose()   // the timer is cleared`
   },
   {
-    title: "写一个 DSH 面板",
-    summary: "defineDshPanel 一次注册 main + 侧栏入口；用 @vobs/dsh/vite 的 dshBundle() 打包。",
+    title: "Writing a DSH panel",
+    summary: "defineDshPanel registers main + a sidebar entry in one go; bundle with dshBundle() from @vobs/dsh/vite.",
     code: `import { defineDshPanel } from '@vobs/dsh'
 import { state } from '@vobs/vobs'
 
@@ -2169,33 +2174,33 @@ export default defineDshPanel({
 const GUARDRAIL_RULES = [
   {
     code: "VOBS_C210",
-    name: "effect 写入了自己依赖的信号",
+    name: "an effect wrote the signal it depends on",
     before: `effect(() => {
-  count.value++          // 读 + 写同一个信号
+  count.value++          // reads + writes the same signal
 })`,
     after: `effect(() => {
   untrack(() => { count.value++ })
 })`,
-    why: "以前这是静默的：effect 重跑 → 又写一次 → 再重跑，实测连续重跑上百轮才被别的地方掩盖住。现在第一次自写就报，并指名是哪个信号、effect 在哪创建的。"
+    why: "This used to be silent: the effect re-runs → writes again → re-runs again; in practice it re-ran hundreds of rounds in a row before something else masked it. Now the very first self-write is reported, naming the signal and where the effect was created."
   },
   {
     code: "VOBS_C211",
-    name: "同一个 effect 在极短时间内连跑超限",
+    name: "the same effect ran more times than the limit within a very short window",
     before: `effect(() => { const v = a.value; if (v < 9) b.value = v + 1 })
 effect(() => { const v = b.value; if (v < 9) a.value = v + 1 })`,
-    after: `// 用 memo 表达派生关系，而不是让两个 effect 互相触发
+    after: `// Express the derivation with memo instead of two effects triggering each other
 const next = memo(() => a.value + 1)`,
-    why: "抓依赖检测覆盖不到的情形：两个 effect 各写对方的依赖，谁都不是「写自己」。真正的循环一定在极短时间内连跑很多次，所以用时间窗而不是刷新边界来判定。"
+    why: `Catches what dependency detection cannot: two effects each writing the other's dependency, so neither is "writing itself". A real loop always runs many times within a very short window, hence the judgment by time window rather than flush boundary.`
   }
 ];
 const CAPABILITIES = [
-  { name: "开发期护栏", status: "done", note: "@vobs/vobs/dev · dev 下自动装 + 终端上报（VOBS_C210 / C211）" },
-  { name: "API 索引", status: "partial", note: "本面板这一页是静态雏形；独立的 vobs docs 查询命令未做" },
-  { name: "写法示例", status: "partial", note: "本面板「示例」页是可直接复制的写法；独立的可运行示例库未做" },
-  { name: "vobs check 静态检查", status: "todo", note: "不跑应用就能给出 文件:行 的问题清单 —— 未做" },
-  { name: "AI 上下文包", status: "todo", note: "坑位清单 + 核心范式，供 AI 加载 —— 未做" },
-  { name: "脚手架预置测试", status: "todo", note: "新项目自带无头渲染断言，让 AI 能自证 —— 未做" },
-  { name: "DSH skill 封装", status: "todo", note: "把 AI 上下文包成 skill，任务匹配时自动加载 —— 未做" }
+  { name: "Dev-time guardrails", status: "done", note: "@vobs/vobs/dev · installs automatically in dev + reports to the terminal (VOBS_C210 / C211)" },
+  { name: "API index", status: "partial", note: "this panel page is a static draft; a standalone vobs docs query command is not done yet" },
+  { name: "Code patterns", status: "partial", note: `this panel's "Patterns" page holds copy-ready snippets; a standalone runnable example library is not done yet` },
+  { name: "vobs check static analysis", status: "todo", note: "produce a file:line issue list without running the app — not done yet" },
+  { name: "AI context pack", status: "todo", note: "pitfall list + core paradigms for AI to load — not done yet" },
+  { name: "Scaffold preset tests", status: "todo", note: "new projects ship headless render assertions so the AI can prove itself — not done yet" },
+  { name: "DSH skill packaging", status: "todo", note: "package the AI context as a skill, auto-loaded on task match — not done yet" }
 ];
 const REPORT_PATH = ".vobs/check.json";
 function pickSession(ctx) {
@@ -2226,7 +2231,7 @@ async function readWholeFile(api, sessionId, path) {
     const bytes = asBytes(await api.readBytes(sessionId, path, {}));
     if (bytes !== void 0) return new TextDecoder().decode(bytes);
   }
-  if (typeof api.read !== "function") throw new Error("workspaceFiles 没有可用的读取方法");
+  if (typeof api.read !== "function") throw new Error("workspaceFiles has no usable read method");
   let text = "";
   let offset = 1;
   for (let page = 0; page < 20; page += 1) {
@@ -2242,14 +2247,14 @@ async function readWholeFile(api, sessionId, path) {
 }
 function createProjectSource(ctx, options = {}) {
   const pollMs = options.pollMs ?? 2500;
-  const projectState = options.sink ?? state({ status: "loading", message: "正在读取检查报告…" });
-  projectState.value = { status: "loading", message: "正在读取检查报告…" };
+  const projectState = options.sink ?? state({ status: "loading", message: "Reading the check report…" }, "signal");
+  projectState.value = { status: "loading", message: "Reading the check report…" };
   const session = pickSession(ctx);
   const api = workspaceFilesOf(ctx);
   if (session === void 0 || api === void 0) {
     projectState.value = {
       status: "unavailable",
-      message: session === void 0 ? "读不到会话列表（sessions 服务不可用），因此不知道工作区在哪。" : "读不到 workspace-files 服务（remote.workspaceFiles 不可用），因此读不了工作区文件。"
+      message: session === void 0 ? "Cannot read the session list (sessions service unavailable), so the workspace is unknown." : "Cannot read the workspace-files service (remote.workspaceFiles unavailable), so workspace files cannot be read."
     };
     return { state: projectState, refresh: () => {
     }, dispose: () => {
@@ -2274,7 +2279,7 @@ function createProjectSource(ctx, options = {}) {
         status: "ready",
         sessionId,
         workspace,
-        message: `报告来自 ${workspace ?? "工作区"}`,
+        message: `Report from ${workspace ?? "the workspace"}`,
         report
       };
     } catch (error) {
@@ -2285,7 +2290,7 @@ function createProjectSource(ctx, options = {}) {
           status: "missing",
           sessionId,
           workspace,
-          message: `还没有 ${REPORT_PATH}`
+          message: `${REPORT_PATH} does not exist yet`
         };
       } else {
         fail(message);
@@ -2327,26 +2332,26 @@ function createProjectSource(ctx, options = {}) {
   };
 }
 const _tpl13 = createTemplate('<span class="vk-spacer"></span>');
-const _tpl17 = createTemplate('<div style="margin-top:10px"><div class="vk-label">让 AI（或你自己）跑一次，报告就会出现在这里：</div><pre class="vk-code">vobs check --write</pre></div>');
-const _tpl23 = createTemplate('<div class="vk-card"><div class="vk-card__body"><div class="vk-empty" style="padding:6px 0">检查通过，没有发现问题。</div></div></div>');
-const _tpl25 = createTemplate('<div class="vk-card"><div class="vk-card__head">开发期护栏<span class="vk-card__hint">只报告、不中断 —— 钩子里的异常会被吞掉，这是刻意的保证：调试工具绝不改变应用行为</span></div><div class="vk-card__body"><div class="vk-desc">用 <span class="vk-mono">vobsPlugin()</span> 的应用在 dev 下会自动装上它，并把违规打到 dev server 终端与浏览器控制台。下面这两条是 vobs 里最容易写错、而且**错的时候没有声音**的写法。</div></div></div>');
-const _tpl32 = createTemplate('<div class="vk-label">会出问题的写法</div>');
-const _tpl35 = createTemplate('<div class="vk-label">护栏建议</div>');
-const _tpl42 = createTemplate('<div class="vk-label" style="margin-top:14px">示例</div>');
-const _tpl52 = createTemplate('<div class="vk-card"><div class="vk-card__head">写法示例<span class="vk-card__hint">可直接复制 · 刻意是「写法」而不是仓库文件索引，后者会随目录变动失真</span></div></div>');
-const _tpl60 = createTemplate('<div class="vk-card__head">能力状态<span class="vk-card__hint">这一页刻意如实 —— 面板不该假装自己什么都有</span></div>');
-const _tpl66 = createTemplate('<div class="vk-card"><div class="vk-card__head">这个面板为什么是静态的</div><div class="vk-card__body"><div class="vk-desc">开发台跑在 DSH 里，你的应用跑在它自己的 dev server 里 —— <strong>两者不是同一个页面</strong>。 所以面板看不到你应用的运行时（包括运行时护栏的告警）。要显示活数据，需要把 DSH 的 Host 半侧 接上（读工作区、跑 vobs check），这一步还没做。</div></div></div>');
-const _tpl68 = createTemplate('<div class="vk-head"><div><div class="vk-title">Vobs 开发台<span class="vk-tag">vobs 渲染</span></div><div class="vk-sub">给「用 vobs 写代码的人」和「帮人写 vobs 代码的 AI」用的参考面板：护栏规则、API 索引、写法示例， 以及这个工具链目前的能力边界。</div></div></div>');
+const _tpl17 = createTemplate('<div style="margin-top:10px"><div class="vk-label">Run this once (your AI or you) and the report will show up here:</div><pre class="vk-code">vobs check --write</pre></div>');
+const _tpl23 = createTemplate('<div class="vk-card"><div class="vk-card__body"><div class="vk-empty" style="padding:6px 0">All checks passed; no issues found.</div></div></div>');
+const _tpl25 = createTemplate('<div class="vk-card"><div class="vk-card__head">Dev-time guardrails<span class="vk-card__hint">Report only, never interrupt — exceptions thrown inside the hooks are swallowed; that is a deliberate guarantee: a debugging tool must never change app behavior</span></div><div class="vk-card__body"><div class="vk-desc">Apps built with <span class="vk-mono">vobsPlugin()</span> install it automatically in dev and report violations to the dev server terminal and the browser console. The two patterns below are the easiest to get wrong in vobs — and they fail **silently** when wrong.</div></div></div>');
+const _tpl32 = createTemplate('<div class="vk-label">The broken pattern</div>');
+const _tpl35 = createTemplate('<div class="vk-label">Guardrail fix</div>');
+const _tpl42 = createTemplate('<div class="vk-label" style="margin-top:14px">Example</div>');
+const _tpl52 = createTemplate('<div class="vk-card"><div class="vk-card__head">Code patterns<span class="vk-card__hint">copy-ready · deliberately "patterns" rather than a repo file index, which would drift as the directory changes</span></div></div>');
+const _tpl60 = createTemplate('<div class="vk-card__head">Capability status<span class="vk-card__hint">this page is deliberately honest — the panel must not pretend to have everything</span></div>');
+const _tpl66 = createTemplate(`<div class="vk-card"><div class="vk-card__head">Why this panel is static</div><div class="vk-card__body"><div class="vk-desc">The devkit runs inside DSH while your app runs in its own dev server — <strong>they are not the same page</strong>. So the panel cannot see your app's runtime (including runtime-guardrail warnings). Showing live data requires wiring up DSH's Host side (reading the workspace, running vobs check); that step has not been done yet.</div></div></div>`);
+const _tpl68 = createTemplate(`<div class="vk-head"><div><div class="vk-title">Vobs Devkit<span class="vk-tag">rendered by vobs</span></div><div class="vk-sub">A reference panel for "people who write vobs code" and "AIs that help write vobs code": guardrail rules, an API index, copy-ready patterns, and the toolchain's current capability boundaries.</div></div></div>`);
 const TABS = [
-  { key: "project", label: "项目" },
-  { key: "guardrails", label: "护栏" },
+  { key: "project", label: "Project" },
+  { key: "guardrails", label: "Guardrails" },
   { key: "api", label: "API" },
-  { key: "patterns", label: "示例" },
-  { key: "status", label: "状态" }
+  { key: "patterns", label: "Patterns" },
+  { key: "status", label: "Status" }
 ];
 function IssueRow(props) {
-  const item = props.item;
-  const isError = item.severity === "error";
+  const item = () => props.item;
+  const isError = () => item().severity === "error";
   return (() => {
     const _el0 = createElement("div");
     setStaticProps(_el0, {
@@ -2359,8 +2364,8 @@ function IssueRow(props) {
       });
       insertBefore(_el1, (() => {
         const _el2 = createElement("span");
-        bindAttribute(_el2, "class", () => isError ? "vk-sev vk-sev--err" : "vk-sev vk-sev--warn");
-        insertDynamicValue(_el2, null, () => isError ? "错误" : "警告");
+        bindAttribute(_el2, "class", () => isError() ? "vk-sev vk-sev--err" : "vk-sev vk-sev--warn");
+        insertDynamicValue(_el2, null, () => isError() ? "Error" : "Warning");
         return _el2;
       })(), null);
       insertBefore(_el1, (() => {
@@ -2369,7 +2374,7 @@ function IssueRow(props) {
           "class": "vk-mono",
           "style": "font-size:11.5px"
         });
-        insertDynamicValue(_el3, null, () => item.code);
+        insertDynamicValue(_el3, null, () => item().code);
         return _el3;
       })(), null);
       insertBefore(_el1, (() => {
@@ -2377,11 +2382,11 @@ function IssueRow(props) {
         setStaticProps(_el4, {
           "class": "vk-card__hint vk-mono"
         });
-        insertDynamicValue(_el4, null, () => item.file);
+        insertDynamicValue(_el4, null, () => item().file);
         insertBefore(_el4, createText(":"), null);
-        insertDynamicValue(_el4, null, () => item.line);
+        insertDynamicValue(_el4, null, () => item().line);
         insertBefore(_el4, createText(":"), null);
-        insertDynamicValue(_el4, null, () => item.column);
+        insertDynamicValue(_el4, null, () => item().column);
         return _el4;
       })(), null);
       return _el1;
@@ -2396,16 +2401,16 @@ function IssueRow(props) {
         setStaticProps(_el6, {
           "class": "vk-desc"
         });
-        insertDynamicValue(_el6, null, () => item.message);
+        insertDynamicValue(_el6, null, () => item().message);
         return _el6;
       })(), null);
-      insertDynamic(_el5, null, () => item.snippet === void 0 || item.snippet === "" ? null : (() => {
+      insertDynamic(_el5, null, () => item().snippet === void 0 || item().snippet === "" ? null : (() => {
         const _el7 = createElement("pre");
         setStaticProps(_el7, {
           "class": "vk-code",
           "style": "margin-top:8px"
         });
-        insertDynamicValue(_el7, null, () => item.snippet);
+        insertDynamicValue(_el7, null, () => item().snippet);
         return _el7;
       })());
       insertBefore(_el5, (() => {
@@ -2415,7 +2420,7 @@ function IssueRow(props) {
           "style": "padding:9px 0 0"
         });
         insertBefore(_el8, createText("→ "), null);
-        insertDynamicValue(_el8, null, () => item.fix);
+        insertDynamicValue(_el8, null, () => item().fix);
         return _el8;
       })(), null);
       return _el5;
@@ -2451,14 +2456,15 @@ function Project(props) {
         setStaticProps(_el11, {
           "class": "vk-card__head"
         });
-        insertBefore(_el11, createText("项目检查"), null);
+        insertBefore(_el11, createText("Project checks"), null);
         insertBefore(_el11, (() => {
           const _el12 = createElement("span");
           setStaticProps(_el12, {
             "class": "vk-card__hint"
           });
-          insertBefore(_el12, createText("读工作区里的 "), null);
+          insertBefore(_el12, createText("reads "), null);
           insertDynamicValue(_el12, null, () => REPORT_PATH);
+          insertBefore(_el12, createText(" from the workspace"), null);
           return _el12;
         })(), null);
         insertBefore(_el11, cloneTemplate(_tpl13), null);
@@ -2468,7 +2474,7 @@ function Project(props) {
             "class": "vk-btn"
           });
           addEventListener(_el14, "click", props.onRefresh);
-          insertBefore(_el14, createText("重新读取"), null);
+          insertBefore(_el14, createText("Refresh"), null);
           return _el14;
         })(), null);
         return _el11;
@@ -2497,7 +2503,7 @@ function Project(props) {
             setStaticProps(_el19, {
               "class": "vk-chip"
             });
-            insertDynamicValue(_el19, null, () => `${summary.value.files} 个文件`);
+            insertDynamicValue(_el19, null, () => `${summary.value.files} files`);
             return _el19;
           })(), null);
           insertBefore(_el18, (() => {
@@ -2505,7 +2511,7 @@ function Project(props) {
             setStaticProps(_el20, {
               "class": "vk-chip"
             });
-            insertDynamicValue(_el20, null, () => `${summary.value.errors} 个错误`);
+            insertDynamicValue(_el20, null, () => `${summary.value.errors} errors`);
             return _el20;
           })(), null);
           insertBefore(_el18, (() => {
@@ -2513,7 +2519,7 @@ function Project(props) {
             setStaticProps(_el21, {
               "class": "vk-chip"
             });
-            insertDynamicValue(_el21, null, () => `${summary.value.warnings} 个警告`);
+            insertDynamicValue(_el21, null, () => `${summary.value.warnings} warnings`);
             return _el21;
           })(), null);
           insertDynamic(_el18, null, () => summary.value.skipped > 0 ? (() => {
@@ -2521,7 +2527,7 @@ function Project(props) {
             setStaticProps(_el22, {
               "class": "vk-chip"
             });
-            insertDynamicValue(_el22, null, () => `跳过 ${summary.value.skipped} 个测试文件`);
+            insertDynamicValue(_el22, null, () => `${summary.value.skipped} test files skipped`);
             return _el22;
           })() : null);
           return _el18;
@@ -2781,9 +2787,9 @@ function Patterns() {
   })();
 }
 const STATUS_LABEL = {
-  done: "已实现",
-  partial: "部分",
-  todo: "未做"
+  done: "Done",
+  partial: "Partial",
+  todo: "Not yet"
 };
 const STATUS_CLASS = {
   done: "vk-sev vk-sev--ok",
@@ -2973,7 +2979,7 @@ const DEVKIT_CSS = `
 }
 .vk-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px 24px; }
 
-/* 规则 / 卡片 */
+/* Rules / cards */
 .vk-card { border: 1px solid var(--vk-border); border-radius: 12px; background: var(--vk-layer1); overflow: hidden; }
 .vk-card + .vk-card { margin-top: 12px; }
 .vk-card__head {
@@ -3005,7 +3011,7 @@ const DEVKIT_CSS = `
 .vk-label { font-size: 10.5px; color: var(--vk-dim); margin-bottom: 5px; }
 .vk-why { font-size: 11.5px; color: var(--vk-dim); line-height: 1.7; padding: 0 14px 14px; }
 
-/* 表格 */
+/* Table */
 .vk-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .vk-table th {
   text-align: left; font-weight: 500; font-size: 10px; letter-spacing: .05em;
@@ -3014,7 +3020,7 @@ const DEVKIT_CSS = `
 .vk-table td { padding: 9px 12px 9px 0; border-top: 1px solid var(--vk-border); vertical-align: top; }
 .vk-table tr:last-child td { padding-bottom: 0; }
 
-/* API 页 */
+/* API page */
 .vk-api { display: grid; grid-template-columns: 210px 1fr; gap: 0; min-height: 0; }
 .vk-api__nav { border-right: 1px solid var(--vk-border); padding-right: 10px; }
 .vk-api__group { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--vk-dim); padding: 12px 8px 5px; }
@@ -3037,13 +3043,13 @@ const DEVKIT_CSS = `
 }
 .vk-chip:hover { color: var(--vk-text); }
 
-/* 示例 */
+/* Patterns */
 .vk-patterns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .vk-pattern { border: 1px solid var(--vk-border); border-radius: 12px; background: var(--vk-layer1); padding: 12px; }
 .vk-pattern__title { font-size: 12.5px; font-weight: 600; }
 .vk-pattern__summary { font-size: 11.5px; color: var(--vk-dim); margin: 5px 0 9px; line-height: 1.6; }
 
-/* 状态 */
+/* Status */
 .vk-cap { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--vk-border); }
 .vk-cap:last-child { border-bottom: 0; }
 .vk-cap__name { font-size: 12.5px; min-width: 168px; }
@@ -3052,17 +3058,17 @@ const DEVKIT_CSS = `
 `;
 const tab = state("project", "tab");
 const apiName = state("state", "apiName");
-const project = state({ status: "loading", message: "正在读取检查报告…" }, "project");
+const project = state({ status: "loading", message: "Reading the check report…" }, "project");
 let refreshProject = () => {
 };
 const index = defineDshPanel({
   key: "vobs-devkit",
-  label: "Vobs 开发台",
+  label: "Vobs Devkit",
   styles: DEVKIT_CSS,
-  // 读工作区文件需要这两项：会话列表决定「哪个工作区」，remote 提供 workspaceFiles。
+  // Reading workspace files needs these two: the session list decides "which workspace", remote provides workspaceFiles.
   injectServices: ["sessions", "remote"],
   sidebarEntry: {
-    label: "Vobs 开发台",
+    label: "Vobs Devkit",
     order: 8,
     renderIcon: () => createComponent(resolveComponent(DevKitIcon, "src/client/index.tsx", "DevKitIcon"), {})
   },

@@ -4,14 +4,16 @@ import { bindText, createElement, createText, insertBefore } from '@vobs/dom'
 import { hydrate, renderToString } from './index'
 
 /*
- * 水合里最阴的一类差异：服务端渲染了**非空**文本，客户端此刻要的是空文本节点
- * （典型形态是 `createText('')` + 后面用绑定 effect 覆写）—— 只认领、不报错，
- * 于是"服务端 Ada / 客户端忘传 state 渲染 loading"这种值被悄悄换掉的情况完全无声。
+ * The sneakiest class of hydration difference: the server rendered **non-empty** text while
+ * the client currently wants an empty text node (typically `createText('')` overwritten by
+ * a bound effect later) — it just claims without reporting, so "server Ada / client forgot
+ * to pass state and renders loading" — a value silently swapped — was completely silent.
  *
- * 第 13 轮给了可观测出口（`hydrationProvisionalText`）；本轮把**语义**补齐：
- * 打开 `strictHydration` 时直接报水合不匹配，默认仍保持原行为（不破坏既有应用）。
+ * Round 13 added the observable outlet (`hydrationProvisionalText`); this round completes
+ * the **semantics**: with `strictHydration` on, a hydration mismatch is thrown directly,
+ * while the default keeps the original behavior (existing apps unaffected).
  */
-describe('水合：临时认领非空文本（strictHydration）', () => {
+describe('hydration: provisional claiming of non-empty text (strictHydration)', () => {
   const render = () => {
     const span = createElement('span')
     const text = createText('')
@@ -20,7 +22,7 @@ describe('水合：临时认领非空文本（strictHydration）', () => {
     return span
   }
 
-  it('默认（非严格）：照旧认领并完成水合，行为不变', () => {
+  it('default (non-strict): claims as before and completes hydration, behavior unchanged', () => {
     document.body.innerHTML = renderToString(render)
     const app = hydrate(render, document.body)
     expect(document.body.textContent).toBe('count: 42')
@@ -28,7 +30,7 @@ describe('水合：临时认领非空文本（strictHydration）', () => {
     document.body.innerHTML = ''
   })
 
-  it('strictHydration：同一场景直接报水合不匹配（kind=content）', () => {
+  it('strictHydration: the same scenario throws a hydration mismatch directly (kind=content)', () => {
     document.body.innerHTML = renderToString(render)
     let error: { vobsHydration?: { kind?: string; actual?: string } } | undefined
     try {
@@ -42,7 +44,7 @@ describe('水合：临时认领非空文本（strictHydration）', () => {
     document.body.innerHTML = ''
   })
 
-  it('strictHydration 对"服务端空文本（占位注释）"这种正常形态不误报', () => {
+  it('strictHydration does not false-positive on the legitimate "server empty text (placeholder comment)" shape', () => {
     const renderEmpty = () => {
       const span = createElement('span')
       insertBefore(span, createText(''), null)

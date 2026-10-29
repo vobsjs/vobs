@@ -40,15 +40,15 @@ async function mount(props: KitDataTableProps<Row>) {
 
 describe('KitDataTable attribute channel', () => {
   it('id / role / aria-* on own props take effect', async () => {
-    const { host, cleanup } = await mount({ columns, rows: ROWS, id: 'table-1', role: 'grid', 'aria-label': '用户表' })
+    const { host, cleanup } = await mount({ columns, rows: ROWS, id: 'table-1', role: 'grid', 'aria-label': 'User table' })
     expect(host.querySelector('[role=grid]')).toBeTruthy()
-    expect(host.querySelector('#table-1')?.getAttribute('aria-label')).toBe('用户表')
+    expect(host.querySelector('#table-1')?.getAttribute('aria-label')).toBe('User table')
     cleanup()
   })
 
-  it('id / role / aria-* on inherited props also take effect (kit's passing style)', async () => {
+  it("id / role / aria-* on inherited props also take effect (kit's passing style)", async () => {
     // Simulate createTableProps: author attributes on the prototype; own props are only the few the component itself adds
-    const base = { id: 'table-2', role: 'grid', 'aria-label': '继承来的标签', tabIndex: 3 }
+    const base = { id: 'table-2', role: 'grid', 'aria-label': 'inherited label', tabIndex: 3 }
     const props = Object.create(base) as Record<string, unknown>
     props.columns = columns
     props.rows = ROWS
@@ -57,7 +57,7 @@ describe('KitDataTable attribute channel', () => {
     const table = host.querySelector('[role=grid]')
     expect(table).toBeTruthy()                                   // this used to be null (silently dropped)
     expect(table?.getAttribute('id')).toBe('table-2')
-    expect(table?.getAttribute('aria-label')).toBe('继承来的标签')
+    expect(table?.getAttribute('aria-label')).toBe('inherited label')
     expect(table?.getAttribute('tabindex')).toBe('3')
     cleanup()
   })

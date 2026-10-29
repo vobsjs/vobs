@@ -15,23 +15,23 @@ interface Product {
 const products: Product[] = [
   {
     id: 'prod_001',
-    name: 'Vobs 框架授权 - 基础版',
+    name: 'Vobs Framework License - Basic',
     price: '299.00',
-    description: '适用于个人开发者和小型团队，包含核心框架及所有官方扩展包。',
+    description: 'For individual developers and small teams; includes the core framework and all official extension packages.',
     image: '📦'
   },
   {
     id: 'prod_002',
-    name: 'Vobs 框架授权 - 专业版',
+    name: 'Vobs Framework License - Pro',
     price: '999.00',
-    description: '适用于中型团队，包含基础版全部功能 + 高级扩展包和企业级支持。',
+    description: 'For mid-sized teams; includes everything in Basic plus advanced extension packages and enterprise-grade support.',
     image: '🚀'
   },
   {
     id: 'prod_003',
-    name: 'Vobs 框架授权 - 企业版',
+    name: 'Vobs Framework License - Enterprise',
     price: '4999.00',
-    description: '适用于大型企业，全功能授权 + 专属技术支持 + 定制化开发服务。',
+    description: 'For large enterprises; full-feature license plus dedicated technical support and customized development services.',
     image: '🏢'
   }
 ]
@@ -41,7 +41,7 @@ export function PaymentPage() {
   const i18n = useI18n()
   const selectedProduct = state<Product | null>(null, 'selectedProduct')
   const paying = state(false, 'paying')
-  const paymentLog = state<string[]>(['>>> 等待发起支付...'], 'paymentLog')
+  const paymentLog = state<string[]>(['>>> Waiting to start payment...'], 'paymentLog')
   const dialogOpen = state(false, 'dialogOpen')
   const portal = createDOMPortalAdapter()
   const configAppId = state('', 'configAppId')
@@ -61,26 +61,26 @@ export function PaymentPage() {
 
   function selectProduct(product: Product): void {
     selectedProduct.value = product
-    paymentLog.value = ['>>> 已选择商品，等待发起支付...']
+    paymentLog.value = ['>>> Product selected, waiting to start payment...']
   }
 
   async function handlePay(): Promise<void> {
     if (!selectedProduct.value) return
     const product = selectedProduct.value
     paying.value = true
-    addLog(`发起支付: ${product.name} (¥${product.price})`)
-    addLog('调用 AlipayClient.pagePay()...')
-    addLog('生成订单号: ' + `ORDER${Date.now()}`)
-    addLog('调用 alipay.trade.page.pay API...')
-    addLog('收到支付宝 HTML 表单...')
+    addLog(`Starting payment: ${product.name} (¥${product.price})`)
+    addLog('Calling AlipayClient.pagePay()...')
+    addLog('Generated order no.: ' + `ORDER${Date.now()}`)
+    addLog('Calling alipay.trade.page.pay API...')
+    addLog('Received Alipay HTML form...')
 
-    // 模拟支付延迟
+    // Simulated payment delay
     await new Promise(resolve => setTimeout(resolve, 1500))
 
-    addLog('支付表单已生成，跳转至支付宝收银台...')
+    addLog('Payment form generated, redirecting to the Alipay checkout...')
     paying.value = false
 
-    // 跳转到结果页
+    // Navigate to the result page
     void router.push({
       path: '/payment/result',
       state: {
@@ -154,7 +154,7 @@ export function PaymentPage() {
               <Button
                 variant="ghost"
                 disabled={paying.value}
-                onClick={() => { selectedProduct.value = null; paymentLog.value = ['>>> 等待发起支付...'] }}
+                onClick={() => { selectedProduct.value = null; paymentLog.value = ['>>> Waiting to start payment...'] }}
               >
                 {i18n.t('common.reset')}
               </Button>
@@ -196,7 +196,7 @@ export function PaymentPage() {
           </label>
           <div class="demo-button-row" style="margin-top: var(--spacer-16)">
             <Button type="submit" variant="brand" icon={<Icon name="check" />}>{i18n.t('common.save')}</Button>
-            <Button type="button" variant="ghost" onClick={() => { dialogOpen.value = false }}>取消</Button>
+            <Button type="button" variant="ghost" onClick={() => { dialogOpen.value = false }}>Cancel</Button>
           </div>
         </form>
       </Dialog>

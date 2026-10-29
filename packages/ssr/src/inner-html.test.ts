@@ -3,28 +3,31 @@ import { createElement, setProperty } from '@vobs/dom'
 import { hydrate, renderToString } from './index'
 
 /**
- * `setProperty(node, 'innerHTML', markup)` 是框架里唯一的"原始标记"逃生口
- * （icon-core 的 SVG、ui/combobox 的下拉箭头都靠它）。但它两端都不成立：
+ * `setProperty(node, 'innerHTML', markup)` is the framework's only "raw markup" escape hatch
+ * (icon-core SVG and the ui/combobox dropdown arrow both rely on it). But it used to fail on
+ * both ends:
  *
- * - 服务端：`serializeAttributes` 的白名单只认 value/tabIndex/className/布尔属性，
- *   innerHTML 既不是属性也不是那个白名单里的 property → **整个 <svg> 静默消失**；
- * - 客户端水合：`Reflect.set(node, 'innerHTML', ...)` 会真的换掉子节点，
- *   新节点不在认领表里 → `assertAllNodesClaimed` 抛 `extra-node`。
+ * - Server: `serializeAttributes`'s whitelist only knows value/tabIndex/className/boolean
+ *   attributes; innerHTML is neither an attribute nor one of those properties →
+ *   **the whole <svg> silently vanished**;
+ * - Client hydration: `Reflect.set(node, 'innerHTML', ...)` really swaps out the child
+ *   nodes, and the new nodes are not in the claim table → `assertAllNodesClaimed` throws
+ *   `extra-node`.
  *
- * 于是「组件用 innerHTML 放原始标记」这条路在 SSR + 水合下根本走不通。
+ * So "components put raw markup via innerHTML" was simply unworkable under SSR + hydration.
  */
-describe('SSR 的 innerHTML 逃生口', () => {  const markup = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1"/></svg>'
+describe('the innerHTML escape hatch in SSR', () => {  const markup = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1"/></svg>'
   const render = () => {
     const span = createElement('span')
     setProperty(span, 'innerHTML', markup)
     return span
   }
 
-  it('服务端产物保留原始标记', () => {
+  it('server output preserves raw markup', () => {
     expect(renderToString(render)).toBe(`<span>${markup}</span>`)
   })
 
-  it('产物可以水合，且 innerHTML 换出来的子树不被当成多余节点', () => {
+  it('output hydrates, and subtrees swapped in via innerHTML are not treated as extra nodes', () => {
     document.body.innerHTML = renderToString(render)
     const app = hydrate(render, document.body)
     expect(document.body.querySelector('svg path')?.getAttribute('d')).toBe('M1')

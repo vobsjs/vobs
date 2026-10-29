@@ -1,8 +1,8 @@
 import type { AlipayClientOptions } from './types'
 
 /**
- * 支付宝配置管理
- * 遵循 vobs 生命周期管理：可创建、可销毁、可替换
+ * Alipay configuration management
+ * Follows the vobs lifecycle: create, dispose, and replace
  */
 export class AlipayConfig {
   private _options: AlipayClientOptions
@@ -12,45 +12,45 @@ export class AlipayConfig {
     this._options = { ...options }
   }
 
-  /** 获取完整配置 */
+  /** Get the full configuration */
   get options(): Readonly<AlipayClientOptions> {
     return this._options
   }
 
-  /** 应用 ID */
+  /** App ID */
   get appId(): string {
     return this._options.appId
   }
 
-  /** 网关地址 */
+  /** Gateway URL */
   get gateway(): string {
     return this._options.gateway ?? 'https://openapi.alipay.com/gateway.do'
   }
 
-  /** 异步通知地址 */
+  /** Async notify URL */
   get notifyUrl(): string | undefined {
     return this._options.notifyUrl
   }
 
-  /** 同步跳转地址 */
+  /** Sync return URL */
   get returnUrl(): string | undefined {
     return this._options.returnUrl
   }
 
-  /** 更新配置（部分更新） */
+  /** Update configuration (partial merge) */
   update(patch: Partial<AlipayClientOptions>): void {
     const merged = { ...this._options, ...patch }
     this.validate(merged)
     this._options = merged
   }
 
-  /** 替换配置 */
+  /** Replace configuration */
   replace(options: AlipayClientOptions): void {
     this.validate(options)
     this._options = { ...options }
   }
 
-  /** 创建沙箱配置的快捷方法 */
+  /** Shortcut for creating a sandbox configuration */
   static forSandbox(options: Omit<AlipayClientOptions, 'gateway'>): AlipayConfig {
     return new AlipayConfig({
       ...options,
@@ -60,13 +60,13 @@ export class AlipayConfig {
 
   private validate(options: AlipayClientOptions): void {
     if (!options.appId) {
-      throw new Error('AlipayConfig: appId 不能为空')
+      throw new Error('AlipayConfig: appId is required')
     }
     if (!options.privateKey) {
-      throw new Error('AlipayConfig: privateKey 不能为空')
+      throw new Error('AlipayConfig: privateKey is required')
     }
     if (!options.alipayPublicKey) {
-      throw new Error('AlipayConfig: alipayPublicKey 不能为空')
+      throw new Error('AlipayConfig: alipayPublicKey is required')
     }
   }
 }

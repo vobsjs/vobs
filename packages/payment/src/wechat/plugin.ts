@@ -5,23 +5,23 @@ import type { WechatClientOptions } from './types'
 export const WECHAT_KEY = createInjectionKey<WechatClient>('vobs.payment.wechat')
 
 export interface WechatPluginOptions {
-  /** 微信支付客户端配置（未传入 client 时必填） */
+  /** WeChat Pay client configuration (required when client is not provided) */
   config?: WechatClientOptions
-  /** 可选的已有客户端实例（指定后忽略 config） */
+  /** Optional existing client instance (config is ignored when set) */
   client?: WechatClient
 }
 
-/** 从 vobs 插件上下文获取微信支付客户端 */
+/** Get the WeChat Pay client from the vobs plugin context */
 export function useWechat(): WechatClient {
   const client = inject(WECHAT_KEY)
   if (!client) {
-    throw new Error('Vobs Payment: 找不到 WechatClient，请安装 wechatPlugin')
+    throw new Error('Vobs Payment: WechatClient not found; install wechatPlugin first')
   }
   return client
 }
 
 /**
- * 微信支付插件
+ * WeChat Pay plugin
  *
  * @example
  * ```ts
@@ -47,9 +47,9 @@ export function wechatPlugin(options: WechatPluginOptions): VobsPlugin {
     version: '0.1.0',
     install(context: VobsContext) {
       if (!options.client && !options.config) {
-        throw new Error('Vobs Payment: wechatPlugin 需要提供 config 或 client 之一')
+        throw new Error('Vobs Payment: wechatPlugin requires either config or client')
       }
-      // 仅销毁插件自建的客户端；外部传入的实例由其所有者负责生命周期。
+      // Only dispose the client created by the plugin itself; externally provided instances are owned by their creator.
       const ownClient = !options.client
       const client = options.client ?? new WechatClient(options.config!)
       context.provide(WECHAT_KEY, client)

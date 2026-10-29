@@ -9,15 +9,17 @@ setRenderer(createDOMRenderer())
 const settle = async (): Promise<void> => { scheduler.flush(); await null }
 
 /*
- * Combobox 的 hover 性能。
+ * Combobox hover performance.
  *
- * 原来整个面板 effect 依赖 `active`（它在里面被读了两处），而 `mousemove` 会改 `active`
- * —— 于是鼠标在选项上滑过就把**全部选项重建一遍**：50 项列表上 10 次 mousemove 实测重建 9 次，
- * 而且每轮都会 `list.replaceChildren()`。方向为 auto 时还会顺带两次
- * `getBoundingClientRect()`（强制 layout）。
+ * Previously the whole panel effect depended on `active` (read in two places inside it), and
+ * `mousemove` changes `active` — so gliding the mouse across options **rebuilt every option**:
+ * on a 50-item list, 10 mousemoves were measured to trigger 9 rebuilds, each round also calling
+ * `list.replaceChildren()`. With direction auto, two extra `getBoundingClientRect()` calls
+ * (forced layout) were thrown in on top.
  *
- * 现在 active 用 untrack 读（不进依赖），高亮由一个只切 class 的 effect 负责。
- * 这里锁住"节点身份不变"——重建的话节点会被换掉，这条断言就会失败。
+ * Now active is read with untrack (kept out of the dependency graph), and highlighting is handled
+ * by an effect that only toggles classes. This locks in "node identity is preserved" — a rebuild
+ * would swap the nodes out and this assertion would fail.
  */
 const OPTIONS = Array.from({ length: 20 }, (_, i) => ({ label: `opt${i}`, value: `v${i}` }))
 
@@ -42,13 +44,13 @@ async function mountCombobox() {
 }
 
 describe('Combobox hover', () => {
-  it('hover 换项不重建选项节点（只切高亮 class）', async () => {
+  it('hovering to another option does not rebuild option nodes (only toggles the highlight class)', async () => {
     const { items, hover, cleanup } = await mountCombobox()
     expect(items()).toHaveLength(20)
 
     const firstBefore = items()[0]
     await hover(5)
-    // 节点身份不变 ⇒ 没有 replaceChildren + 重建
+    // Node identity preserved ⇒ no replaceChildren + rebuild
     expect(items()[0]).toBe(firstBefore)
     expect(items()).toHaveLength(20)
     expect(items()[5].classList.contains('is-active')).toBe(true)
@@ -56,7 +58,7 @@ describe('Combobox hover', () => {
     cleanup()
   })
 
-  it('连续 hover 也不重建，且高亮始终只有一项', async () => {
+  it('consecutive hovering also does not rebuild, and exactly one item stays highlighted', async () => {
     const { items, hover, cleanup } = await mountCombobox()
     const firstBefore = items()[0]
 

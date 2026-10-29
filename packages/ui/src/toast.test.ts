@@ -9,7 +9,7 @@ describe('@vobs/ui ToastHost', () => {
     setRenderer(createDOMRenderer())
   })
 
-  it('消费 NotificationContext，按类型呈现可访问 toast 并允许手动关闭', () => {
+  it('consumes the NotificationContext, renders accessible toasts by type, and allows manual dismissal', () => {
     const notification = createNotification({ defaultDuration: 0 })
     const container = document.createElement('main')
     const app = createVobs({
@@ -31,7 +31,7 @@ describe('@vobs/ui ToastHost', () => {
     notification.dispose()
   })
 
-  it('同 key 顶替后，已渲染的 toast 行必须跟着更新（标题/正文/类型/role）', () => {
+  it('after a same-key replacement, the already-rendered toast row must follow (title/body/type/role)', () => {
     const notification = createNotification({ defaultDuration: 0 })
     const container = document.createElement('main')
     const app = createVobs({
@@ -60,7 +60,7 @@ describe('@vobs/ui ToastHost', () => {
     notification.dispose()
   })
 
-  it('尊重作者传入的 role（不再无条件覆盖成 region）', () => {
+  it('respects an author-supplied role (no longer unconditionally overwritten with region)', () => {
     const notification = createNotification({ defaultDuration: 0 })
     const container = document.createElement('main')
     const app = createVobs({
@@ -80,7 +80,7 @@ describe('@vobs/ui ToastHost', () => {
     notification.dispose()
   })
 
-  it('可通过 notificationPlugin 读取上下文，并支持 portal 与 error alert', () => {
+  it('context is readable via notificationPlugin, with portal and error alert support', () => {
     const notification = createNotification({ defaultDuration: 0 })
     const container = document.createElement('main')
     const target = document.createElement('aside')

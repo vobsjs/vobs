@@ -44,9 +44,10 @@ async function copyAssets(directory, outDir) {
         await visit(source)
         continue
       }
-      // 独立的 .d.ts（如 jsx.d.ts 全局类型声明）不是构建入口，tsup 不会为它们生成产物，
-      // 这里直接复制进 dist（已存在的目标说明是 tsup 生成的同入口类型，不覆盖）。
-      // 注意先于通用 .ts$ 判断：.d.ts 同样以 .ts 结尾。
+      // Standalone .d.ts files (e.g. the jsx.d.ts global type declarations) are not build
+      // entries and tsup emits nothing for them, so copy them into dist directly (an existing
+      // target means tsup already emitted the same-entry types; do not overwrite).
+      // This must be checked before the generic .ts$ rule: .d.ts also ends with .ts.
       if (/\.d\.ts$/.test(item.name)) {
         if (existsSync(target)) continue
         await mkdir(path.dirname(target), { recursive: true })
@@ -77,8 +78,9 @@ for (const name of packageNames) {
   if (existsSync(outDir)) await rm(outDir, { recursive: true, force: true })
 
   console.log(`[build] ${manifest.name} (${entries.length} entries)`)
-  // workspace 依赖走 @vobs/* 正则；其余 dependencies/peerDependencies（如 typescript、parse5）
-  // 必须显式外置，否则会被内联进 dist（node_modules 软链接与 workspace 路径导致自动外置失效）
+  // Workspace deps are handled by the @vobs/* regex; all other dependencies/peerDependencies
+  // (e.g. typescript, parse5) must be externalized explicitly, otherwise they get inlined into
+  // dist (symlinked node_modules and workspace paths defeat automatic externalization)
   const dependencyNames = Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies })
   const baseOptions = {
     outDir,
@@ -89,13 +91,13 @@ for (const name of packageNames) {
     external: [/^@vobs\//, /^node:/, ...dependencyNames],
     outExtension: ({ format }) => ({ js: format === 'cjs' ? '.cjs' : '.js' }),
     esbuildOptions(options) {
-      // platform: node 自动外置 Node 内置模块
+      // platform: node automatically externalizes Node built-ins
       options.platform = 'node'
       options.keepNames = true
       if (options.format === 'cjs') {
-        // esbuild 在 CJS 产物中会把 import.meta 变成空对象（运行时崩溃）。
-        // define 值只允许标识符/字面量，因此先替换成标识符，再用 banner 注入实现；
-        // ESM 产物保留原生 import.meta.url
+        // esbuild turns import.meta into an empty object in CJS output (crashes at runtime).
+        // define only accepts identifiers/literals, so substitute an identifier first and
+        // inject the real value via a banner; ESM output keeps the native import.meta.url
         options.define = {
           ...options.define,
           'import.meta.url': '__VOBS_CJS_FILE_URL'

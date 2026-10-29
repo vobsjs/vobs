@@ -1,8 +1,10 @@
 /* Small runtime presentation hooks owned by @vobs/ui.
  *
- * 整份文件包进 `@layer base`：未分层的普通声明优先于任何分层声明，留在层外会压过
- * `@vobs/tailwind` 入口 `layer(utilities)` 的实用类（blocker #2 / HANDOFF §18.109-3）。
- * 本文件不能有 `@import`（CSS 禁止 @import 出现在 @layer 块内）。
+ * The whole file is wrapped in `@layer base`: unlayered normal declarations take
+ * precedence over any layered declarations, and staying outside a layer would override
+ * the utilities in the `@vobs/tailwind` entry's `layer(utilities)` (blocker #2 /
+ * HANDOFF §18.109-3).
+ * This file cannot contain `@import` (CSS forbids @import inside an @layer block).
  */
 @layer base {
 .vui-icon {

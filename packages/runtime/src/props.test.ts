@@ -99,10 +99,10 @@ describe('binding null / undefined', () => {
 
   it('bindAttribute does not write undefined as a literal', async () => {
     const input = document.createElement('input')
-    const source = state<unknown>('提示')
+    const source = state<unknown>('hint text')
     bindAttribute(input, 'placeholder', source)
     await flush()
-    expect(input.getAttribute('placeholder')).toBe('提示')
+    expect(input.getAttribute('placeholder')).toBe('hint text')
 
     source.value = undefined
     await flush()

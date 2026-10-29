@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 /*
- * 统一发版版本号：根 package.json + 全部可发布包。
+ * Set the release version uniformly: root package.json + all publishable packages.
  *
- * 为什么脚本化：外部踩坑文档 S 条——"36 包版本手工统一"是发版流程脆弱的主因，
- * 而 `check:release` 只能**事后发现**不一致、不能**修正**。
+ * Why a script: external post-mortem doc, item S — "manually unifying 36 package
+ * versions" is the main fragility of the release flow, and `check:release` can only
+ * **detect** inconsistency after the fact, not **fix** it.
  *
- * 用法：
- *   node scripts/set-version.mjs 1.8.0        # 写入
- *   node scripts/set-version.mjs 1.8.0 --dry  # 只看会改什么
+ * Usage:
+ *   node scripts/set-version.mjs 1.8.0        # write
+ *   node scripts/set-version.mjs 1.8.0 --dry  # preview only
  *
- * 边界（如实说明）：
- * - 只改 `version` 字段，不动依赖范围 —— 本仓库的包之间用 `workspace:*`，
- *   发布时 pnpm 会替换成具体版本，所以依赖范围不需要跟着手改
- * - 会保留每个 package.json 原有的缩进与结尾换行（JSON.parse + 手写格式化）
+ * Boundaries (stated honestly):
+ * - Only the `version` field is touched, not dependency ranges — packages in this
+ *   repo depend on each other via `workspace:*`, and pnpm replaces those with
+ *   concrete versions at publish time, so ranges need no manual edits
+ * - Each package.json's original indentation and trailing newline are preserved
+ *   (JSON.parse + hand-written formatting)
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -23,15 +26,15 @@ const dryRun = process.argv.includes('--dry')
 const nextVersion = args[0]
 
 if (!nextVersion) {
-  console.error('用法：node scripts/set-version.mjs <版本> [--dry]')
+  console.error('Usage: node scripts/set-version.mjs <version> [--dry]')
   process.exit(2)
 }
 if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(nextVersion)) {
-  console.error(`版本号形态不对：${nextVersion}（期望 1.2.3 或 1.2.3-beta.1）`)
+  console.error(`Invalid version format: ${nextVersion} (expected 1.2.3 or 1.2.3-beta.1)`)
   process.exit(2)
 }
 
-/** 读原文件，替换 version 字段，保留缩进与结尾换行。 */
+/** Read the original file, replace the version field, preserve indentation and trailing newline. */
 async function updateManifest(path, label) {
   const raw = await readFile(path, 'utf8')
   const manifest = JSON.parse(raw)
@@ -41,11 +44,11 @@ async function updateManifest(path, label) {
   const indentMatch = /\n([ \t]+)"/u.exec(raw)
   const indent = indentMatch ? indentMatch[1] : '  '
   const trailingNewline = raw.endsWith('\n') ? '\n' : ''
-  // 只替换顶层 version 字段，不用整份 JSON.stringify —— 后者会重排字段顺序、
-  // 丢掉格式化细节，产生巨大的无意义 diff
+  // Replace only the top-level version field; a full JSON.stringify would reorder
+  // fields, drop formatting details, and produce a huge meaningless diff
   const next = raw.replace(/("version"\s*:\s*)"[^"]*"/u, `$1"${nextVersion}"`)
   if (next === raw) {
-    throw new Error(`${path}: 没找到顶层 "version" 字段`)
+    throw new Error(`${path}: no top-level "version" field found`)
   }
   void indent
   if (!dryRun) await writeFile(path, trailingNewline && !next.endsWith('\n') ? next + '\n' : next, 'utf8')
@@ -53,7 +56,7 @@ async function updateManifest(path, label) {
 }
 
 const targets = [
-  { path: resolve('package.json'), label: 'vobs-framework（根）' },
+  { path: resolve('package.json'), label: 'vobs-framework (root)' },
   ...PUBLISHED_PACKAGES.map(name => ({ path: resolve('packages', name, 'package.json'), label: `@vobs/${name}` }))
 ]
 
@@ -64,14 +67,14 @@ for (const target of targets) {
 
 const changed = results.filter(item => item.changed)
 if (changed.length === 0) {
-  console.log(`[version] 全部已是 ${nextVersion}，无需改动`)
+  console.log(`[version] Everything already at ${nextVersion}; nothing to change`)
   process.exit(0)
 }
-console.log(`[version] ${dryRun ? '（dry run）' : ''}${changed.length}/${results.length} 个 manifest → ${nextVersion}`)
+console.log(`[version] ${dryRun ? '(dry run) ' : ''}${changed.length}/${results.length} manifests → ${nextVersion}`)
 for (const item of changed.slice(0, 6)) console.log(`  ${item.label}: ${item.previous} → ${nextVersion}`)
-if (changed.length > 6) console.log(`  …其余 ${changed.length - 6} 个同类`)
+if (changed.length > 6) console.log(`  …and ${changed.length - 6} more of the same`)
 if (!dryRun) {
-  console.log('\n下一步：')
+  console.log('\nNext steps:')
   console.log('  pnpm run test:run && pnpm run typecheck && pnpm run check:release')
   console.log('  pnpm run publish:local')
 }

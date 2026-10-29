@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 /*
- * 水合往返：`id` / `style` / `title` 经 SSR 序列化后，客户端水合必须**保留**它们，
- * 且水合后的响应式仍然工作。
+ * Hydration round-trip: after `id` / `style` / `title` go through SSR serialization, client
+ * hydration must **preserve** them, and reactivity must keep working after hydration.
  *
- * 为什么专门测这三个：本轮改过 SSR 的属性输出（`18435dc` 让它们走属性通道）。
- * 那次改动会让产物里**多出**属性，而水合有严格的校验 —— 如果客户端不认领这些属性，
- * strictHydration 就会把它们当差异报出来。所以这条既补上"水合路径"的覆盖，
- * 也是对上一次改动的回归验证。
+ * Why these three specifically: this round changed SSR attribute output (`18435dc` routed
+ * them through the attribute channel). That change adds attributes to the output, and
+ * hydration validates strictly — if the client does not claim these attributes,
+ * strictHydration reports them as differences. So this test both fills the "hydration path"
+ * coverage gap and regression-verifies the previous change.
  *
- * ⚠️ 断言前必须等调度器排空：信号写入经 `queueMicrotask` 异步派发
- * （`reactivity/src/scheduler.ts`）。**同步读 DOM 会看到旧值** ——
- * 我第一版就是这么写的，于是误判成"水合后响应式失效"。
- * 用 `scheduler.flush()` 是最稳的（不依赖 microtask 次数）。
+ * ⚠️ Assertions must wait for the scheduler to drain: signal writes are dispatched
+ * asynchronously via `queueMicrotask` (`reactivity/src/scheduler.ts`). **Reading the DOM
+ * synchronously sees stale values** — my first draft did exactly that and misjudged it as
+ * "reactivity broken after hydration".
+ * `scheduler.flush()` is the most reliable (no dependency on microtask counts).
  */
 import { describe, expect, it } from 'vitest'
 import { scheduler, state } from '@vobs/reactivity'
@@ -20,7 +22,7 @@ import { hydrate, renderToString } from './index'
 
 const settle = (): void => { scheduler.flush() }
 
-describe('水合往返：总是反射的属性', () => {
+describe('hydration round-trip: always-reflected properties', () => {
   const render = () => {
     const div = createElement('div')
     setProperty(div, 'id', 'hero')
@@ -32,14 +34,14 @@ describe('水合往返：总是反射的属性', () => {
     return div
   }
 
-  it('SSR 产物里带着这三个属性', () => {
+  it('the SSR output carries all three attributes', () => {
     const html = renderToString(render)
     expect(html).toContain('id="hero"')
     expect(html).toContain('title="提示"')
     expect(html).toMatch(/style="[^"]*color:\s*red/)
   })
 
-  it('水合之后属性仍在（不会被清掉或覆盖）', () => {
+  it('attributes survive hydration (not cleared or overwritten)', () => {
     document.body.innerHTML = renderToString(render)
     const app = hydrate(render, document.body)
 
@@ -53,7 +55,7 @@ describe('水合往返：总是反射的属性', () => {
     document.body.innerHTML = ''
   })
 
-  it('水合复用服务端节点（节点身份保持），而不是重建', () => {
+  it('hydration reuses server nodes (identity preserved) instead of rebuilding', () => {
     document.body.innerHTML = renderToString(render)
     const before = document.body.querySelector('div')
     const app = hydrate(render, document.body)
@@ -62,12 +64,12 @@ describe('水合往返：总是反射的属性', () => {
     document.body.innerHTML = ''
   })
 
-  it('strictHydration 不因这些属性误报', () => {
+  it('strictHydration does not false-positive on these attributes', () => {
     /*
-     * 注意：`bindText` 的水合本来就是"服务端非空 → 客户端空文本节点"的形态
-     * （`createText('')` + effect 覆写），strictHydration 对**动态文本**会报 content。
-     * 那是有意的语义（见 strict-hydration.test.ts）。所以这里用**静态**内容，
-     * 专测属性维度是否有差异。
+     * Note: `bindText` hydration is inherently the "server non-empty → client empty text
+     * node" shape (`createText('')` + effect overwrite), and strictHydration reports content
+     * for **dynamic text**. That is intentional semantics (see strict-hydration.test.ts),
+     * so this test uses **static** content to isolate the attribute dimension.
      */
     const staticRender = () => {
       const div = createElement('div')
@@ -87,13 +89,13 @@ describe('水合往返：总是反射的属性', () => {
     }
     expect(
       error,
-      `strictHydration 报出了差异: ${JSON.stringify((error as { vobsHydration?: unknown })?.vobsHydration)}`
+      `strictHydration reported a difference: ${JSON.stringify((error as { vobsHydration?: unknown })?.vobsHydration)}`
     ).toBeUndefined()
     app?.destroy()
     document.body.innerHTML = ''
   })
 
-  it('水合之后响应式仍然工作（绑定 effect 随信号更新）', () => {
+  it('reactivity still works after hydration (bound effect follows signal updates)', () => {
     const value = state('first')
     const view = () => {
       const div = createElement('div')
@@ -110,9 +112,9 @@ describe('水合往返：总是反射的属性', () => {
     expect(document.body.textContent).toBe('first')
 
     value.value = 'second'
-    // 修复/验证要点：必须让调度器排空后再断言
+    // Fix/verification point: the scheduler must drain before asserting
     settle()
-    expect(document.body.textContent, '水合后绑定没有随信号更新').toBe('second')
+    expect(document.body.textContent, 'binding did not follow signal updates after hydration').toBe('second')
 
     value.value = 'third'
     settle()

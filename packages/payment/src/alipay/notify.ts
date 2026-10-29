@@ -2,22 +2,22 @@ import type { AlipayClient } from './client'
 import type { AlipayNotifyParams, TradeStatus } from './types'
 
 /**
- * 异步通知处理
+ * Async notification handling
  *
- * 支付宝在交易状态变更时，通过 POST 请求 notify_url 发送异步通知。
- * 处理要点：
- * 1. 收到通知后必须先验签
- * 2. 验签后校验关键业务字段（app_id、out_trade_no、total_amount）
- * 3. 处理成功后返回字符串 "success"（仅此 7 个字符）
- * 4. 需做幂等处理，过滤重复通知
+ * Alipay sends async notifications via POST to notify_url on trade status changes.
+ * Key handling rules:
+ * 1. Verify the signature first upon receiving a notification
+ * 2. After verification, validate key business fields (app_id, out_trade_no, total_amount)
+ * 3. Return the string "success" after successful processing (exactly these 7 characters)
+ * 4. Handle idempotently and filter out duplicate notifications
  */
 export function createNotifyHandler(client: AlipayClient) {
   return {
     /**
-     * 验签异步通知
-     * @param params 异步通知参数（支付宝 POST 过来的原始参数）
-     * @param raw 使用原始报文验签（推荐：v4.15+ 支持，规避 encodeURIComponent 差异导致的验签失败）
-     * @returns 验签是否通过
+     * Verify the signature of an async notification
+     * @param params notification params (raw params POSTed by Alipay)
+     * @param raw verify against the raw payload (recommended; supported in v4.15+ to avoid verify failures caused by encodeURIComponent differences)
+     * @returns whether the signature check passes
      */
     verify(params: Record<string, any>, raw = false): boolean {
       try {
@@ -28,18 +28,21 @@ export function createNotifyHandler(client: AlipayClient) {
     },
 
     /**
-     * 校验异步通知的业务字段
+     * Validate the business fields of an async notification
      *
-     * 验签只保证通知确实来自支付宝，不保证通知与你系统中的订单一致；
-     * 所以 `expected` 是**必填**的两项：`outTradeNo` 订单号与 `totalAmount` 订单金额（单位元）。
+     * Signature verification only proves the notification comes from Alipay; it does not
+     * guarantee the notification matches an order in your system. So `expected` has two
+     * **mandatory** fields: `outTradeNo` (order number) and `totalAmount` (order amount in yuan).
      *
-     * 为什么是必填而不是可选的"有就比对"：可选链（`expected?.outTradeNo`）的姿势下
-     * `validate(params)` 只校验 app_id 就返回 `valid: true` —— 任何金额、任何订单号都能通过；
-     * 更隐蔽的一条：`expected.totalAmount` 是**空串**时被 falsy 短路，整条金额比对被**跳过**。
-     * 缺任何一项都以 `valid: false` + 明确 errors 收场（失败关闭）——文字警告拦不住
-     * "省略即通过"的 API 外形，只有类型才能拦住。
-     * @param params 异步通知参数
-     * @param expected 商户侧期望值：outTradeNo 订单号、totalAmount 订单金额（单位元）
+     * Why mandatory rather than optional "compare if present": with optional chaining
+     * (`expected?.outTradeNo`), `validate(params)` would only check app_id and return
+     * `valid: true` — any amount, any order number would pass. A subtler trap: when
+     * `expected.totalAmount` is an **empty string**, a falsy check short-circuits and the
+     * whole amount comparison is **skipped**. Any missing field ends with `valid: false`
+     * plus explicit errors (fail-closed) — text warnings cannot stop an API shape where
+     * "omitting means passing"; only types can.
+     * @param params notification params
+     * @param expected merchant-side expected values: outTradeNo (order number), totalAmount (order amount in yuan)
      */
     validate(
       params: AlipayNotifyParams,
@@ -47,30 +50,30 @@ export function createNotifyHandler(client: AlipayClient) {
     ): NotifyValidationResult {
       const errors: string[] = []
 
-      // 校验 app_id
+      // Validate app_id
       if (params.appId !== client.config.appId) {
-        errors.push(`app_id 不匹配: 期望 ${client.config.appId}，收到 ${params.appId}`)
+        errors.push(`app_id mismatch: expected ${client.config.appId}, got ${params.appId}`)
       }
 
-      // 校验 out_trade_no 与商户订单一致
+      // Validate out_trade_no against the merchant order
       if (!expected?.outTradeNo) {
-        errors.push('缺少商户侧期望订单号 expected.outTradeNo —— 未与自有订单比对，拒绝放行')
+        errors.push('Missing merchant-side expected order number expected.outTradeNo — not compared against own order, rejecting')
       } else if (params.outTradeNo !== expected.outTradeNo) {
-        errors.push(`out_trade_no 不匹配: 期望 ${expected.outTradeNo}，收到 ${params.outTradeNo}`)
+        errors.push(`out_trade_no mismatch: expected ${expected.outTradeNo}, got ${params.outTradeNo}`)
       }
 
-      // 校验 total_amount 与订单金额一致（金额为两位小数的服务端字符串，按数值比较）
-      // 注意用 === undefined/null 判空而不是 truthiness：空串必须报错而不是被短路跳过
+      // Validate total_amount against the order amount (server-side strings with two decimals; compare numerically)
+      // Note: use === undefined/null instead of truthiness — an empty string must error out, not be short-circuited
       if (expected?.totalAmount === undefined || expected.totalAmount === null || expected.totalAmount === '') {
-        errors.push('缺少商户侧期望金额 expected.totalAmount —— 未与自有订单比对，拒绝放行')
+        errors.push('Missing merchant-side expected amount expected.totalAmount — not compared against own order, rejecting')
       } else if (Number(params.totalAmount) !== Number(expected.totalAmount)) {
-        errors.push(`total_amount 不匹配: 期望 ${expected.totalAmount}，收到 ${params.totalAmount}`)
+        errors.push(`total_amount mismatch: expected ${expected.totalAmount}, got ${params.totalAmount}`)
       }
 
-      // 校验 trade_status
+      // Validate trade_status
       const validStatuses: TradeStatus[] = ['TRADE_SUCCESS', 'TRADE_FINISHED']
       if (!validStatuses.includes(params.tradeStatus as TradeStatus)) {
-        errors.push(`trade_status 非终态: ${params.tradeStatus}`)
+        errors.push(`trade_status is not final: ${params.tradeStatus}`)
       }
 
       return {
@@ -80,16 +83,16 @@ export function createNotifyHandler(client: AlipayClient) {
     },
 
     /**
-     * 生成支付宝异步通知的成功响应
-     * 处理完成后必须返回字符串 "success"
+     * Build the success response for an Alipay async notification
+     * Must return the string "success" after processing
      */
     successResponse(): string {
       return 'success'
     },
 
     /**
-     * 生成支付宝异步通知的失败响应
-     * 返回空字符串或非 success 内容，支付宝会重试通知
+     * Build the failure response for an Alipay async notification
+     * Returning an empty string or anything other than "success" makes Alipay retry
      */
     failResponse(): string {
       return 'fail'

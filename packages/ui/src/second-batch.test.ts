@@ -140,7 +140,7 @@ describe('@vobs/ui second batch', () => {
     app.destroy()
   })
 
-  it('Avatar 图片样式和 Table 居中对齐不使用内联样式', () => {
+  it('Avatar image styling and Table center alignment use no inline styles', () => {
     const container = document.createElement('main')
     const app = createVobs({
       render: () => {
@@ -235,18 +235,19 @@ describe('@vobs/ui second batch', () => {
     expect(headInput).toBeTruthy()
     expect(headInput.checked).toBe(false)
 
-    // 外部信号翻转 → insertDynamic 重建表头节点（新节点带新勾选态）；effect 走微任务刷新
+    // External signal flip → insertDynamic rebuilds the header node (the new node carries the new
+    // checked state); effects refresh on the microtask queue
     selected.value = true
     await Promise.resolve()
     const headInputAfter = container.querySelector('thead input[type="checkbox"]') as HTMLInputElement
     expect(headInputAfter).not.toBe(headInput)
     expect(headInputAfter.checked).toBe(true)
 
-    // 节点内交互回调可达（change → onToggle 语义）
+    // The interaction callback inside the node is reachable (change → onToggle semantics)
     headInputAfter.dispatchEvent(new Event('change'))
     expect(toggles).toEqual([true])
 
-    // 纯文本表头不受影响
+    // Plain-text headers are unaffected
     expect(container.querySelector('thead')?.textContent).toContain('Name')
     app.destroy()
   })

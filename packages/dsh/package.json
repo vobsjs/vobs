@@ -16,7 +16,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "用 vobs 开发 DeepSeek Harness 客户端插件的运行时适配层与构建插件",
+  "description": "Runtime adapter layer and build plugin for developing DeepSeek Harness client plugins with vobs",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

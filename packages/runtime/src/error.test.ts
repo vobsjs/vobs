@@ -67,7 +67,7 @@ describe('Vobs error protocol', () => {
   describe('cross-bundle-copy class identity', () => {
     it('structural recognition adopts foreign instances into local ones', () => {
       // Simulate "another copy": name and fields look like a VobsError but not instanceof the local class
-      const foreign = Object.assign(new Error('来自另一个副本'), {
+      const foreign = Object.assign(new Error('from another bundle copy'), {
         name: 'VobsError',
         code: 'VOBS_F001',
         severity: 'error',
@@ -78,7 +78,7 @@ describe('Vobs error protocol', () => {
       const adopted = normalizeVobsError(foreign)
       expect(adopted).toBeInstanceOf(VobsError)
       expect(adopted.code).toBe('VOBS_F001')
-      expect(adopted.message).toBe('来自另一个副本')
+      expect(adopted.message).toBe('from another bundle copy')
       expect(adopted.cause).toBe(foreign)
     })
 

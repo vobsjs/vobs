@@ -54,14 +54,14 @@ describe('@vobs/forms', () => {
     const form = useForm({ name: '', password: 'a', confirm: 'b' }, {
       validators: {
         name: [rules.required, rules.minLength(2)],
-        confirm: (value, values) => value === values.password ? null : '两次密码不一致'
+        confirm: (value, values) => value === values.password ? null : 'Passwords do not match'
       }
     })
 
     expect(form.validateField('name')).toBe('Required')
     expect(form.field('name').error.value).toBe('Required')
-    expect(form.validateField('confirm')).toBe('两次密码不一致')
-    expect(form.validateAll()).toEqual({ name: 'Required', confirm: '两次密码不一致' })
+    expect(form.validateField('confirm')).toBe('Passwords do not match')
+    expect(form.validateAll()).toEqual({ name: 'Required', confirm: 'Passwords do not match' })
     expect(form.hasErrors.value).toBe(true)
     expect(form.getErrorFields()).toEqual(['name', 'confirm'])
     form.dispose()
@@ -72,7 +72,7 @@ describe('@vobs/forms', () => {
     const form = useForm({ email: '' }, {
       validators: {
         email: value => new Promise<string | null>(resolve => {
-          resolvers.push(() => resolve(value === 'old' ? '旧错误' : null))
+          resolvers.push(() => resolve(value === 'old' ? 'stale error' : null))
         })
       }
     })
@@ -86,7 +86,7 @@ describe('@vobs/forms', () => {
     expect(resolvers).toHaveLength(2)
     resolvers[1](null)
     await second
-    resolvers[0]('旧错误')
+    resolvers[0]('stale error')
     await first
 
     expect(email.error.value).toBeNull()
@@ -107,8 +107,8 @@ describe('@vobs/forms', () => {
     email.markTouched()
     expect(email.error.value).toBe('Invalid email format')
 
-    form.setServerErrors({ email: '邮箱已被注册' })
-    expect(email.error.value).toBe('邮箱已被注册')
+    form.setServerErrors({ email: 'Email already registered' })
+    expect(email.error.value).toBe('Email already registered')
     email.set('valid@example.com')
     expect(email.error.value).toBeNull()
     form.dispose()
@@ -138,24 +138,24 @@ describe('@vobs/forms', () => {
   it('the schema adapter can return async field errors', async () => {
     const form = useForm({ name: 'x' }, {
       schema: {
-        validate: async values => values.name.length < 2 ? { name: '至少 2 个字符' } : {}
+        validate: async values => values.name.length < 2 ? { name: 'At least 2 characters' } : {}
       }
     })
 
-    await expect(form.validateField('name')).resolves.toBe('至少 2 个字符')
-    expect(form.errors.value).toEqual({ name: '至少 2 个字符' })
+    await expect(form.validateField('name')).resolves.toBe('At least 2 characters')
+    expect(form.errors.value).toEqual({ name: 'At least 2 characters' })
     form.dispose()
   })
 
   it('form-level errors thrown by the schema join error aggregation and the submit decision', () => {
     const form = useForm({ name: 'Alice' }, {
       schema: {
-        validate: () => { throw new Error('整表校验失败') }
+        validate: () => { throw new Error('Form-level validation failed') }
       }
     })
 
-    expect(form.validateAll()).toEqual({ __form: '整表校验失败' })
-    expect(form.errors.value).toEqual({ __form: '整表校验失败' })
+    expect(form.validateAll()).toEqual({ __form: 'Form-level validation failed' })
+    expect(form.errors.value).toEqual({ __form: 'Form-level validation failed' })
     expect(form.hasErrors.value).toBe(true)
     expect(form.getErrorFields()).toEqual([])
     form.clearErrors('__form')
@@ -168,7 +168,7 @@ describe('@vobs/forms', () => {
     const name = form.field('name')
     name.set('Alice')
     name.markTouched()
-    form.setServerErrors({ name: '服务端错误' })
+    form.setServerErrors({ name: 'Server error' })
     form.reset()
 
     expect(form.values.name).toBe('')
@@ -301,12 +301,12 @@ describe('@vobs/forms', () => {
     const form = useForm({ name: '' }, { validateOn: 'blur', validators: { name: rules.required } })
     const container = document.createElement('div')
     const app = createVobs({
-      render: () => Field({ form, name: 'name', label: '姓名' })
+      render: () => Field({ form, name: 'name', label: 'Name' })
     })
     app.mount(container)
 
     const input = container.querySelector('input') as HTMLInputElement
-    expect(container.querySelector('label')?.textContent).toBe('姓名')
+    expect(container.querySelector('label')?.textContent).toBe('Name')
     input.value = 'Alice'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     expect(form.values.name).toBe('Alice')
