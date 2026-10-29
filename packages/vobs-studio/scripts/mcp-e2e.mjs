@@ -6,9 +6,12 @@
  */
 import { spawn, execSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+
+const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 
 const phase = process.argv[2] ?? 'scaffold'
 const stateFile = join(process.cwd(), '.artifacts', 'e2e-workspace.txt')
@@ -17,7 +20,10 @@ const workspace = phase === 'scaffold' ? mkdtempSync(join(tmpdir(), 'studio-mcp-
 if (phase === 'scaffold') writeFileSync(stateFile, workspace, 'utf8')
 console.log('phase:', phase, '| workspace:', workspace)
 
-const child = spawn(process.execPath, [join(process.cwd(), 'mcp', 'index.mjs')], { cwd: workspace, stdio: ['pipe', 'pipe', 'pipe'] })
+// Scaffold phase: the server's cwd is deliberately NOT the workspace, so the explicit
+// `workspace` argument is what drives resolution. Preview phase: cwd = workspace, which
+// exercises the process.cwd() fallback (legacy cwd-pinned registration style).
+const child = spawn(process.execPath, [join(packageRoot, 'mcp', 'index.mjs')], { cwd: phase === 'scaffold' ? tmpdir() : workspace, stdio: ['pipe', 'pipe', 'pipe'] })
 child.stderr.on('data', d => process.stderr.write('[server] ' + d))
 
 const pending = new Map()
@@ -67,15 +73,20 @@ if (phase === 'scaffold') {
   const good = await tools('design_check', { code: "import { state } from '@vobs/vobs'\nexport function C() { const n = state(0, 'n'); return <div>{n.value}</div> }" })
   check('design_check passes a clean snippet', good.includes('0 diagnostics'), good.slice(0, 100))
 
-  const scaffold = await tools('design_scaffold', { dir: 'my-app', name: 'my-app' })
+  const scaffold = await tools('design_scaffold', { workspace, dir: 'my-app', name: 'my-app' })
   check('design_scaffold reports success', scaffold.includes('Scaffolded'), scaffold.slice(0, 100))
   check('package.json written with pinned deps', existsSync(join(workspace, 'my-app/package.json')) && readFileSync(join(workspace, 'my-app/package.json'), 'utf8').includes('"@vobs/vobs": "1.9.1"'))
   check('minimal proof page written (no layout opinions)', existsSync(join(workspace, 'my-app/src/pages/home.tsx')) && !existsSync(join(workspace, 'my-app/src/pages/_shared.tsx')))
+
+  const bogus = await tools('design_scaffold', { workspace: join(workspace, 'no-such-dir'), dir: 'x' })
+  check('nonexistent workspace rejected with a clear error', bogus.includes('workspace is not a directory'), bogus.slice(0, 120))
   console.log('\nNEXT: run `pnpm install` inside ' + join(workspace, 'my-app') + ' then `node scripts/mcp-e2e.mjs preview`')
 } else {
-  const build1 = await tools('design_preview_build', { dir: 'my-app' })
+  // Port 5219: a real DSH may already hold 5218 with its own Studio server — the e2e
+  // must not depend on (or disturb) it; the fallback port walk is exercised implicitly.
+  const build1 = await tools('design_preview_build', { dir: 'my-app', port: 5219 })
   check('design_preview_build succeeded', build1.includes('Built'), build1.slice(0, 300))
-  const build2 = await tools('design_preview_build', { dir: 'my-app' })
+  const build2 = await tools('design_preview_build', { dir: 'my-app', port: 5219 })
   check('second build skipped (sources unchanged)', build2.includes('skipped vite build'), build2.slice(0, 120))
   check('manifest written', existsSync(join(workspace, '.vobs/studio/preview.json')))
   const manifest = JSON.parse(readFileSync(join(workspace, '.vobs/studio/preview.json'), 'utf8'))

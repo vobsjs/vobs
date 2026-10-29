@@ -1,7 +1,27 @@
-# DSH bundle patch layer: appends only this plugin's own row; never overrides official entries.
+# DSH bundle patch layer: appends only this plugin's own rows; never overrides official entries.
 #
 # The entry id is the name used for toggling on DSH's "Plugins" page;
 # name must equal package.json's name (the bare package name without scope also works).
 - insert:
     - id: dsh-plugin-vobs-studio
       name: dsh-plugin-vobs-studio
+
+# Install = configure: the second insert registers the Studio MCP server for the whole
+# harness, so installing the plugin is the ONLY setup step (no manual mcpServers editing).
+# The loader evaluates !!js expressions with Node globals, so the script path resolves
+# against the harness home on any machine (DSH_HOME env override, else ~/.dsh; the app
+# hard-codes the desktop profile as profiles/<name> under it). No cwd is pinned: the
+# design_* tools take the session workspace as an explicit `workspace` argument from the
+# agent, because one stdio server process serves every session.
+# NOTE: tools surface as mcp__vobs-studio__design_contract / design_scaffold /
+# design_check / design_preview_build. toolCallTimeoutMs covers a cold vite build.
+- insert:
+    - id: mcp-vobs-studio
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: vobs-studio
+        transport: stdio
+        command: node
+        args:
+          - !!js (process.env.DSH_HOME || ((process.env.USERPROFILE || process.env.HOME) + '/.dsh')) + '/profiles/desktop/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs'
+        toolCallTimeoutMs: 600000

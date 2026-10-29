@@ -74,6 +74,14 @@ check('patch file exists', await fileExists(patchPath))
 const patchText = await readFile(patchPath, 'utf8')
 check('patch inserts this package', patchText.includes('insert:') && patchText.includes(manifest.name))
 check('patch does not override top-level ids (only appends its own line)', !/^-\s*id:/mu.test(patchText))
+check(
+  'patch self-registers the Studio MCP server (install = configure)',
+  patchText.includes("'@deepseek-ai/dsh-mcp-client'") && patchText.includes('serverName: vobs-studio')
+)
+check(
+  'MCP script path is a !!js expression (machine-independent, harness-home resolved)',
+  patchText.includes('!!js') && patchText.includes('profiles/desktop/node_modules')
+)
 
 const hostPath = resolveFromPackage(manifest.exports['.'])
 const clientPath = resolveFromPackage(manifest.exports['./client'])

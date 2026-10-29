@@ -40,16 +40,15 @@ function StatusNotice() {
 function SetupSteps() {
   return (
     <div class="studio__steps">
-      <p class="studio__steps-hint">Follow these three steps once per session:</p>
+      <p class="studio__steps-hint">One-time setup, then just chat:</p>
       <ol>
         <li>
-          <b>Connect the Studio tools</b> — register the plugin's MCP server for this
-          session (stdio), pointing at:
+          <b>The Studio tools are already connected</b> — installing this plugin also
+          registers its MCP server (design contract / scaffold / self-check / preview
+          build) with the harness. If the agent doesn't use them, restart DSH once: the
+          registration is a patch, applied at startup. On an older install (or a manual
+          setup), point the session's MCP config at:
           <code>…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs</code>
-          <span class="studio__steps-sub">
-            In DSH's session tools/MCP picker, or paste it into your agent preset's
-            mcpServers. Without this the agent has no scaffold / self-check / preview tools.
-          </span>
         </li>
         <li>
           <b>Describe what you want in the chat</b> — plain language is enough: what kind

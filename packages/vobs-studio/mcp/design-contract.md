@@ -119,7 +119,9 @@ responsive: single column under `md`, sidebar collapses under `lg`.
 ## 5. Preview contract (how Studio finds your pages)
 
 After building, write `.vobs/studio/preview.json` (usually via the `design_preview_build`
-tool — do not hand-write it unless told to):
+tool — do not hand-write it unless told to). Both filesystem tools (`design_scaffold`,
+`design_preview_build`) take a `workspace` argument — the session's absolute cwd; pass it
+on every call, because one MCP server process serves every session:
 
 ```json
 {

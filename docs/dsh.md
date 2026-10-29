@@ -61,26 +61,48 @@ Once a version tag is cut, it can be written as `#v1.8.0`.
 
 1. **Do not install with `pnpm add`.** The `&path:` subdirectory syntax requires **pnpm ≥ 11**; pnpm 10 **silently ignores** it and installs the entire monorepo root instead of the target subpackage. The DSH plugin page and `dsh plugin` use DSH's built-in pnpm 11.
 2. **The DevKit's "Project" page needs data**: it reads `.vobs/check.json` from the workspace, produced by `vobs check --write` (when the file is absent, the panel honestly tells you what to run). The other pages are static content baked in at build time and are viewable right after install.
-3. **Vobs Studio needs its MCP server registered per session**: add `node <plugin-dir>/mcp/index.mjs` (stdio) to the session's `mcpServers`. Without it the agent has no design contract / scaffold / self-check tools and the Studio panel just shows "no preview yet". The panel reads `.vobs/studio/preview.json`, written by `design_preview_build`.
+3. **Vobs Studio registers its MCP server itself** (v1.8.0+): the plugin's `cordis.patch.yml` carries a second insert that registers the Studio MCP server (`serverName: vobs-studio`) with the harness, so installing the plugin is the only setup step. On older versions — or a manual setup — add `node <plugin-dir>/mcp/index.mjs` (stdio) to the session's `mcpServers`. The panel reads `.vobs/studio/preview.json`, written by `design_preview_build`.
 
 ## Using Vobs Studio (after install)
 
-The Studio panel itself walks first-time users through these three steps (they are shown
+The Studio panel itself walks first-time users through these steps (they are shown
 on its "Getting started" screen), but the short version:
 
-1. **Connect the tools** — in the session's MCP/tools configuration, register a stdio
-   server pointing at `…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs` (inside the
-   plugin's installed directory). Without this the agent has none of the Studio tools.
+1. **The tools are already connected** — the plugin patch registered the Studio MCP
+   server with the harness at install time. If the agent doesn't use the `design_*`
+   tools, restart DSH once: the registration is a patch, applied at startup. On an
+   older install, point the session's MCP config at
+   `…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs` manually.
 2. **Describe what you want in the chat** — plain business language: app type, pages,
    content, data fields, style preference. Technical terms are unnecessary; the agent
    pulls the design contract itself and decides the layout.
 3. **Preview and iterate** — the panel refreshes after each build; keep describing
    changes ("make the hero smaller", "add a filter — segmented, not a dropdown").
 
-MCP is configured per session (Agent Client Protocol `session/new` carries `mcpServers`);
-whether DSH exposes a global MCP settings UI depends on the DSH version — the per-session
-picker or an agent preset's `mcpServers` both work. Auto-attaching the server from the
-plugin's Host half is the planned zero-config step.
+One stdio MCP server process serves every session, so the filesystem tools take an
+explicit `workspace` argument (the agent passes its session cwd on every call); the
+preview server walks upwards from port 5218 when it is taken.
+
+### Install from the chat (no plugin page)
+
+Because a DSH profile is a pnpm workspace (`~/.dsh/profiles/<name>/package.json` +
+`cordis.patch.yml`), the agent itself can perform the whole install from a chat
+message. Paste this into a DSH session:
+
+```text
+Install the dsh-plugin-vobs-studio plugin into this DSH profile and register its MCP server:
+1. Add "dsh-plugin-vobs-studio": "github:vobsjs/vobs#<ref>&path:/packages/vobs-studio"
+   to the dependencies of <dsh-profile>/package.json (keep pnpm ≥ 11 syntax), and add
+   the package name to that file's dsh.profile.bundles array.
+2. Append the two `insert` entries from the package's cordis.patch.yml (the plugin row
+   and the @deepseek-ai/dsh-mcp-client row with the !!js script path) to
+   <dsh-profile>/cordis.patch.yml — keep the !!js expression verbatim.
+3. Run pnpm install inside the profile directory.
+4. Tell me to quit DSH completely and reopen it.
+```
+
+The agent has file and shell tools, so steps 1–3 are ordinary edits it can perform;
+step 4 is unavoidable because plugin patches are composed at startup.
 
 ## Building and verifying
 
@@ -90,7 +112,7 @@ pnpm build:dsh           # builds lib/{index,client}.js for the four plugin pack
 node packages/dsh-plugin/scripts/verify-client.mjs     # 54 artifact checks
 node packages/dsh-console/scripts/verify-console.mjs   # 62
 node packages/dsh-devkit/scripts/verify-devkit.mjs     # 65
-node packages/vobs-studio/scripts/verify-studio.mjs    # 33
+node packages/vobs-studio/scripts/verify-studio.mjs    # 42
 ```
 
 The `lib/` artifacts are **committed to the repository** — DSH does not build your package, so after changing source you must rebuild and commit (CI runs the three verifications above to catch missed rebuilds).

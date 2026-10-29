@@ -11,6 +11,10 @@
  *                             sources are unchanged since the last build
  *
  * Runtime dependency: @vobs/compiler (design_check). Everything else is node builtins.
+ *
+ * Workspace resolution: a globally registered stdio server serves ALL sessions, so every
+ * filesystem tool takes an explicit `workspace` argument (the agent's session cwd). When
+ * omitted it falls back to process.cwd() — direct-CLI use and legacy cwd-pinned configs.
  */
 import { createServer } from 'node:http'
 import { execFileSync } from 'node:child_process'
@@ -25,6 +29,29 @@ const SERVER_INFO = { name: 'vobs-studio-mcp', version: '0.1.0' }
 const DEFAULT_PORT = 5218
 const MANIFEST_PATH = '.vobs/studio/preview.json'
 const CONTRACT = readFileSync(join(here, 'design-contract.md'), 'utf8')
+
+/**
+ * Shared `workspace` argument for every tool that touches the filesystem.
+ *
+ * A globally registered stdio MCP server has ONE process for ALL sessions — it cannot
+ * know which session's workspace a call belongs to. The agent (which always knows its
+ * own cwd) passes it per call; process.cwd() remains as the fallback for direct CLI
+ * use and for the old registration style (cwd pinned in the patch config).
+ */
+const WORKSPACE_PARAM = {
+  type: 'string',
+  description: "Absolute path of the current session's workspace (the session cwd). Pass it on every call."
+}
+
+function resolveWorkspace(args) {
+  const raw = String(args.workspace ?? '').trim()
+  if (raw === '') return process.cwd()
+  const resolved = resolve(raw)
+  if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
+    throw new Error(`workspace is not a directory: ${resolved}`)
+  }
+  return resolved
+}
 
 /* ------------------------------------------------------------------ tools */
 
@@ -47,10 +74,11 @@ const TOOLS = [
   {
     name: 'design_scaffold',
     description:
-      'Write a NEUTRAL vobs + Tailwind project baseline (package.json pinned to @vobs 1.9.1, vite MPA config, theme wiring, one empty proof page — no layout opinions) into <dir> under the workspace. Run once per project; then `pnpm install` inside it. Layout and architecture are YOUR decision per the design contract.',
+      'Write a NEUTRAL vobs + Tailwind project baseline (package.json pinned to @vobs 1.9.1, vite MPA config, theme wiring, one empty proof page — no layout opinions) into <dir> under <workspace>. Run once per project; then `pnpm install` inside it. Layout and architecture are YOUR decision per the design contract.',
     inputSchema: {
       type: 'object',
       properties: {
+        workspace: WORKSPACE_PARAM,
         dir: { type: 'string', description: 'Project directory relative to the workspace root, e.g. "my-app".' },
         name: { type: 'string', description: 'npm package name (defaults to the dir name).' }
       },
@@ -77,6 +105,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
+        workspace: WORKSPACE_PARAM,
         dir: { type: 'string', description: 'Project directory relative to the workspace root.' },
         port: { type: 'number', description: 'Static server port (default 5218).' }
       },
@@ -153,13 +182,40 @@ const sseClients = new Set()
 const RELOAD_SNIPPET = `<script>try{new EventSource('/__studio_reload').onmessage=function(m){if(m.data==='reload')location.reload()}}catch(e){}</script>`
 
 function startServer(root, port) {
-  if (server !== null && serverPort === port && serverRoot === root) return serverPort
-  if (server !== null) server.close()
+  if (server !== null && serverPort === port && serverRoot === root) return Promise.resolve(serverPort)
+  if (server !== null) {
+    server.close()
+    server = null
+  }
   serverRoot = root
-  serverPort = port
   const htmls = listFiles(root).filter(f => f.endsWith('.html')).sort()
   serverFirstPage = '/' + (htmls.find(f => f.endsWith('home.html')) ?? htmls[0] ?? 'home.html').replace(/\\/gu, '/')
-  server = createServer((req, res) => {
+
+  /**
+   * Bind through a promise and walk upwards on EADDRINUSE: a global stdio registration
+   * means several Studio MCP server processes can coexist (one per DSH host/session), and
+   * an unhandled 'error' event on listen() would CRASH this whole MCP server process.
+   * The caller reports the actually bound port.
+   */
+  return new Promise((resolveListen, rejectListen) => {
+    const tryBind = (candidate, attemptsLeft) => {
+      const candidateServer = createServer(handleRequest)
+      candidateServer.once('error', (error) => {
+        if (error !== null && error?.code === 'EADDRINUSE' && attemptsLeft > 0) tryBind(candidate + 1, attemptsLeft - 1)
+        else rejectListen(error ?? new Error('static server could not bind'))
+      })
+      candidateServer.listen(candidate, '127.0.0.1', () => {
+        server = candidateServer
+        serverPort = candidate
+        resolveListen(candidate)
+      })
+    }
+    tryBind(port, 10)
+  })
+}
+
+function handleRequest(req, res) {
+  {
     let url = (req.url ?? '/').split('?')[0]
     if (url === '/') {
       res.writeHead(302, { Location: serverFirstPage })
@@ -190,9 +246,7 @@ function startServer(root, port) {
     }
     res.writeHead(200, { 'Content-Type': ext, 'Cache-Control': 'no-cache' })
     res.end(body)
-  })
-  server.listen(port, '127.0.0.1')
-  return port
+  }
 }
 
 function buildProject(project) {
@@ -225,7 +279,7 @@ function sourcesFingerprint(project) {
 
 const lastBuildFingerprints = new Map()
 
-function doPreviewBuild(workspace, request) {
+async function doPreviewBuild(workspace, request) {
   const dir = String(request.dir ?? '').replace(/^[\\/]+/u, '')
   if (dir === '') throw new Error('dir is required')
   if (dir.includes('..')) throw new Error('dir must stay inside the workspace')
@@ -238,7 +292,7 @@ function doPreviewBuild(workspace, request) {
   if (unchanged) {
     // Sources untouched since the last build: only make sure the server is up and the
     // manifest is fresh — a rebuild would produce byte-identical output.
-    const port = startServer(dist, Number(request.port ?? DEFAULT_PORT))
+    const port = await startServer(dist, Number(request.port ?? DEFAULT_PORT))
     const pages = collectPages(dist, dir)
     const manifest = {
       version: manifestVersion,
@@ -255,7 +309,7 @@ function doPreviewBuild(workspace, request) {
   if (!existsSync(dist)) throw new Error('vite build produced no dist/ — check the build output')
   lastBuildFingerprints.set(dir, fingerprint)
 
-  const port = startServer(dist, Number(request.port ?? DEFAULT_PORT))
+  const port = await startServer(dist, Number(request.port ?? DEFAULT_PORT))
   const pages = collectPages(dist, dir)
   manifestVersion += 1
   const manifest = {
@@ -296,6 +350,9 @@ function writeManifest(workspace, manifest) {
 
 const respond = (result) => ({ jsonrpc: '2.0', id: currentId, result })
 let currentId = null
+const writeMessage = (message) => {
+  process.stdout.write(JSON.stringify(message) + '\n')
+}
 
 function handle(request) {
   currentId = request.id
@@ -307,18 +364,23 @@ function handle(request) {
   }
   if (request.method === 'tools/call') {
     const { name, arguments: args } = request.params ?? {}
-    try {
-      let text
-      if (name === 'design_contract') text = contractText(args?.topic)
-      else if (name === 'design_scaffold') text = doScaffold(process.cwd(), args ?? {})
-      else if (name === 'design_check') text = doDesignCheck(args ?? {})
-      else if (name === 'design_preview_build') text = doPreviewBuild(process.cwd(), args ?? {})
-      else return respond({ content: [{ type: 'text', text: `unknown tool ${name}` }], isError: true })
-      return respond({ content: [{ type: 'text', text }] })
-    } catch (error) {
-      const message = error instanceof Error ? `${error.message}\n${error.stderr ?? ''}` : String(error)
-      return respond({ content: [{ type: 'text', text: message }], isError: true })
-    }
+    // design_preview_build awaits a server bind, so the whole call path is async; the
+    // response is written when it settles (handle() itself returns null for this method).
+    void (async () => {
+      try {
+        let text
+        if (name === 'design_contract') text = contractText(args?.topic)
+        else if (name === 'design_scaffold') text = doScaffold(resolveWorkspace(args ?? {}), args ?? {})
+        else if (name === 'design_check') text = doDesignCheck(args ?? {})
+        else if (name === 'design_preview_build') text = await doPreviewBuild(resolveWorkspace(args ?? {}), args ?? {})
+        else return writeMessage(respond({ content: [{ type: 'text', text: `unknown tool ${name}` }], isError: true }))
+        writeMessage(respond({ content: [{ type: 'text', text }] }))
+      } catch (error) {
+        const message = error instanceof Error ? `${error.message}\n${error.stderr ?? ''}` : String(error)
+        writeMessage(respond({ content: [{ type: 'text', text: message }], isError: true }))
+      }
+    })()
+    return null
   }
   if (request.method === 'notifications/initialized') return null
   return respond({ content: [{ type: 'text', text: `unknown method ${request.method}` }], isError: true })
@@ -357,7 +419,7 @@ rl.on('line', line => {
     return
   }
   const response = handle(request)
-  if (response !== null) process.stdout.write(JSON.stringify(response) + '\n')
+  if (response !== null && response !== undefined) writeMessage(response)
 })
 rl.on('close', () => {
   const finish = () => {

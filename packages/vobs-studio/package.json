@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-vobs-studio",
-  "version": "1.7.8",
+  "version": "1.8.0",
   "description": "Vobs Studio: AI-built vobs+Tailwind projects — design contract, scaffold, self-check and live preview inside DSH",
   "license": "MIT",
   "type": "module",
