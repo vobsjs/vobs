@@ -1962,15 +1962,20 @@ async function readTextWithReason(api, sessionId, path) {
   let sawChannel = false;
   let allEmpty = true;
   let reason;
+  const debug = [];
   if (typeof api.readBytes === "function") {
     sawChannel = true;
     try {
-      const bytes = asBytes(await api.readBytes(sessionId, path, {}));
+      const result = await api.readBytes(sessionId, path, {});
+      const bytes = asBytes(result);
+      const len = bytes !== void 0 ? bytes.byteLength : -1;
+      debug.push(`readBytes{byteLength:${len}}`);
       if (bytes !== void 0 && bytes.byteLength > 0) return { kind: "ok", text: new TextDecoder().decode(bytes) };
       reason = "readBytes returned no data";
     } catch (error) {
       allEmpty = false;
       reason = error instanceof Error ? error.message : String(error);
+      debug.push(`readBytes threw: ${reason}`);
     }
   }
   if (typeof api.read === "function") {
@@ -1981,7 +1986,14 @@ async function readTextWithReason(api, sessionId, path) {
       for (let page = 0; page < 20; page += 1) {
         const before = text;
         const result = await api.read(sessionId, path, { offset });
-        if (result === void 0) break;
+        if (result === void 0) {
+          debug.push(`read{page:${page},result:undefined}`);
+          break;
+        }
+        if (page === 0) {
+          const r = result;
+          debug.push(`read{textLen:${typeof r.text === "string" ? r.text.length : "N/A"},lines:${JSON.stringify(r.lines)},eof:${JSON.stringify(r.eof)},absolutePath:${JSON.stringify(r.absolutePath)},version:${JSON.stringify(r.version)},bytes:${JSON.stringify(r.bytes)}}`);
+        }
         if (page > 0 && !text.endsWith("\n")) text += "\n";
         text += result.text ?? "";
         if (text === before) break;
@@ -1994,11 +2006,12 @@ async function readTextWithReason(api, sessionId, path) {
     } catch (error) {
       allEmpty = false;
       reason = error instanceof Error ? error.message : String(error);
+      debug.push(`read threw: ${reason}`);
     }
   }
   if (!sawChannel) return { kind: "unreadable", reason: "workspaceFiles has no usable read method" };
-  if (allEmpty) return { kind: "ok", text: "" };
-  return { kind: "unreadable", reason: reason ?? "the file could not be read" };
+  if (allEmpty) return { kind: "ok", text: "", debug: debug.join(" | ") };
+  return { kind: "unreadable", reason: reason ?? "the file could not be read", debug: debug.join(" | ") };
 }
 const EMPTY = { status: "loading", message: "Reading the preview manifest…" };
 const joinPath = (base, rel) => {
@@ -2057,11 +2070,11 @@ function createStudioSource(ctx, options = {}) {
       }
       const read = await readTextWithReason(api, sessionId, manifestPath);
       if (read.kind === "unreadable") {
-        if (studioState2.value.status !== "ready") showMissing(sessionId, workspace, `read failed: ${read.reason}`);
+        if (studioState2.value.status !== "ready") showMissing(sessionId, workspace, [read.reason, read.debug].filter(Boolean).join(" · "));
         return;
       }
       if (read.text.trim() === "") {
-        showMissing(sessionId, workspace, "the manifest file exists but is empty");
+        showMissing(sessionId, workspace, ["the manifest file exists but is empty", read.debug].filter(Boolean).join(" · "));
         return;
       }
       let parsed;

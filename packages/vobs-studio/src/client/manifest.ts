@@ -148,20 +148,25 @@ function asBytes(value: unknown): ArrayBufferView | undefined {
  * when every channel that ran completed without throwing and all were empty is the file
  * reported as truly empty ('ok' with '').
  */
-export async function readTextWithReason(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<{ kind: 'ok'; text: string } | { kind: 'unreadable'; reason: string }> {
+export async function readTextWithReason(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<{ kind: 'ok'; text: string; debug?: string } | { kind: 'unreadable'; reason: string; debug?: string }> {
   let sawChannel = false
   let allEmpty = true
   let reason: string | undefined
+  const debug: string[] = []
 
   if (typeof api.readBytes === 'function') {
     sawChannel = true
     try {
-      const bytes = asBytes(await api.readBytes(sessionId, path, {}))
+      const result = await api.readBytes(sessionId, path, {})
+      const bytes = asBytes(result)
+      const len = bytes !== undefined ? bytes.byteLength : -1
+      debug.push(`readBytes{byteLength:${len}}`)
       if (bytes !== undefined && bytes.byteLength > 0) return { kind: 'ok', text: new TextDecoder().decode(bytes) }
       reason = 'readBytes returned no data'
     } catch (error) {
       allEmpty = false
       reason = error instanceof Error ? error.message : String(error)
+      debug.push(`readBytes threw: ${reason}`)
     }
   }
 
@@ -173,7 +178,16 @@ export async function readTextWithReason(api: WorkspaceFilesApi, sessionId: stri
       for (let page = 0; page < 20; page += 1) {
         const before = text
         const result = await api.read(sessionId, path, { offset })
-        if (result === undefined) break
+        if (result === undefined) {
+          debug.push(`read{page:${page},result:undefined}`)
+          break
+        }
+        if (page === 0) {
+          // Forensics: the Host echoes what it resolved — absolutePath exposes the path
+          // it actually used; bytes/version expose whether it saw the file at all.
+          const r = result as { offset?: unknown; lines?: unknown; eof?: unknown; text?: unknown; absolutePath?: unknown; version?: unknown; bytes?: unknown }
+          debug.push(`read{textLen:${typeof r.text === 'string' ? r.text.length : 'N/A'},lines:${JSON.stringify(r.lines)},eof:${JSON.stringify(r.eof)},absolutePath:${JSON.stringify(r.absolutePath)},version:${JSON.stringify(r.version)},bytes:${JSON.stringify(r.bytes)}}`)
+        }
         if (page > 0 && !text.endsWith('\n')) text += '\n'
         text += result.text ?? ''
         // No-progress guard: a Host anomaly that answers every page with empty text and
@@ -189,12 +203,13 @@ export async function readTextWithReason(api: WorkspaceFilesApi, sessionId: stri
     } catch (error) {
       allEmpty = false
       reason = error instanceof Error ? error.message : String(error)
+      debug.push(`read threw: ${reason}`)
     }
   }
 
   if (!sawChannel) return { kind: 'unreadable', reason: 'workspaceFiles has no usable read method' }
-  if (allEmpty) return { kind: 'ok', text: '' } // the file exists with zero content
-  return { kind: 'unreadable', reason: reason ?? 'the file could not be read' }
+  if (allEmpty) return { kind: 'ok', text: '', debug: debug.join(' | ') } // the file exists with zero content
+  return { kind: 'unreadable', reason: reason ?? 'the file could not be read', debug: debug.join(' | ') }
 }
 
 /** Back-compat wrapper: text or undefined. */
@@ -306,11 +321,11 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
         // Read failed: either no manifest (the common case — a missing file throws on the
         // real Host) or a transport failure. An already-ready panel keeps its preview; a
         // non-ready one shows the setup card WITH the Host's real error text.
-        if (studioState.value.status !== 'ready') showMissing(sessionId, workspace, `read failed: ${read.reason}`)
+        if (studioState.value.status !== 'ready') showMissing(sessionId, workspace, [read.reason, read.debug].filter(Boolean).join(' · '))
         return
       }
       if (read.text.trim() === '') {
-        showMissing(sessionId, workspace, 'the manifest file exists but is empty')
+        showMissing(sessionId, workspace, ['the manifest file exists but is empty', read.debug].filter(Boolean).join(' · '))
         return
       }
 
