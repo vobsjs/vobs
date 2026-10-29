@@ -2707,6 +2707,9 @@ const panelPlugin = defineDshPanel({
   label: "Vobs Studio",
   order: 5,
   styles: STUDIO_CSS,
+  // The preview-manifest data source reads sessions + remote.workspaceFiles — without
+  // declaring them here, ctx.get() returns nothing on a real DSH (seen in a real install).
+  injectServices: ["sessions", "remote"],
   sidebarEntry: {
     label: "Vobs Studio",
     renderIcon: () => createComponent(resolveComponent(StudioIcon, "src/client/index.tsx", "StudioIcon"), {})
