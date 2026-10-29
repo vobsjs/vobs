@@ -83,28 +83,53 @@ One stdio MCP server process serves every session, so the filesystem tools take 
 explicit `workspace` argument (the agent passes its session cwd on every call); the
 preview server walks upwards from port 5218 when it is taken.
 
-### Install from the chat (no clone, no plugin page)
+### Install from the chat — one sentence, forever
 
-A DSH profile is a pnpm workspace, and the `dsh` CLI installed with the desktop app
-manages profile plugins directly (`dsh plugin --profile <name> <pnpm-args…>` forwards
-to the bundled pnpm ≥ 11 in the profile directory — the Windows `&` trap and the pnpm
-version are handled by DSH itself). So the agent in any session can perform the whole
-install. Paste this into a DSH chat:
+DSH reads `~/.dsh/AGENTS.md` as the user's global agent instructions (plus workspace
+`AGENTS.md`/`CLAUDE.md`). So the install knowledge lives in the instructions file, and
+the user only ever says:
 
 ```text
-帮我在 DSH 里安装并启用 Vobs Studio 插件：
-1. 运行 dsh plugin --profile desktop add "github:vobsjs/vobs#<ref>&path:/packages/vobs-studio"
-2. 把 "dsh-plugin-vobs-studio" 加进 ~/.dsh/profiles/desktop/package.json 的
-   dsh.profile.bundles 数组
-3. 完成后提醒我：完全退出 DSH 再重新打开
+帮我在 DSH 里安装并启用 Vobs Studio 插件。
 ```
 
-That is the whole message — no manual file editing, no MCP configuration. Step 2 is
-the one thing the CLI does not do (bundle registration is the profile's composition
-order), and the MCP server needs no mention: the plugin's own patch layer registers
-it (see below). Developers with a local vobs clone can swap the spec for
-`"link:<clone>/packages/vobs-studio"` — a link dependency works on any pnpm and
-installs instantly.
+The agent follows the instructions in that file (which teach it the official `dsh
+plugin` CLI, the bundles registration, and the restart reminder — no pnpm gymnastics,
+no MCP configuration; each plugin's own patch layer registers its services).
+
+**One-time bootstrap** (until vobs ships preinstalled knowledge): paste this into a
+DSH session — the agent appends the section to `~/.dsh/AGENTS.md`:
+
+```text
+把下面这一节追加到 ~/.dsh/AGENTS.md（文件不存在就创建，已有同名节就跳过）：
+
+## Installing Vobs plugins (github:vobsjs/vobs)
+
+When the user asks to install a Vobs plugin (Vobs Studio / Vobs Console / Vobs DevKit),
+do exactly this — no other steps, no questions:
+
+1. Run:
+   dsh plugin --profile desktop add "github:vobsjs/vobs#<ref>&path:/packages/<dir>"
+   | Plugin | <dir> | package name |
+   |---|---|---|
+   | Vobs Studio | vobs-studio | dsh-plugin-vobs-studio |
+   | Vobs Console | dsh-console | dsh-plugin-vobs-console |
+   | Vobs DevKit | dsh-devkit | dsh-plugin-vobs-devkit |
+   dsh plugin forwards to DSH's bundled pnpm >= 11 — never run pnpm yourself and never
+   edit dependencies by hand. <ref>: use the tag the user names, otherwise main.
+2. Register the package name (not the dir name) in
+   ~/.dsh/profiles/desktop/package.json → dsh.profile.bundles (append if absent).
+   The CLI does not do this step; without it the plugin will not load.
+3. Remind the user: fully quit DSH (including the tray) and reopen it — plugin patches
+   compose at startup.
+
+No MCP configuration is ever needed for Vobs plugins: each plugin's own patch layer
+registers its services.
+```
+
+After the bootstrap, every Vobs plugin installs from one sentence. Developers with a
+local vobs clone can swap the spec for `"link:<clone>/packages/vobs-studio"` — a link
+dependency works on any pnpm and installs instantly.
 
 ## Building and verifying
 
