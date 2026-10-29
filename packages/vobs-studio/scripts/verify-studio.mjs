@@ -154,6 +154,7 @@ const MANIFEST_JSON = JSON.stringify({
 })
 
 const SOURCE_PAGE = "import { createVobs } from '@vobs/vobs'\nexport function Home() { return null }\n"
+const DESIGN_MD = '# DESIGN\n\n## Tone\n\n- print editorial, committed\n\n## Typography\n\n- **Fraunces** woff2 + argued CJK system stack\n'
 
 const fakeServices = {
   sessions: {
@@ -167,20 +168,18 @@ const fakeServices = {
   },
   remote: {
     workspaceFiles: {
-      // The client now sends ABSOLUTE paths (workspace + rel) per the Host contract.
-      stat: async (sessionId, filePath) => (String(filePath).endsWith('.vobs/studio/preview.json') ? { version: 1, bytes: MANIFEST_JSON.length } : undefined),
+      // The client sends ABSOLUTE paths (workspace + rel) per the Host contract.
+      stat: async (sessionId, filePath) => {
+        const p = String(filePath)
+        if (p.endsWith('.vobs/studio/preview.json')) return { version: 1, bytes: MANIFEST_JSON.length }
+        if (p.endsWith('demo-app/DESIGN.md')) return { version: 1, bytes: DESIGN_MD.length }
+        return undefined
+      },
       read: async (sessionId, filePath, range) => {
         const p = String(filePath)
         if (p.endsWith('.vobs/studio/preview.json')) return { text: MANIFEST_JSON, eof: true }
-        if (p.endsWith('demo-app/src/pages/home.tsx')) return { text: SOURCE_PAGE, eof: true }
+        if (p.endsWith('demo-app/DESIGN.md')) return { text: DESIGN_MD, eof: true }
         return undefined
-      },
-      list: async (sessionId, path) => {
-        const p = String(path)
-        if (p.endsWith('demo-app')) return { entries: [{ name: 'src', type: 'directory' }, { name: 'package.json', type: 'file' }] }
-        if (p.endsWith('demo-app/src')) return { entries: [{ name: 'pages', type: 'directory' }] }
-        if (p.endsWith('demo-app/src/pages')) return { entries: [{ name: 'home.tsx', type: 'file' }] }
-        throw new Error(`no such directory: ${path}`)
       }
     }
   }
@@ -260,7 +259,7 @@ check(
 
 /* --------------------------------------------- 5. Mount + manifest flows through */
 
-section('5. Mount: ready state auto-loads the project tree')
+section('5. Mount: ready state renders the workflow-status page')
 
 const tree = mainRegistrations[0].component()
 const hostElement = dom.window.document.createElement('div')
@@ -278,23 +277,19 @@ check('host element has a shadow root', !!shadow)
 check('shadow root contains <style> and the panel root', !!shadow?.querySelector('style') && !!shadow?.querySelector('.vobs-dsh-root'))
 check('panel rendered', !!shadow?.querySelector('.studio'))
 
-const rowByLabel = label =>
-  // rows carry a chevron glyph before the label — match on the trailing label text
-  [...shadow.querySelectorAll('.studio__tree-row')].find(b => b.textContent.trim().endsWith(label))
+const ready = await until(() => shadow.querySelectorAll('.studio__page-btn').length === 2)
+check('panel reached ready: status + page buttons render', ready, `page-btns=${shadow.querySelectorAll('.studio__page-btn').length}`)
+check('status shows page count and build version', (shadow.querySelector('.studio__status-text')?.textContent ?? '').includes('2 page(s)') && (shadow.querySelector('.studio__status-text')?.textContent ?? '').includes('v1'))
+check('design card renders DESIGN.md with headings', (shadow.querySelector('.studio__design-body')?.textContent ?? '').includes('print editorial') && (shadow.querySelector('.studio__design-body')?.textContent ?? '').includes('Fraunces'))
 
-const ready = await until(() => rowByLabel('src') !== undefined && rowByLabel('package.json') !== undefined)
-check('panel reached ready and auto-loaded + auto-expanded the project root', ready, `rows=${shadow.querySelectorAll('.studio__tree-row').length}`)
-check('two-zone layout: tree + code, no iframe, no launcher', shadow.querySelector('.studio__frame') === null && shadow.querySelector('.studio__launch-page') === null && shadow.querySelector('.studio__aside') === null)
-
-section('6. Source browsing: expand and open a file')
-rowByLabel('src')?.click()
-check('expanding src lists pages/', await until(() => rowByLabel('pages') !== undefined))
-rowByLabel('pages')?.click()
-check('expanding pages lists home.tsx', await until(() => rowByLabel('home.tsx') !== undefined))
-rowByLabel('home.tsx')?.click()
-check('selecting a file opens the code viewer', await until(() => shadow.querySelector('.studio__code-body') !== null))
-check('code viewer shows the file content', (shadow.querySelector('.studio__code-body')?.textContent ?? '').includes('export function Home'))
-check('code viewer header names the file (project-relative)', (shadow.querySelector('.studio__code-head')?.textContent ?? '').includes('src/pages/home.tsx'))
+const opened = []
+dom.window.open = url => {
+  opened.push(String(url))
+  return null
+}
+shadow.querySelectorAll('.studio__page-btn')[0].click()
+await tick()
+check('opening a page targets DSH browser URL', opened[0] === 'http://127.0.0.1:5218/pages/dashboard.html', String(opened[0]))
 
 section('7. Cleanup')
 for (const cleanup of cleanups) cleanup()

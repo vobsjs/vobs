@@ -220,36 +220,6 @@ function state(initialValue, debugName) {
   if (debugName?.trim()) setSignalDebugName(signalInstance, debugName.trim());
   return signalInstance;
 }
-function on(deps, fn, options = {}) {
-  const readDeps = createDepsReader(deps);
-  let previous;
-  let primed = false;
-  return () => {
-    const value = readDeps();
-    if (!primed) {
-      primed = true;
-      previous = value;
-      if (options.defer) return void 0;
-    } else {
-      const last = previous;
-      previous = value;
-      return untrack(() => fn(value, last));
-    }
-    return untrack(() => fn(value, void 0));
-  };
-}
-function createDepsReader(deps) {
-  if (typeof deps === "function") return deps;
-  if (Array.isArray(deps)) {
-    const list = deps;
-    return () => list.map((signal2) => signal2.value);
-  }
-  const signal = deps;
-  if (signal && typeof signal === "object" && "value" in signal) return () => signal.value;
-  throw new Error(
-    "Vobs on(): the first argument must be a signal (has .value), an array of signals, or a getter function. Passing a plain value establishes no subscription — the effect would never be triggered."
-  );
-}
 class Scheduler {
   constructor() {
     this.dirtyEffects = /* @__PURE__ */ new Set();
@@ -1036,11 +1006,11 @@ function parseClassList(value) {
   if (Array.isArray(value)) {
     for (const entry of value) {
       if (entry !== null && typeof entry === "object") {
-        for (const [name, on2] of Object.entries(entry)) if (on2) push(name);
+        for (const [name, on] of Object.entries(entry)) if (on) push(name);
       } else push(entry);
     }
   } else if (value !== null && typeof value === "object") {
-    for (const [name, on2] of Object.entries(value)) if (on2) push(name);
+    for (const [name, on] of Object.entries(value)) if (on) push(name);
   } else push(value);
   return names;
 }
@@ -1374,6 +1344,185 @@ function normalizeDynamicChild(value) {
 }
 function isHostNode(value) {
   return Boolean(value && typeof value === "object" && ("nodeType" in value || (value.type === "element" || value.type === "text" || value.type === "comment")));
+}
+function insertList(parent, anchor, source2, renderItem, keyOf) {
+  const marker = createComment("vobs:list");
+  insertBefore(parent, marker, anchor);
+  let entries = [];
+  const tracksIndex = renderItem.length >= 2;
+  effect(() => {
+    const items = source2();
+    const nextEntries = reconcileIndexed(items, entries, renderItem);
+    const refreshed = tracksIndex ? /* @__PURE__ */ new Set() : null;
+    for (let index2 = 0; index2 < nextEntries.length; index2++) {
+      const entry = nextEntries[index2];
+      if (tracksIndex) {
+        if (entry.index !== index2) {
+          refreshListEntry(parent, entry, index2, renderItem);
+          refreshed.add(entry);
+        }
+      } else {
+        entry.index = index2;
+      }
+    }
+    const retained = new Set(nextEntries);
+    for (const entry of entries) {
+      if (!retained.has(entry)) disposeEntry(parent, entry);
+    }
+    reorderListEntries(parent, marker, entries, nextEntries, refreshed);
+    entries = nextEntries;
+  });
+}
+function reorderListEntries(parent, marker, previous, nextEntries, forceInsert) {
+  const count = nextEntries.length;
+  if (count === 0) return;
+  if (previous.length === 0) {
+    let reference2 = marker;
+    for (let index2 = count - 1; index2 >= 0; index2--) {
+      const node = nextEntries[index2].node;
+      insertBefore(parent, node, reference2);
+      reference2 = node;
+    }
+    return;
+  }
+  const oldIndexOf = /* @__PURE__ */ new Map();
+  for (let index2 = 0; index2 < previous.length; index2++) oldIndexOf.set(previous[index2], index2);
+  const seq = new Array(count);
+  for (let index2 = 0; index2 < count; index2++) {
+    const entry = nextEntries[index2];
+    seq[index2] = forceInsert?.has(entry) ? -1 : oldIndexOf.get(entry) ?? -1;
+  }
+  const keep = computeKeptByLis(seq);
+  let reference = marker;
+  for (let index2 = count - 1; index2 >= 0; index2--) {
+    const node = nextEntries[index2].node;
+    if (keep[index2]) {
+      reference = node;
+      continue;
+    }
+    insertBefore(parent, node, reference);
+    reference = node;
+  }
+}
+function computeKeptByLis(seq) {
+  const count = seq.length;
+  const keep = new Array(count).fill(false);
+  const tailsIndex = [];
+  const tailsValue = [];
+  const prev = new Array(count).fill(-1);
+  for (let i = 0; i < count; i++) {
+    const value = seq[i];
+    if (value < 0) continue;
+    let lo = 0;
+    let hi = tailsValue.length;
+    while (lo < hi) {
+      const mid = lo + hi >> 1;
+      if (tailsValue[mid] < value) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo === tailsValue.length) {
+      tailsValue.push(value);
+      tailsIndex.push(i);
+    } else {
+      tailsValue[lo] = value;
+      tailsIndex[lo] = i;
+    }
+    prev[i] = lo > 0 ? tailsIndex[lo - 1] : -1;
+  }
+  let cursor = tailsIndex.length > 0 ? tailsIndex[tailsIndex.length - 1] : -1;
+  while (cursor >= 0) {
+    keep[cursor] = true;
+    cursor = prev[cursor];
+  }
+  return keep;
+}
+function reconcileIndexed(items, entries, renderItem) {
+  const nextEntries = [];
+  for (let index2 = 0; index2 < items.length; index2++) {
+    const item = items[index2];
+    const entry = entries[index2];
+    if (entry && isPrimitiveItem(item) && !Object.is(entry.current, item)) {
+      nextEntries.push(createListEntry(item, index2, index2, renderItem));
+      continue;
+    }
+    if (entry) {
+      entry.item.value = item;
+      entry.current = item;
+      nextEntries.push(entry);
+      continue;
+    }
+    nextEntries.push(createListEntry(item, index2, index2, renderItem));
+  }
+  return nextEntries;
+}
+function isPrimitiveItem(item) {
+  return item === null || typeof item !== "object";
+}
+function createListEntry(item, index2, key, renderItem) {
+  const owner = createOwner();
+  let itemSignal;
+  let viewOwner;
+  let node;
+  owner.run(() => {
+    itemSignal = state(item, "signal");
+    viewOwner = createOwner();
+    node = viewOwner.run(() => renderItem(toReactiveItem(itemSignal, item), index2));
+  });
+  associateNodeOwner(node, viewOwner);
+  return { key, node, owner, viewOwner, item: itemSignal, current: item, index: index2 };
+}
+function refreshListEntry(parent, entry, index2, renderItem) {
+  removeChild(parent, entry.node);
+  entry.index = index2;
+  const previousView = entry.viewOwner;
+  entry.owner.run(() => {
+    entry.viewOwner = createOwner();
+    entry.node = entry.viewOwner.run(() => renderItem(
+      toReactiveItem(entry.item, entry.current),
+      index2
+    ));
+  });
+  previousView.dispose();
+  associateNodeOwner(entry.node, entry.viewOwner);
+}
+function toReactiveItem(item, initialValue) {
+  if (typeof initialValue !== "object" || initialValue === null) {
+    return initialValue;
+  }
+  return new Proxy(reactiveProxyTarget(initialValue), {
+    get(_target, property, receiver) {
+      return Reflect.get(item.value, property, receiver);
+    },
+    has(_target, property) {
+      return property in item.value;
+    },
+    ownKeys() {
+      return Reflect.ownKeys(item.value);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      const descriptor = Object.getOwnPropertyDescriptor(item.value, property);
+      if (!descriptor) return void 0;
+      const own = Object.getOwnPropertyDescriptor(target, property);
+      return { ...descriptor, configurable: own ? own.configurable : true };
+    }
+  });
+}
+function reactiveProxyTarget(value) {
+  if (Object.isExtensible(value)) {
+    let allConfigurable = true;
+    for (const key of Reflect.ownKeys(value)) {
+      if (Object.getOwnPropertyDescriptor(value, key)?.configurable === false) {
+        allConfigurable = false;
+        break;
+      }
+    }
+    if (allConfigurable) return value;
+  }
+  return Array.isArray(value) ? [] : Object.create(Object.getPrototypeOf(value));
+}
+function disposeEntry(parent, entry) {
+  removeChild(parent, entry.node);
+  entry.owner.dispose();
 }
 const templateCache = /* @__PURE__ */ new Map();
 function createTemplate(html) {
@@ -1851,11 +2000,7 @@ async function readTextWithReason(api, sessionId, path) {
   if (allEmpty) return { kind: "ok", text: "" };
   return { kind: "unreadable", reason: reason ?? "the file could not be read" };
 }
-async function readWorkspaceText(api, sessionId, path) {
-  const read = await readTextWithReason(api, sessionId, path);
-  return read.kind === "ok" ? read.text : void 0;
-}
-const EMPTY$1 = { status: "loading", message: "Reading the preview manifest…" };
+const EMPTY = { status: "loading", message: "Reading the preview manifest…" };
 const joinPath = (base, rel) => {
   if (base === void 0 || base === "") return rel;
   if (rel === "") return base.replace(/[\\/]+$/u, "");
@@ -1864,9 +2009,10 @@ const joinPath = (base, rel) => {
 const MISSING_MESSAGE = "No preview manifest yet. Generate pages first (the skill writes .vobs/studio/preview.json).";
 function createStudioSource(ctx, options = {}) {
   const pollMs = options.pollMs ?? 2500;
-  const studioState2 = options.sink ?? state(EMPTY$1, "studio.state");
-  studioState2.value = EMPTY$1;
+  const studioState2 = options.sink ?? state(EMPTY, "studio.state");
+  studioState2.value = EMPTY;
   let lastVersion;
+  let lastDesignVersion;
   let disposed = false;
   let inFlight = false;
   const setState = (patch) => {
@@ -1874,6 +2020,7 @@ function createStudioSource(ctx, options = {}) {
   };
   const showMissing = (sessionId, workspace, diagnostic) => {
     lastVersion = void 0;
+    lastDesignVersion = void 0;
     setState({ status: "missing", sessionId, workspace, message: MISSING_MESSAGE, diagnostic, manifest: void 0 });
   };
   const load = async () => {
@@ -1941,6 +2088,20 @@ function createStudioSource(ctx, options = {}) {
         return;
       }
       setState({ status: "ready", sessionId, workspace, message: "", manifest });
+      const version = manifest.version ?? 0;
+      if (version !== lastDesignVersion) {
+        lastDesignVersion = version;
+        const designPath = joinPath(joinPath(workspace, String(manifest.project?.dir ?? "")), "DESIGN.md");
+        const design = await readTextWithReason(api, sessionId, designPath);
+        if (design.kind === "ok" && design.text.trim() !== "") {
+          setState({ designMdText: design.text, designMdNote: void 0 });
+        } else {
+          setState({
+            designMdText: void 0,
+            designMdNote: design.kind === "unreadable" ? design.reason : "DESIGN.md exists but is empty"
+          });
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setState({ status: "error", sessionId, workspace, message });
@@ -1972,128 +2133,34 @@ function createStudioSource(ctx, options = {}) {
     }
   };
 }
-const EXCLUDED_DIRS = /* @__PURE__ */ new Set(["node_modules", "dist", ".git", ".vobs"]);
-const EMPTY = {
-  status: "off",
-  message: "",
-  projectDir: "",
-  expanded: [],
-  dirs: {},
-  openPath: "",
-  openState: "loading",
-  openText: ""
-};
-function sortEntries(entries) {
-  return [...entries].sort(
-    (a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === "directory" ? -1 : 1
-  );
-}
-function createSourceBrowser(ctx, signals) {
-  const sourceState = state(EMPTY, "studio.source");
-  let inFlight = false;
-  const patch = (next) => {
-    sourceState.value = { ...sourceState.value, ...next };
-  };
-  const api = () => workspaceFilesOf(ctx);
-  const fetchDir = async (relPath) => {
-    const workspaceApi = api();
-    if (workspaceApi?.list === void 0) throw new Error("workspaceFiles.list is unavailable");
-    const abs = joinPath(joinPath(signals.workspace(), signals.projectDir()), relPath);
-    const result = await workspaceApi.list(signals.sessionId(), abs);
-    const raw = Array.isArray(result?.entries) ? result?.entries ?? [] : [];
-    const entries = raw.filter((e) => e.name !== "" && !EXCLUDED_DIRS.has(e.name)).map((e) => ({ name: e.name, type: e.type === "directory" ? "directory" : "file" }));
-    const dirs = { ...sourceState.value.dirs, [relPath]: sortEntries(entries) };
-    patch({ dirs });
-  };
-  const listDir = async (relPath) => {
-    if (inFlight) return;
-    inFlight = true;
-    try {
-      await fetchDir(relPath);
-    } catch (error) {
-      patch({ status: "error", message: error instanceof Error ? error.message : String(error) });
-    } finally {
-      inFlight = false;
-    }
-  };
-  return {
-    state: sourceState,
-    listDir,
-    toggleDir(relPath) {
-      const expanded = sourceState.value.expanded;
-      if (expanded.includes(relPath)) {
-        patch({ expanded: expanded.filter((p) => p !== relPath) });
-        return;
-      }
-      patch({ expanded: [...expanded, relPath] });
-      if (sourceState.value.dirs[relPath] === void 0) void listDir(relPath);
-    },
-    async openFile(relPath) {
-      patch({ openPath: relPath, openState: "loading", openText: "" });
-      const workspaceApi = api();
-      if (workspaceApi === void 0) {
-        patch({ openState: "error", openText: "workspaceFiles service is unavailable" });
-        return;
-      }
-      const text = await readWorkspaceText(workspaceApi, signals.sessionId(), joinPath(joinPath(signals.workspace(), signals.projectDir()), relPath));
-      if (text === void 0) patch({ openState: "error", openText: "could not read this file" });
-      else patch({ openState: "ok", openText: text });
-    },
-    reset() {
-      sourceState.value = { ...EMPTY };
-    }
-  };
-}
-function buildTree(dirs, relPath) {
-  const entries = dirs[relPath];
-  if (entries === void 0) return [];
-  return entries.map((entry) => {
-    const childRel = relPath === "" ? entry.name : `${relPath}/${entry.name}`;
-    return {
-      name: entry.name,
-      relPath: childRel,
-      isDir: entry.type === "directory",
-      children: entry.type === "directory" ? buildTree(dirs, childRel) : []
-    };
-  });
+function pageUrl(manifest, page) {
+  const origin = manifest?.server?.origin;
+  if (origin === void 0 || origin === "") return void 0;
+  const base = origin.endsWith("/") ? origin.slice(0, -1) : origin;
+  const file = page.file.startsWith("/") ? page.file : `/${page.file}`;
+  return base + file;
 }
 const studioState = state(
   { status: "loading", message: "Waiting for the plugin setup…" },
   "studio.state"
 );
 let source;
-let sourceBrowser;
-let pluginCtx;
-function ensureSourceBrowser() {
-  if (sourceBrowser === void 0) {
-    sourceBrowser = createSourceBrowser(pluginCtx, {
-      projectDir: () => String(studioState.value.manifest?.project?.dir ?? ""),
-      sessionId: () => String(studioState.value.sessionId ?? ""),
-      workspace: () => String(studioState.value.workspace ?? "")
-    });
-  }
-  return sourceBrowser;
-}
-function sourceBrowserOf() {
-  return ensureSourceBrowser();
-}
 function startStudioSource(ctx) {
-  pluginCtx = ctx;
   source?.dispose();
   source = createStudioSource(ctx, { sink: studioState });
+}
+function refreshStudio() {
+  source?.refresh();
 }
 function disposeStudio() {
   source?.dispose();
   source = void 0;
-  sourceBrowser?.reset();
-  sourceBrowser = void 0;
-  pluginCtx = void 0;
 }
-const _tpl7 = createTemplate(`<div class="studio__steps"><p class="studio__steps-hint">One-time setup, then just chat:</p><ol><li><b>The Studio tools are already connected</b> — installing this plugin also registers its MCP server (design contract / scaffold / self-check / preview build) with the harness. If the agent doesn't use them, restart DSH once: the registration is a patch, applied at startup. On an older install (or a manual setup), point the session's MCP config at:<code>…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs</code></li><li><b>Describe what you want in the chat</b> — plain language is enough: what kind of app, which pages, what content. The agent pulls the design contract, states the design direction (DESIGN.md), scaffolds the project, self-checks every snippet and builds it.</li><li><b>Open the pages from the chat</b> — the agent posts a preview URL after each build; DSH's browser renders it (and "Open in browser" style links reach your default browser). This panel follows with the source tree and code.</li></ol></div>`);
-const _tpl9 = createTemplate(`<p class="studio__tree-hint">Generate a project first — the tree follows the manifest's project dir.</p>`);
-const _tpl18 = createTemplate('<p class="studio__code-status">Loading…</p>');
-const _tpl24 = createTemplate('<span class="studio__brand">Vobs Studio</span>');
-const _tpl25 = createTemplate('<span class="studio__tag">AI Build</span>');
+const _tpl7 = createTemplate(`<div class="studio__steps"><p class="studio__steps-hint">One-time setup, then just chat:</p><ol><li><b>The Studio tools are already connected</b> — installing this plugin also registers its MCP server (design contract / scaffold / self-check / preview build) with the harness. If the agent doesn't use them, restart DSH once: the registration is a patch, applied at startup. On an older install (or a manual setup), point the session's MCP config at:<code>…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs</code></li><li><b>Describe what you want in the chat</b> — plain language is enough: what kind of app, which pages, what content. The agent pulls the design contract, states the design direction (DESIGN.md), scaffolds the project, self-checks every snippet and builds it.</li><li><b>Open the pages from the chat</b> — the agent posts a preview URL after each build; DSH's browser renders it. This panel follows with the build status, the page list and the design direction.</li></ol></div>`);
+const _tpl9 = createTemplate('<span class="studio__status-dot"></span>');
+const _tpl17 = createTemplate('<h3>设计方向 <span class="studio__design-src">DESIGN.md</span></h3>');
+const _tpl27 = createTemplate('<span class="studio__brand">Vobs Studio</span>');
+const _tpl28 = createTemplate('<span class="studio__tag">AI Build</span>');
 function StatusNotice() {
   return (() => {
     const _el0 = createElement("div");
@@ -2142,249 +2209,210 @@ function StatusNotice() {
 function SetupSteps() {
   return cloneTemplate(_tpl7);
 }
-function TreeRows(nodes, depth) {
-  return nodes.map((node) => {
-    const browser = sourceBrowserOf();
-    const expanded = browser.state.value.expanded.includes(node.relPath);
-    return (() => {
-      const _el31 = createElement("div");
-      insertBefore(_el31, (() => {
-        const _el32 = createElement("button");
-        setStaticProps(_el32, {
-          "class": "studio__tree-row"
-        });
-        bindAttribute(_el32, "style", () => ({ "padding-left": `${8 + depth * 14}px` }));
-        bindAttribute(_el32, "data-active", () => browser.state.value.openPath === node.relPath && !node.isDir);
-        addEventListener(_el32, "click", () => {
-          if (node.isDir)
-            browser.toggleDir(node.relPath);
-          else
-            void browser.openFile(node.relPath);
-        });
-        insertBefore(_el32, (() => {
-          const _el33 = createElement("span");
-          setStaticProps(_el33, {
-            "class": "studio__tree-chevron"
-          });
-          insertDynamicValue(_el33, null, () => node.isDir ? expanded ? "▾" : "▸" : "");
-          return _el33;
-        })(), null);
-        insertBefore(_el32, (() => {
-          const _el34 = createElement("span");
-          insertDynamicValue(_el34, null, () => node.name);
-          return _el34;
-        })(), null);
-        return _el32;
-      })(), null);
-      insertDynamicValue(_el31, null, () => node.isDir && expanded ? TreeRows(node.children, depth + 1) : null);
-      return _el31;
-    })();
-  });
-}
-function SourceTree() {
-  const browser = sourceBrowserOf();
+function BuildStatus() {
   const view = memo(() => {
-    const s = browser.state.value;
-    const projectDir = String(studioState.value.manifest?.project?.dir ?? "");
-    if (projectDir === "")
-      return { kind: "empty" };
-    if (s.status === "error")
-      return { kind: "error", message: s.message };
-    const tree = buildTree(s.dirs, "");
-    const rootLoaded = s.dirs[""] !== void 0;
-    return { kind: "ready", tree, rootLoaded, open: s, projectDir };
+    const s = studioState.value;
+    return { pages: s.manifest?.pages ?? [], version: s.manifest?.version ?? 0, origin: s.manifest?.server?.origin ?? "" };
   });
   return (() => {
     const _el8 = createElement("div");
     setStaticProps(_el8, {
-      "class": "studio__tree"
+      "class": "studio__status"
     });
-    insertDynamic(_el8, null, () => view.value.kind === "empty" ? cloneTemplate(_tpl9) : view.value.kind === "error" ? (() => {
-      const _el10 = createElement("p");
+    insertBefore(_el8, cloneTemplate(_tpl9), null);
+    insertBefore(_el8, (() => {
+      const _el10 = createElement("span");
       setStaticProps(_el10, {
-        "class": "studio__tree-hint"
+        "class": "studio__status-text"
       });
-      insertDynamicValue(_el10, null, () => view.value.message);
+      insertBefore(_el10, createText("Ready · "), null);
+      insertDynamicValue(_el10, null, () => view.value.pages.length);
+      insertBefore(_el10, createText(" page(s) · build v"), null);
+      insertDynamicValue(_el10, null, () => view.value.version);
       return _el10;
-    })() : (() => {
-      const _el11 = createElement("div");
+    })(), null);
+    insertBefore(_el8, (() => {
+      const _el11 = createElement("button");
       setStaticProps(_el11, {
-        "class": "studio__tree-scroll"
+        "class": "studio__btn",
+        "title": "Copy the preview origin"
       });
-      insertBefore(_el11, (() => {
-        const _el12 = createElement("button");
-        setStaticProps(_el12, {
-          "class": "studio__tree-row"
+      addEventListener(_el11, "click", () => {
+        void navigator.clipboard?.writeText(view.value.origin).catch(() => {
         });
-        bindAttribute(_el12, "data-active", () => view.value.open.openPath === "");
-        addEventListener(_el12, "click", () => {
-          browser.toggleDir("");
-        });
-        insertBefore(_el12, (() => {
-          const _el13 = createElement("span");
-          setStaticProps(_el13, {
-            "class": "studio__tree-chevron"
-          });
-          insertDynamicValue(_el13, null, () => view.value.rootLoaded ? "▾" : "▸");
-          return _el13;
-        })(), null);
-        insertBefore(_el12, (() => {
-          const _el14 = createElement("span");
-          insertDynamicValue(_el14, null, () => view.value.projectDir);
-          return _el14;
-        })(), null);
-        return _el12;
-      })(), null);
-      insertDynamicValue(_el11, null, () => view.value.rootLoaded ? TreeRows(view.value.tree, 1) : null);
+      });
+      insertBefore(_el11, createText("Copy URL"), null);
       return _el11;
-    })());
+    })(), null);
     return _el8;
   })();
 }
-function CodeViewer() {
-  const browser = sourceBrowserOf();
-  const view = memo(() => {
-    const s = browser.state.value;
-    return { path: s.openPath, state: s.openState, text: s.openText };
-  });
+function PageList() {
   return (() => {
-    const _el15 = createElement("div");
-    setStaticProps(_el15, {
-      "class": "studio__code"
+    const _el12 = createElement("div");
+    setStaticProps(_el12, {
+      "class": "studio__pages"
     });
-    insertBefore(_el15, (() => {
-      const _el16 = createElement("div");
-      setStaticProps(_el16, {
-        "class": "studio__code-head"
+    insertList(_el12, null, () => studioState.value.manifest?.pages ?? [], (page) => (() => {
+      const _el13 = createElement("button");
+      setStaticProps(_el13, {
+        "class": "studio__page-btn"
       });
-      insertBefore(_el16, (() => {
-        const _el17 = createElement("code");
-        insertDynamicValue(_el17, null, () => view.value.path === "" ? "select a file in the tree" : view.value.path);
-        return _el17;
+      addEventListener(_el13, "click", () => {
+        const url = pageUrl(studioState.value.manifest, page);
+        if (typeof url === "string")
+          window.open(url, "_blank");
+      });
+      insertBefore(_el13, (() => {
+        const _el14 = createElement("span");
+        insertDynamicValue(_el14, null, () => page.title || page.id);
+        return _el14;
       })(), null);
-      return _el16;
-    })(), null);
-    insertDynamic(_el15, null, () => view.value.state === "loading" ? cloneTemplate(_tpl18) : null);
-    insertDynamic(_el15, null, () => view.value.state === "error" ? (() => {
-      const _el19 = createElement("p");
+      insertBefore(_el13, (() => {
+        const _el15 = createElement("span");
+        setStaticProps(_el15, {
+          "class": "studio__page-route"
+        });
+        insertDynamicValue(_el15, null, () => page.route);
+        return _el15;
+      })(), null);
+      return _el13;
+    })());
+    return _el12;
+  })();
+}
+function DesignCard() {
+  const view = memo(() => {
+    const s = studioState.value;
+    return { text: s.designMdText, note: s.designMdNote };
+  });
+  const lines = (view.value.text ?? "").split("\n");
+  const clean = (line) => line.replace(/\*\*([^*]+)\*\*/gu, "$1");
+  return (() => {
+    const _el16 = createElement("section");
+    setStaticProps(_el16, {
+      "class": "studio__design"
+    });
+    insertBefore(_el16, cloneTemplate(_tpl17), null);
+    insertDynamic(_el16, null, () => view.value.text === void 0 ? (() => {
+      const _el18 = createElement("p");
+      setStaticProps(_el18, {
+        "class": "studio__design-note"
+      });
+      insertDynamicValue(_el18, null, () => view.value.note ?? "Not written yet.");
+      return _el18;
+    })() : (() => {
+      const _el19 = createElement("div");
       setStaticProps(_el19, {
-        "class": "studio__code-status"
+        "class": "studio__design-body"
       });
-      insertDynamicValue(_el19, null, () => view.value.text);
+      insertDynamicValue(_el19, null, () => lines.map((line, index2) => {
+        const trimmed = clean(line).trim();
+        if (trimmed === "")
+          return (() => {
+            const _el20 = createElement("div");
+            setStaticProps(_el20, {
+              "class": "studio__design-spacer"
+            });
+            return _el20;
+          })();
+        if (trimmed.startsWith("## "))
+          return (() => {
+            const _el21 = createElement("h4");
+            insertDynamicValue(_el21, null, () => trimmed.slice(3));
+            return _el21;
+          })();
+        if (trimmed.startsWith("### "))
+          return (() => {
+            const _el22 = createElement("h5");
+            insertDynamicValue(_el22, null, () => trimmed.slice(4));
+            return _el22;
+          })();
+        if (trimmed.startsWith("- ") || /^\d+\.\s/u.test(trimmed)) {
+          return (() => {
+            const _el23 = createElement("div");
+            setStaticProps(_el23, {
+              "class": "studio__design-li"
+            });
+            insertDynamicValue(_el23, null, () => trimmed.replace(/^[-]\s*/u, "").replace(/^\d+\.\s*/u, ""));
+            return _el23;
+          })();
+        }
+        return (() => {
+          const _el24 = createElement("p");
+          insertDynamicValue(_el24, null, () => trimmed);
+          return _el24;
+        })();
+      }));
       return _el19;
-    })() : null);
-    insertDynamic(_el15, null, () => view.value.state === "ok" ? (() => {
-      const _el20 = createElement("pre");
-      setStaticProps(_el20, {
-        "class": "studio__code-body"
-      });
-      insertBefore(_el20, (() => {
-        const _el21 = createElement("code");
-        insertDynamicValue(_el21, null, () => view.value.text);
-        return _el21;
-      })(), null);
-      return _el20;
-    })() : null);
-    return _el15;
+    })());
+    return _el16;
   })();
 }
 function Studio() {
-  effect(on([studioState], () => {
-    untrack(() => {
-      const browser = sourceBrowserOf();
-      const s = browser.state.value;
-      const projectDir = String(studioState.value.manifest?.project?.dir ?? "");
-      if (studioState.value.status !== "ready" || projectDir === "")
-        return;
-      if (s.projectDir !== projectDir) {
-        browser.reset();
-        browser.state.value = { ...browser.state.value, status: "loading", projectDir };
-      }
-      if (browser.state.value.dirs[""] === void 0) {
-        browser.state.value = { ...browser.state.value, expanded: [...browser.state.value.expanded, ""] };
-        void browser.listDir("");
-      }
-    });
-  }));
   return (() => {
-    const _el22 = createElement("div");
-    setStaticProps(_el22, {
+    const _el25 = createElement("div");
+    setStaticProps(_el25, {
       "class": "studio"
     });
-    insertBefore(_el22, (() => {
-      const _el23 = createElement("header");
-      setStaticProps(_el23, {
+    insertBefore(_el25, (() => {
+      const _el26 = createElement("header");
+      setStaticProps(_el26, {
         "class": "studio__head"
       });
-      insertBefore(_el23, cloneTemplate(_tpl24), null);
-      insertBefore(_el23, cloneTemplate(_tpl25), null);
-      insertBefore(_el23, (() => {
-        const _el26 = createElement("span");
-        setStaticProps(_el26, {
+      insertBefore(_el26, cloneTemplate(_tpl27), null);
+      insertBefore(_el26, cloneTemplate(_tpl28), null);
+      insertBefore(_el26, (() => {
+        const _el29 = createElement("span");
+        setStaticProps(_el29, {
           "class": "studio__ws"
         });
-        insertDynamicValue(_el26, null, () => studioState.value.workspace ?? "");
-        return _el26;
-      })(), null);
-      insertBefore(_el23, (() => {
-        const _el27 = createElement("button");
-        setStaticProps(_el27, {
-          "class": "studio__btn"
-        });
-        addEventListener(_el27, "click", () => {
-          sourceBrowserOf().listDir("");
-        });
-        insertBefore(_el27, createText("Refresh"), null);
-        return _el27;
-      })(), null);
-      return _el23;
-    })(), null);
-    insertBefore(_el22, (() => {
-      const _el28 = createElement("div");
-      setStaticProps(_el28, {
-        "class": "studio__body"
-      });
-      insertBefore(_el28, (() => {
-        const _el29 = createElement("aside");
-        setStaticProps(_el29, {
-          "class": "studio__rail"
-        });
-        insertBefore(_el29, createComponent(resolveComponent(SourceTree, "src/client/panel.tsx", "SourceTree"), {}), null);
+        insertDynamicValue(_el29, null, () => studioState.value.workspace ?? "");
         return _el29;
       })(), null);
-      insertBefore(_el28, (() => {
-        const _el30 = createElement("main");
+      insertBefore(_el26, (() => {
+        const _el30 = createElement("button");
         setStaticProps(_el30, {
-          "class": "studio__main"
+          "class": "studio__btn"
         });
-        insertDynamic(_el30, null, () => studioState.value.status === "ready" ? createComponent(resolveComponent(CodeViewer, "src/client/panel.tsx", "CodeViewer"), {}) : createComponent(resolveComponent(StatusNotice, "src/client/panel.tsx", "StatusNotice"), {}));
+        addEventListener(_el30, "click", () => {
+          refreshStudio();
+        });
+        insertBefore(_el30, createText("Refresh"), null);
         return _el30;
       })(), null);
-      return _el28;
+      return _el26;
     })(), null);
-    return _el22;
+    insertBefore(_el25, (() => {
+      const _el31 = createElement("main");
+      setStaticProps(_el31, {
+        "class": "studio__main"
+      });
+      insertDynamic(_el31, null, () => studioState.value.status === "ready" ? (() => {
+        const _el32 = createElement("div");
+        setStaticProps(_el32, {
+          "class": "studio__flow"
+        });
+        insertBefore(_el32, createComponent(resolveComponent(BuildStatus, "src/client/panel.tsx", "BuildStatus"), {}), null);
+        insertBefore(_el32, createComponent(resolveComponent(PageList, "src/client/panel.tsx", "PageList"), {}), null);
+        insertBefore(_el32, createComponent(resolveComponent(DesignCard, "src/client/panel.tsx", "DesignCard"), {}), null);
+        return _el32;
+      })() : createComponent(resolveComponent(StatusNotice, "src/client/panel.tsx", "StatusNotice"), {}));
+      return _el31;
+    })(), null);
+    return _el25;
   })();
 }
 const STUDIO_CSS = `
-:host { display: block; width: 100%; height: 100%; }
-* { box-sizing: border-box; }
-
 .studio {
-  --s-bg: var(--dsw-bg-color, #1a1a1e);
-  --s-panel: var(--dsw-bg-elevated, #222226);
-  --s-border: var(--dsw-border-color, rgba(255,255,255,.08));
-  --s-text: var(--dsw-text-primary, #e8e8ea);
-  --s-muted: var(--dsw-text-tertiary, #8f8f96);
-  --s-brand: var(--dsw-brand-primary, #4d6bfe);
-  --s-brand-soft: color-mix(in srgb, var(--s-brand) 14%, transparent);
-  display: flex;
-  flex-direction: column;
   width: 100%;
   height: 100%;
   background: var(--s-bg);
   color: var(--s-text);
   font: 400 13px/1.5 var(--dsw-font-family, -apple-system, "Segoe UI", sans-serif);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .studio__head {
@@ -2428,77 +2456,93 @@ const STUDIO_CSS = `
 .studio__btn:hover { border-color: var(--s-brand); color: var(--s-brand); }
 .studio__btn[disabled] { opacity: .4; cursor: default; pointer-events: none; }
 
-.studio__diag {
-  margin: 0;
-  max-width: 460px;
-  font-size: 11px;
-  color: var(--s-warning, #d9a441);
-  word-break: break-all;
-}
+.studio__main { flex: 1; min-height: 0; overflow-y: auto; }
 
-.studio__body { flex: 1; display: flex; min-height: 0; }
+.studio__flow { max-width: 720px; margin: 0 auto; padding: 16px 18px 24px; }
 
-.studio__tree { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-.studio__tree-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 4px; }
-.studio__tree-hint { margin: 0; padding: 10px; font-size: 12px; color: var(--s-muted); }
-.studio__tree-row {
+.studio__status {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--s-border);
+  border-radius: 8px;
+  background: var(--s-panel);
+}
+.studio__status-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--s-brand);
+}
+.studio__status-text { flex: 1; font-size: 12px; color: var(--s-text); }
+
+.studio__pages { margin-top: 12px; }
+.studio__page-btn {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
   width: 100%;
-  border: none;
-  background: transparent;
+  border: 1px solid var(--s-border);
+  background: var(--s-panel);
   color: var(--s-text);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   text-align: left;
-  padding: 3px 6px;
-  border-radius: 5px;
+  padding: 9px 12px;
+  border-radius: 6px;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  margin-bottom: 6px;
 }
-.studio__tree-row:hover { background: var(--s-brand-soft); }
-.studio__tree-row[data-active="true"] { color: var(--s-brand); }
-.studio__tree-chevron { flex: none; width: 10px; font-size: 9px; color: var(--s-muted); }
+.studio__page-btn:hover { border-color: var(--s-brand); color: var(--s-brand); }
+.studio__page-route { font-size: 11px; color: var(--s-muted); }
 
-.studio__code { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.studio__code-head {
-  flex: none;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--s-border);
+.studio__design {
+  margin-top: 12px;
+  border: 1px solid var(--s-border);
+  border-radius: 8px;
   background: var(--s-panel);
-  font-size: 12px;
-  color: var(--s-muted);
-}
-.studio__code-status { margin: 0; padding: 12px 14px; font-size: 12px; color: var(--s-muted); }
-.studio__code-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  margin: 0;
   padding: 12px 14px;
-  font: 400 12px/1.6 var(--dsw-mono, Consolas, "Courier New", monospace);
+}
+.studio__design h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--s-text);
-  white-space: pre;
-  tab-size: 2;
-}
-
-.studio__rail {
-  flex: none;
-  width: 280px;
-  border-right: 1px solid var(--s-border);
-  background: var(--s-panel);
   display: flex;
-  flex-direction: column;
-  min-height: 0;
+  align-items: center;
+  gap: 8px;
 }
+.studio__design-src {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--s-muted);
+  border: 1px solid var(--s-border);
+  border-radius: 999px;
+  padding: 0 8px;
+}
+.studio__design-body h4 {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--s-brand);
+}
+.studio__design-body h5 { margin: 8px 0 2px; font-size: 12px; color: var(--s-text); }
+.studio__design-body p { margin: 2px 0; font-size: 12px; color: var(--s-text); }
+.studio__design-li {
+  margin: 2px 0 2px 10px;
+  padding-left: 8px;
+  border-left: 2px solid var(--s-border);
+  font-size: 12px;
+  color: var(--s-text);
+}
+.studio__design-spacer { height: 6px; }
+.studio__design-note { margin: 0; font-size: 12px; color: var(--s-muted); }
 
-.studio__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .studio__placeholder {
-  position: absolute;
-  inset: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2510,57 +2554,39 @@ const STUDIO_CSS = `
 }
 .studio__placeholder h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--s-text); }
 .studio__placeholder code {
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 12px;
+  font-family: var(--dsw-mono, Consolas, "Courier New", monospace);
+  font-size: 11px;
   background: var(--s-panel);
   border: 1px solid var(--s-border);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 1px 6px;
 }
 .studio__placeholder p { margin: 0; max-width: 460px; font-size: 12px; }
 
-.studio__aside {
-  flex: none;
-  width: 260px;
-  border-left: 1px solid var(--s-border);
-  background: var(--s-panel);
-  overflow-y: auto;
-  padding: 12px 14px;
-  font-size: 12px;
-  color: var(--s-muted);
-}
-.studio__aside h3 {
-  margin: 0 0 8px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--s-muted);
-}
-.studio__file {
-  font-family: ui-monospace, Consolas, monospace;
-  padding: 3px 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.studio__error { color: #e5695f; }
-.studio__state { padding: 14px; font-size: 12px; color: var(--s-muted); }
-.studio__steps { max-width: 520px; text-align: left; }
-.studio__steps ol { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 10px; }
-.studio__steps li { font-size: 12px; line-height: 1.55; }
-.studio__steps b { color: var(--s-text); }
+.studio__steps { max-width: 460px; text-align: left; }
+.studio__steps-hint { margin: 0 0 8px; font-size: 12px; color: var(--s-muted); }
+.studio__steps ol { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
+.studio__steps li { font-size: 12px; color: var(--s-text); }
 .studio__steps code {
   display: block;
-  margin: 4px 0 2px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  margin-top: 4px;
+  font-family: var(--dsw-mono, Consolas, "Courier New", monospace);
+  font-size: 11px;
   background: var(--s-panel);
   border: 1px solid var(--s-border);
-  font: 400 11px/1.5 ui-monospace, Consolas, monospace;
+  border-radius: 4px;
+  padding: 3px 8px;
   word-break: break-all;
 }
-.studio__steps-sub { display: block; margin-top: 2px; color: var(--s-muted); font-size: 11px; }
+
+.studio__diag {
+  margin: 0;
+  max-width: 460px;
+  font-size: 11px;
+  color: var(--s-warning, #d9a441);
+  word-break: break-all;
+}
+.studio__error { margin: 0; max-width: 460px; font-size: 12px; color: var(--s-warning, #d9a441); }
 `;
 const _tpl1 = createTemplate('<span class="studio-row__dot"></span>');
 const _tpl6 = createTemplate("<summary>output</summary>");

@@ -4,9 +4,11 @@
  * The view is only rendered when the panel opens, while `setup(ctx)` runs as soon as the
  * plugin loads — so the signals live here and the data source (created in setup) drives
  * them; the component body reads them in dynamic positions and runs exactly once.
+ *
+ * Panel scope (owner call): the panel is a WORKFLOW-STATUS page, not a file browser —
+ * source browsing belongs to DSH's built-in sidebar, page rendering to DSH's browser.
  */
 import { state } from '@vobs/vobs'
-import { createSourceBrowser, type SourceSignals } from './source'
 import { createStudioSource, type StudioSource, type StudioState } from './manifest'
 
 export const studioState = state<StudioState>(
@@ -15,40 +17,17 @@ export const studioState = state<StudioState>(
 )
 
 let source: StudioSource | undefined
-let sourceBrowser: SourceSignals | undefined
-/** The plugin setup ctx — the only place services are reachable; captured for the source browser. */
-let pluginCtx: unknown
-
-function ensureSourceBrowser(): SourceSignals {
-  if (sourceBrowser === undefined) {
-    sourceBrowser = createSourceBrowser(pluginCtx, {
-      projectDir: () => String(studioState.value.manifest?.project?.dir ?? ''),
-      sessionId: () => String(studioState.value.sessionId ?? ''),
-      workspace: () => String(studioState.value.workspace ?? '')
-    })
-  }
-  return sourceBrowser
-}
-
-export function sourceBrowserOf(): SourceSignals {
-  return ensureSourceBrowser()
-}
 
 export function startStudioSource(ctx: Parameters<typeof createStudioSource>[0]): void {
-  pluginCtx = ctx
   source?.dispose()
   source = createStudioSource(ctx, { sink: studioState })
 }
 
 export function refreshStudio(): void {
   source?.refresh()
-  void sourceBrowserOf().listDir('')
 }
 
 export function disposeStudio(): void {
   source?.dispose()
   source = undefined
-  sourceBrowser?.reset()
-  sourceBrowser = undefined
-  pluginCtx = undefined
 }

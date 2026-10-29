@@ -49,6 +49,9 @@ export interface StudioState {
   /** Why the last read failed — surfaced in the panel so silence never hides a Host error. */
   readonly diagnostic?: string
   readonly manifest?: PreviewManifest
+  /** DESIGN.md of the generated project — the design-direction card. Re-read only when the manifest version changes. */
+  readonly designMdText?: string
+  readonly designMdNote?: string
 }
 
 export interface StudioSource {
@@ -228,6 +231,7 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
   studioState.value = EMPTY
 
   let lastVersion: unknown
+  let lastDesignVersion: unknown
   let disposed = false
   let inFlight = false
 
@@ -243,6 +247,7 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
    */
   const showMissing = (sessionId: string, workspace: string | undefined, diagnostic?: string): void => {
     lastVersion = undefined
+    lastDesignVersion = undefined
     setState({ status: 'missing', sessionId, workspace, message: MISSING_MESSAGE, diagnostic, manifest: undefined })
   }
 
@@ -333,6 +338,26 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
         return
       }
       setState({ status: 'ready', sessionId, workspace, message: '', manifest })
+
+      /**
+       * DESIGN.md (the design-direction card) rides along with the manifest read, but is
+       * re-read ONLY when the manifest version changes — one extra small-file read per
+       * build, never per poll (the IPC budget that caused the freeze stays intact).
+       */
+      const version = manifest.version ?? 0
+      if (version !== lastDesignVersion) {
+        lastDesignVersion = version
+        const designPath = joinPath(joinPath(workspace, String(manifest.project?.dir ?? '')), 'DESIGN.md')
+        const design = await readTextWithReason(api, sessionId, designPath)
+        if (design.kind === 'ok' && design.text.trim() !== '') {
+          setState({ designMdText: design.text, designMdNote: undefined })
+        } else {
+          setState({
+            designMdText: undefined,
+            designMdNote: design.kind === 'unreadable' ? design.reason : 'DESIGN.md exists but is empty'
+          })
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setState({ status: 'error', sessionId, workspace, message })

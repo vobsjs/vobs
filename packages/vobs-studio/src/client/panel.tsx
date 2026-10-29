@@ -1,16 +1,18 @@
 /**
- * Vobs Studio panel — two-zone source browser: project tree (left) + code viewer (right).
+ * Vobs Studio panel — the generation WORKFLOW-STATUS page.
  *
- * The component body executes exactly once; every dynamic `{…}` is a subscription
- * position, so updates never re-run this function. All state lives in `store.ts`.
+ * Product shape (owner call): the panel carries only what DSH does not have natively —
+ * build status, the page list with open links, and the design-direction card (DESIGN.md
+ * rendered). Source browsing belongs to DSH's built-in sidebar; page rendering to DSH's
+ * browser. One column, minimal reads: manifest per poll, DESIGN.md only on version
+ * changes.
  *
- * Product shape (owner call): no preview duplication — pages open in DSH's browser via
- * the chat link; this panel is for source review. The missing/error card surfaces the
- * Host's real error text (diagnostics) so field failures are never silent again.
+ * Discipline: the body executes exactly once; every dynamic `{…}` is a subscription
+ * position. Missing/error states surface the Host's real error text (diagnostics).
  */
-import { effect, memo, on, untrack } from '@vobs/vobs'
-import { studioState, sourceBrowserOf } from './store'
-import { buildTree, type TreeNode } from './source'
+import { memo } from '@vobs/vobs'
+import { pageUrl, type PreviewPage } from './manifest'
+import { refreshStudio, studioState } from './store'
 
 function StatusNotice() {
   return (
@@ -30,11 +32,7 @@ function StatusNotice() {
   )
 }
 
-/**
- * First-run guidance, shown whenever the preview manifest has never been produced.
- * This panel is the only surface a fresh install guarantees the user will open — so the
- * setup steps live HERE, not only in the repository docs.
- */
+/** First-run guidance — the only surface a fresh install guarantees the user will open. */
 function SetupSteps() {
   return (
     <div class="studio__steps">
@@ -56,114 +54,89 @@ function SetupSteps() {
         </li>
         <li>
           <b>Open the pages from the chat</b> — the agent posts a preview URL after each
-          build; DSH's browser renders it (and "Open in browser" style links reach your
-          default browser). This panel follows with the source tree and code.
+          build; DSH's browser renders it. This panel follows with the build status, the
+          page list and the design direction.
         </li>
       </ol>
     </div>
   )
 }
 
-/** One recursive tree row; expansion state lives in the source browser's signals. */
-function TreeRows(nodes: readonly TreeNode[], depth: number): unknown {
-  return nodes.map(node => {
-    const browser = sourceBrowserOf()
-    const expanded = browser.state.value.expanded.includes(node.relPath)
-    return (
-      <div>
-        <button
-          class="studio__tree-row"
-          style={{ 'padding-left': `${8 + depth * 14}px` }}
-          data-active={browser.state.value.openPath === node.relPath && !node.isDir}
-          onClick={() => {
-            if (node.isDir) browser.toggleDir(node.relPath)
-            else void browser.openFile(node.relPath)
-          }}
-        >
-          <span class="studio__tree-chevron">{node.isDir ? (expanded ? '▾' : '▸') : ''}</span>
-          <span>{node.name}</span>
-        </button>
-        {node.isDir && expanded ? TreeRows(node.children, depth + 1) : null}
-      </div>
-    )
-  })
-}
-
-function SourceTree() {
-  const browser = sourceBrowserOf()
+function BuildStatus() {
   const view = memo(() => {
-    const s = browser.state.value
-    const projectDir = String(studioState.value.manifest?.project?.dir ?? '')
-    if (projectDir === '') return { kind: 'empty' as const }
-    if (s.status === 'error') return { kind: 'error' as const, message: s.message }
-    const tree = buildTree(s.dirs, '')
-    const rootLoaded = s.dirs[''] !== undefined
-    return { kind: 'ready' as const, tree, rootLoaded, open: s, projectDir }
+    const s = studioState.value
+    return { pages: s.manifest?.pages ?? [], version: s.manifest?.version ?? 0, origin: s.manifest?.server?.origin ?? '' }
   })
   return (
-    <div class="studio__tree">
-      {view.value.kind === 'empty' ? (
-        <p class="studio__tree-hint">Generate a project first — the tree follows the manifest's project dir.</p>
-      ) : view.value.kind === 'error' ? (
-        <p class="studio__tree-hint">{view.value.message}</p>
-      ) : (
-        <div class="studio__tree-scroll">
-          <button
-            class="studio__tree-row"
-            data-active={view.value.open.openPath === ''}
-            onClick={() => {
-              browser.toggleDir('')
-            }}
-          >
-            <span class="studio__tree-chevron">{view.value.rootLoaded ? '▾' : '▸'}</span>
-            <span>{view.value.projectDir}</span>
-          </button>
-          {view.value.rootLoaded ? TreeRows(view.value.tree, 1) : null}
-        </div>
-      )}
+    <div class="studio__status">
+      <span class="studio__status-dot" />
+      <span class="studio__status-text">
+        Ready · {view.value.pages.length} page(s) · build v{view.value.version}
+      </span>
+      <button
+        class="studio__btn"
+        title="Copy the preview origin"
+        onClick={() => {
+          void navigator.clipboard?.writeText(view.value.origin).catch(() => {})
+        }}
+      >
+        Copy URL
+      </button>
     </div>
   )
 }
 
-function CodeViewer() {
-  const browser = sourceBrowserOf()
-  const view = memo(() => {
-    const s = browser.state.value
-    return { path: s.openPath, state: s.openState, text: s.openText }
-  })
+function PageList() {
   return (
-    <div class="studio__code">
-      <div class="studio__code-head">
-        <code>{view.value.path === '' ? 'select a file in the tree' : view.value.path}</code>
-      </div>
-      {view.value.state === 'loading' ? <p class="studio__code-status">Loading…</p> : null}
-      {view.value.state === 'error' ? <p class="studio__code-status">{view.value.text}</p> : null}
-      {view.value.state === 'ok' ? <pre class="studio__code-body"><code>{view.value.text}</code></pre> : null}
+    <div class="studio__pages">
+      {(studioState.value.manifest?.pages ?? []).map((page: PreviewPage) => (
+        <button
+          class="studio__page-btn"
+          onClick={() => {
+            const url = pageUrl(studioState.value.manifest, page)
+            if (typeof url === 'string') window.open(url, '_blank')
+          }}
+        >
+          <span>{page.title || page.id}</span>
+          <span class="studio__page-route">{page.route}</span>
+        </button>
+      ))}
     </div>
+  )
+}
+
+/** DESIGN.md rendered lightly: '## ' headings, '- ' bullets, **bold** stripped to <b>. */
+function DesignCard() {
+  const view = memo(() => {
+    const s = studioState.value
+    return { text: s.designMdText, note: s.designMdNote }
+  })
+  const lines = (view.value.text ?? '').split('\n')
+  const clean = (line: string): string => line.replace(/\*\*([^*]+)\*\*/gu, '$1')
+  return (
+    <section class="studio__design">
+      <h3>设计方向 <span class="studio__design-src">DESIGN.md</span></h3>
+      {view.value.text === undefined ? (
+        <p class="studio__design-note">{view.value.note ?? 'Not written yet.'}</p>
+      ) : (
+        <div class="studio__design-body">
+          {lines.map((line, index) => {
+            const trimmed = clean(line).trim()
+            if (trimmed === '') return <div class="studio__design-spacer" key={index} />
+            if (trimmed.startsWith('## ')) return <h4 key={index}>{trimmed.slice(3)}</h4>
+            if (trimmed.startsWith('### ')) return <h5 key={index}>{trimmed.slice(4)}</h5>
+            if (trimmed.startsWith('- ') || /^\d+\.\s/u.test(trimmed)) {
+              return <div class="studio__design-li" key={index}>{trimmed.replace(/^[-]\s*/u, '').replace(/^\d+\.\s*/u, '')}</div>
+            }
+            return <p key={index}>{trimmed}</p>
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 
 export function Studio() {
-  // Auto-load the project root once the manifest is ready, so the tree is populated
-  // without a click. The only tracked dep is studioState; all writes are untracked (no
-  // C210 self-subscription).
-  effect(on([studioState], () => {
-    untrack(() => {
-      const browser = sourceBrowserOf()
-      const s = browser.state.value
-      const projectDir = String(studioState.value.manifest?.project?.dir ?? '')
-      if (studioState.value.status !== 'ready' || projectDir === '') return
-      if (s.projectDir !== projectDir) {
-        browser.reset()
-        browser.state.value = { ...browser.state.value, status: 'loading', projectDir }
-      }
-      if (browser.state.value.dirs[''] === undefined) {
-        browser.state.value = { ...browser.state.value, expanded: [...browser.state.value.expanded, ''] }
-        void browser.listDir('')
-      }
-    })
-  }))
-
   return (
     <div class="studio">
       <header class="studio__head">
@@ -173,20 +146,23 @@ export function Studio() {
         <button
           class="studio__btn"
           onClick={() => {
-            sourceBrowserOf().listDir('')
+            refreshStudio()
           }}
         >
           Refresh
         </button>
       </header>
-      <div class="studio__body">
-        <aside class="studio__rail">
-          <SourceTree />
-        </aside>
-        <main class="studio__main">
-          {studioState.value.status === 'ready' ? <CodeViewer /> : <StatusNotice />}
-        </main>
-      </div>
+      <main class="studio__main">
+        {studioState.value.status === 'ready' ? (
+          <div class="studio__flow">
+            <BuildStatus />
+            <PageList />
+            <DesignCard />
+          </div>
+        ) : (
+          <StatusNotice />
+        )}
+      </main>
     </div>
   )
 }
