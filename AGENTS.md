@@ -16,6 +16,7 @@
 | **Checks / scripts the repo already has** | **`pnpm run checks`** ← run this first |
 | Symbols / APIs exported by the framework | `vobs api <keyword>` |
 | Diagnostic-code rules and the correct way to write them | `vobs explain <code>` |
+| **DSH plugins that already exist** (Console / DevKit / Studio) | **[docs/dsh.md](docs/dsh.md)** — before building anything "DSH plugin"-shaped; Vobs Studio (`packages/vobs-studio`) already does AI-built vobs+Tailwind pages: design contract, MCP server, preview panel |
 
 - ❌ Once: wrote an equivalent of `check-imports` from scratch, **and on top of a wrong
   conclusion added `workspace:*` to 3 bundle-style packages**, which would have turned their

@@ -1,16 +1,17 @@
 # DSH plugins
 
-vobs can be used to write client plugins for [DeepSeek Harness](https://github.com/deepseek-ai). The repository contains **one toolchain + three plugin packages**:
+vobs can be used to write client plugins for [DeepSeek Harness](https://github.com/deepseek-ai). The repository contains **one toolchain + four plugin packages**:
 
 | Package | Purpose |
 | --- | --- |
-| [`@vobs/dsh`](../packages/dsh) | Runtime adapter (`defineDshPlugin` / `defineDshOverlay` / `defineDshPanel`) + `dshBundle()` to build plugins + `@vobs/dsh/preview` local preview runtime |
+| [`@vobs/dsh`](../packages/dsh) | Runtime adapter (`defineDshPlugin` / `defineDshOverlay` / `defineDshPanel` / `createVobsPropsSlotHost`) + `dshBundle()` to build plugins + `@vobs/dsh/preview` local preview runtime |
 | [`@vobs/cli`](../packages/cli) | The `vobs dsh init / dev / build / check / install` command group and the plugin template; also `vobs check` static source checks |
 | [`packages/dsh-plugin`](../packages/dsh-plugin) | The minimal working plugin (overlay), also the reference implementation for "vobs → DSH" |
 | [`packages/dsh-console`](../packages/dsh-console) | **Vobs Console**: a multi-session real-time cockpit registered into the `main` slot (overview / event stream / tool analysis / artifacts) |
 | [`packages/dsh-devkit`](../packages/dsh-devkit) | **Vobs DevKit**: project checks (reads `.vobs/check.json`) / guardrails / API / examples / status |
+| [`packages/vobs-studio`](../packages/vobs-studio) | **Vobs Studio**: AI-built vobs+Tailwind projects — an MCP server (design contract / scaffold / static self-check / build+serve) plus a full-page preview panel and in-chat toolview rows |
 
-These three `dsh-plugin*` packages share the repository-wide lockstep version with the rest, but are **not published to npm** — they are distributed via Git tags or commits + the `#path:` subdirectory.
+These four `dsh-plugin*` packages share the repository-wide lockstep version with the rest, but are **not published to npm** — they are distributed via Git tags or commits + the `#path:` subdirectory.
 
 ## How users install
 
@@ -21,6 +22,7 @@ Sidebar → **Plugins** → **Add plugin**. The dialog accepts **a package name,
 ```text
 github:vobsjs/vobs#<ref>&path:/packages/dsh-console
 github:vobsjs/vobs#<ref>&path:/packages/dsh-devkit
+github:vobsjs/vobs#<ref>&path:/packages/vobs-studio
 ```
 
 The Host first reads what the spec points to before running pnpm (you can see the pnpm output). After installing you **must turn the plugin's switch on**, then **quit DSH completely and reopen it**. Only one can be installed at a time.
@@ -59,15 +61,17 @@ Once a version tag is cut, it can be written as `#v1.8.0`.
 
 1. **Do not install with `pnpm add`.** The `&path:` subdirectory syntax requires **pnpm ≥ 11**; pnpm 10 **silently ignores** it and installs the entire monorepo root instead of the target subpackage. The DSH plugin page and `dsh plugin` use DSH's built-in pnpm 11.
 2. **The DevKit's "Project" page needs data**: it reads `.vobs/check.json` from the workspace, produced by `vobs check --write` (when the file is absent, the panel honestly tells you what to run). The other pages are static content baked in at build time and are viewable right after install.
+3. **Vobs Studio needs its MCP server registered per session**: add `node <plugin-dir>/mcp/index.mjs` (stdio) to the session's `mcpServers`. Without it the agent has no design contract / scaffold / self-check tools and the Studio panel just shows "no preview yet". The panel reads `.vobs/studio/preview.json`, written by `design_preview_build`.
 
 ## Building and verifying
 
 ```bash
 pnpm build:packages      # first time: produces the build artifacts of @vobs/dsh and @vobs/vite-plugin
-pnpm build:dsh           # builds lib/{index,client}.js for the three plugin packages
+pnpm build:dsh           # builds lib/{index,client}.js for the four plugin packages
 node packages/dsh-plugin/scripts/verify-client.mjs     # 54 artifact checks
 node packages/dsh-console/scripts/verify-console.mjs   # 62
 node packages/dsh-devkit/scripts/verify-devkit.mjs     # 65
+node packages/vobs-studio/scripts/verify-studio.mjs    # 33
 ```
 
 The `lib/` artifacts are **committed to the repository** — DSH does not build your package, so after changing source you must rebuild and commit (CI runs the three verifications above to catch missed rebuilds).
