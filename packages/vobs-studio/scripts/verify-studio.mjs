@@ -190,9 +190,13 @@ check('factory returns the plugin object', typeof plugin === 'object' && plugin 
 // cordis's effect hooks the plugin teardown (which clears the polling interval) — without
 // running it the process never exits.
 const disposers = []
+const declaredInject = new Set(['slots', ...(plugin.inject ?? [])])
+// Real DSH only hands DECLARED services to ctx.get — a source that reads an undeclared
+// service silently gets undefined (real-install regression this assertion guards against).
 plugin.apply({
   slots: slotsStub,
   get(name) {
+    if (!declaredInject.has(name)) throw new Error(`service "${name}" used but not declared in inject/injectServices`)
     return fakeServices[name]
   },
   effect(callback) {
