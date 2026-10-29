@@ -1297,13 +1297,6 @@ function bindAttribute(node, key, source2) {
     setAttribute(node, key, key === "style" && value && typeof value === "object" && !Array.isArray(value) ? Object.entries(value).filter(([, entry]) => entry !== null && entry !== void 0 && entry !== false).map(([name, entry]) => `${name.replace(/[A-Z]/gu, (match) => `-${match.toLowerCase()}`)}:${String(entry)}`).join(";") : String(value));
   });
 }
-function bindProperty(node, key, source2) {
-  effect(() => {
-    const value = readSource(source2);
-    if (value === null || value === void 0) return;
-    setProperty(node, key, value);
-  });
-}
 function insertDynamic(parent, anchor, factory) {
   const marker = createComment("vobs:dynamic");
   insertBefore(parent, marker, anchor);
@@ -1381,185 +1374,6 @@ function normalizeDynamicChild(value) {
 }
 function isHostNode(value) {
   return Boolean(value && typeof value === "object" && ("nodeType" in value || (value.type === "element" || value.type === "text" || value.type === "comment")));
-}
-function insertList(parent, anchor, source2, renderItem, keyOf) {
-  const marker = createComment("vobs:list");
-  insertBefore(parent, marker, anchor);
-  let entries = [];
-  const tracksIndex = renderItem.length >= 2;
-  effect(() => {
-    const items = source2();
-    const nextEntries = reconcileIndexed(items, entries, renderItem);
-    const refreshed = tracksIndex ? /* @__PURE__ */ new Set() : null;
-    for (let index2 = 0; index2 < nextEntries.length; index2++) {
-      const entry = nextEntries[index2];
-      if (tracksIndex) {
-        if (entry.index !== index2) {
-          refreshListEntry(parent, entry, index2, renderItem);
-          refreshed.add(entry);
-        }
-      } else {
-        entry.index = index2;
-      }
-    }
-    const retained = new Set(nextEntries);
-    for (const entry of entries) {
-      if (!retained.has(entry)) disposeEntry(parent, entry);
-    }
-    reorderListEntries(parent, marker, entries, nextEntries, refreshed);
-    entries = nextEntries;
-  });
-}
-function reorderListEntries(parent, marker, previous, nextEntries, forceInsert) {
-  const count = nextEntries.length;
-  if (count === 0) return;
-  if (previous.length === 0) {
-    let reference2 = marker;
-    for (let index2 = count - 1; index2 >= 0; index2--) {
-      const node = nextEntries[index2].node;
-      insertBefore(parent, node, reference2);
-      reference2 = node;
-    }
-    return;
-  }
-  const oldIndexOf = /* @__PURE__ */ new Map();
-  for (let index2 = 0; index2 < previous.length; index2++) oldIndexOf.set(previous[index2], index2);
-  const seq = new Array(count);
-  for (let index2 = 0; index2 < count; index2++) {
-    const entry = nextEntries[index2];
-    seq[index2] = forceInsert?.has(entry) ? -1 : oldIndexOf.get(entry) ?? -1;
-  }
-  const keep = computeKeptByLis(seq);
-  let reference = marker;
-  for (let index2 = count - 1; index2 >= 0; index2--) {
-    const node = nextEntries[index2].node;
-    if (keep[index2]) {
-      reference = node;
-      continue;
-    }
-    insertBefore(parent, node, reference);
-    reference = node;
-  }
-}
-function computeKeptByLis(seq) {
-  const count = seq.length;
-  const keep = new Array(count).fill(false);
-  const tailsIndex = [];
-  const tailsValue = [];
-  const prev = new Array(count).fill(-1);
-  for (let i = 0; i < count; i++) {
-    const value = seq[i];
-    if (value < 0) continue;
-    let lo = 0;
-    let hi = tailsValue.length;
-    while (lo < hi) {
-      const mid = lo + hi >> 1;
-      if (tailsValue[mid] < value) lo = mid + 1;
-      else hi = mid;
-    }
-    if (lo === tailsValue.length) {
-      tailsValue.push(value);
-      tailsIndex.push(i);
-    } else {
-      tailsValue[lo] = value;
-      tailsIndex[lo] = i;
-    }
-    prev[i] = lo > 0 ? tailsIndex[lo - 1] : -1;
-  }
-  let cursor = tailsIndex.length > 0 ? tailsIndex[tailsIndex.length - 1] : -1;
-  while (cursor >= 0) {
-    keep[cursor] = true;
-    cursor = prev[cursor];
-  }
-  return keep;
-}
-function reconcileIndexed(items, entries, renderItem) {
-  const nextEntries = [];
-  for (let index2 = 0; index2 < items.length; index2++) {
-    const item = items[index2];
-    const entry = entries[index2];
-    if (entry && isPrimitiveItem(item) && !Object.is(entry.current, item)) {
-      nextEntries.push(createListEntry(item, index2, index2, renderItem));
-      continue;
-    }
-    if (entry) {
-      entry.item.value = item;
-      entry.current = item;
-      nextEntries.push(entry);
-      continue;
-    }
-    nextEntries.push(createListEntry(item, index2, index2, renderItem));
-  }
-  return nextEntries;
-}
-function isPrimitiveItem(item) {
-  return item === null || typeof item !== "object";
-}
-function createListEntry(item, index2, key, renderItem) {
-  const owner = createOwner();
-  let itemSignal;
-  let viewOwner;
-  let node;
-  owner.run(() => {
-    itemSignal = state(item, "signal");
-    viewOwner = createOwner();
-    node = viewOwner.run(() => renderItem(toReactiveItem(itemSignal, item), index2));
-  });
-  associateNodeOwner(node, viewOwner);
-  return { key, node, owner, viewOwner, item: itemSignal, current: item, index: index2 };
-}
-function refreshListEntry(parent, entry, index2, renderItem) {
-  removeChild(parent, entry.node);
-  entry.index = index2;
-  const previousView = entry.viewOwner;
-  entry.owner.run(() => {
-    entry.viewOwner = createOwner();
-    entry.node = entry.viewOwner.run(() => renderItem(
-      toReactiveItem(entry.item, entry.current),
-      index2
-    ));
-  });
-  previousView.dispose();
-  associateNodeOwner(entry.node, entry.viewOwner);
-}
-function toReactiveItem(item, initialValue) {
-  if (typeof initialValue !== "object" || initialValue === null) {
-    return initialValue;
-  }
-  return new Proxy(reactiveProxyTarget(initialValue), {
-    get(_target, property, receiver) {
-      return Reflect.get(item.value, property, receiver);
-    },
-    has(_target, property) {
-      return property in item.value;
-    },
-    ownKeys() {
-      return Reflect.ownKeys(item.value);
-    },
-    getOwnPropertyDescriptor(target, property) {
-      const descriptor = Object.getOwnPropertyDescriptor(item.value, property);
-      if (!descriptor) return void 0;
-      const own = Object.getOwnPropertyDescriptor(target, property);
-      return { ...descriptor, configurable: own ? own.configurable : true };
-    }
-  });
-}
-function reactiveProxyTarget(value) {
-  if (Object.isExtensible(value)) {
-    let allConfigurable = true;
-    for (const key of Reflect.ownKeys(value)) {
-      if (Object.getOwnPropertyDescriptor(value, key)?.configurable === false) {
-        allConfigurable = false;
-        break;
-      }
-    }
-    if (allConfigurable) return value;
-  }
-  return Array.isArray(value) ? [] : Object.create(Object.getPrototypeOf(value));
-}
-function disposeEntry(parent, entry) {
-  removeChild(parent, entry.node);
-  entry.owner.dispose();
 }
 const templateCache = /* @__PURE__ */ new Map();
 function createTemplate(html) {
@@ -1995,13 +1809,13 @@ function asBytes(value) {
   if (candidate === null || typeof candidate !== "object") return void 0;
   return typeof candidate.byteLength === "number" ? candidate : void 0;
 }
-async function readWorkspaceText(api, sessionId, path) {
+async function readTextWithReason(api, sessionId, path) {
   try {
     if (typeof api.readBytes === "function") {
       const bytes = asBytes(await api.readBytes(sessionId, path, {}));
-      if (bytes !== void 0) return new TextDecoder().decode(bytes);
+      if (bytes !== void 0) return { kind: "ok", text: new TextDecoder().decode(bytes) };
     }
-    if (typeof api.read !== "function") return void 0;
+    if (typeof api.read !== "function") return { kind: "unreadable", reason: "workspaceFiles has no usable read method" };
     let text = "";
     let offset = 1;
     for (let page = 0; page < 20; page += 1) {
@@ -2013,10 +1827,14 @@ async function readWorkspaceText(api, sessionId, path) {
       const lines = typeof result.lines === "number" && result.lines > 0 ? result.lines : 1;
       offset += lines;
     }
-    return text;
-  } catch {
-    return void 0;
+    return { kind: "ok", text };
+  } catch (error) {
+    return { kind: "unreadable", reason: error instanceof Error ? error.message : String(error) };
   }
+}
+async function readWorkspaceText(api, sessionId, path) {
+  const read = await readTextWithReason(api, sessionId, path);
+  return read.kind === "ok" ? read.text : void 0;
 }
 const EMPTY$1 = { status: "loading", message: "Reading the preview manifest…" };
 const joinPath = (base, rel) => {
@@ -2035,9 +1853,9 @@ function createStudioSource(ctx, options = {}) {
   const setState = (patch) => {
     studioState2.value = { ...studioState2.value, ...patch };
   };
-  const showMissing = (sessionId, workspace) => {
+  const showMissing = (sessionId, workspace, diagnostic) => {
     lastVersion = void 0;
-    setState({ status: "missing", sessionId, workspace, message: MISSING_MESSAGE, manifest: void 0 });
+    setState({ status: "missing", sessionId, workspace, message: MISSING_MESSAGE, diagnostic, manifest: void 0 });
   };
   const load = async () => {
     if (disposed || inFlight) return;
@@ -2071,18 +1889,18 @@ function createStudioSource(ctx, options = {}) {
         } catch {
         }
       }
-      const text = await readWorkspaceText(api, sessionId, manifestPath);
-      if (text === void 0) {
-        if (studioState2.value.status !== "ready") showMissing(sessionId, workspace);
+      const read = await readTextWithReason(api, sessionId, manifestPath);
+      if (read.kind === "unreadable") {
+        if (studioState2.value.status !== "ready") showMissing(sessionId, workspace, `read failed: ${read.reason}`);
         return;
       }
-      if (text.trim() === "") {
-        showMissing(sessionId, workspace);
+      if (read.text.trim() === "") {
+        showMissing(sessionId, workspace, "the manifest file exists but is empty");
         return;
       }
       let parsed;
       try {
-        parsed = JSON.parse(text);
+        parsed = JSON.parse(read.text);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         setState({
@@ -2125,13 +1943,6 @@ function createStudioSource(ctx, options = {}) {
       if (timer !== void 0) clearInterval(timer);
     }
   };
-}
-function pageUrl(manifest, page) {
-  const origin = manifest?.server?.origin;
-  if (origin === void 0 || origin === "") return void 0;
-  const base = origin.endsWith("/") ? origin.slice(0, -1) : origin;
-  const file = page.file.startsWith("/") ? page.file : `/${page.file}`;
-  return base + file;
 }
 const EXCLUDED_DIRS = /* @__PURE__ */ new Set(["node_modules", "dist", ".git", ".vobs"]);
 const EMPTY = {
@@ -2222,9 +2033,6 @@ const studioState = state(
   { status: "loading", message: "Waiting for the plugin setup…" },
   "studio.state"
 );
-const activePageId = state("", "studio.activePage");
-const serverNoticeDismissed = state(false, "studio.serverNoticeDismissed");
-const railMode = state("pages", "studio.railMode");
 let source;
 let sourceBrowser;
 let pluginCtx;
@@ -2246,167 +2054,106 @@ function startStudioSource(ctx) {
   source?.dispose();
   source = createStudioSource(ctx, { sink: studioState });
 }
-function refreshStudio() {
-  source?.refresh();
-}
 function disposeStudio() {
   source?.dispose();
   source = void 0;
   sourceBrowser?.reset();
   sourceBrowser = void 0;
   pluginCtx = void 0;
-  railMode.value = "pages";
 }
-const _tpl2 = createTemplate("<code>design_preview_build</code>");
-const _tpl10 = createTemplate(`<div class="studio__steps"><p class="studio__steps-hint">One-time setup, then just chat:</p><ol><li><b>The Studio tools are already connected</b> — installing this plugin also registers its MCP server (design contract / scaffold / self-check / preview build) with the harness. If the agent doesn't use them, restart DSH once: the registration is a patch, applied at startup. On an older install (or a manual setup), point the session's MCP config at:<code>…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs</code></li><li><b>Describe what you want in the chat</b> — plain language is enough: what kind of app, which pages, what content. The agent pulls the design contract, scaffolds the project, self-checks every snippet and builds it.</li><li><b>Watch the pages appear here</b> — the panel refreshes automatically after each build. Iterate by describing changes ("make the hero smaller"); "Open in browser" shows the same preview full-size.</li></ol></div>`);
-const _tpl16 = createTemplate(`<p class="studio__tree-hint">Generate a project first — the tree follows the manifest's project dir.</p>`);
-const _tpl25 = createTemplate('<p class="studio__code-status">Loading…</p>');
-const _tpl33 = createTemplate(`<p class="studio__launch-hint">Preview opens in DSH's browser (also via the link the agent posts after each build).</p>`);
-const _tpl38 = createTemplate("<h3>Project</h3>");
-const _tpl45 = createTemplate('<span class="studio__brand">Vobs Studio</span>');
-const _tpl46 = createTemplate('<span class="studio__tag">AI Build</span>');
-function ServerNotice() {
+const _tpl7 = createTemplate(`<div class="studio__steps"><p class="studio__steps-hint">One-time setup, then just chat:</p><ol><li><b>The Studio tools are already connected</b> — installing this plugin also registers its MCP server (design contract / scaffold / self-check / preview build) with the harness. If the agent doesn't use them, restart DSH once: the registration is a patch, applied at startup. On an older install (or a manual setup), point the session's MCP config at:<code>…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs</code></li><li><b>Describe what you want in the chat</b> — plain language is enough: what kind of app, which pages, what content. The agent pulls the design contract, states the design direction (DESIGN.md), scaffolds the project, self-checks every snippet and builds it.</li><li><b>Open the pages from the chat</b> — the agent posts a preview URL after each build; DSH's browser renders it (and "Open in browser" style links reach your default browser). This panel follows with the source tree and code.</li></ol></div>`);
+const _tpl9 = createTemplate(`<p class="studio__tree-hint">Generate a project first — the tree follows the manifest's project dir.</p>`);
+const _tpl18 = createTemplate('<p class="studio__code-status">Loading…</p>');
+const _tpl24 = createTemplate('<span class="studio__brand">Vobs Studio</span>');
+const _tpl25 = createTemplate('<span class="studio__tag">AI Build</span>');
+function StatusNotice() {
   return (() => {
     const _el0 = createElement("div");
     setStaticProps(_el0, {
-      "class": "studio__notice"
+      "class": "studio__placeholder"
     });
     insertBefore(_el0, (() => {
-      const _el1 = createElement("span");
-      insertBefore(_el1, createText("Frames blank? The preview server is per-session — ask the agent to re-run"), null);
-      insertDynamicValue(_el1, null, () => " ");
-      insertBefore(_el1, cloneTemplate(_tpl2), null);
-      insertBefore(_el1, createText(" to restart it."), null);
+      const _el1 = createElement("h2");
+      insertDynamicValue(_el1, null, () => studioState.value.status === "missing" ? "Getting started" : studioState.value.status === "error" ? "Preview manifest error" : "Vobs Studio");
       return _el1;
     })(), null);
-    insertBefore(_el0, (() => {
-      const _el3 = createElement("button");
-      setStaticProps(_el3, {
-        "class": "studio__notice-x",
-        "title": "Dismiss"
+    insertDynamic(_el0, null, () => studioState.value.workspace ? (() => {
+      const _el2 = createElement("p");
+      insertBefore(_el2, createText("Workspace: "), null);
+      insertBefore(_el2, (() => {
+        const _el3 = createElement("code");
+        insertDynamicValue(_el3, null, () => studioState.value.workspace);
+        return _el3;
+      })(), null);
+      return _el2;
+    })() : null);
+    insertDynamic(_el0, null, () => studioState.value.status === "missing" ? createComponent(resolveComponent(SetupSteps, "src/client/panel.tsx", "SetupSteps"), {}) : (() => {
+      const _el4 = createElement("p");
+      insertDynamicValue(_el4, null, () => studioState.value.message);
+      return _el4;
+    })());
+    insertDynamic(_el0, null, () => studioState.value.diagnostic ? (() => {
+      const _el5 = createElement("p");
+      setStaticProps(_el5, {
+        "class": "studio__diag"
       });
-      addEventListener(_el3, "click", () => {
-        serverNoticeDismissed.value = true;
+      insertDynamicValue(_el5, null, () => studioState.value.diagnostic);
+      return _el5;
+    })() : null);
+    insertDynamic(_el0, null, () => studioState.value.status === "error" ? (() => {
+      const _el6 = createElement("p");
+      setStaticProps(_el6, {
+        "class": "studio__error"
       });
-      insertBefore(_el3, createText("×"), null);
-      return _el3;
-    })(), null);
+      insertDynamicValue(_el6, null, () => studioState.value.message);
+      return _el6;
+    })() : null);
     return _el0;
   })();
 }
-function StatusNotice() {
-  return (() => {
-    const _el4 = createElement("div");
-    setStaticProps(_el4, {
-      "class": "studio__placeholder"
-    });
-    insertBefore(_el4, (() => {
-      const _el5 = createElement("h2");
-      insertDynamicValue(_el5, null, () => studioState.value.status === "missing" ? "Getting started" : studioState.value.status === "error" ? "Preview manifest error" : "Vobs Studio");
-      return _el5;
-    })(), null);
-    insertDynamic(_el4, null, () => studioState.value.workspace ? (() => {
-      const _el6 = createElement("p");
-      insertBefore(_el6, createText("Workspace: "), null);
-      insertBefore(_el6, (() => {
-        const _el7 = createElement("code");
-        insertDynamicValue(_el7, null, () => studioState.value.workspace);
-        return _el7;
-      })(), null);
-      return _el6;
-    })() : null);
-    insertDynamic(_el4, null, () => studioState.value.status === "missing" ? createComponent(resolveComponent(SetupSteps, "src/client/panel.tsx", "SetupSteps"), {}) : (() => {
-      const _el8 = createElement("p");
-      insertDynamicValue(_el8, null, () => studioState.value.message);
-      return _el8;
-    })());
-    insertDynamic(_el4, null, () => studioState.value.status === "error" ? (() => {
-      const _el9 = createElement("p");
-      setStaticProps(_el9, {
-        "class": "studio__error"
-      });
-      insertDynamicValue(_el9, null, () => studioState.value.message);
-      return _el9;
-    })() : null);
-    return _el4;
-  })();
-}
 function SetupSteps() {
-  return cloneTemplate(_tpl10);
-}
-function PageList() {
-  return (() => {
-    const _el11 = createElement("nav");
-    setStaticProps(_el11, {
-      "class": "studio__pages"
-    });
-    insertList(_el11, null, () => studioState.value.manifest?.pages ?? [], (page) => (() => {
-      const _el12 = createElement("button");
-      setStaticProps(_el12, {
-        "class": "studio__page"
-      });
-      bindAttribute(_el12, "data-active", () => activePageId.value === page.id);
-      addEventListener(_el12, "click", () => {
-        activePageId.value = page.id;
-      });
-      insertBefore(_el12, (() => {
-        const _el13 = createElement("span");
-        insertDynamicValue(_el13, null, () => page.title || page.id);
-        return _el13;
-      })(), null);
-      insertDynamic(_el12, null, () => page.route ? (() => {
-        const _el14 = createElement("span");
-        setStaticProps(_el14, {
-          "class": "studio__page-route"
-        });
-        insertDynamicValue(_el14, null, () => page.route);
-        return _el14;
-      })() : null);
-      return _el12;
-    })());
-    return _el11;
-  })();
+  return cloneTemplate(_tpl7);
 }
 function TreeRows(nodes, depth) {
   return nodes.map((node) => {
     const browser = sourceBrowserOf();
     const expanded = browser.state.value.expanded.includes(node.relPath);
     return (() => {
-      const _el54 = createElement("div");
-      insertBefore(_el54, (() => {
-        const _el55 = createElement("button");
-        setStaticProps(_el55, {
+      const _el31 = createElement("div");
+      insertBefore(_el31, (() => {
+        const _el32 = createElement("button");
+        setStaticProps(_el32, {
           "class": "studio__tree-row"
         });
-        bindAttribute(_el55, "style", () => ({ "padding-left": `${8 + depth * 14}px` }));
-        bindAttribute(_el55, "data-active", () => browser.state.value.openPath === node.relPath && !node.isDir);
-        addEventListener(_el55, "click", () => {
+        bindAttribute(_el32, "style", () => ({ "padding-left": `${8 + depth * 14}px` }));
+        bindAttribute(_el32, "data-active", () => browser.state.value.openPath === node.relPath && !node.isDir);
+        addEventListener(_el32, "click", () => {
           if (node.isDir)
             browser.toggleDir(node.relPath);
           else
             void browser.openFile(node.relPath);
         });
-        insertBefore(_el55, (() => {
-          const _el56 = createElement("span");
-          setStaticProps(_el56, {
+        insertBefore(_el32, (() => {
+          const _el33 = createElement("span");
+          setStaticProps(_el33, {
             "class": "studio__tree-chevron"
           });
-          insertDynamicValue(_el56, null, () => node.isDir ? expanded ? "▾" : "▸" : "");
-          return _el56;
+          insertDynamicValue(_el33, null, () => node.isDir ? expanded ? "▾" : "▸" : "");
+          return _el33;
         })(), null);
-        insertBefore(_el55, (() => {
-          const _el57 = createElement("span");
-          insertDynamicValue(_el57, null, () => node.name);
-          return _el57;
+        insertBefore(_el32, (() => {
+          const _el34 = createElement("span");
+          insertDynamicValue(_el34, null, () => node.name);
+          return _el34;
         })(), null);
-        return _el55;
+        return _el32;
       })(), null);
-      insertDynamicValue(_el54, null, () => node.isDir && expanded ? TreeRows(node.children, depth + 1) : null);
-      return _el54;
+      insertDynamicValue(_el31, null, () => node.isDir && expanded ? TreeRows(node.children, depth + 1) : null);
+      return _el31;
     })();
   });
 }
-function SourceBrowserPane() {
+function SourceTree() {
   const browser = sourceBrowserOf();
   const view = memo(() => {
     const s = browser.state.value;
@@ -2420,50 +2167,50 @@ function SourceBrowserPane() {
     return { kind: "ready", tree, rootLoaded, open: s, projectDir };
   });
   return (() => {
-    const _el15 = createElement("div");
-    setStaticProps(_el15, {
+    const _el8 = createElement("div");
+    setStaticProps(_el8, {
       "class": "studio__tree"
     });
-    insertDynamic(_el15, null, () => view.value.kind === "empty" ? cloneTemplate(_tpl16) : view.value.kind === "error" ? (() => {
-      const _el17 = createElement("p");
-      setStaticProps(_el17, {
+    insertDynamic(_el8, null, () => view.value.kind === "empty" ? cloneTemplate(_tpl9) : view.value.kind === "error" ? (() => {
+      const _el10 = createElement("p");
+      setStaticProps(_el10, {
         "class": "studio__tree-hint"
       });
-      insertDynamicValue(_el17, null, () => view.value.message);
-      return _el17;
+      insertDynamicValue(_el10, null, () => view.value.message);
+      return _el10;
     })() : (() => {
-      const _el18 = createElement("div");
-      setStaticProps(_el18, {
+      const _el11 = createElement("div");
+      setStaticProps(_el11, {
         "class": "studio__tree-scroll"
       });
-      insertBefore(_el18, (() => {
-        const _el19 = createElement("button");
-        setStaticProps(_el19, {
+      insertBefore(_el11, (() => {
+        const _el12 = createElement("button");
+        setStaticProps(_el12, {
           "class": "studio__tree-row"
         });
-        bindAttribute(_el19, "data-active", () => view.value.open.openPath === "");
-        addEventListener(_el19, "click", () => {
+        bindAttribute(_el12, "data-active", () => view.value.open.openPath === "");
+        addEventListener(_el12, "click", () => {
           browser.toggleDir("");
         });
-        insertBefore(_el19, (() => {
-          const _el20 = createElement("span");
-          setStaticProps(_el20, {
+        insertBefore(_el12, (() => {
+          const _el13 = createElement("span");
+          setStaticProps(_el13, {
             "class": "studio__tree-chevron"
           });
-          insertDynamicValue(_el20, null, () => view.value.rootLoaded ? "▾" : "▸");
-          return _el20;
+          insertDynamicValue(_el13, null, () => view.value.rootLoaded ? "▾" : "▸");
+          return _el13;
         })(), null);
-        insertBefore(_el19, (() => {
-          const _el21 = createElement("span");
-          insertDynamicValue(_el21, null, () => view.value.projectDir);
-          return _el21;
+        insertBefore(_el12, (() => {
+          const _el14 = createElement("span");
+          insertDynamicValue(_el14, null, () => view.value.projectDir);
+          return _el14;
         })(), null);
-        return _el19;
+        return _el12;
       })(), null);
-      insertDynamicValue(_el18, null, () => view.value.rootLoaded ? TreeRows(view.value.tree, 1) : null);
-      return _el18;
+      insertDynamicValue(_el11, null, () => view.value.rootLoaded ? TreeRows(view.value.tree, 1) : null);
+      return _el11;
     })());
-    return _el15;
+    return _el8;
   })();
 }
 function CodeViewer() {
@@ -2473,257 +2220,121 @@ function CodeViewer() {
     return { path: s.openPath, state: s.openState, text: s.openText };
   });
   return (() => {
-    const _el22 = createElement("div");
-    setStaticProps(_el22, {
+    const _el15 = createElement("div");
+    setStaticProps(_el15, {
       "class": "studio__code"
     });
-    insertBefore(_el22, (() => {
-      const _el23 = createElement("div");
-      setStaticProps(_el23, {
+    insertBefore(_el15, (() => {
+      const _el16 = createElement("div");
+      setStaticProps(_el16, {
         "class": "studio__code-head"
       });
-      insertBefore(_el23, (() => {
-        const _el24 = createElement("code");
-        insertDynamicValue(_el24, null, () => view.value.path === "" ? "select a file in the tree" : view.value.path);
-        return _el24;
+      insertBefore(_el16, (() => {
+        const _el17 = createElement("code");
+        insertDynamicValue(_el17, null, () => view.value.path === "" ? "select a file in the tree" : view.value.path);
+        return _el17;
       })(), null);
-      return _el23;
+      return _el16;
     })(), null);
-    insertDynamic(_el22, null, () => view.value.state === "loading" ? cloneTemplate(_tpl25) : null);
-    insertDynamic(_el22, null, () => view.value.state === "error" ? (() => {
-      const _el26 = createElement("p");
-      setStaticProps(_el26, {
+    insertDynamic(_el15, null, () => view.value.state === "loading" ? cloneTemplate(_tpl18) : null);
+    insertDynamic(_el15, null, () => view.value.state === "error" ? (() => {
+      const _el19 = createElement("p");
+      setStaticProps(_el19, {
         "class": "studio__code-status"
       });
-      insertDynamicValue(_el26, null, () => view.value.text);
-      return _el26;
+      insertDynamicValue(_el19, null, () => view.value.text);
+      return _el19;
     })() : null);
-    insertDynamic(_el22, null, () => view.value.state === "ok" ? (() => {
-      const _el27 = createElement("pre");
-      setStaticProps(_el27, {
+    insertDynamic(_el15, null, () => view.value.state === "ok" ? (() => {
+      const _el20 = createElement("pre");
+      setStaticProps(_el20, {
         "class": "studio__code-body"
       });
-      insertBefore(_el27, (() => {
-        const _el28 = createElement("code");
-        insertDynamicValue(_el28, null, () => view.value.text);
-        return _el28;
+      insertBefore(_el20, (() => {
+        const _el21 = createElement("code");
+        insertDynamicValue(_el21, null, () => view.value.text);
+        return _el21;
       })(), null);
-      return _el27;
+      return _el20;
     })() : null);
-    return _el22;
-  })();
-}
-function RailSwitch() {
-  return (() => {
-    const _el29 = createElement("div");
-    setStaticProps(_el29, {
-      "class": "studio__tabs"
-    });
-    insertBefore(_el29, (() => {
-      const _el30 = createElement("button");
-      setStaticProps(_el30, {
-        "class": "studio__tab"
-      });
-      bindAttribute(_el30, "data-active", () => railMode.value === "pages");
-      addEventListener(_el30, "click", () => {
-        railMode.value = "pages";
-      });
-      insertBefore(_el30, createText("Pages"), null);
-      return _el30;
-    })(), null);
-    insertBefore(_el29, (() => {
-      const _el31 = createElement("button");
-      setStaticProps(_el31, {
-        "class": "studio__tab"
-      });
-      bindAttribute(_el31, "data-active", () => railMode.value === "files");
-      addEventListener(_el31, "click", () => {
-        railMode.value = "files";
-        const browser = sourceBrowserOf();
-        if (browser.state.value.status === "off" && studioState.value.manifest?.project?.dir) {
-          browser.state.value = { ...browser.state.value, status: "loading", projectDir: studioState.value.manifest.project.dir };
-          void browser.listDir("");
-        }
-      });
-      insertBefore(_el31, createText("Files"), null);
-      return _el31;
-    })(), null);
-    return _el29;
-  })();
-}
-function PageLauncher() {
-  const view = memo(() => {
-    const s = studioState.value;
-    return { pages: s.manifest?.pages ?? [], ready: s.status === "ready" };
-  });
-  return (() => {
-    const _el32 = createElement("div");
-    setStaticProps(_el32, {
-      "class": "studio__launch"
-    });
-    insertBefore(_el32, cloneTemplate(_tpl33), null);
-    insertList(_el32, null, () => view.value.pages, (page) => (() => {
-      const _el34 = createElement("button");
-      setStaticProps(_el34, {
-        "class": "studio__launch-page"
-      });
-      addEventListener(_el34, "click", () => {
-        const url = pageUrl(studioState.value.manifest, page);
-        if (typeof url === "string")
-          window.open(url, "_blank");
-      });
-      insertBefore(_el34, (() => {
-        const _el35 = createElement("span");
-        insertDynamicValue(_el35, null, () => page.title || page.id);
-        return _el35;
-      })(), null);
-      insertDynamic(_el34, null, () => page.route ? (() => {
-        const _el36 = createElement("span");
-        setStaticProps(_el36, {
-          "class": "studio__page-route"
-        });
-        insertDynamicValue(_el36, null, () => page.route);
-        return _el36;
-      })() : null);
-      return _el34;
-    })());
-    return _el32;
-  })();
-}
-function Aside() {
-  return (() => {
-    const _el37 = createElement("aside");
-    setStaticProps(_el37, {
-      "class": "studio__aside"
-    });
-    insertBefore(_el37, cloneTemplate(_tpl38), null);
-    insertBefore(_el37, (() => {
-      const _el39 = createElement("div");
-      setStaticProps(_el39, {
-        "class": "studio__file"
-      });
-      insertDynamicValue(_el39, null, () => studioState.value.manifest?.project?.name ?? "—");
-      return _el39;
-    })(), null);
-    insertBefore(_el37, (() => {
-      const _el40 = createElement("h3");
-      bindAttribute(_el40, "style", () => ({ "margin-top": "14px" }));
-      insertBefore(_el40, createText("Files"), null);
-      return _el40;
-    })(), null);
-    insertList(_el37, null, () => studioState.value.manifest?.pages ?? [], (page) => (() => {
-      const _el41 = createElement("div");
-      setStaticProps(_el41, {
-        "class": "studio__file"
-      });
-      insertDynamicValue(_el41, null, () => page.file);
-      return _el41;
-    })());
-    insertBefore(_el37, (() => {
-      const _el42 = createElement("p");
-      bindAttribute(_el42, "style", () => ({ "margin-top": "14px" }));
-      insertBefore(_el42, createText("Switch the rail to Files to browse the project source."), null);
-      return _el42;
-    })(), null);
-    return _el37;
+    return _el15;
   })();
 }
 function Studio() {
   effect(on([studioState], () => {
     untrack(() => {
-      const pages = studioState.value.manifest?.pages ?? [];
-      if (pages.length === 0)
+      const browser = sourceBrowserOf();
+      const s = browser.state.value;
+      const projectDir = String(studioState.value.manifest?.project?.dir ?? "");
+      if (studioState.value.status !== "ready" || projectDir === "")
         return;
-      const id = activePageId.value;
-      if (id === "" || !pages.some((p) => p.id === id)) {
-        activePageId.value = pages[0]?.id ?? "";
+      if (s.projectDir !== projectDir) {
+        browser.reset();
+        browser.state.value = { ...browser.state.value, status: "loading", projectDir };
+      }
+      if (browser.state.value.dirs[""] === void 0) {
+        browser.state.value = { ...browser.state.value, expanded: [...browser.state.value.expanded, ""] };
+        void browser.listDir("");
       }
     });
   }));
   return (() => {
-    const _el43 = createElement("div");
-    setStaticProps(_el43, {
+    const _el22 = createElement("div");
+    setStaticProps(_el22, {
       "class": "studio"
     });
-    insertBefore(_el43, (() => {
-      const _el44 = createElement("header");
-      setStaticProps(_el44, {
+    insertBefore(_el22, (() => {
+      const _el23 = createElement("header");
+      setStaticProps(_el23, {
         "class": "studio__head"
       });
-      insertBefore(_el44, cloneTemplate(_tpl45), null);
-      insertBefore(_el44, cloneTemplate(_tpl46), null);
-      insertBefore(_el44, (() => {
-        const _el47 = createElement("span");
-        setStaticProps(_el47, {
+      insertBefore(_el23, cloneTemplate(_tpl24), null);
+      insertBefore(_el23, cloneTemplate(_tpl25), null);
+      insertBefore(_el23, (() => {
+        const _el26 = createElement("span");
+        setStaticProps(_el26, {
           "class": "studio__ws"
         });
-        insertDynamicValue(_el47, null, () => studioState.value.workspace ?? "");
-        return _el47;
+        insertDynamicValue(_el26, null, () => studioState.value.workspace ?? "");
+        return _el26;
       })(), null);
-      insertBefore(_el44, (() => {
-        const _el48 = createElement("button");
-        setStaticProps(_el48, {
+      insertBefore(_el23, (() => {
+        const _el27 = createElement("button");
+        setStaticProps(_el27, {
           "class": "studio__btn"
         });
-        addEventListener(_el48, "click", () => {
-          refreshStudio();
+        addEventListener(_el27, "click", () => {
+          sourceBrowserOf().listDir("");
         });
-        insertBefore(_el48, createText("Refresh"), null);
-        return _el48;
+        insertBefore(_el27, createText("Refresh"), null);
+        return _el27;
       })(), null);
-      insertBefore(_el44, (() => {
-        const _el49 = createElement("button");
-        setStaticProps(_el49, {
-          "class": "studio__btn"
-        });
-        bindProperty(_el49, "disabled", () => !(studioState.value.status === "ready" && (studioState.value.manifest?.server?.origin ?? "") !== ""));
-        addEventListener(_el49, "click", () => {
-          const s = studioState.value;
-          const pages = s.manifest?.pages ?? [];
-          const active = pages.find((p) => p.id === activePageId.value);
-          const url = active === void 0 ? s.manifest?.server?.origin : pageUrl(s.manifest, active);
-          if (typeof url === "string")
-            window.open(url, "_blank");
-        });
-        insertBefore(_el49, createText("Open in browser"), null);
-        return _el49;
-      })(), null);
-      return _el44;
+      return _el23;
     })(), null);
-    insertDynamic(_el43, null, () => studioState.value.status === "ready" && !serverNoticeDismissed.value ? createComponent(resolveComponent(ServerNotice, "src/client/panel.tsx", "ServerNotice"), {}) : null);
-    insertBefore(_el43, (() => {
-      const _el50 = createElement("div");
-      setStaticProps(_el50, {
+    insertBefore(_el22, (() => {
+      const _el28 = createElement("div");
+      setStaticProps(_el28, {
         "class": "studio__body"
       });
-      insertBefore(_el50, (() => {
-        const _el51 = createElement("aside");
-        setStaticProps(_el51, {
+      insertBefore(_el28, (() => {
+        const _el29 = createElement("aside");
+        setStaticProps(_el29, {
           "class": "studio__rail"
         });
-        insertBefore(_el51, (() => {
-          const _el52 = createElement("div");
-          setStaticProps(_el52, {
-            "class": "studio__rail-head"
-          });
-          insertBefore(_el52, createComponent(resolveComponent(RailSwitch, "src/client/panel.tsx", "RailSwitch"), {}), null);
-          return _el52;
-        })(), null);
-        insertDynamic(_el51, null, () => railMode.value === "pages" ? studioState.value.status === "ready" ? createComponent(resolveComponent(PageList, "src/client/panel.tsx", "PageList"), {}) : null : createComponent(resolveComponent(SourceBrowserPane, "src/client/panel.tsx", "SourceBrowserPane"), {}));
-        return _el51;
+        insertBefore(_el29, createComponent(resolveComponent(SourceTree, "src/client/panel.tsx", "SourceTree"), {}), null);
+        return _el29;
       })(), null);
-      insertBefore(_el50, (() => {
-        const _el53 = createElement("main");
-        setStaticProps(_el53, {
+      insertBefore(_el28, (() => {
+        const _el30 = createElement("main");
+        setStaticProps(_el30, {
           "class": "studio__main"
         });
-        insertDynamic(_el53, null, () => railMode.value === "files" ? createComponent(resolveComponent(CodeViewer, "src/client/panel.tsx", "CodeViewer"), {}) : studioState.value.status === "ready" ? createComponent(resolveComponent(PageLauncher, "src/client/panel.tsx", "PageLauncher"), {}) : createComponent(resolveComponent(StatusNotice, "src/client/panel.tsx", "StatusNotice"), {}));
-        return _el53;
+        insertDynamic(_el30, null, () => studioState.value.status === "ready" ? createComponent(resolveComponent(CodeViewer, "src/client/panel.tsx", "CodeViewer"), {}) : createComponent(resolveComponent(StatusNotice, "src/client/panel.tsx", "StatusNotice"), {}));
+        return _el30;
       })(), null);
-      insertBefore(_el50, createComponent(resolveComponent(Aside, "src/client/panel.tsx", "Aside"), {}), null);
-      return _el50;
+      return _el28;
     })(), null);
-    return _el43;
+    return _el22;
   })();
 }
 const STUDIO_CSS = `
@@ -2789,47 +2400,15 @@ const STUDIO_CSS = `
 .studio__btn:hover { border-color: var(--s-brand); color: var(--s-brand); }
 .studio__btn[disabled] { opacity: .4; cursor: default; pointer-events: none; }
 
-.studio__notice {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 14px;
+.studio__diag {
+  margin: 0;
+  max-width: 460px;
   font-size: 11px;
-  color: var(--s-muted);
-  background: var(--s-brand-soft);
-  border-bottom: 1px solid var(--s-border);
+  color: var(--s-warning, #d9a441);
+  word-break: break-all;
 }
-.studio__notice code { color: var(--s-brand); }
-.studio__notice-x {
-  flex: none;
-  margin-left: auto;
-  border: none;
-  background: transparent;
-  color: var(--s-muted);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  padding: 0 2px;
-}
-.studio__notice-x:hover { color: var(--s-text); }
 
 .studio__body { flex: 1; display: flex; min-height: 0; }
-
-.studio__tabs { display: flex; gap: 4px; width: 100%; }
-.studio__tab {
-  flex: 1;
-  border: none;
-  background: transparent;
-  color: var(--s-muted);
-  font: inherit;
-  font-size: 12px;
-  padding: 3px 0;
-  border-radius: 5px;
-  cursor: pointer;
-}
-.studio__tab:hover { color: var(--s-text); }
-.studio__tab[data-active="true"] { background: var(--s-brand-soft); color: var(--s-brand); }
 
 .studio__tree { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .studio__tree-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 4px; }
@@ -2880,66 +2459,15 @@ const STUDIO_CSS = `
 
 .studio__rail {
   flex: none;
-  width: 220px;
+  width: 280px;
   border-right: 1px solid var(--s-border);
   background: var(--s-panel);
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-.studio__rail-head {
-  flex: none;
-  padding: 10px 14px 6px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--s-muted);
-}
-.studio__pages { flex: 1; overflow-y: auto; padding: 0 8px 10px; }
-.studio__page {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--s-text);
-  font: inherit;
-  font-size: 13px;
-  border-radius: 8px;
-  padding: 7px 10px;
-  cursor: pointer;
-  margin-bottom: 2px;
-}
-.studio__page:hover { background: var(--s-brand-soft); }
-.studio__page[data-active="true"] {
-  background: var(--s-brand-soft);
-  border-color: var(--s-brand);
-  color: var(--s-brand);
-}
-.studio__page-route { display: block; font-size: 11px; color: var(--s-muted); }
 
 .studio__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.studio__launch { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
-.studio__launch-hint { margin: 0 0 10px; font-size: 12px; color: var(--s-muted); }
-.studio__launch-page {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  border: 1px solid var(--s-border);
-  background: var(--s-panel);
-  color: var(--s-text);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  padding: 10px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  margin-bottom: 8px;
-}
-.studio__launch-page:hover { border-color: var(--s-brand); color: var(--s-brand); }
 .studio__placeholder {
   position: absolute;
   inset: 0;

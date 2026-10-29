@@ -260,7 +260,7 @@ check(
 
 /* --------------------------------------------- 5. Mount + manifest flows through */
 
-section('5. Mount: manifest drives the panel to ready')
+section('5. Mount: ready state auto-loads the project tree')
 
 const tree = mainRegistrations[0].component()
 const hostElement = dom.window.document.createElement('div')
@@ -278,43 +278,15 @@ check('host element has a shadow root', !!shadow)
 check('shadow root contains <style> and the panel root', !!shadow?.querySelector('style') && !!shadow?.querySelector('.vobs-dsh-root'))
 check('panel rendered', !!shadow?.querySelector('.studio'))
 
-const ready = await until(() => shadow.querySelectorAll('.studio__page').length === 2)
-check('panel reached ready: both pages listed', ready, `pages=${shadow.querySelectorAll('.studio__page').length}`)
-
-const pageButtons = () => [...shadow.querySelectorAll('.studio__page')]
-check('page titles render', pageButtons().map(b => b.textContent).join('|').includes('Dashboard') && pageButtons().map(b => b.textContent).join('|').includes('Settings'))
-
-section('5b. Launcher: pages open in DSH browser, no iframe duplication')
-check('launcher lists both pages', await until(() => shadow.querySelectorAll('.studio__launch-page').length === 2))
-const opened = []
-dom.window.open = url => {
-  opened.push(String(url))
-  return null
-}
-shadow.querySelectorAll('.studio__launch-page')[0].click()
-await tick()
-check('launching a page opens its URL', opened[0] === 'http://127.0.0.1:5218/pages/dashboard.html', String(opened[0]))
-check('no iframe in the panel (preview lives in DSH browser)', shadow.querySelector('.studio__frame') === null)
-
-section('6. Page rail switching')
-pageButtons()[1].click()
-await tick()
-check(
-  'active page is visually marked',
-  pageButtons()[1].getAttribute('data-active') === 'true' && pageButtons()[0].getAttribute('data-active') !== 'true'
-)
-
-section('6b. Files tab: source tree + code viewer')
-const tabs = [...shadow.querySelectorAll('.studio__tab')]
-check('rail has Pages/Files tabs', tabs.length === 2, tabs.map(b => b.textContent).join('|'))
-tabs.find(b => b.textContent === 'Files')?.click()
-await tick()
-check('Files mode shows the tree rooted at the project dir', await until(() => shadow.querySelector('.studio__tree') !== null))
 const rowByLabel = label =>
   // rows carry a chevron glyph before the label — match on the trailing label text
   [...shadow.querySelectorAll('.studio__tree-row')].find(b => b.textContent.trim().endsWith(label))
-rowByLabel('demo-app')?.click()
-check('expanding the root lists src/ and skips nothing', await until(() => rowByLabel('src') !== undefined && rowByLabel('package.json') !== undefined))
+
+const ready = await until(() => rowByLabel('src') !== undefined && rowByLabel('package.json') !== undefined)
+check('panel reached ready and auto-loaded + auto-expanded the project root', ready, `rows=${shadow.querySelectorAll('.studio__tree-row').length}`)
+check('two-zone layout: tree + code, no iframe, no launcher', shadow.querySelector('.studio__frame') === null && shadow.querySelector('.studio__launch-page') === null && shadow.querySelector('.studio__aside') === null)
+
+section('6. Source browsing: expand and open a file')
 rowByLabel('src')?.click()
 check('expanding src lists pages/', await until(() => rowByLabel('pages') !== undefined))
 rowByLabel('pages')?.click()
@@ -323,9 +295,6 @@ rowByLabel('home.tsx')?.click()
 check('selecting a file opens the code viewer', await until(() => shadow.querySelector('.studio__code-body') !== null))
 check('code viewer shows the file content', (shadow.querySelector('.studio__code-body')?.textContent ?? '').includes('export function Home'))
 check('code viewer header names the file (project-relative)', (shadow.querySelector('.studio__code-head')?.textContent ?? '').includes('src/pages/home.tsx'))
-tabs.find(b => b.textContent === 'Pages')?.click()
-await tick()
-check('switching back to Pages restores the page list', await until(() => shadow.querySelectorAll('.studio__page').length === 2))
 
 section('7. Cleanup')
 for (const cleanup of cleanups) cleanup()
@@ -386,21 +355,24 @@ fakeServices.remote.workspaceFiles.read = realHostMissing
 const shadow2 = applyAndMount()
 const guided = await until(() => shadow2?.querySelector('.studio__steps') !== null)
 check('host-style thrown "missing" shows the setup card', guided)
+check('the card surfaces the Host error as a diagnostic', (shadow2?.querySelector('.studio__diag')?.textContent ?? '').includes('Unexpected end of JSON input'), shadow2?.querySelector('.studio__diag')?.textContent)
 check('thrown missing state shows no error notice', shadow2?.querySelector('.studio__error') === null)
 
 // 8c. A present but broken manifest is a real error, with an actionable message.
+// (No click: a disposed-then-remounted host renders but does not re-dispatch events in
+// jsdom, so a fresh apply is the honest way to drive the load.)
 fakeServices.remote.workspaceFiles.stat = async () => ({ version: 2, bytes: 5 })
 fakeServices.remote.workspaceFiles.read = async () => ({ text: '{"pag', eof: true })
-shadow2.querySelector('.studio__btn')?.click()
-const failed = await until(() => shadow2?.querySelector('.studio__error') !== null)
-const errorText = shadow2?.querySelector('.studio__error')?.textContent ?? ''
+const shadow3 = applyAndMount()
+const failed = await until(() => shadow3?.querySelector('.studio__error') !== null)
+const errorText = shadow3?.querySelector('.studio__error')?.textContent ?? ''
 check('broken manifest JSON surfaces as an error', failed, errorText)
 check('error message names the file and the fix', errorText.includes('not valid JSON') && errorText.includes('Rebuild'), errorText)
 
 section('9. Final cleanup')
 for (const cleanup of cleanups.splice(0)) cleanup()
 for (const dispose of disposers.splice(0)) dispose()
-check('second mount emptied after cleanup', (shadow2?.childNodes.length ?? -1) === 0)
+check('final mount emptied after cleanup', (shadow3?.childNodes.length ?? -1) === 0)
 
 /* ------------------------------------------------------------------- Result */
 

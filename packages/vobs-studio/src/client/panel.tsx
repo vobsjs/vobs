@@ -1,45 +1,16 @@
 /**
- * Vobs Studio panel — full-page main area.
+ * Vobs Studio panel — two-zone source browser: project tree (left) + code viewer (right).
  *
  * The component body executes exactly once; every dynamic `{…}` is a subscription
  * position, so updates never re-run this function. All state lives in `store.ts`.
  *
- * Discipline applied here (each of these is a real diagnostic, not style):
- * - no `const s = studioState.value` snapshots in the body (C118) — read `.value`
- *   inside JSX dynamic expressions so each read position subscribes;
- * - derived values used across several bindings go through `memo`, not body reads;
- * - the selection-fixer is `effect(on([studioState], …))` with everything untracked
- *   inside — declared deps only, no read+write self-subscription (C210).
+ * Product shape (owner call): no preview duplication — pages open in DSH's browser via
+ * the chat link; this panel is for source review. The missing/error card surfaces the
+ * Host's real error text (diagnostics) so field failures are never silent again.
  */
 import { effect, memo, on, untrack } from '@vobs/vobs'
-import { pageUrl, type PreviewPage } from './manifest'
-import { activePageId, railMode, refreshStudio, serverNoticeDismissed, sourceBrowserOf, studioState } from './store'
+import { studioState, sourceBrowserOf } from './store'
 import { buildTree, type TreeNode } from './source'
-
-/**
- * Shown while ready: the static preview server binds on each `design_preview_build`
- * and does not survive a DSH restart, so "ready + blank frames" needs its explanation
- * inside the panel (dismissable — it is a session-lifetime reminder, not an error).
- */
-function ServerNotice() {
-  return (
-    <div class="studio__notice">
-      <span>
-        Frames blank? The preview server is per-session — ask the agent to re-run{' '}
-        <code>design_preview_build</code> to restart it.
-      </span>
-      <button
-        class="studio__notice-x"
-        title="Dismiss"
-        onClick={() => {
-          serverNoticeDismissed.value = true
-        }}
-      >
-        ×
-      </button>
-    </div>
-  )
-}
 
 function StatusNotice() {
   return (
@@ -53,6 +24,7 @@ function StatusNotice() {
       </h2>
       {studioState.value.workspace ? <p>Workspace: <code>{studioState.value.workspace}</code></p> : null}
       {studioState.value.status === 'missing' ? <SetupSteps /> : <p>{studioState.value.message}</p>}
+      {studioState.value.diagnostic ? <p class="studio__diag">{studioState.value.diagnostic}</p> : null}
       {studioState.value.status === 'error' ? <p class="studio__error">{studioState.value.message}</p> : null}
     </div>
   )
@@ -78,35 +50,17 @@ function SetupSteps() {
         </li>
         <li>
           <b>Describe what you want in the chat</b> — plain language is enough: what kind
-          of app, which pages, what content. The agent pulls the design contract, scaffolds
-          the project, self-checks every snippet and builds it.
+          of app, which pages, what content. The agent pulls the design contract, states
+          the design direction (DESIGN.md), scaffolds the project, self-checks every
+          snippet and builds it.
         </li>
         <li>
-          <b>Watch the pages appear here</b> — the panel refreshes automatically after each
-          build. Iterate by describing changes ("make the hero smaller"); "Open in browser"
-          shows the same preview full-size.
+          <b>Open the pages from the chat</b> — the agent posts a preview URL after each
+          build; DSH's browser renders it (and "Open in browser" style links reach your
+          default browser). This panel follows with the source tree and code.
         </li>
       </ol>
     </div>
-  )
-}
-
-function PageList() {
-  return (
-    <nav class="studio__pages">
-      {(studioState.value.manifest?.pages ?? []).map((page: PreviewPage) => (
-        <button
-          class="studio__page"
-          data-active={activePageId.value === page.id}
-          onClick={() => {
-            activePageId.value = page.id
-          }}
-        >
-          <span>{page.title || page.id}</span>
-          {page.route ? <span class="studio__page-route">{page.route}</span> : null}
-        </button>
-      ))}
-    </nav>
   )
 }
 
@@ -135,7 +89,7 @@ function TreeRows(nodes: readonly TreeNode[], depth: number): unknown {
   })
 }
 
-function SourceBrowserPane() {
+function SourceTree() {
   const browser = sourceBrowserOf()
   const view = memo(() => {
     const s = browser.state.value
@@ -189,93 +143,23 @@ function CodeViewer() {
   )
 }
 
-/** Left rail: Pages (rendered previews) vs Files (project source tree). */
-function RailSwitch() {
-  return (
-    <div class="studio__tabs">
-      <button
-        class="studio__tab"
-        data-active={railMode.value === 'pages'}
-        onClick={() => {
-          railMode.value = 'pages'
-        }}
-      >
-        Pages
-      </button>
-      <button
-        class="studio__tab"
-        data-active={railMode.value === 'files'}
-        onClick={() => {
-          railMode.value = 'files'
-          const browser = sourceBrowserOf()
-          if (browser.state.value.status === 'off' && studioState.value.manifest?.project?.dir) {
-            browser.state.value = { ...browser.state.value, status: 'loading', projectDir: studioState.value.manifest.project.dir }
-            void browser.listDir('')
-          }
-        }}
-      >
-        Files
-      </button>
-    </div>
-  )
-}
-
-/**
- * Pages mode: the panel does NOT duplicate the rendered preview — DSH's browser opens
- * the page (chat link or the buttons here, `window.open`), so one preview lives in one
- * place. The rail keeps page switching, the launcher makes each page one click away.
- */
-function PageLauncher() {
-  const view = memo(() => {
-    const s = studioState.value
-    return { pages: s.manifest?.pages ?? [], ready: s.status === 'ready' }
-  })
-  return (
-    <div class="studio__launch">
-      <p class="studio__launch-hint">
-        Preview opens in DSH's browser (also via the link the agent posts after each build).
-      </p>
-      {view.value.pages.map((page: PreviewPage) => (
-        <button
-          class="studio__launch-page"
-          onClick={() => {
-            const url = pageUrl(studioState.value.manifest, page)
-            if (typeof url === 'string') window.open(url, '_blank')
-          }}
-        >
-          <span>{page.title || page.id}</span>
-          {page.route ? <span class="studio__page-route">{page.route}</span> : null}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function Aside() {
-  return (
-    <aside class="studio__aside">
-      <h3>Project</h3>
-      <div class="studio__file">{studioState.value.manifest?.project?.name ?? '—'}</div>
-      <h3 style={{ 'margin-top': '14px' }}>Files</h3>
-      {(studioState.value.manifest?.pages ?? []).map((page: PreviewPage) => (
-        <div class="studio__file">{page.file}</div>
-      ))}
-      <p style={{ 'margin-top': '14px' }}>Switch the rail to Files to browse the project source.</p>
-    </aside>
-  )
-}
-
 export function Studio() {
-  // Keep the selection valid as the manifest changes: pick the first page when the
-  // current id no longer exists. The only tracked dep is studioState; everything inside
-  // is untracked, so writes to activePageId never subscribe this effect (no C210).
+  // Auto-load the project root once the manifest is ready, so the tree is populated
+  // without a click. The only tracked dep is studioState; all writes are untracked (no
+  // C210 self-subscription).
   effect(on([studioState], () => {
     untrack(() => {
-      const pages = studioState.value.manifest?.pages ?? []
-      if (pages.length === 0) return
-      const id = activePageId.value
-      if (id === '' || !pages.some((p: PreviewPage) => p.id === id)) {
-        activePageId.value = pages[0]?.id ?? ''
+      const browser = sourceBrowserOf()
+      const s = browser.state.value
+      const projectDir = String(studioState.value.manifest?.project?.dir ?? '')
+      if (studioState.value.status !== 'ready' || projectDir === '') return
+      if (s.projectDir !== projectDir) {
+        browser.reset()
+        browser.state.value = { ...browser.state.value, status: 'loading', projectDir }
+      }
+      if (browser.state.value.dirs[''] === undefined) {
+        browser.state.value = { ...browser.state.value, expanded: [...browser.state.value.expanded, ''] }
+        void browser.listDir('')
       }
     })
   }))
@@ -289,47 +173,19 @@ export function Studio() {
         <button
           class="studio__btn"
           onClick={() => {
-            refreshStudio()
+            sourceBrowserOf().listDir('')
           }}
         >
           Refresh
         </button>
-        <button
-          class="studio__btn"
-          disabled={!(studioState.value.status === 'ready' && (studioState.value.manifest?.server?.origin ?? '') !== '')}
-          onClick={() => {
-            const s = studioState.value
-            const pages = s.manifest?.pages ?? []
-            const active = pages.find((p: PreviewPage) => p.id === activePageId.value)
-            const url = active === undefined ? s.manifest?.server?.origin : pageUrl(s.manifest, active)
-            if (typeof url === 'string') window.open(url, '_blank')
-          }}
-        >
-          Open in browser
-        </button>
       </header>
-      {studioState.value.status === 'ready' && !serverNoticeDismissed.value ? <ServerNotice /> : null}
       <div class="studio__body">
         <aside class="studio__rail">
-          <div class="studio__rail-head">
-            <RailSwitch />
-          </div>
-          {railMode.value === 'pages' ? (
-            studioState.value.status === 'ready' ? <PageList /> : null
-          ) : (
-            <SourceBrowserPane />
-          )}
+          <SourceTree />
         </aside>
         <main class="studio__main">
-          {railMode.value === 'files' ? (
-            <CodeViewer />
-          ) : studioState.value.status === 'ready' ? (
-            <PageLauncher />
-          ) : (
-            <StatusNotice />
-          )}
+          {studioState.value.status === 'ready' ? <CodeViewer /> : <StatusNotice />}
         </main>
-        <Aside />
       </div>
     </div>
   )

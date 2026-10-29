@@ -14,19 +14,6 @@ export const studioState = state<StudioState>(
   'studio.state'
 )
 
-export const activePageId = state('', 'studio.activePage')
-
-/**
- * Whether the user dismissed the per-session preview-server hint. The static server
- * binds on each `design_preview_build` call and dies with the harness — after a DSH
- * restart the panel is "ready" (manifest still on disk) with blank frames, which reads
- * like a bug unless the reason is stated once.
- */
-export const serverNoticeDismissed = state(false, 'studio.serverNoticeDismissed')
-
-/** Left-rail mode: rendered-page preview vs project source browser. */
-export const railMode = state<'pages' | 'files'>('pages', 'studio.railMode')
-
 let source: StudioSource | undefined
 let sourceBrowser: SourceSignals | undefined
 /** The plugin setup ctx — the only place services are reachable; captured for the source browser. */
@@ -55,6 +42,7 @@ export function startStudioSource(ctx: Parameters<typeof createStudioSource>[0])
 
 export function refreshStudio(): void {
   source?.refresh()
+  void sourceBrowserOf().listDir('')
 }
 
 export function disposeStudio(): void {
@@ -63,5 +51,4 @@ export function disposeStudio(): void {
   sourceBrowser?.reset()
   sourceBrowser = undefined
   pluginCtx = undefined
-  railMode.value = 'pages'
 }

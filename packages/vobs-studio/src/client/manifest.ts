@@ -46,6 +46,8 @@ export interface StudioState {
   readonly sessionId?: string
   readonly workspace?: string
   readonly message: string
+  /** Why the last read failed — surfaced in the panel so silence never hides a Host error. */
+  readonly diagnostic?: string
   readonly manifest?: PreviewManifest
 }
 
@@ -133,21 +135,17 @@ function asBytes(value: unknown): ArrayBufferView | undefined {
 }
 
 /**
- * Read the whole manifest. Returns undefined when nothing could be read.
- *
- * Verified against the Host's wire contract (dsh-api-workspace-files typert): every
- * result schema is a plain object with no "absent" shape — a missing file surfaces as
- * a thrown Remote error (often an opaque transport message like "Unexpected end of
- * JSON input"), never as a clean `undefined`. Callers must treat "could not read" as
- * "no manifest yet", not as an error.
+ * Read a whole file. Discriminated result: 'ok' carries the text; 'unreadable' carries
+ * the Host's real error message — the panel surfaces it, because a silent missing state
+ * cost us a full debugging round (the absolute-path incident).
  */
-export async function readWorkspaceText(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<string | undefined> {
+export async function readTextWithReason(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<{ kind: 'ok'; text: string } | { kind: 'unreadable'; reason: string }> {
   try {
     if (typeof api.readBytes === 'function') {
       const bytes = asBytes(await api.readBytes(sessionId, path, {}))
-      if (bytes !== undefined) return new TextDecoder().decode(bytes)
+      if (bytes !== undefined) return { kind: 'ok', text: new TextDecoder().decode(bytes) }
     }
-    if (typeof api.read !== 'function') return undefined
+    if (typeof api.read !== 'function') return { kind: 'unreadable', reason: 'workspaceFiles has no usable read method' }
 
     let text = ''
     let offset = 1 // line numbers are 1-based — the official paged reader starts at 1
@@ -160,10 +158,16 @@ export async function readWorkspaceText(api: WorkspaceFilesApi, sessionId: strin
       const lines = typeof result.lines === 'number' && result.lines > 0 ? result.lines : 1
       offset += lines
     }
-    return text
-  } catch {
-    return undefined
+    return { kind: 'ok', text }
+  } catch (error) {
+    return { kind: 'unreadable', reason: error instanceof Error ? error.message : String(error) }
   }
+}
+
+/** Back-compat wrapper: text or undefined. */
+export async function readWorkspaceText(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<string | undefined> {
+  const read = await readTextWithReason(api, sessionId, path)
+  return read.kind === 'ok' ? read.text : undefined
 }
 
 /* ---------------------------------------------------------------- Data source */
@@ -207,9 +211,9 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
    * fails (the exact bug seen in a real install — the Console avoids it by hot-swapping).
    * "unavailable" is therefore a retrying state, never terminal.
    */
-  const showMissing = (sessionId: string, workspace: string | undefined): void => {
+  const showMissing = (sessionId: string, workspace: string | undefined, diagnostic?: string): void => {
     lastVersion = undefined
-    setState({ status: 'missing', sessionId, workspace, message: MISSING_MESSAGE, manifest: undefined })
+    setState({ status: 'missing', sessionId, workspace, message: MISSING_MESSAGE, diagnostic, manifest: undefined })
   }
 
   const load = async (): Promise<void> => {
@@ -262,23 +266,22 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
         }
       }
 
-      const text = await readWorkspaceText(api, sessionId, manifestPath)
-      if (text === undefined) {
+      const read = await readTextWithReason(api, sessionId, manifestPath)
+      if (read.kind === 'unreadable') {
         // Read failed: either no manifest (the common case — a missing file throws on the
-        // real Host) or a transient transport failure. An already-ready panel keeps its
-        // preview instead of flashing the setup card on every poll.
-        if (studioState.value.status !== 'ready') showMissing(sessionId, workspace)
+        // real Host) or a transport failure. An already-ready panel keeps its preview; a
+        // non-ready one shows the setup card WITH the Host's real error text.
+        if (studioState.value.status !== 'ready') showMissing(sessionId, workspace, `read failed: ${read.reason}`)
         return
       }
-      if (text.trim() === '') {
-        // The read cycle completed with empty content: definitively no manifest.
-        showMissing(sessionId, workspace)
+      if (read.text.trim() === '') {
+        showMissing(sessionId, workspace, 'the manifest file exists but is empty')
         return
       }
 
       let parsed: unknown
       try {
-        parsed = JSON.parse(text)
+        parsed = JSON.parse(read.text)
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
         setState({
