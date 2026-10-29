@@ -1,0 +1,16 @@
+@import "tailwindcss";
+@import "@vobs/tailwind/theme.css";
+@import "@vobs/ui/tokens.css";
+@import "@vobs/ui/base.css";
+@import "@vobs/ui/components.css";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}

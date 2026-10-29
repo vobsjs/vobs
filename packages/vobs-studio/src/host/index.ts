@@ -1,0 +1,22 @@
+/**
+ * Host half.
+ *
+ * DSH's bundle inserts one row into the profile's cordis tree, and that row points at this
+ * module. The client module system scans **enabled Loader entries**, reads this package's
+ * `dsh.client` declaration, and serves `exports['./client']` (lib/client.js) to the page
+ * as the browser bundle.
+ *
+ * In other words: the Host side only needs to "be mounted" so the client bundle enters the
+ * startup graph. Write here only when adding tools for agents, subscribing to
+ * sessions/events, or registering services.
+ */
+
+/** cordis plugin name, used for the debug namespace; unrelated to the npm package name. */
+export const name = 'vobs-studio'
+
+/** Host service names that must be ready first. */
+export const inject: readonly string[] = []
+
+export function apply(_ctx: unknown): void {
+  // Intentionally empty: the default plugin's observable behavior happens entirely in the browser half.
+}

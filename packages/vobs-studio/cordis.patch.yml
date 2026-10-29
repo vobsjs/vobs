@@ -1,0 +1,7 @@
+# DSH bundle patch layer: appends only this plugin's own row; never overrides official entries.
+#
+# The entry id is the name used for toggling on DSH's "Plugins" page;
+# name must equal package.json's name (the bare package name without scope also works).
+- insert:
+    - id: dsh-plugin-vobs-studio
+      name: dsh-plugin-vobs-studio

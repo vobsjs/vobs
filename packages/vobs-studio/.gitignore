@@ -1,0 +1,6 @@
+node_modules/
+*.log
+*.tsbuildinfo
+.artifacts/
+
+# lib/ is build output and must be committed: DSH does not build your package at install time.

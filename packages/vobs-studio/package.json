@@ -1,0 +1,42 @@
+{
+  "name": "dsh-plugin-vobs-studio",
+  "version": "1.7.8",
+  "description": "Vobs Studio: AI-built vobs+Tailwind projects — design contract, scaffold, self-check and live preview inside DSH",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vobsjs/vobs.git",
+    "directory": "packages/vobs-studio"
+  },
+  "homepage": "https://github.com/vobsjs/vobs/tree/main/packages/vobs-studio",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "mcp",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-dsh-plugins.mjs vobs-studio",
+    "verify": "node scripts/verify-studio.mjs"
+  },
+  "dependencies": {
+    "@vobs/compiler": "1.9.1"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}

@@ -25,7 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'vite'
 import { workspaceAliases } from './vite-workspace.mjs'
 
-const DEFAULT_PACKAGES = ['dsh-plugin', 'dsh-console', 'dsh-devkit']
+const DEFAULT_PACKAGES = ['dsh-plugin', 'dsh-console', 'dsh-devkit', 'vobs-studio']
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const requested = process.argv.slice(2).filter(argument => !argument.startsWith('-'))
