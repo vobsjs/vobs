@@ -16,9 +16,41 @@ failures.
 scaffold is a neutral engineering baseline (build pipeline + tokens + one empty page) —
 it deliberately contains no layout opinions and there are no page templates. A marketing
 site, an admin dashboard, and a desktop-style workbench are structurally different;
-design each from the user's requirements guided by §3.5 design principles. What this
-contract gives you is the vobs-specific knowledge (rules, tokens, components) — the
+design each from the user's requirements. What this contract gives you is the vobs-specific
+knowledge (rules, tokens, components) plus the design-direction procedure (§0.5) — the
 design itself is yours.
+
+## 0.5 Design direction (mandatory — decide BEFORE writing any page)
+
+The statistically most typical look for a request's domain (dark left sidebar + topbar +
+striped table + green primary button for anything admin-ish) is NOT a design — it is the
+absence of one. Producing it uninvited is a rejected result even when the code is perfect.
+
+Before writing any page code, derive from the user's description and state in chat (a
+short paragraph is enough):
+
+1. **Layout archetype** — choose from an OPEN set, justified by the content: top-nav
+   editorial, sidebar workbench, split-view master/detail, card canvas, kanban, document
+   flow, kiosk/full-bleed, wizard… or a hybrid. An admin console is one option among
+   many, chosen because the content demands it — never the default.
+2. **Typography** — name the font stack (a deliberate system stack is fine; say WHY) and
+   the scale intent: heading sizes/weights/tracking, body size, numeric treatment
+   (tabular figures for data-heavy pages). Serif/display families fit editorial moods,
+   mono technical ones. Bundling an open webfont (`assets/fonts/*.woff2` + `@font-face`
+   in `src/styles/index.css`) is encouraged when it carries the mood — network is
+   available at build time.
+3. **Color story** — light or dark, one dominant neutral scheme + one accent with a
+   semantic reason (brand? status? data highlight?). Map it through
+   `useTheme().setBrand(...)` / token overrides. Never default blue-or-green "because".
+4. **Density & shape** — generous vs dense, radius feel (sharp / soft / pill), shadow
+   policy (flat / bordered / elevated).
+5. **One signature element** — a single memorable detail this app owns: a distinctive
+   header treatment, an unusual list-row anatomy, a data-viz accent, a recurring motif.
+   One is enough; it must recur on every page.
+
+Write these decisions into the scaffolded `DESIGN.md` before writing pages, so every
+later page and every later session stays consistent. Cohesion across pages beats
+per-page cleverness.
 
 ## 1. Framework rules (breaking any of these is a rejected build)
 
@@ -55,8 +87,9 @@ hard-code hex values.
 | `rounded-vobs-sm/md/lg` | 2 / 4 / 6 px | Radius ladder |
 | dark: variant | `[data-vobs-mode="dark"]` | Dark mode follows the vobs theme boundary — never `prefers-color-scheme` |
 
-**Known gap (do not invent)**: no typography scale tokens yet — use Tailwind's default
-`text-sm/base/lg/xl` sizes; consistency comes from the page recipes below.
+**Typography**: no type-scale tokens yet — use Tailwind's size classes deliberately and
+state the scale in `DESIGN.md`: headings with explicit `tracking-*` and weight pairings,
+body `text-sm/base` chosen by density, `tabular-nums` for data columns.
 
 ## 3. Component inventory (`@vobs/ui`)
 
@@ -100,6 +133,11 @@ layout templates:
    one sentence + one recovery action.
 8. **Density follows content**: data pages dense (`text-sm`, tight rows); marketing
    pages generous whitespace; never mix the two rhythms on one page.
+9. **Direction before markup**: the §0.5 decisions exist and `DESIGN.md` is filled
+   before any page code; later pages reuse the archetype, type, color story and
+   signature element.
+10. **No statistically-default output**: if the rendered page could be mistaken for a
+    stock template of its domain, the design phase failed — go back to §0.5.
 
 ## 4. Page shape (multi-page contract)
 
@@ -112,9 +150,10 @@ src/pages/_shared.tsx         → shared layout/chrome used by several pages
 src/styles/index.css          → `@import "@vobs/tailwind/styles.css";` + `@import "tailwindcss";`
 ```
 
-Rules: every page mounts the same shell chrome (side nav + topbar) via `_shared.tsx`;
-page files stay thin (composition only — extract bodies into `src/components/`);
-responsive: single column under `md`, sidebar collapses under `lg`.
+Rules: pages of one app share the chrome YOU designed in §0.5 via `_shared.tsx` — the
+archetype decides what "chrome" means (a marketing site may have no app shell at all; a
+workbench has a full one). Page files stay thin (composition only — extract bodies into
+`src/components/`); responsive per §3.5.
 
 ## 5. Preview contract (how Studio finds your pages)
 
@@ -147,6 +186,7 @@ rebuild + rewrite the manifest.
 
 | Forbidden | Instead |
 | --- | --- |
+| The default look for the domain (dark sidebar + topbar + striped table + green CTA for anything "admin") | The §0.5 direction derived from THIS user's description — archetype, typography, color story, signature element |
 | Global scroll (`body { overflow: auto }`) | Page shell `h-screen overflow-hidden`; scroll inside table/panel containers |
 | Hard-coded colors (`#2563eb`, `bg-blue-500`) | Token classes (`bg-brand`) |
 | `!important` | Specificity via layer order; fix the selector |

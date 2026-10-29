@@ -1,7 +1,7 @@
 /**
  * Minimal home page — proves the toolchain compiles and tokens resolve.
- * This page carries NO layout opinions: replace it (or add pages beside it) based on
- * what the user asked for. See design_contract topic "archetypes" for layout recipes.
+ * This page carries NO layout opinions: fill DESIGN.md (contract §0.5) first, then
+ * replace this page (or add pages beside it) based on what the user asked for.
  */
 import { createVobs } from '@vobs/vobs'
 import { themePlugin, ThemeBoundary } from '@vobs/theme'

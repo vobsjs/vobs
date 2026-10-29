@@ -74,7 +74,7 @@ const TOOLS = [
   {
     name: 'design_scaffold',
     description:
-      'Write a NEUTRAL vobs + Tailwind project baseline (package.json pinned to @vobs 1.9.1, vite MPA config, theme wiring, one empty proof page — no layout opinions) into <dir> under <workspace>. Run once per project; then `pnpm install` inside it. Layout and architecture are YOUR decision per the design contract.',
+      'Write a NEUTRAL vobs + Tailwind project baseline (package.json pinned to @vobs 1.9.1, vite MPA config, theme wiring, one empty proof page, DESIGN.md template — no layout opinions) into <dir> under <workspace>. Run once per project; then `pnpm install` inside it. Fill DESIGN.md per contract §0.5 (design direction) BEFORE writing any page — layout and architecture are YOUR decision per the design contract.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -165,7 +165,7 @@ function doScaffold(workspace, request) {
   }
   return [
     `Scaffolded ${count} files into ${dir}/ (vobs + Tailwind, @vobs deps pinned to 1.9.1).`,
-    'Next: run `pnpm install` inside it (or let the agent run it), then edit src/pages/*.tsx.',
+    'Next: fill DESIGN.md (contract §0.5 — archetype / typography / color story / signature) before writing any page, then run `pnpm install` inside it.',
     'Reference the design_contract sections "rules", "components" and "pages" before writing page code.'
   ].join('\n')
 }
@@ -336,7 +336,9 @@ function collectPages(dist, dir) {
     .map(f => {
       const html = readFileSync(join(dist, f), 'utf8')
       const title = /<title>([^<]*)<\/title>/u.exec(html)?.[1] ?? f.replace(/\.html$/u, '')
-      return { id: f.replace(/^pages\//u, '').replace(/\.html$/u, ''), title, route: `/${f}`, file: `${dir}/dist/${f.replace(/\\/gu, '/')}` }
+      // `file` is resolved by the Studio panel as `server.origin + '/' + file`, and the
+      // static server's root IS dist/ — so it must be dist-relative, not workspace-relative.
+      return { id: f.replace(/^pages\//u, '').replace(/\.html$/u, ''), title, route: `/${f}`, file: f.replace(/\\/gu, '/') }
     })
 }
 
