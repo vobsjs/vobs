@@ -90,7 +90,7 @@ DSH reads `~/.dsh/AGENTS.md` as the user's global agent instructions (plus works
 the user only ever says:
 
 ```text
-帮我在 DSH 里安装并启用 Vobs Studio 插件。
+帮我在 DSH 里安装 Vobs Studio 插件。
 ```
 
 The agent follows the instructions in that file (which teach it the official `dsh
