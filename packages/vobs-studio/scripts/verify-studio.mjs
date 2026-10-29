@@ -252,6 +252,7 @@ check('slash command is an action that opens the panel', slash?.ui?.kind === 'ac
 check('slash command does not collide with tool names', !['design_contract', 'design_scaffold', 'design_check', 'design_preview_build'].includes('vobs-studio'))
 
 check('registered into main', mainRegistrations.length === 1, `main=${mainRegistrations.length}`)
+check('layout service declared (slash command selectPanel needs it)', declaredInject.has('layout'), [...declaredInject].join(','))
 check(
   'main registration is keyed to vobs-studio',
   mainRegistrations[0]?.options?.name === 'main' && mainRegistrations[0]?.options?.key === 'vobs-studio',

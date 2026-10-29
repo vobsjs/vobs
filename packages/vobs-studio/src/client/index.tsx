@@ -54,7 +54,10 @@ const panelPlugin = defineDshPanel(
 )
 
 export default defineDshPlugin({
-  inject: panelPlugin.inject,
+  // "layout" is declared for the slash command's selectPanel: cordis THROWS on
+  // property access of an undeclared service — optional chaining cannot guard it
+  // (the same class of incident as the undeclared remote.workspaceFiles read).
+  inject: [...panelPlugin.inject, 'layout'],
   setup(ctx) {
     panelPlugin.apply(ctx)
     for (const tool of TOOLVIEW_TOOLS) {
