@@ -155,6 +155,8 @@ const MANIFEST_JSON = JSON.stringify({
 
 const SOURCE_PAGE = "import { createVobs } from '@vobs/vobs'\nexport function Home() { return null }\n"
 
+const commandRegistrations = []
+
 const fakeServices = {
   sessions: {
     list: {
@@ -179,6 +181,12 @@ const fakeServices = {
         if (path === 'demo-app/src/pages') return { entries: [{ name: 'home.tsx', type: 'file' }] }
         throw new Error(`no such directory: ${path}`)
       }
+    }
+  },
+  commandUi: {
+    register(contribution) {
+      commandRegistrations.push(contribution)
+      return () => {}
     }
   }
 }
@@ -222,11 +230,26 @@ plugin.apply({
     if (!declaredInject.has(name)) throw new Error(`service "${name}" used but not declared in inject/injectServices`)
     return fakeServices[name]
   },
+  inject(services, callback) {
+    callback({
+      get: name => fakeServices[name],
+      effect(cb) {
+        const dispose = cb()
+        if (typeof dispose === 'function') disposers.push(dispose)
+      }
+    })
+  },
   effect(callback) {
     const dispose = callback()
     if (typeof dispose === 'function') disposers.push(dispose)
   }
 })
+
+section('4c. /vobs-studio slash command')
+const slash = commandRegistrations.find(c => c.name === 'vobs-studio')
+check('slash command registered via commandUi', slash !== undefined, JSON.stringify(commandRegistrations.map(c => c.name)))
+check('slash command is an action that opens the panel', slash?.ui?.kind === 'action' && typeof slash?.ui?.run === 'function')
+check('slash command does not collide with tool names', !['design_contract', 'design_scaffold', 'design_check', 'design_preview_build'].includes('vobs-studio'))
 
 check('registered into main', mainRegistrations.length === 1, `main=${mainRegistrations.length}`)
 check(

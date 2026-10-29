@@ -75,7 +75,8 @@ on its "Getting started" screen), but the short version:
    `…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs` manually.
 2. **Describe what you want in the chat** — plain business language: app type, pages,
    content, data fields, style preference. Technical terms are unnecessary; the agent
-   pulls the design contract itself and decides the layout.
+   pulls the design contract itself and decides the layout. `/vobs-studio` in the chat
+   input's slash menu opens the panel directly.
 3. **Preview and iterate** — the panel refreshes after each build; keep describing
    changes ("make the hero smaller", "add a filter — segmented, not a dropdown").
 

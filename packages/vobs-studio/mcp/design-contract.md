@@ -192,10 +192,13 @@ rebuild + rewrite the manifest.
 
 ## 6. Self-check loop (mandatory)
 
-1. `design_check` (static) on every new/changed `.tsx` **before writing it**.
-2. Build. Zero build errors.
-3. Rebuild the preview manifest (`design_preview_build`) so the Studio panel refreshes.
-4. If a page renders blank: check for top-level conditional returns and unnamed states
+1. `design_check` (snippet mode) on every new/changed `.tsx` **before writing it**.
+2. `design_check` in **project mode** (`workspace` + `dir`) after writing files —
+   `tsc --noEmit` must report **0 type errors** before building (static C diagnostics
+   do NOT cover TypeScript types).
+3. Build. Zero build errors.
+4. Rebuild the preview manifest (`design_preview_build`) so the Studio panel refreshes.
+5. If a page renders blank: check for top-level conditional returns and unnamed states
    first — they are the two most common causes.
 
 ## 7. Anti-patterns (Forbidden)

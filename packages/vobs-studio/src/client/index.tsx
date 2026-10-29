@@ -65,5 +65,37 @@ export default defineDshPlugin({
         )
       )
     }
+    registerSlashCommand(ctx)
   }
 })
+
+/**
+ * `/vobs-studio` in the chat input's slash menu → opens the Studio panel, the same way
+ * the sidebar rail does (`ctx.layout.selectPanel(id)` — recon'ed from the host's own
+ * sidebar client). Registration rides the official `commandUi` service; any failure is
+ * contained (the command disappears, the plugin keeps working).
+ */
+interface CommandUiScope {
+  get?(name: string): { register?(contribution: unknown): unknown } | undefined
+  effect?(callback: () => unknown, label?: string): unknown
+}
+
+function registerSlashCommand(ctx: { inject?: (services: string[], callback: (scope: CommandUiScope) => void) => void; layout?: { selectPanel?: (id: string) => void } }): void {
+  try {
+    ctx.inject?.(['commandUi'], scope => {
+      scope.effect?.(() => scope.get?.('commandUi')?.register({
+        name: 'vobs-studio',
+        label: () => 'Vobs Studio',
+        available: () => true,
+        ui: {
+          kind: 'action',
+          run: () => {
+            ctx.layout?.selectPanel?.('vobs-studio')
+          }
+        }
+      }), 'vobs-studio: slash command')
+    })
+  } catch (error) {
+    console.warn('[vobs-studio] slash command registration failed:', error)
+  }
+}

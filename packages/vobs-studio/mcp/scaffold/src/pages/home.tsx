@@ -21,5 +21,5 @@ createVobs({
       <Home />
     </ThemeBoundary>
   ),
-  plugins: [themePlugin({ mode: 'system' })]
+  plugins: [themePlugin({ defaultMode: 'system' })]
 }).mount('#root')

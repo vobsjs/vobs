@@ -88,6 +88,11 @@ if (phase === 'scaffold') {
   check('design_preview_build succeeded', build1.includes('Built'), build1.slice(0, 300))
   const build2 = await tools('design_preview_build', { dir: 'my-app', port: 5219 })
   check('second build skipped (sources unchanged)', build2.includes('skipped vite build'), build2.slice(0, 120))
+
+  // PROJECT MODE: tsc --noEmit over the scaffold — typescript ships in the template's devDeps.
+  const types = await tools('design_check', { workspace, dir: 'my-app' })
+  check('design_check project mode runs tsc', types.includes('tsc --noEmit'), types.slice(0, 200))
+  check('scaffold typechecks clean', types.includes('0 type errors'), types.slice(0, 400))
   check('manifest written', existsSync(join(workspace, '.vobs/studio/preview.json')))
   const manifest = JSON.parse(readFileSync(join(workspace, '.vobs/studio/preview.json'), 'utf8'))
   check('manifest lists home page', manifest.pages?.some(p => p.id === 'home'), JSON.stringify(manifest.pages))

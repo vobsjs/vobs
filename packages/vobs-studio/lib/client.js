@@ -3195,8 +3195,28 @@ const index = defineDshPlugin({
     for (const tool of TOOLVIEW_TOOLS) {
       ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({ name: "tool.call.toolview", key: tool }, createVobsPropsSlotHost(Row, { styles: TOOLVIEW_CSS })));
     }
+    registerSlashCommand(ctx);
   }
 });
+function registerSlashCommand(ctx) {
+  try {
+    ctx.inject?.(["commandUi"], (scope) => {
+      scope.effect?.(() => scope.get?.("commandUi")?.register({
+        name: "vobs-studio",
+        label: () => "Vobs Studio",
+        available: () => true,
+        ui: {
+          kind: "action",
+          run: () => {
+            ctx.layout?.selectPanel?.("vobs-studio");
+          }
+        }
+      }), "vobs-studio: slash command");
+    });
+  } catch (error) {
+    console.warn("[vobs-studio] slash command registration failed:", error);
+  }
+}
 exports.default = index;
 var out=module.exports;
 return (out&&out.__esModule&&Object.prototype.hasOwnProperty.call(out,"default"))?out.default:out;

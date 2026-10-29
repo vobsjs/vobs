@@ -88,14 +88,15 @@ const TOOLS = [
   {
     name: 'design_check',
     description:
-      'Static-check a vobs component snippet WITHOUT writing it to disk. Returns all VOBS_C* diagnostics (compile + analyze) with verified before/after rewrites. Run this on EVERY new or changed .tsx snippet BEFORE writing it — zero diagnostics is the bar for done.',
+      'Two modes. SNIPPET MODE (pass `code`): static-check a vobs component WITHOUT writing it — returns all VOBS_C* diagnostics (compile + analyze) with verified rewrites; run on EVERY new or changed .tsx BEFORE writing it, zero diagnostics is the bar. PROJECT MODE (pass `workspace` + `dir`, no code): run tsc --noEmit over the scaffolded project — returns type errors to fix; run after writing files and BEFORE design_preview_build (static C diagnostics do NOT cover TypeScript types).',
     inputSchema: {
       type: 'object',
       properties: {
-        code: { type: 'string', description: 'The complete .tsx snippet to check.' },
-        filename: { type: 'string', description: 'Virtual filename for diagnostics (default snippet.tsx).' }
-      },
-      required: ['code']
+        code: { type: 'string', description: 'SNIPPET MODE: the complete .tsx snippet to check.' },
+        filename: { type: 'string', description: 'Snippet mode: virtual filename for diagnostics (default snippet.tsx).' },
+        workspace: WORKSPACE_PARAM,
+        dir: { type: 'string', description: 'PROJECT MODE: project directory relative to the workspace root; runs tsc --noEmit over it.' }
+      }
     }
   },
   {
@@ -373,7 +374,9 @@ function handle(request) {
         let text
         if (name === 'design_contract') text = contractText(args?.topic)
         else if (name === 'design_scaffold') text = doScaffold(resolveWorkspace(args ?? {}), args ?? {})
-        else if (name === 'design_check') text = doDesignCheck(args ?? {})
+        else if (name === 'design_check') text = args?.dir !== undefined
+          ? doProjectTypes(resolveWorkspace(args ?? {}), args ?? {})
+          : doDesignCheck(args ?? {})
         else if (name === 'design_preview_build') text = await doPreviewBuild(resolveWorkspace(args ?? {}), args ?? {})
         else return writeMessage(respond({ content: [{ type: 'text', text: `unknown tool ${name}` }], isError: true }))
         writeMessage(respond({ content: [{ type: 'text', text }] }))
@@ -406,6 +409,38 @@ function doDesignCheck(request) {
       `  at ${d.file}:${d.line}:${d.column}`,
       d.fix !== undefined && d.fix !== '' ? `  fix: ${d.fix.split('\n')[0]}` : ''
     ].filter(line => line !== '').join('\n'))
+  ].join('\n')
+}
+
+const TSC_OUTPUT_CAP = 40
+
+/**
+ * PROJECT MODE: `tsc --noEmit` over the scaffolded project, via the local typescript
+ * the project itself installs (no global dependency). Non-zero exit IS the expected
+ * "has errors" signal — the output is the result, not a failure of the tool.
+ */
+function doProjectTypes(workspace, request) {
+  const dir = String(request.dir ?? '').replace(/^[\\/]+/u, '')
+  if (dir === '') throw new Error('dir is required (project mode)')
+  if (dir.includes('..')) throw new Error('dir must stay inside the workspace')
+  const project = resolve(workspace, dir)
+  if (!existsSync(resolve(project, 'package.json'))) throw new Error(`no package.json in ${dir}/ — run design_scaffold first`)
+  const tscJs = resolve(project, 'node_modules', 'typescript', 'bin', 'tsc')
+  if (!existsSync(tscJs)) throw new Error(`typescript is not installed in ${dir}/ — run pnpm install first`)
+
+  let output = ''
+  try {
+    output = execFileSync(process.execPath, [tscJs, '--noEmit'], { cwd: project, stdio: 'pipe', timeout: 180_000 }).toString()
+  } catch (error) {
+    output = `${error.stdout ?? ''}\n${error.stderr ?? ''}`
+  }
+  const errorLines = output.split('\n').filter(line => /error TS\d+/u.test(line))
+  if (errorLines.length === 0) return `✓ tsc --noEmit: 0 type errors in ${dir}/.`
+  return [
+    `✗ tsc --noEmit: ${errorLines.length} type error(s) in ${dir}/ — fix BEFORE design_preview_build:`,
+    '',
+    ...errorLines.slice(0, TSC_OUTPUT_CAP),
+    ...(errorLines.length > TSC_OUTPUT_CAP ? [`… ${errorLines.length - TSC_OUTPUT_CAP} more`] : [])
   ].join('\n')
 }
 
