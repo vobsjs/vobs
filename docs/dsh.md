@@ -85,31 +85,26 @@ preview server walks upwards from port 5218 when it is taken.
 
 ### Install from the chat (no clone, no plugin page)
 
-Because a DSH profile is a pnpm workspace (`~/.dsh/profiles/desktop/package.json` +
-`cordis.patch.yml`), the agent itself can perform the whole install from a chat
-message — no local vobs clone needed. Paste this into a DSH session:
+A DSH profile is a pnpm workspace, and the `dsh` CLI installed with the desktop app
+manages profile plugins directly (`dsh plugin --profile <name> <pnpm-args…>` forwards
+to the bundled pnpm ≥ 11 in the profile directory — the Windows `&` trap and the pnpm
+version are handled by DSH itself). So the agent in any session can perform the whole
+install. Paste this into a DSH chat:
 
 ```text
-Install the dsh-plugin-vobs-studio plugin into this DSH profile and register its MCP server:
-1. Add "dsh-plugin-vobs-studio": "github:vobsjs/vobs#<ref>&path:/packages/vobs-studio"
-   to the dependencies of ~/.dsh/profiles/desktop/package.json, and add the package
-   name to that file's dsh.profile.bundles array.
-2. Append the two `insert` entries from that package's cordis.patch.yml (the plugin row
-   and the @deepseek-ai/dsh-mcp-client row with the !!js script path) to
-   ~/.dsh/profiles/desktop/cordis.patch.yml — keep the !!js expression verbatim.
-3. Run pnpm install inside ~/.dsh/profiles/desktop. IMPORTANT: the &path: syntax needs
-   pnpm >= 11 — check `pnpm --version` first; if it is older, run DSH's bundled copy:
-   node ~/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin/pnpm.cjs install
-   (add --no-frozen-lockfile if the lockfile is stale).
-4. Tell me to quit DSH completely and reopen it.
+帮我在 DSH 里安装并启用 Vobs Studio 插件：
+1. 运行 dsh plugin --profile desktop add "github:vobsjs/vobs#<ref>&path:/packages/vobs-studio"
+2. 把 "dsh-plugin-vobs-studio" 加进 ~/.dsh/profiles/desktop/package.json 的
+   dsh.profile.bundles 数组
+3. 完成后提醒我：完全退出 DSH 再重新打开
 ```
 
-The agent has file and shell tools, so steps 1–3 are ordinary edits it can perform;
-step 4 is unavoidable because plugin patches are composed at startup. The `!!js` path
-expression makes the MCP registration machine-independent, so this works for anyone.
-Developers with a local vobs clone can swap the github spec for
-`"link:<clone>/packages/vobs-studio"` — a link dependency works on any pnpm version
-and installs instantly.
+That is the whole message — no manual file editing, no MCP configuration. Step 2 is
+the one thing the CLI does not do (bundle registration is the profile's composition
+order), and the MCP server needs no mention: the plugin's own patch layer registers
+it (see below). Developers with a local vobs clone can swap the spec for
+`"link:<clone>/packages/vobs-studio"` — a link dependency works on any pnpm and
+installs instantly.
 
 ## Building and verifying
 
