@@ -13,7 +13,32 @@
  */
 import { effect, memo, on, untrack } from '@vobs/vobs'
 import { pageUrl, type PreviewPage } from './manifest'
-import { activePageId, refreshStudio, studioState } from './store'
+import { activePageId, refreshStudio, serverNoticeDismissed, studioState } from './store'
+
+/**
+ * Shown while ready: the static preview server binds on each `design_preview_build`
+ * and does not survive a DSH restart, so "ready + blank frames" needs its explanation
+ * inside the panel (dismissable — it is a session-lifetime reminder, not an error).
+ */
+function ServerNotice() {
+  return (
+    <div class="studio__notice">
+      <span>
+        Frames blank? The preview server is per-session — ask the agent to re-run{' '}
+        <code>design_preview_build</code> to restart it.
+      </span>
+      <button
+        class="studio__notice-x"
+        title="Dismiss"
+        onClick={() => {
+          serverNoticeDismissed.value = true
+        }}
+      >
+        ×
+      </button>
+    </div>
+  )
+}
 
 function StatusNotice() {
   return (
@@ -161,6 +186,7 @@ export function Studio() {
           Open in browser
         </button>
       </header>
+      {studioState.value.status === 'ready' && !serverNoticeDismissed.value ? <ServerNotice /> : null}
       <div class="studio__body">
         <aside class="studio__rail">
           <div class="studio__rail-head">Pages</div>

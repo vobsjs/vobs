@@ -67,6 +67,31 @@ export const STUDIO_CSS = `
 .studio__btn:hover { border-color: var(--s-brand); color: var(--s-brand); }
 .studio__btn[disabled] { opacity: .4; cursor: default; pointer-events: none; }
 
+.studio__notice {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  font-size: 11px;
+  color: var(--s-muted);
+  background: var(--s-brand-soft);
+  border-bottom: 1px solid var(--s-border);
+}
+.studio__notice code { color: var(--s-brand); }
+.studio__notice-x {
+  flex: none;
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--s-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.studio__notice-x:hover { color: var(--s-text); }
+
 .studio__body { flex: 1; display: flex; min-height: 0; }
 
 .studio__rail {
