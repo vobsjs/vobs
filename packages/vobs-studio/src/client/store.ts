@@ -6,6 +6,7 @@
  * them; the component body reads them in dynamic positions and runs exactly once.
  */
 import { state } from '@vobs/vobs'
+import { createSourceBrowser, type SourceSignals } from './source'
 import { createStudioSource, type StudioSource, type StudioState } from './manifest'
 
 export const studioState = state<StudioState>(
@@ -23,9 +24,38 @@ export const activePageId = state('', 'studio.activePage')
  */
 export const serverNoticeDismissed = state(false, 'studio.serverNoticeDismissed')
 
+/** Left-rail mode: rendered-page preview vs project source browser. */
+export const railMode = state<'pages' | 'files'>('pages', 'studio.railMode')
+
 let source: StudioSource | undefined
+let sourceBrowser: SourceSignals | undefined
+/** The plugin setup ctx — the only place services are reachable; captured for the source browser. */
+let pluginCtx: unknown
+
+function ensureSourceBrowser(): SourceSignals {
+  if (sourceBrowser === undefined) {
+    sourceBrowser = createSourceBrowser(pluginCtx, {
+      projectDir: {
+        get value(): string {
+          return String(studioState.value.manifest?.project?.dir ?? '')
+        }
+      },
+      sessionId: {
+        get value(): string {
+          return String(studioState.value.sessionId ?? '')
+        }
+      }
+    })
+  }
+  return sourceBrowser
+}
+
+export function sourceBrowserOf(): SourceSignals {
+  return ensureSourceBrowser()
+}
 
 export function startStudioSource(ctx: Parameters<typeof createStudioSource>[0]): void {
+  pluginCtx = ctx
   source?.dispose()
   source = createStudioSource(ctx, { sink: studioState })
 }
@@ -37,4 +67,8 @@ export function refreshStudio(): void {
 export function disposeStudio(): void {
   source?.dispose()
   source = undefined
+  sourceBrowser?.reset()
+  sourceBrowser = undefined
+  pluginCtx = undefined
+  railMode.value = 'pages'
 }

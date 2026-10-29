@@ -100,9 +100,21 @@ interface WorkspaceFilesApi {
     options?: { range?: unknown; baseFile?: string },
     signal?: unknown
   ) => Promise<{ data?: Uint8Array } | Uint8Array | undefined>
+  readonly list?: (
+    sessionId: string,
+    path: string,
+    signal?: unknown
+  ) => Promise<
+    | {
+        path?: string
+        entries?: readonly { name: string; type?: string; size?: number }[]
+        truncated?: boolean
+      }
+    | undefined
+  >
 }
 
-function workspaceFilesOf(ctx: DshClientContext | undefined): WorkspaceFilesApi | undefined {
+export function workspaceFilesOf(ctx: DshClientContext | undefined): WorkspaceFilesApi | undefined {
   const remote = ctx?.get?.('remote') as { workspaceFiles?: WorkspaceFilesApi } | undefined
   return remote?.workspaceFiles
 }
@@ -129,7 +141,7 @@ function asBytes(value: unknown): ArrayBufferView | undefined {
  * JSON input"), never as a clean `undefined`. Callers must treat "could not read" as
  * "no manifest yet", not as an error.
  */
-async function readManifestText(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<string | undefined> {
+export async function readWorkspaceText(api: WorkspaceFilesApi, sessionId: string, path: string): Promise<string | undefined> {
   try {
     if (typeof api.readBytes === 'function') {
       const bytes = asBytes(await api.readBytes(sessionId, path, {}))
@@ -233,7 +245,7 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
         }
       }
 
-      const text = await readManifestText(api, sessionId, MANIFEST_PATH)
+      const text = await readWorkspaceText(api, sessionId, MANIFEST_PATH)
       if (text === undefined) {
         // Read failed: either no manifest (the common case — a missing file throws on the
         // real Host) or a transient transport failure. An already-ready panel keeps its

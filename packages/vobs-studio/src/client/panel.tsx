@@ -13,7 +13,8 @@
  */
 import { effect, memo, on, untrack } from '@vobs/vobs'
 import { pageUrl, type PreviewPage } from './manifest'
-import { activePageId, refreshStudio, serverNoticeDismissed, studioState } from './store'
+import { activePageId, railMode, refreshStudio, serverNoticeDismissed, sourceBrowserOf, studioState } from './store'
+import { buildTree, type TreeNode } from './source'
 
 /**
  * Shown while ready: the static preview server binds on each `design_preview_build`
@@ -109,6 +110,116 @@ function PageList() {
   )
 }
 
+/** One recursive tree row; expansion state lives in the source browser's signals. */
+function TreeRows(nodes: readonly TreeNode[], depth: number): unknown {
+  return nodes.map(node => {
+    const browser = sourceBrowserOf()
+    const expanded = browser.state.value.expanded.includes(node.relPath)
+    return (
+      <div>
+        <button
+          class="studio__tree-row"
+          style={{ 'padding-left': `${8 + depth * 14}px` }}
+          data-active={browser.state.value.openPath === node.relPath && !node.isDir}
+          onClick={() => {
+            if (node.isDir) browser.toggleDir(node.relPath)
+            else void browser.openFile(node.relPath)
+          }}
+        >
+          <span class="studio__tree-chevron">{node.isDir ? (expanded ? '▾' : '▸') : ''}</span>
+          <span>{node.name}</span>
+        </button>
+        {node.isDir && expanded ? TreeRows(node.children, depth + 1) : null}
+      </div>
+    )
+  })
+}
+
+function SourceBrowserPane() {
+  const browser = sourceBrowserOf()
+  const view = memo(() => {
+    const s = browser.state.value
+    const projectDir = String(studioState.value.manifest?.project?.dir ?? '')
+    if (projectDir === '') return { kind: 'empty' as const }
+    if (s.status === 'error') return { kind: 'error' as const, message: s.message }
+    const tree = buildTree(s.dirs, '')
+    const rootLoaded = s.dirs[''] !== undefined
+    return { kind: 'ready' as const, tree, rootLoaded, open: s, projectDir }
+  })
+  return (
+    <div class="studio__tree">
+      {view.value.kind === 'empty' ? (
+        <p class="studio__tree-hint">Generate a project first — the tree follows the manifest's project dir.</p>
+      ) : view.value.kind === 'error' ? (
+        <p class="studio__tree-hint">{view.value.message}</p>
+      ) : (
+        <div class="studio__tree-scroll">
+          <button
+            class="studio__tree-row"
+            data-active={view.value.open.openPath === ''}
+            onClick={() => {
+              browser.toggleDir('')
+            }}
+          >
+            <span class="studio__tree-chevron">{view.value.rootLoaded ? '▾' : '▸'}</span>
+            <span>{view.value.projectDir}</span>
+          </button>
+          {view.value.rootLoaded ? TreeRows(view.value.tree, 1) : null}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CodeViewer() {
+  const browser = sourceBrowserOf()
+  const view = memo(() => {
+    const s = browser.state.value
+    return { path: s.openPath, state: s.openState, text: s.openText }
+  })
+  return (
+    <div class="studio__code">
+      <div class="studio__code-head">
+        <code>{view.value.path === '' ? 'select a file in the tree' : view.value.path}</code>
+      </div>
+      {view.value.state === 'loading' ? <p class="studio__code-status">Loading…</p> : null}
+      {view.value.state === 'error' ? <p class="studio__code-status">{view.value.text}</p> : null}
+      {view.value.state === 'ok' ? <pre class="studio__code-body"><code>{view.value.text}</code></pre> : null}
+    </div>
+  )
+}
+
+/** Left rail: Pages (rendered previews) vs Files (project source tree). */
+function RailSwitch() {
+  return (
+    <div class="studio__tabs">
+      <button
+        class="studio__tab"
+        data-active={railMode.value === 'pages'}
+        onClick={() => {
+          railMode.value = 'pages'
+        }}
+      >
+        Pages
+      </button>
+      <button
+        class="studio__tab"
+        data-active={railMode.value === 'files'}
+        onClick={() => {
+          railMode.value = 'files'
+          const browser = sourceBrowserOf()
+          if (browser.state.value.status === 'off' && studioState.value.manifest?.project?.dir) {
+            browser.state.value = { ...browser.state.value, status: 'loading', projectDir: studioState.value.manifest.project.dir }
+            void browser.listDir('')
+          }
+        }}
+      >
+        Files
+      </button>
+    </div>
+  )
+}
+
 function Viewport() {
   const view = memo(() => {
     const s = studioState.value
@@ -189,11 +300,17 @@ export function Studio() {
       {studioState.value.status === 'ready' && !serverNoticeDismissed.value ? <ServerNotice /> : null}
       <div class="studio__body">
         <aside class="studio__rail">
-          <div class="studio__rail-head">Pages</div>
-          {studioState.value.status === 'ready' ? <PageList /> : null}
+          <div class="studio__rail-head">
+            <RailSwitch />
+          </div>
+          {railMode.value === 'pages' ? (
+            studioState.value.status === 'ready' ? <PageList /> : null
+          ) : (
+            <SourceBrowserPane />
+          )}
         </aside>
         <main class="studio__main">
-          <Viewport />
+          {railMode.value === 'files' ? <CodeViewer /> : <Viewport />}
         </main>
         <Aside />
       </div>

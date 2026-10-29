@@ -153,6 +153,8 @@ const MANIFEST_JSON = JSON.stringify({
   ]
 })
 
+const SOURCE_PAGE = "import { createVobs } from '@vobs/vobs'\nexport function Home() { return null }\n"
+
 const fakeServices = {
   sessions: {
     list: {
@@ -166,7 +168,17 @@ const fakeServices = {
   remote: {
     workspaceFiles: {
       stat: async (sessionId, filePath) => (filePath === '.vobs/studio/preview.json' ? { version: 1, bytes: MANIFEST_JSON.length } : undefined),
-      read: async (sessionId, filePath, range) => (filePath === '.vobs/studio/preview.json' ? { text: MANIFEST_JSON, eof: true } : undefined)
+      read: async (sessionId, filePath, range) => {
+        if (filePath === '.vobs/studio/preview.json') return { text: MANIFEST_JSON, eof: true }
+        if (filePath === 'demo-app/src/pages/home.tsx') return { text: SOURCE_PAGE, eof: true }
+        return undefined
+      },
+      list: async (sessionId, path) => {
+        if (path === 'demo-app') return { entries: [{ name: 'src', type: 'directory' }, { name: 'package.json', type: 'file' }] }
+        if (path === 'demo-app/src') return { entries: [{ name: 'pages', type: 'directory' }] }
+        if (path === 'demo-app/src/pages') return { entries: [{ name: 'home.tsx', type: 'file' }] }
+        throw new Error(`no such directory: ${path}`)
+      }
     }
   }
 }
@@ -280,6 +292,29 @@ check(
   'active page is visually marked',
   pageButtons()[1].getAttribute('data-active') === 'true' && pageButtons()[0].getAttribute('data-active') !== 'true'
 )
+
+section('6b. Files tab: source tree + code viewer')
+const tabs = [...shadow.querySelectorAll('.studio__tab')]
+check('rail has Pages/Files tabs', tabs.length === 2, tabs.map(b => b.textContent).join('|'))
+tabs.find(b => b.textContent === 'Files')?.click()
+await tick()
+check('Files mode shows the tree rooted at the project dir', await until(() => shadow.querySelector('.studio__tree') !== null))
+const rowByLabel = label =>
+  // rows carry a chevron glyph before the label — match on the trailing label text
+  [...shadow.querySelectorAll('.studio__tree-row')].find(b => b.textContent.trim().endsWith(label))
+rowByLabel('demo-app')?.click()
+check('expanding the root lists src/ and skips nothing', await until(() => rowByLabel('src') !== undefined && rowByLabel('package.json') !== undefined))
+rowByLabel('src')?.click()
+check('expanding src lists pages/', await until(() => rowByLabel('pages') !== undefined))
+rowByLabel('pages')?.click()
+check('expanding pages lists home.tsx', await until(() => rowByLabel('home.tsx') !== undefined))
+rowByLabel('home.tsx')?.click()
+check('selecting a file opens the code viewer', await until(() => shadow.querySelector('.studio__code-body') !== null))
+check('code viewer shows the file content', (shadow.querySelector('.studio__code-body')?.textContent ?? '').includes('export function Home'))
+check('code viewer header names the file (project-relative)', (shadow.querySelector('.studio__code-head')?.textContent ?? '').includes('src/pages/home.tsx'))
+tabs.find(b => b.textContent === 'Pages')?.click()
+await tick()
+check('switching back to Pages restores the page list', await until(() => shadow.querySelectorAll('.studio__page').length === 2))
 
 section('7. Cleanup')
 for (const cleanup of cleanups) cleanup()
