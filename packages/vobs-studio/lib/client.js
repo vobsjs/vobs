@@ -3180,44 +3180,14 @@ const panelPlugin = defineDshPanel({
   }
 }, () => createComponent(resolveComponent(Studio, "src/client/index.tsx", "Studio"), {}));
 const index = defineDshPlugin({
-  // "layout" is declared for the slash command's selectPanel: cordis THROWS on
-  // property access of an undeclared service — optional chaining cannot guard it
-  // (the same class of incident as the undeclared remote.workspaceFiles read).
-  inject: [...panelPlugin.inject, "layout"],
+  inject: panelPlugin.inject,
   setup(ctx) {
     panelPlugin.apply(ctx);
     for (const tool of TOOLVIEW_TOOLS) {
       ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({ name: "tool.call.toolview", key: tool }, createVobsPropsSlotHost(Row, { styles: TOOLVIEW_CSS })));
     }
-    registerSlashCommand(ctx);
   }
 });
-function registerSlashCommand(ctx) {
-  try {
-    const host = ctx;
-    if (typeof host.inject !== "function")
-      return;
-    host.inject(["commandUi"], (scope) => {
-      const commandUi = scope.get?.("commandUi");
-      if (commandUi?.register === void 0)
-        return;
-      const register = commandUi.register;
-      scope.effect?.(() => register({
-        name: "vobs-studio",
-        label: () => "Vobs Studio",
-        available: () => true,
-        ui: {
-          kind: "action",
-          run: () => {
-            host.layout?.selectPanel?.("vobs-studio");
-          }
-        }
-      }), "vobs-studio: slash command");
-    });
-  } catch (error) {
-    console.warn("[vobs-studio] slash command registration failed:", error);
-  }
-}
 exports.default = index;
 var out=module.exports;
 return (out&&out.__esModule&&Object.prototype.hasOwnProperty.call(out,"default"))?out.default:out;

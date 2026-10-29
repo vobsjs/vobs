@@ -10,7 +10,7 @@
  * `setup(ctx)` runs as soon as the plugin loads (before the panel is ever rendered) and
  * starts the preview-manifest data source; the view binds the module-level signals.
  */
-import { createVobsPropsSlotHost, defineDshPlugin, defineDshPanel, type DshClientContext } from '@vobs/dsh'
+import { createVobsPropsSlotHost, defineDshPlugin, defineDshPanel } from '@vobs/dsh'
 import { Studio } from './panel'
 import { STUDIO_CSS } from './styles'
 import { disposeStudio, startStudioSource } from './store'
@@ -54,10 +54,7 @@ const panelPlugin = defineDshPanel(
 )
 
 export default defineDshPlugin({
-  // "layout" is declared for the slash command's selectPanel: cordis THROWS on
-  // property access of an undeclared service — optional chaining cannot guard it
-  // (the same class of incident as the undeclared remote.workspaceFiles read).
-  inject: [...panelPlugin.inject, 'layout'],
+  inject: panelPlugin.inject,
   setup(ctx) {
     panelPlugin.apply(ctx)
     for (const tool of TOOLVIEW_TOOLS) {
@@ -68,46 +65,5 @@ export default defineDshPlugin({
         )
       )
     }
-    registerSlashCommand(ctx)
   }
 })
-
-/**
- * `/vobs-studio` in the chat input's slash menu → opens the Studio panel, the same way
- * the sidebar rail does (`ctx.layout.selectPanel(id)` — recon'ed from the host's own
- * sidebar client). Registration rides the official `commandUi` service; any failure is
- * contained (the command disappears, the plugin keeps working).
- */
-interface CommandUiScope {
-  get?(name: string): { register?(contribution: unknown): unknown } | undefined
-  effect?(callback: () => unknown, label?: string): unknown
-}
-
-function registerSlashCommand(ctx: DshClientContext): void {
-  try {
-    const host = ctx as unknown as {
-      inject?: (services: string[], callback: (scope: CommandUiScope) => void) => void
-      layout?: { selectPanel?: (id: string) => void }
-    }
-    if (typeof host.inject !== 'function') return
-    host.inject(['commandUi'], scope => {
-      const commandUi = scope.get?.('commandUi')
-      if (commandUi?.register === undefined) return
-      // bind the method to a const: property narrowing does not survive into the closure
-      const register = commandUi.register
-      scope.effect?.(() => register({
-        name: 'vobs-studio',
-        label: () => 'Vobs Studio',
-        available: () => true,
-        ui: {
-          kind: 'action',
-          run: () => {
-            host.layout?.selectPanel?.('vobs-studio')
-          }
-        }
-      }), 'vobs-studio: slash command')
-    })
-  } catch (error) {
-    console.warn('[vobs-studio] slash command registration failed:', error)
-  }
-}
