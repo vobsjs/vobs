@@ -2151,14 +2151,13 @@ function createSourceBrowser(ctx, signals) {
     sourceState.value = { ...sourceState.value, ...next };
   };
   const api = () => workspaceFilesOf(ctx);
-  const sessionId = () => String(signals.sessionId.value ?? "");
   const fetchDir = async (relPath) => {
     const workspaceApi = api();
     if (workspaceApi?.list === void 0) throw new Error("workspaceFiles.list is unavailable");
-    const abs = joinPath(signals.projectDir.value, relPath);
-    const result = await workspaceApi.list(sessionId(), abs);
-    const raw = Array.isArray(result?.entries) ? result?.entries : [];
-    const entries = raw.filter((e) => typeof e?.name === "string" && e.name !== "" && !EXCLUDED_DIRS.has(e.name)).map((e) => ({ name: String(e.name), type: e.type === "directory" ? "directory" : "file" }));
+    const abs = joinPath(signals.projectDir(), relPath);
+    const result = await workspaceApi.list(signals.sessionId(), abs);
+    const raw = Array.isArray(result?.entries) ? result?.entries ?? [] : [];
+    const entries = raw.filter((e) => e.name !== "" && !EXCLUDED_DIRS.has(e.name)).map((e) => ({ name: e.name, type: e.type === "directory" ? "directory" : "file" }));
     const dirs = { ...sourceState.value.dirs, [relPath]: sortEntries(entries) };
     patch({ dirs });
   };
@@ -2192,7 +2191,7 @@ function createSourceBrowser(ctx, signals) {
         patch({ openState: "error", openText: "workspaceFiles service is unavailable" });
         return;
       }
-      const text = await readWorkspaceText(workspaceApi, sessionId(), joinPath(signals.projectDir.value, relPath));
+      const text = await readWorkspaceText(workspaceApi, signals.sessionId(), joinPath(signals.projectDir(), relPath));
       if (text === void 0) patch({ openState: "error", openText: "could not read this file" });
       else patch({ openState: "ok", openText: text });
     },
@@ -2227,16 +2226,8 @@ let pluginCtx;
 function ensureSourceBrowser() {
   if (sourceBrowser === void 0) {
     sourceBrowser = createSourceBrowser(pluginCtx, {
-      projectDir: {
-        get value() {
-          return String(studioState.value.manifest?.project?.dir ?? "");
-        }
-      },
-      sessionId: {
-        get value() {
-          return String(studioState.value.sessionId ?? "");
-        }
-      }
+      projectDir: () => String(studioState.value.manifest?.project?.dir ?? ""),
+      sessionId: () => String(studioState.value.sessionId ?? "")
     });
   }
   return sourceBrowser;
@@ -3200,15 +3191,22 @@ const index = defineDshPlugin({
 });
 function registerSlashCommand(ctx) {
   try {
-    ctx.inject?.(["commandUi"], (scope) => {
-      scope.effect?.(() => scope.get?.("commandUi")?.register({
+    const host = ctx;
+    if (typeof host.inject !== "function")
+      return;
+    host.inject(["commandUi"], (scope) => {
+      const commandUi = scope.get?.("commandUi");
+      if (commandUi?.register === void 0)
+        return;
+      const register = commandUi.register;
+      scope.effect?.(() => register({
         name: "vobs-studio",
         label: () => "Vobs Studio",
         available: () => true,
         ui: {
           kind: "action",
           run: () => {
-            ctx.layout?.selectPanel?.("vobs-studio");
+            host.layout?.selectPanel?.("vobs-studio");
           }
         }
       }), "vobs-studio: slash command");

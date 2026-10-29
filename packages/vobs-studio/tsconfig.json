@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": {
+      "@vobs/dsh": ["packages/dsh/src/index.ts"],
+      "@vobs/dsh/react": ["packages/dsh/src/react.ts"],
+      "@vobs/reactivity": ["packages/reactivity/src/index.ts"],
+      "@vobs/vobs": ["packages/vobs/src/index.ts"],
+      "@vobs/vobs/jsx-runtime": ["packages/vobs/src/jsx-runtime.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

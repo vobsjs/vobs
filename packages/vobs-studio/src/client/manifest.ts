@@ -86,7 +86,7 @@ function pickSession(ctx: DshClientContext | undefined): SessionRow | undefined 
   return rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0]
 }
 
-interface WorkspaceFilesApi {
+export interface WorkspaceFilesApi {
   readonly stat?: (sessionId: string, path: string, signal?: unknown) => Promise<{ version?: unknown; bytes?: number } | undefined>
   readonly read?: (
     sessionId: string,

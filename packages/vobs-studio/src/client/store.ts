@@ -35,16 +35,8 @@ let pluginCtx: unknown
 function ensureSourceBrowser(): SourceSignals {
   if (sourceBrowser === undefined) {
     sourceBrowser = createSourceBrowser(pluginCtx, {
-      projectDir: {
-        get value(): string {
-          return String(studioState.value.manifest?.project?.dir ?? '')
-        }
-      },
-      sessionId: {
-        get value(): string {
-          return String(studioState.value.sessionId ?? '')
-        }
-      }
+      projectDir: () => String(studioState.value.manifest?.project?.dir ?? ''),
+      sessionId: () => String(studioState.value.sessionId ?? '')
     })
   }
   return sourceBrowser

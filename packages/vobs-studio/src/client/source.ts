@@ -67,7 +67,7 @@ function sortEntries(entries: readonly SourceEntry[]): readonly SourceEntry[] {
   )
 }
 
-export function createSourceBrowser(ctx: unknown, signals: { projectDir: Signal<string>; sessionId: Signal<string> }): SourceSignals {
+export function createSourceBrowser(ctx: unknown, signals: { projectDir(): string; sessionId(): string }): SourceSignals {
   const sourceState = state<SourceState>(EMPTY, 'studio.source')
   let inFlight = false
 
@@ -76,18 +76,18 @@ export function createSourceBrowser(ctx: unknown, signals: { projectDir: Signal<
   }
 
   const api = (): WorkspaceFilesApi | undefined => workspaceFilesOf(ctx as never)
-  const sessionId = (): string => String(signals.sessionId.value ?? '')
 
   /** List one directory (rel to projectDir) into the cache. Throws propagate to callers. */
   const fetchDir = async (relPath: string): Promise<void> => {
     const workspaceApi = api()
     if (workspaceApi?.list === undefined) throw new Error('workspaceFiles.list is unavailable')
-    const abs = joinPath(signals.projectDir.value, relPath)
-    const result = await workspaceApi.list(sessionId(), abs)
-    const raw = Array.isArray(result?.entries) ? result?.entries : []
+    const abs = joinPath(signals.projectDir(), relPath)
+    const result = await workspaceApi.list(signals.sessionId(), abs)
+    // Array.isArray narrows a readonly array to any[] — retype explicitly before iterating.
+    const raw: readonly { name: string; type?: string; size?: number }[] = Array.isArray(result?.entries) ? (result?.entries ?? []) : []
     const entries: SourceEntry[] = raw
-      .filter(e => typeof e?.name === 'string' && e.name !== '' && !EXCLUDED_DIRS.has(e.name))
-      .map(e => ({ name: String(e.name), type: e.type === 'directory' ? 'directory' : 'file' }))
+      .filter(e => e.name !== '' && !EXCLUDED_DIRS.has(e.name))
+      .map(e => ({ name: e.name, type: e.type === 'directory' ? 'directory' : 'file' }))
     const dirs = { ...sourceState.value.dirs, [relPath]: sortEntries(entries) }
     patch({ dirs })
   }
@@ -123,7 +123,7 @@ export function createSourceBrowser(ctx: unknown, signals: { projectDir: Signal<
         patch({ openState: 'error', openText: 'workspaceFiles service is unavailable' })
         return
       }
-      const text = await readWorkspaceText(workspaceApi, sessionId(), joinPath(signals.projectDir.value, relPath))
+      const text = await readWorkspaceText(workspaceApi, signals.sessionId(), joinPath(signals.projectDir(), relPath))
       if (text === undefined) patch({ openState: 'error', openText: 'could not read this file' })
       else patch({ openState: 'ok', openText: text })
     },

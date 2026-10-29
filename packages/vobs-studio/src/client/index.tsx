@@ -10,7 +10,7 @@
  * `setup(ctx)` runs as soon as the plugin loads (before the panel is ever rendered) and
  * starts the preview-manifest data source; the view binds the module-level signals.
  */
-import { createVobsPropsSlotHost, defineDshPlugin, defineDshPanel } from '@vobs/dsh'
+import { createVobsPropsSlotHost, defineDshPlugin, defineDshPanel, type DshClientContext } from '@vobs/dsh'
 import { Studio } from './panel'
 import { STUDIO_CSS } from './styles'
 import { disposeStudio, startStudioSource } from './store'
@@ -80,17 +80,26 @@ interface CommandUiScope {
   effect?(callback: () => unknown, label?: string): unknown
 }
 
-function registerSlashCommand(ctx: { inject?: (services: string[], callback: (scope: CommandUiScope) => void) => void; layout?: { selectPanel?: (id: string) => void } }): void {
+function registerSlashCommand(ctx: DshClientContext): void {
   try {
-    ctx.inject?.(['commandUi'], scope => {
-      scope.effect?.(() => scope.get?.('commandUi')?.register({
+    const host = ctx as unknown as {
+      inject?: (services: string[], callback: (scope: CommandUiScope) => void) => void
+      layout?: { selectPanel?: (id: string) => void }
+    }
+    if (typeof host.inject !== 'function') return
+    host.inject(['commandUi'], scope => {
+      const commandUi = scope.get?.('commandUi')
+      if (commandUi?.register === undefined) return
+      // bind the method to a const: property narrowing does not survive into the closure
+      const register = commandUi.register
+      scope.effect?.(() => register({
         name: 'vobs-studio',
         label: () => 'Vobs Studio',
         available: () => true,
         ui: {
           kind: 'action',
           run: () => {
-            ctx.layout?.selectPanel?.('vobs-studio')
+            host.layout?.selectPanel?.('vobs-studio')
           }
         }
       }), 'vobs-studio: slash command')
