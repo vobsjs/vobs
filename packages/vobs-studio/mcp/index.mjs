@@ -322,8 +322,11 @@ async function doPreviewBuild(workspace, request) {
   writeManifest(workspace, manifest)
 
   for (const client of sseClients) client.write('data: reload\n\n')
+  const firstRoute = pages[0] !== undefined ? pages[0].route : '/'
   return [
-    `Built ${pages.length} page(s); serving ${dir}/dist at http://127.0.0.1:${port}.`,
+    `Built ${pages.length} page(s); serving ${dir}/dist.`,
+    `Preview URL (kept on its own line so chat linkifiers cannot glue characters onto it):`,
+    `http://127.0.0.1:${port}${firstRoute}`,
     `Manifest written to ${MANIFEST_PATH} (version ${manifestVersion}) — the Studio panel picks it up within ~2.5s.`,
     `Pages: ${pages.map(p => p.id).join(', ')}`
   ].join('\n')

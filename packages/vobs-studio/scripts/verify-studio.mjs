@@ -167,16 +167,19 @@ const fakeServices = {
   },
   remote: {
     workspaceFiles: {
-      stat: async (sessionId, filePath) => (filePath === '.vobs/studio/preview.json' ? { version: 1, bytes: MANIFEST_JSON.length } : undefined),
+      // The client now sends ABSOLUTE paths (workspace + rel) per the Host contract.
+      stat: async (sessionId, filePath) => (String(filePath).endsWith('.vobs/studio/preview.json') ? { version: 1, bytes: MANIFEST_JSON.length } : undefined),
       read: async (sessionId, filePath, range) => {
-        if (filePath === '.vobs/studio/preview.json') return { text: MANIFEST_JSON, eof: true }
-        if (filePath === 'demo-app/src/pages/home.tsx') return { text: SOURCE_PAGE, eof: true }
+        const p = String(filePath)
+        if (p.endsWith('.vobs/studio/preview.json')) return { text: MANIFEST_JSON, eof: true }
+        if (p.endsWith('demo-app/src/pages/home.tsx')) return { text: SOURCE_PAGE, eof: true }
         return undefined
       },
       list: async (sessionId, path) => {
-        if (path === 'demo-app') return { entries: [{ name: 'src', type: 'directory' }, { name: 'package.json', type: 'file' }] }
-        if (path === 'demo-app/src') return { entries: [{ name: 'pages', type: 'directory' }] }
-        if (path === 'demo-app/src/pages') return { entries: [{ name: 'home.tsx', type: 'file' }] }
+        const p = String(path)
+        if (p.endsWith('demo-app')) return { entries: [{ name: 'src', type: 'directory' }, { name: 'package.json', type: 'file' }] }
+        if (p.endsWith('demo-app/src')) return { entries: [{ name: 'pages', type: 'directory' }] }
+        if (p.endsWith('demo-app/src/pages')) return { entries: [{ name: 'home.tsx', type: 'file' }] }
         throw new Error(`no such directory: ${path}`)
       }
     }
@@ -281,13 +284,21 @@ check('panel reached ready: both pages listed', ready, `pages=${shadow.querySele
 const pageButtons = () => [...shadow.querySelectorAll('.studio__page')]
 check('page titles render', pageButtons().map(b => b.textContent).join('|').includes('Dashboard') && pageButtons().map(b => b.textContent).join('|').includes('Settings'))
 
-const frame = shadow.querySelector('.studio__frame')
-check('iframe points at the static server (first page selected automatically)', frame?.getAttribute('src') === 'http://127.0.0.1:5218/pages/dashboard.html', String(frame?.getAttribute('src')))
+section('5b. Launcher: pages open in DSH browser, no iframe duplication')
+check('launcher lists both pages', await until(() => shadow.querySelectorAll('.studio__launch-page').length === 2))
+const opened = []
+dom.window.open = url => {
+  opened.push(String(url))
+  return null
+}
+shadow.querySelectorAll('.studio__launch-page')[0].click()
+await tick()
+check('launching a page opens its URL', opened[0] === 'http://127.0.0.1:5218/pages/dashboard.html', String(opened[0]))
+check('no iframe in the panel (preview lives in DSH browser)', shadow.querySelector('.studio__frame') === null)
 
-section('6. Page switching')
+section('6. Page rail switching')
 pageButtons()[1].click()
 await tick()
-check('clicking the second page switches the iframe', shadow.querySelector('.studio__frame')?.getAttribute('src') === 'http://127.0.0.1:5218/pages/settings.html', String(shadow.querySelector('.studio__frame')?.getAttribute('src')))
 check(
   'active page is visually marked',
   pageButtons()[1].getAttribute('data-active') === 'true' && pageButtons()[0].getAttribute('data-active') !== 'true'

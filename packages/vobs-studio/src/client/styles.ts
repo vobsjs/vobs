@@ -198,15 +198,26 @@ export const STUDIO_CSS = `
 .studio__page-route { display: block; font-size: 11px; color: var(--s-muted); }
 
 .studio__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.studio__viewport { flex: 1; min-height: 0; position: relative; background: var(--s-bg); }
-.studio__frame {
-  position: absolute;
-  inset: 0;
+.studio__launch { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
+.studio__launch-hint { margin: 0 0 10px; font-size: 12px; color: var(--s-muted); }
+.studio__launch-page {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   width: 100%;
-  height: 100%;
-  border: 0;
-  background: #fff;
+  border: 1px solid var(--s-border);
+  background: var(--s-panel);
+  color: var(--s-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 8px;
 }
+.studio__launch-page:hover { border-color: var(--s-brand); color: var(--s-brand); }
 .studio__placeholder {
   position: absolute;
   inset: 0;

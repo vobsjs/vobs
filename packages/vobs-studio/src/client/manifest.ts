@@ -177,6 +177,15 @@ export interface StudioSourceOptions {
 
 const EMPTY: StudioState = { status: 'loading', message: 'Reading the preview manifest…' }
 
+/** Join a workspace (or any base dir) with a workspace-relative path into an absolute path. */
+const joinPath = (base: string | undefined, rel: string): string => {
+  if (base === undefined || base === '') return rel
+  if (rel === '') return base.replace(/[\\/]+$/u, '')
+  return `${base.replace(/[\\/]+$/u, '')}/${rel.replace(/^[\\/]+/u, '')}`
+}
+
+export { joinPath as joinWorkspace }
+
 const MISSING_MESSAGE = 'No preview manifest yet. Generate pages first (the skill writes .vobs/studio/preview.json).'
 
 export function createStudioSource(ctx: DshClientContext | undefined, options: StudioSourceOptions = {}): StudioSource {
@@ -224,6 +233,14 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
       workspace = session.cwd
 
       /**
+       * The Host's stat/read take an ABSOLUTE path ("the filesystem's execution world"
+       * — verified in the asar docstring); a workspace-relative path resolves to nothing
+       * and the call throws → the panel showed 'missing' forever on a real Host while
+       * the manifest sat on disk. Compose workspace + rel into an absolute path.
+       */
+      const manifestPath = joinPath(workspace, MANIFEST_PATH)
+
+      /**
        * stat is a cheap skip, NOT an existence oracle: the Host's stat result carries no
        * "absent" state (bytes is optional) and a missing file may resolve or throw alike.
        * Only a concrete `bytes` number is acted on; everything else falls through to the
@@ -231,7 +248,7 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
        */
       if (typeof api.stat === 'function') {
         try {
-          const info = await api.stat(sessionId, MANIFEST_PATH)
+          const info = await api.stat(sessionId, manifestPath)
           if (info !== undefined && typeof info.bytes === 'number') {
             if (info.bytes === 0) {
               showMissing(sessionId, workspace)
@@ -245,7 +262,7 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
         }
       }
 
-      const text = await readWorkspaceText(api, sessionId, MANIFEST_PATH)
+      const text = await readWorkspaceText(api, sessionId, manifestPath)
       if (text === undefined) {
         // Read failed: either no manifest (the common case — a missing file throws on the
         // real Host) or a transient transport failure. An already-ready panel keeps its

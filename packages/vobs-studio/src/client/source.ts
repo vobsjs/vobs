@@ -13,7 +13,7 @@
  * keep unverified streams out of the panel.
  */
 import { state, type Signal } from '@vobs/vobs'
-import { readWorkspaceText, workspaceFilesOf, type WorkspaceFilesApi } from './manifest'
+import { joinWorkspace, readWorkspaceText, workspaceFilesOf, type WorkspaceFilesApi } from './manifest'
 
 /** Directories that are build/dependency noise for a source review. */
 const EXCLUDED_DIRS = new Set(['node_modules', 'dist', '.git', '.vobs'])
@@ -59,15 +59,13 @@ const EMPTY: SourceState = {
   openText: ''
 }
 
-const joinPath = (base: string, rel: string): string => (rel === '' ? base : `${base}/${rel}`)
-
 function sortEntries(entries: readonly SourceEntry[]): readonly SourceEntry[] {
   return [...entries].sort((a, b) =>
     a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1
   )
 }
 
-export function createSourceBrowser(ctx: unknown, signals: { projectDir(): string; sessionId(): string }): SourceSignals {
+export function createSourceBrowser(ctx: unknown, signals: { projectDir(): string; sessionId(): string; workspace(): string }): SourceSignals {
   const sourceState = state<SourceState>(EMPTY, 'studio.source')
   let inFlight = false
 
@@ -77,11 +75,11 @@ export function createSourceBrowser(ctx: unknown, signals: { projectDir(): strin
 
   const api = (): WorkspaceFilesApi | undefined => workspaceFilesOf(ctx as never)
 
-  /** List one directory (rel to projectDir) into the cache. Throws propagate to callers. */
+  /** List one directory (rel to projectDir) into the cache. Absolute path per the Host contract. */
   const fetchDir = async (relPath: string): Promise<void> => {
     const workspaceApi = api()
     if (workspaceApi?.list === undefined) throw new Error('workspaceFiles.list is unavailable')
-    const abs = joinPath(signals.projectDir(), relPath)
+    const abs = joinWorkspace(joinWorkspace(signals.workspace(), signals.projectDir()), relPath)
     const result = await workspaceApi.list(signals.sessionId(), abs)
     // Array.isArray narrows a readonly array to any[] — retype explicitly before iterating.
     const raw: readonly { name: string; type?: string; size?: number }[] = Array.isArray(result?.entries) ? (result?.entries ?? []) : []
@@ -123,7 +121,7 @@ export function createSourceBrowser(ctx: unknown, signals: { projectDir(): strin
         patch({ openState: 'error', openText: 'workspaceFiles service is unavailable' })
         return
       }
-      const text = await readWorkspaceText(workspaceApi, signals.sessionId(), joinPath(signals.projectDir(), relPath))
+      const text = await readWorkspaceText(workspaceApi, signals.sessionId(), joinWorkspace(joinWorkspace(signals.workspace(), signals.projectDir()), relPath))
       if (text === undefined) patch({ openState: 'error', openText: 'could not read this file' })
       else patch({ openState: 'ok', openText: text })
     },

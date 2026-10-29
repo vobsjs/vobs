@@ -36,7 +36,8 @@ function ensureSourceBrowser(): SourceSignals {
   if (sourceBrowser === undefined) {
     sourceBrowser = createSourceBrowser(pluginCtx, {
       projectDir: () => String(studioState.value.manifest?.project?.dir ?? ''),
-      sessionId: () => String(studioState.value.sessionId ?? '')
+      sessionId: () => String(studioState.value.sessionId ?? ''),
+      workspace: () => String(studioState.value.workspace ?? '')
     })
   }
   return sourceBrowser

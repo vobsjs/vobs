@@ -220,20 +220,33 @@ function RailSwitch() {
   )
 }
 
-function Viewport() {
+/**
+ * Pages mode: the panel does NOT duplicate the rendered preview — DSH's browser opens
+ * the page (chat link or the buttons here, `window.open`), so one preview lives in one
+ * place. The rail keeps page switching, the launcher makes each page one click away.
+ */
+function PageLauncher() {
   const view = memo(() => {
     const s = studioState.value
-    const active = (s.manifest?.pages ?? []).find((p: PreviewPage) => p.id === activePageId.value)
-    return {
-      url: active === undefined ? undefined : pageUrl(s.manifest, active),
-      title: active?.title ?? 'preview'
-    }
+    return { pages: s.manifest?.pages ?? [], ready: s.status === 'ready' }
   })
   return (
-    <div class="studio__viewport">
-      {view.value.url !== undefined
-        ? <iframe class="studio__frame" src={view.value.url} title={view.value.title} />
-        : <StatusNotice />}
+    <div class="studio__launch">
+      <p class="studio__launch-hint">
+        Preview opens in DSH's browser (also via the link the agent posts after each build).
+      </p>
+      {view.value.pages.map((page: PreviewPage) => (
+        <button
+          class="studio__launch-page"
+          onClick={() => {
+            const url = pageUrl(studioState.value.manifest, page)
+            if (typeof url === 'string') window.open(url, '_blank')
+          }}
+        >
+          <span>{page.title || page.id}</span>
+          {page.route ? <span class="studio__page-route">{page.route}</span> : null}
+        </button>
+      ))}
     </div>
   )
 }
@@ -247,9 +260,7 @@ function Aside() {
       {(studioState.value.manifest?.pages ?? []).map((page: PreviewPage) => (
         <div class="studio__file">{page.file}</div>
       ))}
-      <p style={{ 'margin-top': '14px' }}>
-        The full file tree lands with the workspace service in the next milestone.
-      </p>
+      <p style={{ 'margin-top': '14px' }}>Switch the rail to Files to browse the project source.</p>
     </aside>
   )
 }
@@ -310,7 +321,13 @@ export function Studio() {
           )}
         </aside>
         <main class="studio__main">
-          {railMode.value === 'files' ? <CodeViewer /> : <Viewport />}
+          {railMode.value === 'files' ? (
+            <CodeViewer />
+          ) : studioState.value.status === 'ready' ? (
+            <PageLauncher />
+          ) : (
+            <StatusNotice />
+          )}
         </main>
         <Aside />
       </div>

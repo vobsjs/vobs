@@ -2019,6 +2019,11 @@ async function readWorkspaceText(api, sessionId, path) {
   }
 }
 const EMPTY$1 = { status: "loading", message: "Reading the preview manifest…" };
+const joinPath = (base, rel) => {
+  if (base === void 0 || base === "") return rel;
+  if (rel === "") return base.replace(/[\\/]+$/u, "");
+  return `${base.replace(/[\\/]+$/u, "")}/${rel.replace(/^[\\/]+/u, "")}`;
+};
 const MISSING_MESSAGE = "No preview manifest yet. Generate pages first (the skill writes .vobs/studio/preview.json).";
 function createStudioSource(ctx, options = {}) {
   const pollMs = options.pollMs ?? 2500;
@@ -2051,9 +2056,10 @@ function createStudioSource(ctx, options = {}) {
       }
       sessionId = String(session.sessionId ?? "");
       workspace = session.cwd;
+      const manifestPath = joinPath(workspace, MANIFEST_PATH);
       if (typeof api.stat === "function") {
         try {
-          const info = await api.stat(sessionId, MANIFEST_PATH);
+          const info = await api.stat(sessionId, manifestPath);
           if (info !== void 0 && typeof info.bytes === "number") {
             if (info.bytes === 0) {
               showMissing(sessionId, workspace);
@@ -2065,7 +2071,7 @@ function createStudioSource(ctx, options = {}) {
         } catch {
         }
       }
-      const text = await readWorkspaceText(api, sessionId, MANIFEST_PATH);
+      const text = await readWorkspaceText(api, sessionId, manifestPath);
       if (text === void 0) {
         if (studioState2.value.status !== "ready") showMissing(sessionId, workspace);
         return;
@@ -2138,7 +2144,6 @@ const EMPTY = {
   openState: "loading",
   openText: ""
 };
-const joinPath = (base, rel) => rel === "" ? base : `${base}/${rel}`;
 function sortEntries(entries) {
   return [...entries].sort(
     (a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === "directory" ? -1 : 1
@@ -2154,7 +2159,7 @@ function createSourceBrowser(ctx, signals) {
   const fetchDir = async (relPath) => {
     const workspaceApi = api();
     if (workspaceApi?.list === void 0) throw new Error("workspaceFiles.list is unavailable");
-    const abs = joinPath(signals.projectDir(), relPath);
+    const abs = joinPath(joinPath(signals.workspace(), signals.projectDir()), relPath);
     const result = await workspaceApi.list(signals.sessionId(), abs);
     const raw = Array.isArray(result?.entries) ? result?.entries ?? [] : [];
     const entries = raw.filter((e) => e.name !== "" && !EXCLUDED_DIRS.has(e.name)).map((e) => ({ name: e.name, type: e.type === "directory" ? "directory" : "file" }));
@@ -2191,7 +2196,7 @@ function createSourceBrowser(ctx, signals) {
         patch({ openState: "error", openText: "workspaceFiles service is unavailable" });
         return;
       }
-      const text = await readWorkspaceText(workspaceApi, signals.sessionId(), joinPath(signals.projectDir(), relPath));
+      const text = await readWorkspaceText(workspaceApi, signals.sessionId(), joinPath(joinPath(signals.workspace(), signals.projectDir()), relPath));
       if (text === void 0) patch({ openState: "error", openText: "could not read this file" });
       else patch({ openState: "ok", openText: text });
     },
@@ -2227,7 +2232,8 @@ function ensureSourceBrowser() {
   if (sourceBrowser === void 0) {
     sourceBrowser = createSourceBrowser(pluginCtx, {
       projectDir: () => String(studioState.value.manifest?.project?.dir ?? ""),
-      sessionId: () => String(studioState.value.sessionId ?? "")
+      sessionId: () => String(studioState.value.sessionId ?? ""),
+      workspace: () => String(studioState.value.workspace ?? "")
     });
   }
   return sourceBrowser;
@@ -2255,9 +2261,10 @@ const _tpl2 = createTemplate("<code>design_preview_build</code>");
 const _tpl10 = createTemplate(`<div class="studio__steps"><p class="studio__steps-hint">One-time setup, then just chat:</p><ol><li><b>The Studio tools are already connected</b> — installing this plugin also registers its MCP server (design contract / scaffold / self-check / preview build) with the harness. If the agent doesn't use them, restart DSH once: the registration is a patch, applied at startup. On an older install (or a manual setup), point the session's MCP config at:<code>…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs</code></li><li><b>Describe what you want in the chat</b> — plain language is enough: what kind of app, which pages, what content. The agent pulls the design contract, scaffolds the project, self-checks every snippet and builds it.</li><li><b>Watch the pages appear here</b> — the panel refreshes automatically after each build. Iterate by describing changes ("make the hero smaller"); "Open in browser" shows the same preview full-size.</li></ol></div>`);
 const _tpl16 = createTemplate(`<p class="studio__tree-hint">Generate a project first — the tree follows the manifest's project dir.</p>`);
 const _tpl25 = createTemplate('<p class="studio__code-status">Loading…</p>');
-const _tpl35 = createTemplate("<h3>Project</h3>");
-const _tpl42 = createTemplate('<span class="studio__brand">Vobs Studio</span>');
-const _tpl43 = createTemplate('<span class="studio__tag">AI Build</span>');
+const _tpl33 = createTemplate(`<p class="studio__launch-hint">Preview opens in DSH's browser (also via the link the agent posts after each build).</p>`);
+const _tpl38 = createTemplate("<h3>Project</h3>");
+const _tpl45 = createTemplate('<span class="studio__brand">Vobs Studio</span>');
+const _tpl46 = createTemplate('<span class="studio__tag">AI Build</span>');
 function ServerNotice() {
   return (() => {
     const _el0 = createElement("div");
@@ -2365,37 +2372,37 @@ function TreeRows(nodes, depth) {
     const browser = sourceBrowserOf();
     const expanded = browser.state.value.expanded.includes(node.relPath);
     return (() => {
-      const _el51 = createElement("div");
-      insertBefore(_el51, (() => {
-        const _el52 = createElement("button");
-        setStaticProps(_el52, {
+      const _el54 = createElement("div");
+      insertBefore(_el54, (() => {
+        const _el55 = createElement("button");
+        setStaticProps(_el55, {
           "class": "studio__tree-row"
         });
-        bindAttribute(_el52, "style", () => ({ "padding-left": `${8 + depth * 14}px` }));
-        bindAttribute(_el52, "data-active", () => browser.state.value.openPath === node.relPath && !node.isDir);
-        addEventListener(_el52, "click", () => {
+        bindAttribute(_el55, "style", () => ({ "padding-left": `${8 + depth * 14}px` }));
+        bindAttribute(_el55, "data-active", () => browser.state.value.openPath === node.relPath && !node.isDir);
+        addEventListener(_el55, "click", () => {
           if (node.isDir)
             browser.toggleDir(node.relPath);
           else
             void browser.openFile(node.relPath);
         });
-        insertBefore(_el52, (() => {
-          const _el53 = createElement("span");
-          setStaticProps(_el53, {
+        insertBefore(_el55, (() => {
+          const _el56 = createElement("span");
+          setStaticProps(_el56, {
             "class": "studio__tree-chevron"
           });
-          insertDynamicValue(_el53, null, () => node.isDir ? expanded ? "▾" : "▸" : "");
-          return _el53;
+          insertDynamicValue(_el56, null, () => node.isDir ? expanded ? "▾" : "▸" : "");
+          return _el56;
         })(), null);
-        insertBefore(_el52, (() => {
-          const _el54 = createElement("span");
-          insertDynamicValue(_el54, null, () => node.name);
-          return _el54;
+        insertBefore(_el55, (() => {
+          const _el57 = createElement("span");
+          insertDynamicValue(_el57, null, () => node.name);
+          return _el57;
         })(), null);
-        return _el52;
+        return _el55;
       })(), null);
-      insertDynamicValue(_el51, null, () => node.isDir && expanded ? TreeRows(node.children, depth + 1) : null);
-      return _el51;
+      insertDynamicValue(_el54, null, () => node.isDir && expanded ? TreeRows(node.children, depth + 1) : null);
+      return _el54;
     })();
   });
 }
@@ -2544,68 +2551,81 @@ function RailSwitch() {
     return _el29;
   })();
 }
-function Viewport() {
+function PageLauncher() {
   const view = memo(() => {
     const s = studioState.value;
-    const active = (s.manifest?.pages ?? []).find((p) => p.id === activePageId.value);
-    return {
-      url: active === void 0 ? void 0 : pageUrl(s.manifest, active),
-      title: active?.title ?? "preview"
-    };
+    return { pages: s.manifest?.pages ?? [], ready: s.status === "ready" };
   });
   return (() => {
     const _el32 = createElement("div");
     setStaticProps(_el32, {
-      "class": "studio__viewport"
+      "class": "studio__launch"
     });
-    insertDynamic(_el32, null, () => view.value.url !== void 0 ? (() => {
-      const _el33 = createElement("iframe");
-      setStaticProps(_el33, {
-        "class": "studio__frame"
+    insertBefore(_el32, cloneTemplate(_tpl33), null);
+    insertList(_el32, null, () => view.value.pages, (page) => (() => {
+      const _el34 = createElement("button");
+      setStaticProps(_el34, {
+        "class": "studio__launch-page"
       });
-      bindAttribute(_el33, "src", () => view.value.url);
-      bindAttribute(_el33, "title", () => view.value.title);
-      return _el33;
-    })() : createComponent(resolveComponent(StatusNotice, "src/client/panel.tsx", "StatusNotice"), {}));
+      addEventListener(_el34, "click", () => {
+        const url = pageUrl(studioState.value.manifest, page);
+        if (typeof url === "string")
+          window.open(url, "_blank");
+      });
+      insertBefore(_el34, (() => {
+        const _el35 = createElement("span");
+        insertDynamicValue(_el35, null, () => page.title || page.id);
+        return _el35;
+      })(), null);
+      insertDynamic(_el34, null, () => page.route ? (() => {
+        const _el36 = createElement("span");
+        setStaticProps(_el36, {
+          "class": "studio__page-route"
+        });
+        insertDynamicValue(_el36, null, () => page.route);
+        return _el36;
+      })() : null);
+      return _el34;
+    })());
     return _el32;
   })();
 }
 function Aside() {
   return (() => {
-    const _el34 = createElement("aside");
-    setStaticProps(_el34, {
+    const _el37 = createElement("aside");
+    setStaticProps(_el37, {
       "class": "studio__aside"
     });
-    insertBefore(_el34, cloneTemplate(_tpl35), null);
-    insertBefore(_el34, (() => {
-      const _el36 = createElement("div");
-      setStaticProps(_el36, {
+    insertBefore(_el37, cloneTemplate(_tpl38), null);
+    insertBefore(_el37, (() => {
+      const _el39 = createElement("div");
+      setStaticProps(_el39, {
         "class": "studio__file"
       });
-      insertDynamicValue(_el36, null, () => studioState.value.manifest?.project?.name ?? "—");
-      return _el36;
-    })(), null);
-    insertBefore(_el34, (() => {
-      const _el37 = createElement("h3");
-      bindAttribute(_el37, "style", () => ({ "margin-top": "14px" }));
-      insertBefore(_el37, createText("Files"), null);
-      return _el37;
-    })(), null);
-    insertList(_el34, null, () => studioState.value.manifest?.pages ?? [], (page) => (() => {
-      const _el38 = createElement("div");
-      setStaticProps(_el38, {
-        "class": "studio__file"
-      });
-      insertDynamicValue(_el38, null, () => page.file);
-      return _el38;
-    })());
-    insertBefore(_el34, (() => {
-      const _el39 = createElement("p");
-      bindAttribute(_el39, "style", () => ({ "margin-top": "14px" }));
-      insertBefore(_el39, createText("The full file tree lands with the workspace service in the next milestone."), null);
+      insertDynamicValue(_el39, null, () => studioState.value.manifest?.project?.name ?? "—");
       return _el39;
     })(), null);
-    return _el34;
+    insertBefore(_el37, (() => {
+      const _el40 = createElement("h3");
+      bindAttribute(_el40, "style", () => ({ "margin-top": "14px" }));
+      insertBefore(_el40, createText("Files"), null);
+      return _el40;
+    })(), null);
+    insertList(_el37, null, () => studioState.value.manifest?.pages ?? [], (page) => (() => {
+      const _el41 = createElement("div");
+      setStaticProps(_el41, {
+        "class": "studio__file"
+      });
+      insertDynamicValue(_el41, null, () => page.file);
+      return _el41;
+    })());
+    insertBefore(_el37, (() => {
+      const _el42 = createElement("p");
+      bindAttribute(_el42, "style", () => ({ "margin-top": "14px" }));
+      insertBefore(_el42, createText("Switch the rail to Files to browse the project source."), null);
+      return _el42;
+    })(), null);
+    return _el37;
   })();
 }
 function Studio() {
@@ -2621,43 +2641,43 @@ function Studio() {
     });
   }));
   return (() => {
-    const _el40 = createElement("div");
-    setStaticProps(_el40, {
+    const _el43 = createElement("div");
+    setStaticProps(_el43, {
       "class": "studio"
     });
-    insertBefore(_el40, (() => {
-      const _el41 = createElement("header");
-      setStaticProps(_el41, {
+    insertBefore(_el43, (() => {
+      const _el44 = createElement("header");
+      setStaticProps(_el44, {
         "class": "studio__head"
       });
-      insertBefore(_el41, cloneTemplate(_tpl42), null);
-      insertBefore(_el41, cloneTemplate(_tpl43), null);
-      insertBefore(_el41, (() => {
-        const _el44 = createElement("span");
-        setStaticProps(_el44, {
+      insertBefore(_el44, cloneTemplate(_tpl45), null);
+      insertBefore(_el44, cloneTemplate(_tpl46), null);
+      insertBefore(_el44, (() => {
+        const _el47 = createElement("span");
+        setStaticProps(_el47, {
           "class": "studio__ws"
         });
-        insertDynamicValue(_el44, null, () => studioState.value.workspace ?? "");
-        return _el44;
+        insertDynamicValue(_el47, null, () => studioState.value.workspace ?? "");
+        return _el47;
       })(), null);
-      insertBefore(_el41, (() => {
-        const _el45 = createElement("button");
-        setStaticProps(_el45, {
+      insertBefore(_el44, (() => {
+        const _el48 = createElement("button");
+        setStaticProps(_el48, {
           "class": "studio__btn"
         });
-        addEventListener(_el45, "click", () => {
+        addEventListener(_el48, "click", () => {
           refreshStudio();
         });
-        insertBefore(_el45, createText("Refresh"), null);
-        return _el45;
+        insertBefore(_el48, createText("Refresh"), null);
+        return _el48;
       })(), null);
-      insertBefore(_el41, (() => {
-        const _el46 = createElement("button");
-        setStaticProps(_el46, {
+      insertBefore(_el44, (() => {
+        const _el49 = createElement("button");
+        setStaticProps(_el49, {
           "class": "studio__btn"
         });
-        bindProperty(_el46, "disabled", () => !(studioState.value.status === "ready" && (studioState.value.manifest?.server?.origin ?? "") !== ""));
-        addEventListener(_el46, "click", () => {
+        bindProperty(_el49, "disabled", () => !(studioState.value.status === "ready" && (studioState.value.manifest?.server?.origin ?? "") !== ""));
+        addEventListener(_el49, "click", () => {
           const s = studioState.value;
           const pages = s.manifest?.pages ?? [];
           const active = pages.find((p) => p.id === activePageId.value);
@@ -2665,45 +2685,45 @@ function Studio() {
           if (typeof url === "string")
             window.open(url, "_blank");
         });
-        insertBefore(_el46, createText("Open in browser"), null);
-        return _el46;
+        insertBefore(_el49, createText("Open in browser"), null);
+        return _el49;
       })(), null);
-      return _el41;
+      return _el44;
     })(), null);
-    insertDynamic(_el40, null, () => studioState.value.status === "ready" && !serverNoticeDismissed.value ? createComponent(resolveComponent(ServerNotice, "src/client/panel.tsx", "ServerNotice"), {}) : null);
-    insertBefore(_el40, (() => {
-      const _el47 = createElement("div");
-      setStaticProps(_el47, {
+    insertDynamic(_el43, null, () => studioState.value.status === "ready" && !serverNoticeDismissed.value ? createComponent(resolveComponent(ServerNotice, "src/client/panel.tsx", "ServerNotice"), {}) : null);
+    insertBefore(_el43, (() => {
+      const _el50 = createElement("div");
+      setStaticProps(_el50, {
         "class": "studio__body"
       });
-      insertBefore(_el47, (() => {
-        const _el48 = createElement("aside");
-        setStaticProps(_el48, {
+      insertBefore(_el50, (() => {
+        const _el51 = createElement("aside");
+        setStaticProps(_el51, {
           "class": "studio__rail"
         });
-        insertBefore(_el48, (() => {
-          const _el49 = createElement("div");
-          setStaticProps(_el49, {
+        insertBefore(_el51, (() => {
+          const _el52 = createElement("div");
+          setStaticProps(_el52, {
             "class": "studio__rail-head"
           });
-          insertBefore(_el49, createComponent(resolveComponent(RailSwitch, "src/client/panel.tsx", "RailSwitch"), {}), null);
-          return _el49;
+          insertBefore(_el52, createComponent(resolveComponent(RailSwitch, "src/client/panel.tsx", "RailSwitch"), {}), null);
+          return _el52;
         })(), null);
-        insertDynamic(_el48, null, () => railMode.value === "pages" ? studioState.value.status === "ready" ? createComponent(resolveComponent(PageList, "src/client/panel.tsx", "PageList"), {}) : null : createComponent(resolveComponent(SourceBrowserPane, "src/client/panel.tsx", "SourceBrowserPane"), {}));
-        return _el48;
+        insertDynamic(_el51, null, () => railMode.value === "pages" ? studioState.value.status === "ready" ? createComponent(resolveComponent(PageList, "src/client/panel.tsx", "PageList"), {}) : null : createComponent(resolveComponent(SourceBrowserPane, "src/client/panel.tsx", "SourceBrowserPane"), {}));
+        return _el51;
       })(), null);
-      insertBefore(_el47, (() => {
-        const _el50 = createElement("main");
-        setStaticProps(_el50, {
+      insertBefore(_el50, (() => {
+        const _el53 = createElement("main");
+        setStaticProps(_el53, {
           "class": "studio__main"
         });
-        insertDynamic(_el50, null, () => railMode.value === "files" ? createComponent(resolveComponent(CodeViewer, "src/client/panel.tsx", "CodeViewer"), {}) : createComponent(resolveComponent(Viewport, "src/client/panel.tsx", "Viewport"), {}));
-        return _el50;
+        insertDynamic(_el53, null, () => railMode.value === "files" ? createComponent(resolveComponent(CodeViewer, "src/client/panel.tsx", "CodeViewer"), {}) : studioState.value.status === "ready" ? createComponent(resolveComponent(PageLauncher, "src/client/panel.tsx", "PageLauncher"), {}) : createComponent(resolveComponent(StatusNotice, "src/client/panel.tsx", "StatusNotice"), {}));
+        return _el53;
       })(), null);
-      insertBefore(_el47, createComponent(resolveComponent(Aside, "src/client/panel.tsx", "Aside"), {}), null);
-      return _el47;
+      insertBefore(_el50, createComponent(resolveComponent(Aside, "src/client/panel.tsx", "Aside"), {}), null);
+      return _el50;
     })(), null);
-    return _el40;
+    return _el43;
   })();
 }
 const STUDIO_CSS = `
@@ -2900,15 +2920,26 @@ const STUDIO_CSS = `
 .studio__page-route { display: block; font-size: 11px; color: var(--s-muted); }
 
 .studio__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.studio__viewport { flex: 1; min-height: 0; position: relative; background: var(--s-bg); }
-.studio__frame {
-  position: absolute;
-  inset: 0;
+.studio__launch { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
+.studio__launch-hint { margin: 0 0 10px; font-size: 12px; color: var(--s-muted); }
+.studio__launch-page {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   width: 100%;
-  height: 100%;
-  border: 0;
-  background: #fff;
+  border: 1px solid var(--s-border);
+  background: var(--s-panel);
+  color: var(--s-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 8px;
 }
+.studio__launch-page:hover { border-color: var(--s-brand); color: var(--s-brand); }
 .studio__placeholder {
   position: absolute;
   inset: 0;
