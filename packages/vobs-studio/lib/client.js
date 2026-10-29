@@ -2105,11 +2105,11 @@ function disposeStudio() {
   source?.dispose();
   source = void 0;
 }
-const _tpl6$1 = createTemplate("<code>.vobs/studio/preview.json</code>");
-const _tpl15 = createTemplate("<h3>Project</h3>");
-const _tpl22 = createTemplate('<span class="studio__brand">Vobs Studio</span>');
-const _tpl23 = createTemplate('<span class="studio__tag">AI Build</span>');
-const _tpl29 = createTemplate('<div class="studio__rail-head">Pages</div>');
+const _tpl6$1 = createTemplate(`<div class="studio__steps"><p class="studio__steps-hint">Follow these three steps once per session:</p><ol><li><b>Connect the Studio tools</b> — register the plugin's MCP server for this session (stdio), pointing at:<code>…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs</code><span class="studio__steps-sub">In DSH's session tools/MCP picker, or paste it into your agent preset's mcpServers. Without this the agent has no scaffold / self-check / preview tools.</span></li><li><b>Describe what you want in the chat</b> — plain language is enough: what kind of app, which pages, what content. The agent pulls the design contract, scaffolds the project, self-checks every snippet and builds it.</li><li><b>Watch the pages appear here</b> — the panel refreshes automatically after each build. Iterate by describing changes ("make the hero smaller"); "Open in browser" shows the same preview full-size.</li></ol></div>`);
+const _tpl14 = createTemplate("<h3>Project</h3>");
+const _tpl21 = createTemplate('<span class="studio__brand">Vobs Studio</span>');
+const _tpl22 = createTemplate('<span class="studio__tag">AI Build</span>');
+const _tpl28 = createTemplate('<div class="studio__rail-head">Pages</div>');
 function StatusNotice() {
   return (() => {
     const _el0 = createElement("div");
@@ -2118,7 +2118,7 @@ function StatusNotice() {
     });
     insertBefore(_el0, (() => {
       const _el1 = createElement("h2");
-      insertDynamicValue(_el1, null, () => studioState.value.status === "missing" ? "No preview yet" : studioState.value.status === "error" ? "Preview manifest error" : "Vobs Studio");
+      insertDynamicValue(_el1, null, () => studioState.value.status === "missing" ? "Getting started" : studioState.value.status === "error" ? "Preview manifest error" : "Vobs Studio");
       return _el1;
     })(), null);
     insertDynamic(_el0, null, () => studioState.value.workspace ? (() => {
@@ -2131,61 +2131,56 @@ function StatusNotice() {
       })(), null);
       return _el2;
     })() : null);
-    insertBefore(_el0, (() => {
+    insertDynamic(_el0, null, () => studioState.value.status === "missing" ? createComponent(resolveComponent(SetupSteps, "src/client/panel.tsx", "SetupSteps"), {}) : (() => {
       const _el4 = createElement("p");
       insertDynamicValue(_el4, null, () => studioState.value.message);
       return _el4;
-    })(), null);
-    insertDynamic(_el0, null, () => studioState.value.status === "missing" ? (() => {
-      const _el5 = createElement("p");
-      insertBefore(_el5, createText("Ask the agent to build pages, or run the preview build — it writes"), null);
-      insertDynamicValue(_el5, null, () => " ");
-      insertBefore(_el5, cloneTemplate(_tpl6$1), null);
-      insertBefore(_el5, createText(" and this panel picks it up automatically."), null);
-      return _el5;
-    })() : null);
+    })());
     insertDynamic(_el0, null, () => studioState.value.status === "error" ? (() => {
-      const _el7 = createElement("p");
-      setStaticProps(_el7, {
+      const _el5 = createElement("p");
+      setStaticProps(_el5, {
         "class": "studio__error"
       });
-      insertDynamicValue(_el7, null, () => studioState.value.message);
-      return _el7;
+      insertDynamicValue(_el5, null, () => studioState.value.message);
+      return _el5;
     })() : null);
     return _el0;
   })();
 }
+function SetupSteps() {
+  return cloneTemplate(_tpl6$1);
+}
 function PageList() {
   return (() => {
-    const _el8 = createElement("nav");
-    setStaticProps(_el8, {
+    const _el7 = createElement("nav");
+    setStaticProps(_el7, {
       "class": "studio__pages"
     });
-    insertList(_el8, null, () => studioState.value.manifest?.pages ?? [], (page) => (() => {
-      const _el9 = createElement("button");
-      setStaticProps(_el9, {
+    insertList(_el7, null, () => studioState.value.manifest?.pages ?? [], (page) => (() => {
+      const _el8 = createElement("button");
+      setStaticProps(_el8, {
         "class": "studio__page"
       });
-      bindAttribute(_el9, "data-active", () => activePageId.value === page.id);
-      addEventListener(_el9, "click", () => {
+      bindAttribute(_el8, "data-active", () => activePageId.value === page.id);
+      addEventListener(_el8, "click", () => {
         activePageId.value = page.id;
       });
-      insertBefore(_el9, (() => {
-        const _el10 = createElement("span");
-        insertDynamicValue(_el10, null, () => page.title || page.id);
-        return _el10;
+      insertBefore(_el8, (() => {
+        const _el9 = createElement("span");
+        insertDynamicValue(_el9, null, () => page.title || page.id);
+        return _el9;
       })(), null);
-      insertDynamic(_el9, null, () => page.route ? (() => {
-        const _el11 = createElement("span");
-        setStaticProps(_el11, {
+      insertDynamic(_el8, null, () => page.route ? (() => {
+        const _el10 = createElement("span");
+        setStaticProps(_el10, {
           "class": "studio__page-route"
         });
-        insertDynamicValue(_el11, null, () => page.route);
-        return _el11;
+        insertDynamicValue(_el10, null, () => page.route);
+        return _el10;
       })() : null);
-      return _el9;
+      return _el8;
     })());
-    return _el8;
+    return _el7;
   })();
 }
 function Viewport() {
@@ -2198,58 +2193,58 @@ function Viewport() {
     };
   });
   return (() => {
-    const _el12 = createElement("div");
-    setStaticProps(_el12, {
+    const _el11 = createElement("div");
+    setStaticProps(_el11, {
       "class": "studio__viewport"
     });
-    insertDynamic(_el12, null, () => view.value.url !== void 0 ? (() => {
-      const _el13 = createElement("iframe");
-      setStaticProps(_el13, {
+    insertDynamic(_el11, null, () => view.value.url !== void 0 ? (() => {
+      const _el12 = createElement("iframe");
+      setStaticProps(_el12, {
         "class": "studio__frame"
       });
-      bindAttribute(_el13, "src", () => view.value.url);
-      bindAttribute(_el13, "title", () => view.value.title);
-      return _el13;
+      bindAttribute(_el12, "src", () => view.value.url);
+      bindAttribute(_el12, "title", () => view.value.title);
+      return _el12;
     })() : createComponent(resolveComponent(StatusNotice, "src/client/panel.tsx", "StatusNotice"), {}));
-    return _el12;
+    return _el11;
   })();
 }
 function Aside() {
   return (() => {
-    const _el14 = createElement("aside");
-    setStaticProps(_el14, {
+    const _el13 = createElement("aside");
+    setStaticProps(_el13, {
       "class": "studio__aside"
     });
-    insertBefore(_el14, cloneTemplate(_tpl15), null);
-    insertBefore(_el14, (() => {
-      const _el16 = createElement("div");
-      setStaticProps(_el16, {
+    insertBefore(_el13, cloneTemplate(_tpl14), null);
+    insertBefore(_el13, (() => {
+      const _el15 = createElement("div");
+      setStaticProps(_el15, {
         "class": "studio__file"
       });
-      insertDynamicValue(_el16, null, () => studioState.value.manifest?.project?.name ?? "—");
+      insertDynamicValue(_el15, null, () => studioState.value.manifest?.project?.name ?? "—");
+      return _el15;
+    })(), null);
+    insertBefore(_el13, (() => {
+      const _el16 = createElement("h3");
+      bindAttribute(_el16, "style", () => ({ "margin-top": "14px" }));
+      insertBefore(_el16, createText("Files"), null);
       return _el16;
     })(), null);
-    insertBefore(_el14, (() => {
-      const _el17 = createElement("h3");
-      bindAttribute(_el17, "style", () => ({ "margin-top": "14px" }));
-      insertBefore(_el17, createText("Files"), null);
-      return _el17;
-    })(), null);
-    insertList(_el14, null, () => studioState.value.manifest?.pages ?? [], (page) => (() => {
-      const _el18 = createElement("div");
-      setStaticProps(_el18, {
+    insertList(_el13, null, () => studioState.value.manifest?.pages ?? [], (page) => (() => {
+      const _el17 = createElement("div");
+      setStaticProps(_el17, {
         "class": "studio__file"
       });
-      insertDynamicValue(_el18, null, () => page.file);
-      return _el18;
+      insertDynamicValue(_el17, null, () => page.file);
+      return _el17;
     })());
-    insertBefore(_el14, (() => {
-      const _el19 = createElement("p");
-      bindAttribute(_el19, "style", () => ({ "margin-top": "14px" }));
-      insertBefore(_el19, createText("The full file tree lands with the workspace service in the next milestone."), null);
-      return _el19;
+    insertBefore(_el13, (() => {
+      const _el18 = createElement("p");
+      bindAttribute(_el18, "style", () => ({ "margin-top": "14px" }));
+      insertBefore(_el18, createText("The full file tree lands with the workspace service in the next milestone."), null);
+      return _el18;
     })(), null);
-    return _el14;
+    return _el13;
   })();
 }
 function Studio() {
@@ -2265,43 +2260,43 @@ function Studio() {
     });
   }));
   return (() => {
-    const _el20 = createElement("div");
-    setStaticProps(_el20, {
+    const _el19 = createElement("div");
+    setStaticProps(_el19, {
       "class": "studio"
     });
-    insertBefore(_el20, (() => {
-      const _el21 = createElement("header");
-      setStaticProps(_el21, {
+    insertBefore(_el19, (() => {
+      const _el20 = createElement("header");
+      setStaticProps(_el20, {
         "class": "studio__head"
       });
-      insertBefore(_el21, cloneTemplate(_tpl22), null);
-      insertBefore(_el21, cloneTemplate(_tpl23), null);
-      insertBefore(_el21, (() => {
-        const _el24 = createElement("span");
-        setStaticProps(_el24, {
+      insertBefore(_el20, cloneTemplate(_tpl21), null);
+      insertBefore(_el20, cloneTemplate(_tpl22), null);
+      insertBefore(_el20, (() => {
+        const _el23 = createElement("span");
+        setStaticProps(_el23, {
           "class": "studio__ws"
         });
-        insertDynamicValue(_el24, null, () => studioState.value.workspace ?? "");
+        insertDynamicValue(_el23, null, () => studioState.value.workspace ?? "");
+        return _el23;
+      })(), null);
+      insertBefore(_el20, (() => {
+        const _el24 = createElement("button");
+        setStaticProps(_el24, {
+          "class": "studio__btn"
+        });
+        addEventListener(_el24, "click", () => {
+          refreshStudio();
+        });
+        insertBefore(_el24, createText("Refresh"), null);
         return _el24;
       })(), null);
-      insertBefore(_el21, (() => {
+      insertBefore(_el20, (() => {
         const _el25 = createElement("button");
         setStaticProps(_el25, {
           "class": "studio__btn"
         });
+        bindProperty(_el25, "disabled", () => !(studioState.value.status === "ready" && (studioState.value.manifest?.server?.origin ?? "") !== ""));
         addEventListener(_el25, "click", () => {
-          refreshStudio();
-        });
-        insertBefore(_el25, createText("Refresh"), null);
-        return _el25;
-      })(), null);
-      insertBefore(_el21, (() => {
-        const _el26 = createElement("button");
-        setStaticProps(_el26, {
-          "class": "studio__btn"
-        });
-        bindProperty(_el26, "disabled", () => !(studioState.value.status === "ready" && (studioState.value.manifest?.server?.origin ?? "") !== ""));
-        addEventListener(_el26, "click", () => {
           const s = studioState.value;
           const pages = s.manifest?.pages ?? [];
           const active = pages.find((p) => p.id === activePageId.value);
@@ -2309,37 +2304,37 @@ function Studio() {
           if (typeof url === "string")
             window.open(url, "_blank");
         });
-        insertBefore(_el26, createText("Open in browser"), null);
-        return _el26;
+        insertBefore(_el25, createText("Open in browser"), null);
+        return _el25;
       })(), null);
-      return _el21;
+      return _el20;
     })(), null);
-    insertBefore(_el20, (() => {
-      const _el27 = createElement("div");
-      setStaticProps(_el27, {
+    insertBefore(_el19, (() => {
+      const _el26 = createElement("div");
+      setStaticProps(_el26, {
         "class": "studio__body"
       });
-      insertBefore(_el27, (() => {
-        const _el28 = createElement("aside");
-        setStaticProps(_el28, {
+      insertBefore(_el26, (() => {
+        const _el27 = createElement("aside");
+        setStaticProps(_el27, {
           "class": "studio__rail"
         });
-        insertBefore(_el28, cloneTemplate(_tpl29), null);
-        insertDynamic(_el28, null, () => studioState.value.status === "ready" ? createComponent(resolveComponent(PageList, "src/client/panel.tsx", "PageList"), {}) : null);
-        return _el28;
+        insertBefore(_el27, cloneTemplate(_tpl28), null);
+        insertDynamic(_el27, null, () => studioState.value.status === "ready" ? createComponent(resolveComponent(PageList, "src/client/panel.tsx", "PageList"), {}) : null);
+        return _el27;
       })(), null);
-      insertBefore(_el27, (() => {
-        const _el30 = createElement("main");
-        setStaticProps(_el30, {
+      insertBefore(_el26, (() => {
+        const _el29 = createElement("main");
+        setStaticProps(_el29, {
           "class": "studio__main"
         });
-        insertBefore(_el30, createComponent(resolveComponent(Viewport, "src/client/panel.tsx", "Viewport"), {}), null);
-        return _el30;
+        insertBefore(_el29, createComponent(resolveComponent(Viewport, "src/client/panel.tsx", "Viewport"), {}), null);
+        return _el29;
       })(), null);
-      insertBefore(_el27, createComponent(resolveComponent(Aside, "src/client/panel.tsx", "Aside"), {}), null);
-      return _el27;
+      insertBefore(_el26, createComponent(resolveComponent(Aside, "src/client/panel.tsx", "Aside"), {}), null);
+      return _el26;
     })(), null);
-    return _el20;
+    return _el19;
   })();
 }
 const STUDIO_CSS = `
@@ -2508,6 +2503,21 @@ const STUDIO_CSS = `
 }
 .studio__error { color: #e5695f; }
 .studio__state { padding: 14px; font-size: 12px; color: var(--s-muted); }
+.studio__steps { max-width: 520px; text-align: left; }
+.studio__steps ol { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 10px; }
+.studio__steps li { font-size: 12px; line-height: 1.55; }
+.studio__steps b { color: var(--s-text); }
+.studio__steps code {
+  display: block;
+  margin: 4px 0 2px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--s-panel);
+  border: 1px solid var(--s-border);
+  font: 400 11px/1.5 ui-monospace, Consolas, monospace;
+  word-break: break-all;
+}
+.studio__steps-sub { display: block; margin-top: 2px; color: var(--s-muted); font-size: 11px; }
 `;
 const _tpl1 = createTemplate('<span class="studio-row__dot"></span>');
 const _tpl6 = createTemplate("<summary>output</summary>");

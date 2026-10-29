@@ -170,4 +170,19 @@ export const STUDIO_CSS = `
 }
 .studio__error { color: #e5695f; }
 .studio__state { padding: 14px; font-size: 12px; color: var(--s-muted); }
+.studio__steps { max-width: 520px; text-align: left; }
+.studio__steps ol { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 10px; }
+.studio__steps li { font-size: 12px; line-height: 1.55; }
+.studio__steps b { color: var(--s-text); }
+.studio__steps code {
+  display: block;
+  margin: 4px 0 2px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--s-panel);
+  border: 1px solid var(--s-border);
+  font: 400 11px/1.5 ui-monospace, Consolas, monospace;
+  word-break: break-all;
+}
+.studio__steps-sub { display: block; margin-top: 2px; color: var(--s-muted); font-size: 11px; }
 `

@@ -20,20 +20,48 @@ function StatusNotice() {
     <div class="studio__placeholder">
       <h2>
         {studioState.value.status === 'missing'
-          ? 'No preview yet'
+          ? 'Getting started'
           : studioState.value.status === 'error'
             ? 'Preview manifest error'
             : 'Vobs Studio'}
       </h2>
       {studioState.value.workspace ? <p>Workspace: <code>{studioState.value.workspace}</code></p> : null}
-      <p>{studioState.value.message}</p>
-      {studioState.value.status === 'missing' ? (
-        <p>
-          Ask the agent to build pages, or run the preview build — it writes{' '}
-          <code>.vobs/studio/preview.json</code> and this panel picks it up automatically.
-        </p>
-      ) : null}
+      {studioState.value.status === 'missing' ? <SetupSteps /> : <p>{studioState.value.message}</p>}
       {studioState.value.status === 'error' ? <p class="studio__error">{studioState.value.message}</p> : null}
+    </div>
+  )
+}
+
+/**
+ * First-run guidance, shown whenever the preview manifest has never been produced.
+ * This panel is the only surface a fresh install guarantees the user will open — so the
+ * setup steps live HERE, not only in the repository docs.
+ */
+function SetupSteps() {
+  return (
+    <div class="studio__steps">
+      <p class="studio__steps-hint">Follow these three steps once per session:</p>
+      <ol>
+        <li>
+          <b>Connect the Studio tools</b> — register the plugin's MCP server for this
+          session (stdio), pointing at:
+          <code>…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs</code>
+          <span class="studio__steps-sub">
+            In DSH's session tools/MCP picker, or paste it into your agent preset's
+            mcpServers. Without this the agent has no scaffold / self-check / preview tools.
+          </span>
+        </li>
+        <li>
+          <b>Describe what you want in the chat</b> — plain language is enough: what kind
+          of app, which pages, what content. The agent pulls the design contract, scaffolds
+          the project, self-checks every snippet and builds it.
+        </li>
+        <li>
+          <b>Watch the pages appear here</b> — the panel refreshes automatically after each
+          build. Iterate by describing changes ("make the hero smaller"); "Open in browser"
+          shows the same preview full-size.
+        </li>
+      </ol>
     </div>
   )
 }

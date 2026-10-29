@@ -63,6 +63,25 @@ Once a version tag is cut, it can be written as `#v1.8.0`.
 2. **The DevKit's "Project" page needs data**: it reads `.vobs/check.json` from the workspace, produced by `vobs check --write` (when the file is absent, the panel honestly tells you what to run). The other pages are static content baked in at build time and are viewable right after install.
 3. **Vobs Studio needs its MCP server registered per session**: add `node <plugin-dir>/mcp/index.mjs` (stdio) to the session's `mcpServers`. Without it the agent has no design contract / scaffold / self-check tools and the Studio panel just shows "no preview yet". The panel reads `.vobs/studio/preview.json`, written by `design_preview_build`.
 
+## Using Vobs Studio (after install)
+
+The Studio panel itself walks first-time users through these three steps (they are shown
+on its "Getting started" screen), but the short version:
+
+1. **Connect the tools** — in the session's MCP/tools configuration, register a stdio
+   server pointing at `…/node_modules/dsh-plugin-vobs-studio/mcp/index.mjs` (inside the
+   plugin's installed directory). Without this the agent has none of the Studio tools.
+2. **Describe what you want in the chat** — plain business language: app type, pages,
+   content, data fields, style preference. Technical terms are unnecessary; the agent
+   pulls the design contract itself and decides the layout.
+3. **Preview and iterate** — the panel refreshes after each build; keep describing
+   changes ("make the hero smaller", "add a filter — segmented, not a dropdown").
+
+MCP is configured per session (Agent Client Protocol `session/new` carries `mcpServers`);
+whether DSH exposes a global MCP settings UI depends on the DSH version — the per-session
+picker or an agent preset's `mcpServers` both work. Auto-attaching the server from the
+plugin's Host half is the planned zero-config step.
+
 ## Building and verifying
 
 ```bash
