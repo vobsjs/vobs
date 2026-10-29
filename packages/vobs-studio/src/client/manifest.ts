@@ -168,10 +168,15 @@ export async function readTextWithReason(api: WorkspaceFilesApi, sessionId: stri
       let text = ''
       let offset = 1 // line numbers are 1-based — the official paged reader starts at 1
       for (let page = 0; page < 20; page += 1) {
+        const before = text
         const result = await api.read(sessionId, path, { offset })
         if (result === undefined) break
         if (page > 0 && !text.endsWith('\n')) text += '\n'
         text += result.text ?? ''
+        // No-progress guard: a Host anomaly that answers every page with empty text and
+        // eof=false would otherwise burn 20 IPC calls per poll and starve the renderer
+        // (the UI-freeze incident). One empty page is enough to stop.
+        if (text === before) break
         if (result.eof === true) break
         const lines = typeof result.lines === 'number' && result.lines > 0 ? result.lines : 1
         offset += lines
@@ -336,15 +341,31 @@ export function createStudioSource(ctx: DshClientContext | undefined, options: S
     }
   }
 
-  const timer = pollMs > 0 ? setInterval(() => { void load() }, pollMs) : undefined
-  void load()
+  /**
+   * Self-scheduling poll with BACKOFF: live refresh needs the fast cadence only when
+   * ready; while missing/unavailable every tick burns stat+readBytes+read IPC against
+   * the Host — a 4× slower cadence there keeps the renderer (and the Host) fluid.
+   */
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const schedule = (): void => {
+    if (disposed) return
+    const delay = studioState.value.status === 'ready' ? pollMs : pollMs * 4
+    timer = setTimeout(() => {
+      void load().finally(schedule)
+    }, delay)
+  }
+  if (pollMs > 0) {
+    void load().finally(schedule) // first load immediately, then the backoff cadence
+  } else {
+    void load()
+  }
 
   return {
     state: studioState,
     refresh: () => { void load() },
     dispose: () => {
       disposed = true
-      if (timer !== undefined) clearInterval(timer)
+      if (timer !== undefined) clearTimeout(timer)
     }
   }
 }

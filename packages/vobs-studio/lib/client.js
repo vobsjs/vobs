@@ -1830,10 +1830,12 @@ async function readTextWithReason(api, sessionId, path) {
       let text = "";
       let offset = 1;
       for (let page = 0; page < 20; page += 1) {
+        const before = text;
         const result = await api.read(sessionId, path, { offset });
         if (result === void 0) break;
         if (page > 0 && !text.endsWith("\n")) text += "\n";
         text += result.text ?? "";
+        if (text === before) break;
         if (result.eof === true) break;
         const lines = typeof result.lines === "number" && result.lines > 0 ? result.lines : 1;
         offset += lines;
@@ -1946,10 +1948,19 @@ function createStudioSource(ctx, options = {}) {
       inFlight = false;
     }
   };
-  const timer = pollMs > 0 ? setInterval(() => {
+  let timer;
+  const schedule = () => {
+    if (disposed) return;
+    const delay = studioState2.value.status === "ready" ? pollMs : pollMs * 4;
+    timer = setTimeout(() => {
+      void load().finally(schedule);
+    }, delay);
+  };
+  if (pollMs > 0) {
+    void load().finally(schedule);
+  } else {
     void load();
-  }, pollMs) : void 0;
-  void load();
+  }
   return {
     state: studioState2,
     refresh: () => {
@@ -1957,7 +1968,7 @@ function createStudioSource(ctx, options = {}) {
     },
     dispose: () => {
       disposed = true;
-      if (timer !== void 0) clearInterval(timer);
+      if (timer !== void 0) clearTimeout(timer);
     }
   };
 }
