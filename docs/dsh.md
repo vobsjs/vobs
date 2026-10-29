@@ -109,15 +109,19 @@ DSH session — the agent appends the section to `~/.dsh/AGENTS.md`:
 When the user asks to install a Vobs plugin (Vobs Studio / Vobs Console / Vobs DevKit),
 do exactly this — no other steps, no questions:
 
-1. Run:
-   dsh plugin --profile desktop add "github:vobsjs/vobs#<ref>&path:/packages/<dir>"
+1. Bypass the `dsh.cmd` shim — its cmd.exe `%*` re-expansion eats the `&` in `&path:`
+   and silently installs the WHOLE monorepo (real incident). Invoke the entry directly
+   with Electron-as-Node:
+   $env:ELECTRON_RUN_AS_NODE='1'
+   & '<install>\DeepSeek Harness.exe' --expose-internals '<install>\resources\app.asar\dsh\node_modules\@deepseek-ai\dsh-desktop-host\lib\cli.js' plugin --profile desktop add 'github:vobsjs/vobs#<ref>&path:/packages/<dir>'
    | Plugin | <dir> | package name |
    |---|---|---|
    | Vobs Studio | vobs-studio | dsh-plugin-vobs-studio |
    | Vobs Console | dsh-console | dsh-plugin-vobs-console |
    | Vobs DevKit | dsh-devkit | dsh-plugin-vobs-devkit |
-   dsh plugin forwards to DSH's bundled pnpm >= 11 — never run pnpm yourself and never
-   edit dependencies by hand. <ref>: use the tag the user names, otherwise main.
+   <ref>: use the tag the user names, otherwise main. Afterwards CHECK that the profile
+   dependency spec still contains `&path:/packages/<dir>`; if it lost the spec (the shim
+   trap), `plugin remove` and redo via the direct invocation.
 2. Register the package name (not the dir name) in
    ~/.dsh/profiles/desktop/package.json → dsh.profile.bundles (append if absent).
    The CLI does not do this step; without it the plugin will not load.
