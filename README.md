@@ -95,7 +95,15 @@ Core packages described individually, the rest grouped by purpose (per-package d
 ## DSH plugins
 
 vobs can also be used to build DeepSeek Harness client plugins (one toolchain + four plugin packages, not published to npm, distributed via Git subdirectories): **Vobs Console** (multi-session cockpit), **Vobs DevKit** (project checks and AI guardrails), and **Vobs Studio** (AI-built vobs+Tailwind pages: design contract + MCP tools + live preview panel — installing the plugin also registers its MCP server, so the agent can build from a plain chat description).
-For installation, building, verification, and known pitfalls see **[docs/dsh.md](docs/dsh.md)**.
+
+**Install from a DSH chat — one sentence** (any phrasing works; the install knowledge lives in the user's global instructions):
+
+```text
+帮我在 DSH 里安装 Vobs Studio 插件。
+Install the Vobs Studio plugin in DSH.
+```
+
+For the one-time setup of those instructions, the CLI details, verification, and known pitfalls see **[docs/dsh.md](docs/dsh.md)**.
 
 ## Development
 

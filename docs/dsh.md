@@ -91,6 +91,7 @@ the user only ever says:
 
 ```text
 帮我在 DSH 里安装 Vobs Studio 插件。
+Install the Vobs Studio plugin in DSH.
 ```
 
 The agent follows the instructions in that file (which teach it the official `dsh
