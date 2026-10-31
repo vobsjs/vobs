@@ -631,7 +631,16 @@
       border-radius: var(--radius-full);
       cursor: pointer; transition: background .15s, border-color .15s;
     }
-    .vui-switch input { display: none; }
+    /* The real control must be the hit area (2026-10-31): it used to be `display: none`, so clicks
+       on the visual track never reached the input and `change` never fired — the switch looked fine
+       but was completely inert, with no console error. Cover the whole track with a transparent
+       input instead; the sibling selectors for the thumb / brand background keep working. */
+    .vui-switch input {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      margin: 0; opacity: 0; cursor: pointer;
+      z-index: 1;
+    }
     .vui-switch__thumb {
       position: absolute; top: 2px; left: 2px;
       width: 12px; height: 12px;
