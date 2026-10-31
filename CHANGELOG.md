@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.2] - 2026-10-31
+
+### Fixed
+
+- **`@vobs/ui` `Switch` was completely inert.** The real `<input>` was styled `display: none`
+  while `change` was the only event wired to `onChange`, so clicking the visible track never
+  reached the control: the switch rendered correctly, refused to move, and printed nothing in
+  the console (found in a downstream project). The input is now a transparent overlay covering
+  the track (`position: absolute; inset: 0; opacity: 0`), so the click lands on the control and
+  `input:checked ~ .vui-switch__thumb` keeps working. Locked by `packages/ui/src/switch.test.ts`
+  (click → `bind`/`onChange`, plus a CSS-contract assertion against `display: none` regressing).
+
 ## [1.9.1] - 2026-10-29
 
 ### Fixed
