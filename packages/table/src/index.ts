@@ -6,6 +6,7 @@ export type {
   DataTableAlign,
   DataTableChildren,
   DataTableColumn,
+  DataTableColumnGroup,
   DataTableColumnSettings,
   DataTableColumnSettingsPersistence,
   DataTableColumnSettingsStorage,

@@ -41,6 +41,31 @@ const app = createVobs({
 app.mount(document.getElementById('app')!)
 ```
 
+## Grouped header
+
+Declare `group` on **leaf columns**. Contiguous visible columns sharing the same `group.id`
+merge into one row-1 cell with `colspan` (the group label); row 2 keeps the usual per-column
+header (label / `head` / sort button).
+
+```ts
+const columns: readonly DataTableColumn<Sale>[] = [
+  { id: 'customer', label: 'Customer' },
+  { id: 'vatAmount', label: 'Amount', sortable: true, group: { id: 'vat', label: 'VAT' } },
+  { id: 'vatStatus', label: 'Status', group: { id: 'vat', label: 'VAT' } }
+]
+```
+
+- The column model stays **flat**: sorting, visibility, column order, width settings and cell
+  rendering are unchanged — grouping is purely a header concern.
+- Ungrouped columns span both header rows (`rowspan=2`), so the two-row header stays rectangular.
+- Contiguity is computed **after** visibility/order normalization: hiding a leaf shrinks the
+  group's `colspan`; hiding a middle column **splits** one group into two group cells (the label
+  repeats — columns are never silently rejoined).
+- Group labels may be a string, node, or factory (a factory re-renders reactively, like `head`).
+  `group.align` (`'start' | 'center' | 'end'`) defaults to centered.
+- With `stickyHeader`, the leaf row is pushed below the group row by the **measured** group-row
+  height (`--vobs-table-group-head-height`), so app-level header padding overrides stay aligned.
+
 ## API
 
 | Signature | Description |
@@ -54,4 +79,4 @@ app.mount(document.getElementById('app')!)
 
 ## Types
 
-DataTableAlign, DataTableSortDirection, DataTableSortType, DataTableSortingMode, DataTablePaginationMode, DataTableSort, DataTableQuery, DataTablePage, DataTableResourceData, DataTableResource, DataTableChildren, DataTableColumn, DataTableColumnSettings, DataTableColumnSettingsPersistence, DataTableColumnSettingsStorage, DataTableIcons, DataTablePaginationContext, DataTablePagination, DataTableCommonProps, KitDataTableProps, KitColumnSettingsProps
+DataTableAlign, DataTableSortDirection, DataTableSortType, DataTableSortingMode, DataTablePaginationMode, DataTableSort, DataTableQuery, DataTablePage, DataTableResourceData, DataTableResource, DataTableChildren, DataTableColumn, DataTableColumnGroup, DataTableColumnSettings, DataTableColumnSettingsPersistence, DataTableColumnSettingsStorage, DataTableIcons, DataTablePaginationContext, DataTablePagination, DataTableCommonProps, KitDataTableProps, KitColumnSettingsProps

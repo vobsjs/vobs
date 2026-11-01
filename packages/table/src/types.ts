@@ -44,6 +44,24 @@ export type DataTableChildren =
   | readonly DataTableChildren[]
   | (() => DataTableChildren | null | undefined)
 
+/**
+ * Grouped header (two-row `thead`). Declared **on leaf columns**: contiguous
+ * visible columns sharing the same `group.id` merge into one row-1 cell with
+ * `colspan` (the group label), while row 2 keeps the usual per-column header
+ * (label / `head` / sort button). The column model stays flat, so sorting,
+ * visibility, column order and cell rendering are unaffected.
+ *
+ * Non-contiguous columns with the same group id render as **separate** group
+ * cells (the label repeats) — hiding a middle column via `visibleColumnIds`
+ * does not silently rejoin them.
+ */
+export interface DataTableColumnGroup {
+  readonly id: string
+  /** Group label; node / factory supported (rendered through dynamic insertion, like `head`). */
+  readonly label?: DataTableChildren
+  readonly align?: DataTableAlign
+}
+
 export interface DataTableColumn<Row = Record<string, unknown>> {
   readonly id: string
   readonly label: string
@@ -54,6 +72,8 @@ export interface DataTableColumn<Row = Record<string, unknown>> {
    * controls. Sortable columns render the sort button instead and ignore `head`.
    */
   readonly head?: DataTableChildren
+  /** Optional grouped header membership (see DataTableColumnGroup). */
+  readonly group?: DataTableColumnGroup
   readonly key?: keyof Row
   readonly render?: (row: Row, index: number) => DataTableChildren
   readonly compare?: (left: Row, right: Row) => number

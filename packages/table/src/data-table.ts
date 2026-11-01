@@ -26,6 +26,7 @@ import {
 import { defaultIcons } from './icons'
 import type {
   DataTableColumn,
+  DataTableColumnGroup,
   DataTableChildren,
   DataTableColumnSettings,
   DataTableIcons,
@@ -108,7 +109,7 @@ export function KitDataTable<Row = Record<string, unknown>>(props: KitDataTableP
   })
   addEventListener(viewport, 'scroll', () => { scrollTop.value = viewport.scrollTop })
 
-  insertDynamic(head, null, () => createHeader(props))
+  insertDynamic(head, null, () => createHeader(props, head))
   /*
    * Page data (rows after filter/sort/pagination) lives in a memo: cells read
    * rows through it, so any data change necessarily re-runs — without relying
@@ -237,23 +238,104 @@ function renderRowMenu(ctx: Signal<{ x: number; y: number; items: readonly DataT
   return menu
 }
 
-function createHeader<Row>(props: KitDataTableProps<Row>): VobsNode {
+function createHeader<Row>(props: KitDataTableProps<Row>, section: Element): VobsNode {
   const columns = visibleColumns(props)
   return createFragment((parent, anchor) => {
-    const row = createElement('tr')
-    for (const column of columns) {
-      const cell = createElement('th')
-      setAttribute(cell, 'scope', 'col')
-      setAttribute(cell, 'data-column-id', column.id)
-      applyColumnStyle(cell, column, readProp<DataTableColumnSettings | undefined>(props, 'columnSettings', undefined))
-      if (column.sortable) insertBefore(cell, createSortButton(props, column, cell), null)
-      else if (column.head !== undefined) {
-        // Header node: inserted dynamically (reactive to signals — e.g. header select-all boxes); resolveSlot normalizes node/text/factory
-        insertDynamic(cell, null, () => resolveSlot(column.head))
-      } else insertBefore(cell, createText(column.label), null)
-      insertBefore(row, cell, null)
+    const runs = headerRuns(columns)
+    const grouped = runs.some(run => run.group !== undefined)
+    setOptionalAttribute(section, 'data-grouped-head', grouped ? 'true' : undefined)
+    const top = createElement('tr')
+    for (const run of runs) {
+      const group = run.group
+      if (group !== undefined) {
+        const cell = createElement('th')
+        setAttribute(cell, 'scope', 'colgroup')
+        setAttribute(cell, 'colspan', String(run.columns.length))
+        setAttribute(cell, 'data-column-group', group.id)
+        setOptionalAttribute(cell, 'data-align', group.align)
+        // Group label goes through dynamic insertion too, so a factory label stays reactive
+        const label = group.label ?? group.id
+        insertDynamic(cell, null, () => resolveSlot(label))
+        insertBefore(top, cell, null)
+        continue
+      }
+      // Ungrouped columns span both rows so the two-row header stays rectangular
+      insertBefore(top, createHeaderCell(props, run.columns[0], grouped ? 2 : undefined), null)
     }
-    insertBefore(parent, row, anchor)
+    insertBefore(parent, top, anchor)
+    if (grouped) {
+      const bottom = createElement('tr')
+      for (const run of runs) {
+        if (run.group === undefined) continue
+        for (const column of run.columns) insertBefore(bottom, createHeaderCell(props, column), null)
+      }
+      insertBefore(parent, bottom, anchor)
+      syncGroupHeadHeight(section)
+    }
+  })
+}
+
+/** Header run: one group cell (or one ungrouped column) = a contiguous column slice. */
+interface HeaderRun<Row> {
+  readonly group?: DataTableColumnGroup
+  columns: DataTableColumn<Row>[]
+}
+
+/**
+ * Split visible columns into header runs. Contiguity is computed **after**
+ * visibility/order normalization, so hiding a leaf shrinks its group's colspan
+ * and hiding a middle column splits one group into two separate group cells
+ * (labels repeat — never silently rejoined).
+ */
+function headerRuns<Row>(columns: readonly DataTableColumn<Row>[]): readonly HeaderRun<Row>[] {
+  const runs: HeaderRun<Row>[] = []
+  for (const column of columns) {
+    const group = column.group
+    const last = runs.length === 0 ? undefined : runs[runs.length - 1]
+    if (group !== undefined && last !== undefined && last.group !== undefined && last.group.id === group.id) {
+      last.columns.push(column)
+      continue
+    }
+    runs.push({ group, columns: [column] })
+  }
+  return runs
+}
+
+function createHeaderCell<Row>(
+  props: KitDataTableProps<Row>,
+  column: DataTableColumn<Row>,
+  rowspan?: number
+): Element {
+  const cell = createElement('th')
+  setAttribute(cell, 'scope', 'col')
+  setAttribute(cell, 'data-column-id', column.id)
+  if (rowspan !== undefined) setAttribute(cell, 'rowspan', String(rowspan))
+  applyColumnStyle(cell, column, readProp<DataTableColumnSettings | undefined>(props, 'columnSettings', undefined))
+  if (column.sortable) insertBefore(cell, createSortButton(props, column, cell), null)
+  else if (column.head !== undefined) {
+    // Header node: inserted dynamically (reactive to signals — e.g. header select-all boxes); resolveSlot normalizes node/text/factory
+    insertDynamic(cell, null, () => resolveSlot(column.head))
+  } else insertBefore(cell, createText(column.label), null)
+  return cell
+}
+
+/**
+ * Sticky offset for the second header row. Both rows use per-cell `position:
+ * sticky`, so the leaf row must be pushed down by the group row's height —
+ * read it once after layout instead of guessing from font size / padding
+ * (apps override header padding; a guessed constant would overlap).
+ */
+function syncGroupHeadHeight(section: Element): void {
+  const view = (globalThis as { requestAnimationFrame?: (callback: () => void) => unknown }).requestAnimationFrame
+  if (typeof view !== 'function') return
+  view(() => {
+    const first = section.firstElementChild
+    if (first === null) return
+    const height = Math.round(first.getBoundingClientRect().height)
+    if (height <= 0) return
+    const table = section.parentElement
+    if (table === null) return
+    table.style.setProperty('--vobs-table-group-head-height', `${height}px`)
   })
 }
 

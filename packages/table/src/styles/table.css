@@ -60,6 +60,22 @@
   background: var(--vobs-table-header-surface, var(--vobs-table-surface, var(--bg-base-secondary, #fff)));
   box-shadow: 0 1px 0 var(--vobs-table-border, var(--border-neutral-l1, #d0d7de));
 }
+/*
+ * Grouped header (column.group): two-row thead — row 1 = group labels with
+ * colspan, row 2 = the usual per-column headers. The group cell is centered by
+ * default (a group label describes N columns); a group may opt into start/end
+ * alignment through `group.align`. Sticky offsets: row 1 sticks at 0, row 2 is
+ * pushed below it by the measured group-row height (see syncGroupHeadHeight).
+ */
+.vobs-data-table thead[data-grouped-head="true"] th[data-column-group] {
+  text-align: center;
+  border-bottom: 1px solid var(--vobs-table-border, var(--border-neutral-l1, #d0d7de));
+}
+.vobs-data-table thead[data-grouped-head="true"] th[data-column-group][data-align="start"] { text-align: start; }
+.vobs-data-table thead[data-grouped-head="true"] th[data-column-group][data-align="end"] { text-align: end; }
+.vobs-data-table--sticky-header thead[data-grouped-head="true"] tr + tr th {
+  top: var(--vobs-table-group-head-height, 34px);
+}
 .vobs-data-table tbody tr:last-child td { border-bottom: 0; }
 .vobs-data-table [data-align="center"] { text-align: center; }
 .vobs-data-table [data-align="end"] { text-align: end; font-variant-numeric: tabular-nums; }
