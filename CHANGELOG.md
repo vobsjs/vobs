@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.3] - 2026-11-01
+
+### Added
+
+- **`@vobs/table`: grouped header (two-row `thead`).** Declare `group` on leaf columns
+  (`{ id: 'vat', label: '增值税' }`); contiguous **visible** columns sharing the same group id merge
+  into one header cell with `colspan`, while the second header row keeps the per-column labels /
+  `head` / sort buttons. Ungrouped columns span both rows (`rowspan=2`), so the header stays
+  rectangular. The column model remains flat — sorting, visibility, column order, width settings
+  and cell rendering are untouched. Contiguity is recomputed after visibility/order normalization,
+  so hiding a leaf shrinks the `colspan` and hiding a middle column **splits** the group rather than
+  silently rejoining the remaining leaves. Group labels accept string / node / factory (reactive),
+  `group.align` defaults to centered, and with `stickyHeader` the leaf row is offset by the
+  **measured** group-row height (`--vobs-table-group-head-height`) so app-level header padding
+  overrides cannot misalign the two rows. Locked by `packages/table/src/grouped-header.test.ts`
+  (7 cases: colspan, rowspan on ungrouped cells, visibility shrink, mid-column split, sort buttons
+  on leaf cells, reactive factory label, id fallback).
+
 ## [1.9.2] - 2026-10-31
 
 ### Fixed
